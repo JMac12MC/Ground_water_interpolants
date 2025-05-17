@@ -274,68 +274,32 @@ with main_col1:
                         icon=folium.Icon(color='blue', icon='tint', prefix='fa')
                     ).add_to(marker_cluster)
         
-        # Add click event to capture coordinates
-        m.add_child(folium.LatLngPopup())
+        # Add click event to capture coordinates (only need this once)
+        folium.LatLngPopup().add_to(m)
         
-        # Add click handler
-        m.add_child(folium.ClickForMarker(
-            popup="Selected Location",
-            js='''
-            function(e) {
-                parent.postMessage({
-                    type: 'streamlit:setComponentValue', 
-                    value: [e.latlng.lat, e.latlng.lng]
-                }, '*');
-                return L.marker(e.latlng);
-            }
-            '''
-        ))
+        # Add a simple click handler that manually tracks clicks
+        folium.LayerControl().add_to(m)
+        
+        # Create a custom click handler
+        from folium.plugins import MousePosition
+        MousePosition().add_to(m)
     
     # Display the map
     st.subheader("Interactive Map")
     st.caption("Click on the map to select a location or use the search box above")
-    map_container = folium_static(m, width=800)
+    folium_static(m, width=800)
     
-    # Add listener for map clicks
-    components_js = """
-    <script>
-    window.addEventListener('message', function(e) {
-        let data = e.data;
-        
-        if (data.type === 'streamlit:setComponentValue') {
-            if (Array.isArray(data.value) && data.value.length === 2) {
-                window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
-                    key: 'selected_point',
-                    value: data.value
-                }, '*');
-                
-                // Force a rerun
-                setTimeout(function() {
-                    window.parent.postMessage({
-                        type: 'streamlit:componentRerun'
-                    }, '*');
-                }, 100);
-            } else if (typeof data.value === 'string') {
-                // It's a well ID
-                window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
-                    key: 'selected_well',
-                    value: data.value
-                }, '*');
-                
-                // Force a rerun
-                setTimeout(function() {
-                    window.parent.postMessage({
-                        type: 'streamlit:componentRerun'
-                    }, '*');
-                }, 100);
-            }
-        }
-    });
-    </script>
-    """
-    st.components.v1.html(components_js, height=0)
+    # Add manual coordinate selection
+    st.subheader("Manually Select Coordinates")
+    col1, col2 = st.columns(2)
+    with col1:
+        latitude = st.number_input("Latitude", value=default_location[0], format="%.6f")
+    with col2:
+        longitude = st.number_input("Longitude", value=default_location[1], format="%.6f")
+    
+    if st.button("Set Location"):
+        st.session_state.selected_point = [latitude, longitude]
+        st.rerun()
 
 with main_col2:
     st.subheader("Analysis Results")

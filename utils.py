@@ -1,0 +1,53 @@
+import pandas as pd
+import numpy as np
+import math
+import csv
+import io
+
+def get_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate the Haversine distance between two points in kilometers
+    """
+    R = 6371  # Earth radius in kilometers
+    
+    # Convert latitude and longitude from degrees to radians
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    lat2_rad = math.radians(lat2)
+    lon2_rad = math.radians(lon2)
+    
+    # Haversine formula
+    dlon = lon2_rad - lon1_rad
+    dlat = lat2_rad - lat1_rad
+    a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    distance = R * c
+    
+    return distance
+
+def calculate_yield_score(yield_rate, max_yield=None):
+    """
+    Convert yield rate to a score between 0 and 1
+    """
+    if max_yield is None:
+        # If no max provided, use a reasonable maximum (adjust as needed)
+        max_yield = 100
+    
+    # Normalize the yield rate
+    score = min(1.0, max(0.0, yield_rate / max_yield))
+    return score
+
+def download_as_csv(dataframe):
+    """
+    Convert a DataFrame to a CSV string for download
+    """
+    # Create a string buffer
+    buffer = io.StringIO()
+    
+    # Write the DataFrame to the buffer as a CSV
+    dataframe.to_csv(buffer, index=False)
+    
+    # Get the value of the buffer as a string
+    csv_string = buffer.getvalue()
+    
+    return csv_string

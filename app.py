@@ -224,7 +224,7 @@ with main_col1:
             ).add_to(m)
             
             # Add heat map based on yield
-            if st.session_state.heat_map_visibility and not filtered_wells.empty:
+            if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
                 heat_data = generate_heat_map_data(
                     filtered_wells, 
                     st.session_state.selected_point, 
@@ -266,7 +266,7 @@ with main_col1:
                 for idx, row in wells_df.iterrows():
                     # Use a smaller CircleMarker for all wells
                     folium.CircleMarker(
-                        location=[row['latitude'], row['longitude']],
+                        location=(float(row['latitude']), float(row['longitude'])),
                         radius=3,  # Small dot
                         color='gray',
                         fill=True,
@@ -276,7 +276,7 @@ with main_col1:
                     ).add_to(all_wells_layer)
                 
                 # Add filtered wells with more details
-                if not filtered_wells.empty:
+                if isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
                     marker_cluster = MarkerCluster(name="Filtered Wells").add_to(m)
                     
                     for idx, row in filtered_wells.iterrows():
@@ -296,7 +296,7 @@ with main_col1:
                         
                         # Create marker with popup
                         folium.Marker(
-                            location=[row['latitude'], row['longitude']],
+                            location=(float(row['latitude']), float(row['longitude'])),
                             popup=folium.Popup(popup_content, max_width=300),
                             tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s",
                             icon=folium.Icon(color='blue', icon='tint', prefix='fa')
@@ -387,7 +387,7 @@ with main_col2:
                 st.session_state.filtered_wells['well_id'] == st.session_state.selected_well
             ]
             
-            if not well_details.empty:
+            if isinstance(well_details, pd.DataFrame) and not well_details.empty:
                 well = well_details.iloc[0]
                 st.subheader(f"Well {well['well_id']} Details")
                 

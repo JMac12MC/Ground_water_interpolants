@@ -288,14 +288,27 @@ with main_col1:
     st.subheader("Interactive Map")
     st.caption("Click on the map to select a location or use the search box above")
     
-    # Use st_folium with return_clicks parameter to get click data
+    # Use st_folium instead of folium_static to capture clicks
     from streamlit_folium import st_folium
-    map_data = st_folium(m, width=800)
     
-    # Process map clicks
-    if map_data and map_data.get("last_clicked"):
+    # Make sure we disable folium_static's existing click handlers
+    m.add_child(folium.Element("""
+    <script>
+    // Clear any existing click handlers
+    </script>
+    """))
+    
+    # Use st_folium with return_clicked_latlon to get click coordinates
+    map_data = st_folium(m, width=800, zoom=st.session_state.zoom_level, 
+                       key="interactive_map", returned_objects=["last_clicked"])
+    
+    # Process clicks from the map
+    if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+        # Get the coordinates from the click
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
+        
+        # Update session state with the new coordinates
         st.session_state.selected_point = [clicked_lat, clicked_lng]
         st.rerun()
     

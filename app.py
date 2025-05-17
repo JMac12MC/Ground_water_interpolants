@@ -7,7 +7,7 @@ import numpy as np
 import os
 import base64
 from utils import get_distance, download_as_csv
-from data_loader import load_sample_data, load_custom_data
+from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data
 
 # Set page configuration

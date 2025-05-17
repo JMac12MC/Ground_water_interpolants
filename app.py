@@ -287,7 +287,17 @@ with main_col1:
     # Display the map
     st.subheader("Interactive Map")
     st.caption("Click on the map to select a location or use the search box above")
-    folium_static(m, width=800)
+    
+    # Use st_folium with return_clicks parameter to get click data
+    from streamlit_folium import st_folium
+    map_data = st_folium(m, width=800)
+    
+    # Process map clicks
+    if map_data and map_data.get("last_clicked"):
+        clicked_lat = map_data["last_clicked"]["lat"]
+        clicked_lng = map_data["last_clicked"]["lng"]
+        st.session_state.selected_point = [clicked_lat, clicked_lng]
+        st.rerun()
     
     # Add manual coordinate selection
     st.subheader("Manually Select Coordinates")

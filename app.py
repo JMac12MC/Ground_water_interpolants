@@ -71,18 +71,28 @@ with st.sidebar:
     # Data source selection
     data_source = st.radio(
         "Select Data Source",
-        ["Sample Data", "Custom Upload", "API Data (Coming Soon)"]
+        ["Sample Data", "NZ Government Data", "Custom Upload", "API Data"]
     )
     
     if data_source == "Sample Data":
         st.session_state.wells_data = load_sample_data()
+    elif data_source == "NZ Government Data":
+        # Load the New Zealand government well data
+        st.session_state.wells_data = load_nz_govt_data()
     elif data_source == "Custom Upload":
         uploaded_file = st.file_uploader("Upload a CSV file with well data", type=["csv"])
         if uploaded_file is not None:
             st.session_state.wells_data = load_custom_data(uploaded_file)
-    else:
-        st.info("API integration is coming soon! Using sample data for now.")
-        st.session_state.wells_data = load_sample_data()
+    else:  # API Data
+        api_url = st.text_input("Enter API URL or type 'NZ' for New Zealand data")
+        api_key = st.text_input("API Key (if required)", type="password")
+        
+        if st.button("Fetch Data"):
+            if api_url:
+                st.session_state.wells_data = load_api_data(api_url, api_key)
+            else:
+                st.error("Please enter an API URL")
+                st.session_state.wells_data = load_sample_data()
     
     st.header("Filters")
     

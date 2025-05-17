@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+import os
+import random
 
 def load_sample_data():
     """
@@ -77,6 +79,7 @@ def load_sample_data():
         
         # Save to file for future use
         try:
+            os.makedirs("sample_data", exist_ok=True)
             df.to_csv("sample_data/wells_sample.csv", index=False)
         except:
             pass
@@ -140,7 +143,7 @@ def load_nz_govt_data():
         return df
     except:
         # Generate realistic New Zealand well data
-        st.info("Generating realistic New Zealand well data based on actual geographical patterns...")
+        st.info("Generating New Zealand well data based on actual geographical patterns...")
         
         # Let's generate more wells with a realistic geographic distribution
         import random
@@ -152,8 +155,8 @@ def load_nz_govt_data():
         base_lat = -43.5320
         base_lon = 172.6306
         
-        # Generate many more wells (2000+) to provide a more realistic dataset
-        num_wells = 2000
+        # Generate many more wells (3000+) to provide a more realistic dataset
+        num_wells = 3000
         
         # Set random seed for reproducibility
         np.random.seed(42)
@@ -170,7 +173,12 @@ def load_nz_govt_data():
             # South Canterbury
             (-44.1, 171.3, 0.2),  # South Canterbury region
             # Central Canterbury
-            (-43.6, 171.9, 0.15)  # Central Canterbury
+            (-43.6, 171.9, 0.15),  # Central Canterbury
+            # Additional farming regions
+            (-43.8, 172.2, 0.2),  # Southern Canterbury Plains
+            (-43.3, 172.5, 0.18),  # Northern Plains
+            (-44.3, 171.2, 0.15),  # South Canterbury
+            (-43.4, 171.7, 0.22),  # Mid Canterbury farming region
         ]
         
         # Create the dataset with weighted distribution around high density areas
@@ -178,7 +186,7 @@ def load_nz_govt_data():
         
         for i in range(num_wells):
             # Determine if this well should be near a high density area
-            if random.random() < 0.7:  # 70% of wells will be in or near high density areas
+            if random.random() < 0.75:  # 75% of wells will be in or near high density areas
                 # Choose a random high density area
                 area = random.choice(high_density_areas)
                 area_lat, area_lon, radius = area
@@ -192,7 +200,7 @@ def load_nz_govt_data():
                 lat = np.random.uniform(base_lat - 1.5, base_lat + 1.5)
                 lon = np.random.uniform(base_lon - 1.5, base_lon + 1.5)
             
-            # Generate well ID
+            # Generate well ID with prefix for New Zealand wells
             well_id = f"NZ-{i+1000}"
             
             # Generate realistic depth based on location and some randomness
@@ -238,73 +246,13 @@ def load_nz_govt_data():
         
         # Save to cache for future use
         try:
+            os.makedirs("sample_data", exist_ok=True)  # Ensure directory exists
             df.to_csv("sample_data/nz_wells_cache.csv", index=False)
-        except:
-            pass
+        except Exception as e:
+            st.warning(f"Could not save cache file: {e}")
         
         st.success(f"Generated {len(df)} wells for New Zealand")
         return df
-
-
-                        if len(coords) >= 2:  # Make sure we have both longitude and latitude
-                            # GeoJSON from Canterbury Maps uses [longitude, latitude] order
-                            longitude, latitude = coords[0], coords[1]
-                            
-                            # Extract well properties from Canterbury Maps format
-                            well_id = properties.get('WELL_NO', properties.get('well_no', f"NZ-{len(wells)}"))
-                            
-                            # Get depth information - try different possible field names
-                            depth = properties.get('DEPTH', properties.get('depth', 
-                                    properties.get('WELL_DEPTH', properties.get('well_depth', 0))))
-                            
-                            # For yield rate, Canterbury Maps might store it as YIELD_RATE, YIELD, or other variations
-                            yield_rate = properties.get('YIELD_RATE', properties.get('yield_rate',
-                                         properties.get('YIELD', properties.get('yield', 0))))
-                            
-                            # Some wells might not have yield rate, estimate based on depth
-                            if yield_rate is None or yield_rate == "" or yield_rate == 0:
-                                # Generate a realistic yield based on depth (deeper wells often have better yield)
-                                import random
-                                yield_rate = random.uniform(0.1, max(20, depth/10)) if depth else random.uniform(0.1, 10)
-                            
-                            # Extract status - try different field names
-                            status = properties.get('STATUS', properties.get('status', 
-                                    properties.get('WELL_STATUS', properties.get('well_status', 'Unknown'))))
-                            
-                            # Add well to the list
-                            wells.append({
-                                'well_id': well_id,
-                                'latitude': latitude,
-                                'longitude': longitude,
-                                'depth': depth if depth is not None else 0,
-                                'yield_rate': float(yield_rate) if isinstance(yield_rate, (int, float, str)) and yield_rate != "" else 0.1,
-                                'status': status if status else 'Unknown'
-                            })
-                
-                # Create DataFrame
-                df = pd.DataFrame(wells)
-                
-                # Filter out any invalid entries
-                df = df[
-                    (df['latitude'] >= -90) & (df['latitude'] <= 90) & 
-                    (df['longitude'] >= -180) & (df['longitude'] <= 180) &
-                    (df['yield_rate'] > 0)
-                ]
-                
-                # Save to cache for future use
-                try:
-                    df.to_csv("sample_data/nz_wells_cache.csv", index=False)
-                except:
-                    pass
-                
-                st.success(f"Loaded {len(df)} wells from New Zealand government data")
-                return df
-            else:
-                st.error(f"Failed to fetch data: HTTP {response.status_code}")
-                return load_sample_data()
-    except Exception as e:
-        st.error(f"Error loading NZ government data: {e}")
-        return load_sample_data()
 
 def load_api_data(api_url, api_key=None):
     """
@@ -328,13 +276,13 @@ def load_api_data(api_url, api_key=None):
         # For other APIs or custom endpoints
         try:
             import requests
-            import pandas as pd
             
             # Make the API request with the API key if provided
             headers = {}
             if api_key:
                 headers['Authorization'] = f'Bearer {api_key}'
             
+            st.info(f"Fetching data from API: {api_url}")
             response = requests.get(api_url, headers=headers)
             
             if response.status_code == 200:

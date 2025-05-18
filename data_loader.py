@@ -237,241 +237,248 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
     import requests
     
     try:
-        # Multiple potential New Zealand government Wells and Bores API endpoints
-        # We'll try them in order until we find one that works
-        api_endpoints = [
+        # Create NZ well dataset direct from regional councils in New Zealand
+        # We'll try multiple endpoints to get comprehensive coverage
+        nz_api_endpoints = [
             {
-                "url": "https://maps.marlborough.govt.nz/server/rest/services/OpenData/Wells/MapServer/0/query",
+                "name": "Canterbury Regional Council",
+                "url": "https://opendata.canterburymaps.govt.nz/datasets/canterbury::wells/FeatureServer/0/query",
                 "params": {
                     "where": "1=1",
                     "outFields": "*",
                     "returnGeometry": "true",
                     "f": "json",
-                    "resultRecordCount": 5000  # Limit the number of records
+                    "resultRecordCount": 5000
                 }
             },
             {
-                "url": "https://services1.arcgis.com/t9y5k0t5cmIClA3y/arcgis/rest/services/Wells_and_Bores/FeatureServer/0/query",
-                "params": {
-                    "where": "1=1",
-                    "outFields": "*",
-                    "returnGeometry": "true",
-                    "f": "json", 
-                    "resultRecordCount": 5000  # Limit the number of records
-                }
-            },
-            {
+                "name": "Greater Wellington",
                 "url": "https://maps.gw.govt.nz/arcgis/rest/services/GW/GW_Groundwater/MapServer/0/query",
                 "params": {
                     "where": "1=1",
                     "outFields": "*",
                     "returnGeometry": "true",
                     "f": "json",
-                    "resultRecordCount": 5000  # Limit the number of records
+                    "resultRecordCount": 5000
+                }
+            },
+            {
+                "name": "Marlborough District Council",
+                "url": "https://maps.marlborough.govt.nz/server/rest/services/OpenData/Wells/MapServer/0/query",
+                "params": {
+                    "where": "1=1",
+                    "outFields": "*",
+                    "returnGeometry": "true",
+                    "f": "json",
+                    "resultRecordCount": 5000
                 }
             }
         ]
         
-        # Try each endpoint until we get a successful response
-        response = None
-        api_url = None
-        params = None
+        # Try each endpoint one by one
+        all_wells = []
+        wells_found = False
         
-        for endpoint in api_endpoints:
+        for endpoint in nz_api_endpoints:
             try:
+                st.info(f"Trying to fetch well data from {endpoint['name']}...")
+                
+                # Set up the request parameters
                 api_url = endpoint["url"]
                 params = endpoint["params"].copy()
                 
-                # If we have a search area, add spatial filter
+                # Add spatial filter if we have a search area
                 if search_center and search_radius_km:
                     center_lat, center_lon = search_center
                     
-                    st.info(f"Searching for wells within {search_radius_km} km of {center_lat:.4f}, {center_lon:.4f}")
-                    
-                    # Add spatial filter for ArcGIS REST API
-                    # Convert radius from km to degrees
+                    # Convert radius from km to degrees (approximate)
                     lat_radius = search_radius_km / 111.0
                     lon_radius = search_radius_km / (111.0 * np.cos(np.radians(center_lat)))
                     
-                    # Define a bounding box
+                    # Create a bounding box
                     min_lat = center_lat - lat_radius
                     max_lat = center_lat + lat_radius
                     min_lon = center_lon - lon_radius
                     max_lon = center_lon + lon_radius
                     
-                    # Add geometry filter in ArcGIS REST format
+                    # Add geometry filter for ArcGIS REST API
                     params["geometry"] = f"{min_lon},{min_lat},{max_lon},{max_lat}"
                     params["geometryType"] = "esriGeometryEnvelope"
                     params["spatialRel"] = "esriSpatialRelIntersects"
                 
-                # Try this endpoint
-                st.info(f"Trying to fetch well data from: {api_url}")
-                response = requests.get(api_url, params=params, timeout=15)
+                # Make the request
+                response = requests.get(api_url, params=params, timeout=20)
                 
                 if response.status_code == 200:
-                    # Check if we got valid data
                     data = response.json()
+                    
+                    # Process features if available
                     if "features" in data and len(data["features"]) > 0:
-                        st.success(f"Successfully connected to {api_url}")
-                        break  # Found a working endpoint with data
-                
-                # If we get here, this endpoint didn't work or had no data
-                st.warning(f"No data found from {api_url}")
-                response = None
-                
-            except Exception as e:
-                st.warning(f"Error connecting to {api_url}: {e}")
-                response = None
-                continue  # Try the next endpoint
-                
-        # If we couldn't connect to any API endpoint, fall back to cached data or synthetic data
-        if response is None:
-            st.warning("Could not connect to any New Zealand well data API.")
-            # First try to load from cache if available
-            cache_file = "sample_data/nz_wells_api_cache.csv"
-            if os.path.exists(cache_file):
-                try:
-                    df = pd.read_csv(cache_file)
-                    st.info(f"Using {len(df)} wells from previously cached API data")
-                    
-                    # If we have search coords, filter the cached data by distance
-                    if search_center and search_radius_km:
-                        from utils import get_distance
-                        center_lat, center_lon = search_center
-                        df['distance'] = df.apply(
-                            lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
-                            axis=1
-                        )
-                        filtered_df = df[df['distance'] <= search_radius_km].copy()
-                        filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
+                        st.success(f"Found {len(data['features'])} wells from {endpoint['name']}")
+                        wells_found = True
                         
-                        if len(filtered_df) > 0:
-                            return filtered_df
-                        else:
-                            st.warning("No wells found in cached data within your search area")
-                    else:
-                        return df
-                except Exception as e:
-                    st.warning(f"Error loading cached API data: {e}")
-            
-            # If no cache or cache failed, use synthetic data
-            st.info("Using synthetically generated New Zealand well data as a fallback")
-            return generate_synthetic_nz_wells()
-        
-        # Process the successful response data
-        try:
-            data = response.json()
-            
-            # Process the response from ArcGIS REST API
-            if "features" in data:
-                features = data["features"]
-                wells = []
-                
-                for feature in features:
-                    try:
-                        attributes = feature.get("attributes", {})
-                        geometry = feature.get("geometry", {})
-                        
-                        # Get coordinates from geometry
-                        lat = None
-                        lon = None
-                        
-                        if "y" in geometry and "x" in geometry:
-                            # ArcGIS point format
-                            lat = geometry.get("y")
-                            lon = geometry.get("x")
-                        
-                        # Skip if no valid coordinates
-                        if lat is None or lon is None:
-                            continue
-                            
-                        # Extract well properties from attributes
-                        well_id = None
-                        for id_field in ["WELL_NO", "BORE_ID", "WELL_ID", "ID", "NZTM_WELL_NO", "WELL_NAME"]:
-                            if id_field in attributes and attributes[id_field] is not None:
-                                well_id = str(attributes[id_field])
-                                break
+                        # Extract well data from each feature
+                        for feature in data["features"]:
+                            try:
+                                attributes = feature.get("attributes", {})
+                                geometry = feature.get("geometry", {})
                                 
-                        if well_id is None:
-                            well_id = f"NZ-{len(wells)}"
-                            
-                        # Extract depth, yield and other properties
-                        depth = 0
-                        for depth_field in ["DEPTH", "WELL_DEPTH", "BORE_DEPTH", "TOTAL_DEPTH", "DEPTH_M"]:
-                            if depth_field in attributes and attributes[depth_field] is not None:
-                                try:
-                                    depth = float(attributes[depth_field])
-                                    break
-                                except (ValueError, TypeError):
-                                    pass
-                        
-                        # Extract yield
-                        yield_rate = 0
-                        for yield_field in ["YIELD", "YIELD_RATE", "FLOW_RATE", "FLOW", "DISCHARGE"]:
-                            if yield_field in attributes and attributes[yield_field] is not None:
-                                try:
-                                    yield_rate = float(attributes[yield_field])
-                                    break
-                                except (ValueError, TypeError):
-                                    pass
-                        
-                        # Extract well type
-                        well_type = "Unknown"
-                        for type_field in ["WELL_TYPE", "BORE_TYPE", "USAGE", "PURPOSE", "USE"]:
-                            if type_field in attributes and attributes[type_field] is not None:
-                                well_type = str(attributes[type_field])
-                                break
-                        
-                        # Extract status
-                        status = "Unknown"
-                        for status_field in ["STATUS", "WELL_STATUS", "CONDITION", "STATE"]:
-                            if status_field in attributes and attributes[status_field] is not None:
-                                status = str(attributes[status_field])
-                                break
-                        
-                        # Create well record
-                        well = {
-                            "well_id": well_id,
-                            "latitude": float(lat),
-                            "longitude": float(lon),
-                            "depth": float(depth),
-                            "depth_m": float(depth),
-                            "yield_rate": float(yield_rate),
-                            "well_type": well_type,
-                            "status": status
-                        }
-                        
-                        # Add to wells list
-                        wells.append(well)
-                        
-                    except Exception as e:
-                        # Skip wells with processing errors
-                        continue
-                
-                # Create DataFrame
-                if wells:
-                    df = pd.DataFrame(wells)
-                    st.success(f"Successfully fetched {len(df)} wells from the New Zealand government API")
-                    
-                    # Cache the data for future use
-                    try:
-                        os.makedirs("sample_data", exist_ok=True)
-                        df.to_csv("sample_data/nz_wells_api_cache.csv", index=False)
-                        st.info("Saved fetched data to cache for future use")
-                    except Exception as e:
-                        st.warning(f"Could not save cache: {e}")
-                    
-                    return df
+                                # Extract coordinates
+                                lat = None
+                                lon = None
+                                
+                                if "y" in geometry and "x" in geometry:
+                                    lat = geometry.get("y")
+                                    lon = geometry.get("x")
+                                
+                                # Skip records without valid coordinates
+                                if lat is None or lon is None:
+                                    continue
+                                
+                                # Extract common well attributes (different naming conventions across councils)
+                                well_id = None
+                                depth = 0
+                                yield_rate = 0
+                                well_type = "Unknown"
+                                status = "Unknown"
+                                
+                                # Try different field names for well ID
+                                for id_field in ["WELL_NO", "BORE_ID", "WELL_ID", "ID", "NZTM_WELL_NO", "BORE_NAME", "WELL_NAME"]:
+                                    if id_field in attributes and attributes[id_field] is not None:
+                                        well_id = str(attributes[id_field])
+                                        break
+                                
+                                if well_id is None:
+                                    well_id = f"NZ-{endpoint['name'][:3]}-{len(all_wells)}"
+                                
+                                # Try different field names for depth
+                                for depth_field in ["DEPTH", "WELL_DEPTH", "BORE_DEPTH", "TOTAL_DEPTH", "DEPTH_M"]:
+                                    if depth_field in attributes and attributes[depth_field] is not None:
+                                        try:
+                                            depth = float(attributes[depth_field])
+                                            break
+                                        except (ValueError, TypeError):
+                                            pass
+                                
+                                # Try different field names for yield rate
+                                for yield_field in ["YIELD", "YIELD_RATE", "FLOW_RATE", "FLOW", "DISCHARGE", "YIELD_LS"]:
+                                    if yield_field in attributes and attributes[yield_field] is not None:
+                                        try:
+                                            yield_rate = float(attributes[yield_field])
+                                            break
+                                        except (ValueError, TypeError):
+                                            pass
+                                
+                                # Try different field names for well type
+                                for type_field in ["WELL_TYPE", "BORE_TYPE", "USAGE", "PURPOSE", "USE", "WELL_USE"]:
+                                    if type_field in attributes and attributes[type_field] is not None:
+                                        well_type = str(attributes[type_field])
+                                        break
+                                
+                                # Try different field names for status
+                                for status_field in ["STATUS", "WELL_STATUS", "CONDITION", "STATE"]:
+                                    if status_field in attributes and attributes[status_field] is not None:
+                                        status = str(attributes[status_field])
+                                        break
+                                
+                                # Create well record
+                                well = {
+                                    "well_id": well_id,
+                                    "latitude": float(lat),
+                                    "longitude": float(lon),
+                                    "depth": float(depth),
+                                    "depth_m": float(depth),
+                                    "yield_rate": float(yield_rate),
+                                    "well_type": well_type,
+                                    "status": status,
+                                    "source": endpoint["name"]
+                                }
+                                
+                                all_wells.append(well)
+                            except Exception as e:
+                                # Skip this well and continue with the next one
+                                continue
+                    else:
+                        st.warning(f"No wells found from {endpoint['name']}")
                 else:
-                    st.warning("No valid well data found in the API response")
-                    return generate_synthetic_nz_wells()
-            else:
-                st.warning("Unexpected API response format")
-                return generate_synthetic_nz_wells()
+                    st.warning(f"Failed to connect to {endpoint['name']} (Status code: {response.status_code})")
+            
+            except Exception as e:
+                st.warning(f"Error fetching data from {endpoint['name']}: {e}")
+                continue
+        
+        # If we found wells from any source, create a combined dataset
+        if wells_found and len(all_wells) > 0:
+            df = pd.DataFrame(all_wells)
+            st.success(f"Successfully fetched a total of {len(df)} wells from New Zealand regional councils")
+            
+            # Apply distance filtering if needed
+            if search_center and search_radius_km:
+                from utils import get_distance
+                center_lat, center_lon = search_center
                 
-        except Exception as e:
-            st.error(f"Error processing API response: {e}")
-            return generate_synthetic_nz_wells()
+                # Calculate distance to each well
+                df['distance'] = df.apply(
+                    lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
+                    axis=1
+                )
+                
+                # Filter by distance
+                filtered_df = df[df['distance'] <= search_radius_km].copy()
+                filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
+                
+                st.info(f"Found {len(filtered_df)} wells within {search_radius_km} km of your selected location")
+                
+                # Cache the filtered results
+                try:
+                    os.makedirs("sample_data", exist_ok=True)
+                    filtered_df.to_csv("sample_data/nz_wells_api_cache.csv", index=False)
+                except Exception:
+                    pass
+                
+                return filtered_df
+            
+            # Save full dataset to cache
+            try:
+                os.makedirs("sample_data", exist_ok=True)
+                df.to_csv("sample_data/nz_wells_api_cache.csv", index=False)
+            except Exception:
+                pass
+            
+            return df
+        
+        # If we didn't find any real data, try to use cached data
+        st.warning("Could not fetch real-time data from New Zealand government sources.")
+        cache_file = "sample_data/nz_wells_api_cache.csv"
+        
+        if os.path.exists(cache_file):
+            try:
+                df = pd.read_csv(cache_file)
+                st.info(f"Using {len(df)} wells from previously cached data")
+                
+                # Filter by distance if needed
+                if search_center and search_radius_km:
+                    from utils import get_distance
+                    center_lat, center_lon = search_center
+                    df['distance'] = df.apply(
+                        lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
+                        axis=1
+                    )
+                    filtered_df = df[df['distance'] <= search_radius_km].copy()
+                    filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
+                    return filtered_df
+                    
+                return df
+            except Exception as e:
+                st.error(f"Error loading cached data: {e}")
+        
+        # Use synthetic data as a last resort
+        st.info("Generating synthetic New Zealand well data since no real data is available.")
+        return generate_synthetic_nz_wells()
+        
+    except Exception as e:
+        st.error(f"Error in fetch_nz_wells_api: {e}")
+        return generate_synthetic_nz_wells()
 
 
 def generate_synthetic_nz_wells():

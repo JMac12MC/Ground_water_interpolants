@@ -77,8 +77,23 @@ with st.sidebar:
     if data_source == "Sample Data":
         st.session_state.wells_data = load_sample_data()
     elif data_source == "NZ Government Data":
-        # Load the New Zealand government well data
-        st.session_state.wells_data = load_nz_govt_data()
+        # Add options for using full NZ dataset
+        use_full_dataset = st.checkbox("Load full dataset from NZ government API", value=False)
+        
+        if use_full_dataset:
+            st.info("When you select a location on the map, the app will fetch the latest well data around that point from the New Zealand government database.")
+        
+        # Check if we have a selected point for on-demand loading
+        if use_full_dataset and st.session_state.selected_point:
+            # Load data for the selected area
+            st.session_state.wells_data = load_nz_govt_data(
+                use_full_dataset=True,
+                search_center=st.session_state.selected_point,
+                search_radius_km=st.session_state.search_radius
+            )
+        else:
+            # Load cached data
+            st.session_state.wells_data = load_nz_govt_data(use_full_dataset=False)
     elif data_source == "Custom Upload":
         uploaded_file = st.file_uploader("Upload a CSV file with well data", type=["csv"])
         if uploaded_file is not None:

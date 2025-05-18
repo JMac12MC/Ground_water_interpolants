@@ -127,132 +127,353 @@ def load_custom_data(uploaded_file):
         st.error(f"Error loading CSV file: {e}")
         return None
 
-def load_nz_govt_data():
+def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_km=None):
     """
-    Generate realistic well data for New Zealand based on geographical patterns
+    Load well data from New Zealand government database
     
+    Parameters:
+    -----------
+    use_full_dataset : bool
+        Whether to load the full dataset from the API
+    search_center : tuple
+        (latitude, longitude) of search center to filter by location
+    search_radius_km : float
+        Radius in km to filter by location
+        
     Returns:
     --------
     DataFrame
         Pandas DataFrame with the well data
     """
-    # Try to load from cached file first (if it exists)
-    try:
-        df = pd.read_csv("sample_data/nz_wells_cache.csv")
-        st.success(f"Loaded {len(df)} wells from cached data")
-        return df
-    except:
-        # Generate realistic New Zealand well data
-        st.info("Generating New Zealand well data based on actual geographical patterns...")
-        
-        # Let's generate more wells with a realistic geographic distribution
-        import random
-        import numpy as np
-        
-        # We'll focus on Canterbury region in New Zealand
-        # Canterbury coordinates approximately:
-        # Center around Christchurch: -43.5320, 172.6306
-        base_lat = -43.5320
-        base_lon = 172.6306
-        
-        # Generate many more wells (3000+) to provide a more realistic dataset
-        num_wells = 3000
-        
-        # Set random seed for reproducibility
-        np.random.seed(42)
-        
-        # We'll create some areas with higher well density (e.g. agricultural regions)
-        # These are approximate coordinates of areas with likely higher well concentrations
-        high_density_areas = [
-            # Christchurch and surroundings
-            (base_lat, base_lon, 0.2),  # Christchurch
-            (base_lat - 0.3, base_lon - 0.2, 0.15),  # West of Christchurch
-            (base_lat + 0.2, base_lon + 0.3, 0.1),  # East of Christchurch
-            # North Canterbury
-            (-43.0, 172.7, 0.25),  # North Canterbury region
-            # South Canterbury
-            (-44.1, 171.3, 0.2),  # South Canterbury region
-            # Central Canterbury
-            (-43.6, 171.9, 0.15),  # Central Canterbury
-            # Additional farming regions
-            (-43.8, 172.2, 0.2),  # Southern Canterbury Plains
-            (-43.3, 172.5, 0.18),  # Northern Plains
-            (-44.3, 171.2, 0.15),  # South Canterbury
-            (-43.4, 171.7, 0.22),  # Mid Canterbury farming region
-        ]
-        
-        # Create the dataset with weighted distribution around high density areas
-        wells = []
-        
-        for i in range(num_wells):
-            # Determine if this well should be near a high density area
-            if random.random() < 0.75:  # 75% of wells will be in or near high density areas
-                # Choose a random high density area
-                area = random.choice(high_density_areas)
-                area_lat, area_lon, radius = area
-                
-                # Generate coordinates near this area with some randomness
-                lat = np.random.normal(area_lat, radius * random.uniform(0.2, 1.0))
-                lon = np.random.normal(area_lon, radius * random.uniform(0.2, 1.0))
-            else:
-                # Generate more dispersed wells across the Canterbury region
-                # This creates a wider distribution
-                lat = np.random.uniform(base_lat - 1.5, base_lat + 1.5)
-                lon = np.random.uniform(base_lon - 1.5, base_lon + 1.5)
-            
-            # Generate well ID with prefix for New Zealand wells
-            well_id = f"NZ-{i+1000}"
-            
-            # Generate realistic depth based on location and some randomness
-            # Wells closer to mountains tend to be deeper
-            mountain_factor = max(0, 1 - (lon - 171.0) / 2.0) if lon < 172.0 else 0
-            depth = np.random.gamma(5, 20) * (1 + mountain_factor)
-            depth = min(500, max(10, depth))  # Limit depth between 10-500m
-            
-            # Generate yield rate with correlation to depth and location
-            # Deeper wells and wells in certain areas tend to have better yield
-            base_yield = np.random.gamma(2, 3)  # Base yield distribution
-            location_factor = 1.0
-            
-            # Adjust yield based on proximity to water sources (simplified)
-            for area_lat, area_lon, _ in high_density_areas:
-                dist = ((lat - area_lat) ** 2 + (lon - area_lon) ** 2) ** 0.5
-                if dist < 0.2:
-                    location_factor = 1.5  # Higher yield near established areas
-            
-            # Deeper wells often have higher yield rates
-            depth_factor = (depth / 100) ** 0.5  # Square root to prevent excessive scaling
-            
-            yield_rate = base_yield * location_factor * depth_factor
-            yield_rate = min(50, max(0.1, yield_rate))  # Limit to 0.1-50 L/s
-            
-            # Generate status - most wells active, some monitoring/inactive
-            status_options = ["Active", "Monitoring", "Inactive", "Abandoned"]
-            status_weights = [0.7, 0.15, 0.1, 0.05]  # Probability distribution
-            status = np.random.choice(status_options, p=status_weights)
-            
-            # Add to wells list
-            wells.append({
-                'well_id': well_id,
-                'latitude': float(lat),
-                'longitude': float(lon),
-                'depth': float(depth),
-                'yield_rate': float(yield_rate),
-                'status': status
-            })
-        
-        # Convert to DataFrame
-        df = pd.DataFrame(wells)
-        
-        # Save to cache for future use
+    # If we're not using full dataset, try the cached data first
+    cache_file = "sample_data/nz_wells_cache.csv"
+    
+    if not use_full_dataset and os.path.exists(cache_file):
         try:
-            os.makedirs("sample_data", exist_ok=True)  # Ensure directory exists
-            df.to_csv("sample_data/nz_wells_cache.csv", index=False)
+            df = pd.read_csv(cache_file)
+            
+            # If we have a specific search area, filter the cached data
+            if search_center and search_radius_km:
+                from utils import get_distance
+                
+                # Filter by distance
+                center_lat, center_lon = search_center
+                df['distance'] = df.apply(
+                    lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
+                    axis=1
+                )
+                filtered_df = df[df['distance'] <= search_radius_km].copy()
+                filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
+                
+                if len(filtered_df) > 0:
+                    st.success(f"Loaded {len(filtered_df)} wells from cached data within {search_radius_km} km radius")
+                    return filtered_df
+                else:
+                    st.info("No wells found in the cached data for your search area. Trying to fetch from the NZ government API...")
+            else:
+                st.success(f"Loaded {len(df)} wells from cached data")
+                return df
+                
         except Exception as e:
-            st.warning(f"Could not save cache file: {e}")
+            st.warning(f"Error loading cached data: {e}")
+    
+    # If we're using the full dataset or cache failed, try to fetch from the NZ API
+    if use_full_dataset or (search_center and search_radius_km):
+        st.info("Attempting to fetch data from the New Zealand government wells database...")
+        try:
+            result = fetch_nz_wells_api(search_center, search_radius_km)
+            if isinstance(result, pd.DataFrame) and len(result) > 0:
+                return result
+            else:
+                st.warning("Could not retrieve data from NZ API. Using cached or generated data instead.")
+        except Exception as e:
+            st.error(f"Error connecting to NZ API: {e}")
+            st.info("Using cached or generated data instead.")
+    
+    # If we reach here, we need to use cached or generated data
+    if os.path.exists(cache_file):
+        try:
+            df = pd.read_csv(cache_file)
+            st.success(f"Using {len(df)} wells from previously cached data")
+            
+            # Filter by distance if needed
+            if search_center and search_radius_km:
+                from utils import get_distance
+                
+                center_lat, center_lon = search_center
+                df['distance'] = df.apply(
+                    lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
+                    axis=1
+                )
+                filtered_df = df[df['distance'] <= search_radius_km].copy()
+                filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
+                
+                return filtered_df
+                
+            return df
+        except Exception as e:
+            st.warning(f"Error loading cached data: {e}")
+    
+    # If all else fails, generate synthetic data
+    st.info("Generating synthetic New Zealand well data...")
+    return generate_synthetic_nz_wells()
+    
+def fetch_nz_wells_api(search_center=None, search_radius_km=None):
+    """
+    Fetch well data from the New Zealand government API
+    
+    Parameters:
+    -----------
+    search_center : tuple
+        (latitude, longitude) of search center to filter by location
+    search_radius_km : float
+        Radius in km to filter by location
         
-        st.success(f"Generated {len(df)} wells for New Zealand")
-        return df
+    Returns:
+    --------
+    DataFrame
+        Pandas DataFrame with the well data
+    """
+    import requests
+    
+    try:
+        # The New Zealand government catalog URL for wells and bores
+        # Using the Wells and Bores dataset from https://catalogue.data.govt.nz/dataset/wells-and-bores-all4
+        api_url = "https://data.gns.cri.nz/pbe-wfs/ows"
+        
+        # Set up parameters for the WFS request
+        params = {
+            "service": "WFS",
+            "version": "2.0.0",
+            "request": "GetFeature",
+            "typeName": "hyd:well",  # Wells layer
+            "outputFormat": "application/json",
+            "maxFeatures": 5000  # Limit the number of features to prevent timeout
+        }
+        
+        # If we have a search area, add a geographic filter
+        if search_center and search_radius_km:
+            center_lat, center_lon = search_center
+            
+            # Convert radius from km to degrees (approximate)
+            lat_radius = search_radius_km / 111.0
+            lon_radius = search_radius_km / (111.0 * np.cos(np.radians(center_lat)))
+            
+            # Create bounding box
+            min_lat = center_lat - lat_radius
+            max_lat = center_lat + lat_radius
+            min_lon = center_lon - lon_radius
+            max_lon = center_lon + lon_radius
+            
+            # Add bounding box filter to params (GeoServer WFS format)
+            params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat},EPSG:4326"
+        
+        # Make the API request
+        st.info(f"Fetching well data from the New Zealand government API...")
+        response = requests.get(api_url, params=params, timeout=15)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                
+                # Check if we got valid data
+                if "features" not in data or len(data["features"]) == 0:
+                    st.warning("No wells found in the API response")
+                    return None
+                
+                # Process the GeoJSON features
+                wells = []
+                for feature in data["features"]:
+                    props = feature.get("properties", {})
+                    geom = feature.get("geometry", {})
+                    
+                    # Check if we have valid geometry
+                    if geom and geom.get("type") == "Point" and "coordinates" in geom:
+                        lon, lat = geom["coordinates"]
+                        
+                        # Extract well properties - field names from the actual NZ API
+                        well_id = props.get("id") or props.get("WELL_NO", f"NZ-{len(wells)}")
+                        depth = float(props.get("DEPTH") or 0)
+                        
+                        # Try different field names for yield
+                        yield_rate = 0
+                        for field in ["YIELD", "FLOW_RATE", "YIELD_RATE", "FLOW"]:
+                            if field in props and props[field] is not None:
+                                try:
+                                    yield_rate = float(props[field])
+                                    break
+                                except (ValueError, TypeError):
+                                    pass
+                        
+                        # Get well type and status
+                        well_type = props.get("WELL_TYPE", "Unknown")
+                        status = props.get("STATUS", "Unknown")
+                        
+                        # Create the well record
+                        well = {
+                            "well_id": well_id,
+                            "latitude": float(lat),
+                            "longitude": float(lon),
+                            "depth": float(depth),
+                            "depth_m": float(depth),  # For UI consistency
+                            "yield_rate": float(yield_rate),
+                            "well_type": well_type,
+                            "status": status
+                        }
+                        wells.append(well)
+                
+                # Create DataFrame
+                if wells:
+                    df = pd.DataFrame(wells)
+                    st.success(f"Successfully fetched {len(df)} wells from the NZ government API")
+                    
+                    # Cache the data for future use
+                    try:
+                        os.makedirs("sample_data", exist_ok=True)
+                        df.to_csv("sample_data/nz_wells_cache.csv", index=False)
+                        st.info("Saved fetched data to cache for future use")
+                    except Exception as e:
+                        st.warning(f"Could not save cache: {e}")
+                    
+                    return df
+                else:
+                    st.warning("No valid well data found in the API response")
+                    return None
+            
+            except Exception as e:
+                st.error(f"Error processing API response: {e}")
+                return None
+        else:
+            st.error(f"API request failed with status code {response.status_code}")
+            return None
+    
+    except Exception as e:
+        st.error(f"Error connecting to NZ API: {e}")
+        return None
+
+def generate_synthetic_nz_wells():
+    """
+    Generate realistic well data for New Zealand based on geographical patterns
+    Used as a fallback when API data can't be fetched
+    
+    Returns:
+    --------
+    DataFrame
+        Pandas DataFrame with the synthetic well data
+    """
+    st.warning("Generating synthetic New Zealand well data because real API data is unavailable")
+    
+    # We'll focus on Canterbury region in New Zealand
+    # Canterbury coordinates approximately:
+    # Center around Christchurch: -43.5320, 172.6306
+    base_lat = -43.5320
+    base_lon = 172.6306
+    
+    # Generate many more wells (3000+) to provide a more realistic dataset
+    num_wells = 3000
+    
+    # Set random seed for reproducibility
+    np.random.seed(42)
+    
+    # We'll create some areas with higher well density (e.g. agricultural regions)
+    # These are approximate coordinates of areas with likely higher well concentrations
+    high_density_areas = [
+        # Christchurch and surroundings
+        (base_lat, base_lon, 0.2),  # Christchurch
+        (base_lat - 0.3, base_lon - 0.2, 0.15),  # West of Christchurch
+        (base_lat + 0.2, base_lon + 0.3, 0.1),  # East of Christchurch
+        # North Canterbury
+        (-43.0, 172.7, 0.25),  # North Canterbury region
+        # South Canterbury
+        (-44.1, 171.3, 0.2),  # South Canterbury region
+        # Central Canterbury
+        (-43.6, 171.9, 0.15),  # Central Canterbury
+        # Additional farming regions
+        (-43.8, 172.2, 0.2),  # Southern Canterbury Plains
+        (-43.3, 172.5, 0.18),  # Northern Plains
+        (-44.3, 171.2, 0.15),  # South Canterbury
+        (-43.4, 171.7, 0.22),  # Mid Canterbury farming region
+    ]
+    
+    # Create the dataset with weighted distribution around high density areas
+    wells = []
+    
+    for i in range(num_wells):
+        # Determine if this well should be near a high density area
+        if random.random() < 0.75:  # 75% of wells will be in or near high density areas
+            # Choose a random high density area
+            area = random.choice(high_density_areas)
+            area_lat, area_lon, radius = area
+            
+            # Generate coordinates near this area with some randomness
+            lat = np.random.normal(area_lat, radius * random.uniform(0.2, 1.0))
+            lon = np.random.normal(area_lon, radius * random.uniform(0.2, 1.0))
+        else:
+            # Generate more dispersed wells across the Canterbury region
+            # This creates a wider distribution
+            lat = np.random.uniform(base_lat - 1.5, base_lat + 1.5)
+            lon = np.random.uniform(base_lon - 1.5, base_lon + 1.5)
+        
+        # Generate well ID with prefix for New Zealand wells
+        well_id = f"NZ-{i+1000}"
+        
+        # Generate realistic depth based on location and some randomness
+        # Wells closer to mountains tend to be deeper
+        mountain_factor = max(0, 1 - (lon - 171.0) / 2.0) if lon < 172.0 else 0
+        depth = np.random.gamma(5, 20) * (1 + mountain_factor)
+        depth = min(500, max(10, depth))  # Limit depth between 10-500m
+        
+        # Generate yield rate with correlation to depth and location
+        # Deeper wells and wells in certain areas tend to have better yield
+        base_yield = np.random.gamma(2, 3)  # Base yield distribution
+        location_factor = 1.0
+        
+        # Adjust yield based on proximity to water sources (simplified)
+        for area_lat, area_lon, _ in high_density_areas:
+            dist = ((lat - area_lat) ** 2 + (lon - area_lon) ** 2) ** 0.5
+            if dist < 0.2:
+                location_factor = 1.5  # Higher yield near established areas
+        
+        # Deeper wells often have higher yield rates
+        depth_factor = (depth / 100) ** 0.5  # Square root to prevent excessive scaling
+        
+        yield_rate = base_yield * location_factor * depth_factor
+        yield_rate = min(50, max(0.1, yield_rate))  # Limit to 0.1-50 L/s
+        
+        # Generate status - most wells active, some monitoring/inactive
+        status_options = ["Active", "Monitoring", "Inactive", "Abandoned"]
+        status_weights = [0.7, 0.15, 0.1, 0.05]  # Probability distribution
+        status = np.random.choice(status_options, p=status_weights)
+        
+        # Generate well type
+        well_types = ["Domestic", "Irrigation", "Stock", "Monitoring", "Industrial"]
+        well_type = np.random.choice(well_types, p=[0.25, 0.35, 0.2, 0.15, 0.05])
+        
+        # Add to wells list
+        wells.append({
+            'well_id': well_id,
+            'latitude': float(lat),
+            'longitude': float(lon),
+            'depth': float(depth),
+            'depth_m': float(depth),
+            'yield_rate': float(yield_rate),
+            'status': status,
+            'well_type': well_type
+        })
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(wells)
+    
+    # Save to cache for future use
+    try:
+        os.makedirs("sample_data", exist_ok=True)  # Ensure directory exists
+        df.to_csv("sample_data/nz_wells_cache.csv", index=False)
+    except Exception as e:
+        st.warning(f"Could not save cache file: {e}")
+    
+    st.success(f"Generated {len(df)} synthetic wells for New Zealand")
+    return df
 
 def load_api_data(api_url, api_key=None):
     """

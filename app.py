@@ -48,8 +48,7 @@ if 'wells_data' not in st.session_state:
     st.session_state.wells_data = None
 if 'filtered_wells' not in st.session_state:
     st.session_state.filtered_wells = None
-if 'yield_filtered_wells' not in st.session_state:
-    st.session_state.yield_filtered_wells = None
+# No more yield filtering - removed
 if 'total_wells_in_radius' not in st.session_state:
     st.session_state.total_wells_in_radius = 0
 if 'heat_map_visibility' not in st.session_state:
@@ -58,10 +57,6 @@ if 'well_markers_visibility' not in st.session_state:
     st.session_state.well_markers_visibility = True
 if 'search_radius' not in st.session_state:
     st.session_state.search_radius = 10
-if 'min_yield' not in st.session_state:
-    st.session_state.min_yield = 0
-if 'max_yield' not in st.session_state:
-    st.session_state.max_yield = 1000
 if 'selected_well' not in st.session_state:
     st.session_state.selected_well = None
 

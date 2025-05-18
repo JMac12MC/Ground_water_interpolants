@@ -213,9 +213,6 @@ def main():
             
             # Generate the global isopach map first (if enabled)
             if st.session_state.show_isopach and st.session_state.heat_map_visibility:
-                # Create a feature group for the isopach visualization
-                isopach_group = folium.FeatureGroup(name="Isopach Map")
-                
                 # Generate smooth contours for the entire dataset
                 contour_layer = isopach.create_smooth_contours(
                     wells_df,
@@ -226,46 +223,9 @@ def main():
                     num_points=200      # Higher resolution for smoother contours
                 )
                 
-                if contour_json:
-                    # Style function for the contours based on yield value
-                    style_function = lambda feature: {
-                        'fillColor': get_color_for_yield(
-                            feature['properties']['yield_value'], 
-                            st.session_state.min_yield, 
-                            st.session_state.max_yield, 
-                            gradient
-                        ),
-                        'color': 'black',
-                        'weight': 0.5,
-                        'fillOpacity': 0.65,
-                    }
-                    
-                    # Add tooltip to show yield value on hover
-                    tooltip = folium.GeoJsonTooltip(
-                        fields=['yield_value'],
-                        aliases=['Yield (L/s):'],
-                        localize=True,
-                        sticky=False,
-                        labels=True,
-                        style="""
-                            background-color: #F0EFEF;
-                            border: 1px solid black;
-                            border-radius: 3px;
-                            box-shadow: 3px 3px 3px rgba(0,0,0,0.25);
-                        """
-                    )
-                    
-                    # Add the GeoJSON contours to the map
-                    folium.GeoJson(
-                        data=contour_json,
-                        name='Yield Contours',
-                        style_function=style_function,
-                        tooltip=tooltip,
-                        overlay=True
-                    ).add_to(isopach_group)
-                    
-                    # Add the isopach group to the map
-                    isopach_group.add_to(m)
+                # Add smooth continuous contours to the map
+                if contour_layer:
+                    isopach.add_contour_to_map(m, contour_layer, name="Groundwater Yield Map")
             
             # Filter based on yield if selected point exists
             if st.session_state.selected_point:
@@ -391,11 +351,11 @@ def main():
         # Add the click handler to update the selected point
         m.add_child(folium.LatLngPopup())
         
-        # Use st_folium which supports click events
+        # Use st_folium to enable map click events
         map_data = st_folium(m, width=800, height=600, key="main_map")
         
         # Handle map click events
-        if map_data["last_clicked"]:
+        if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
             # Extract coordinates from click
             clicked_lat = map_data["last_clicked"]["lat"]
             clicked_lng = map_data["last_clicked"]["lng"]
@@ -403,11 +363,7 @@ def main():
             # Update selected point and trigger rerun
             st.session_state.selected_point = [clicked_lat, clicked_lng]
             st.rerun()
-        
-        # Handle map click (stores in session state for next render)
-        map_data = st.session_state.get('last_clicked')
-        if map_data:
-            handle_map_click(map_data)
+        # This duplicate code is removed
     
     # Right column for displaying well information
     with main_col2:

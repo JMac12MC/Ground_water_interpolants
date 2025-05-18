@@ -5,12 +5,17 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib import cm
 from scipy.spatial import Voronoi, voronoi_plot_2d
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, Matern
 import base64
 from io import BytesIO
+import geojson
+from utils import get_distance
 
-def create_isopach_map(wells_df, center_point, radius_km, min_yield=None, max_yield=None, resolution=80):
+def calculate_interpolated_grid(wells_df, center_point, radius_km, min_yield=None, max_yield=None, num_points=60):
     """
-    Generate GeoJSON contour data for an isopach map showing zones of equal yield values
+    Create an interpolated grid of yield values using IDW (Inverse Distance Weighting)
+    for visualizing as an isopach map.
     
     Parameters:
     -----------
@@ -24,21 +29,21 @@ def create_isopach_map(wells_df, center_point, radius_km, min_yield=None, max_yi
         Minimum yield value for normalization
     max_yield : float, optional
         Maximum yield value for normalization
-    resolution : int
-        Grid resolution for interpolation (higher = more detailed but slower)
+    num_points : int
+        Grid resolution (higher = more detailed but slower)
         
     Returns:
     --------
-    tuple
-        (geojson_contours, heat_data)
-        Where:
-        - geojson_contours: GeoJSON features with contour polygons
-        - heat_data: list of [lat, lng, normalized_yield] points for fallback heat map
+    DataFrame
+        DataFrame with columns: latitude, longitude, yield_value, yield_class
+        Where yield_class is an integer 0-4 representing which of 5 categories
+        the yield value falls into.
     """
-    if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
-        return None, []
+    # Handle empty dataframe
+    if wells_df is None or wells_df.empty:
+        return None
     
-    # Extract coordinates and yields for wells within search radius
+    # Extract coordinates and yields
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
     yields = wells_df['yield_rate'].values.astype(float)
@@ -49,225 +54,135 @@ def create_isopach_map(wells_df, center_point, radius_km, min_yield=None, max_yi
     if max_yield is None:
         max_yield = np.max(yields) if len(yields) > 0 else 1
     
-    # For special case with too few wells, just return heat map data without contours
+    # For very few wells, just return a simple grid around them
     if len(wells_df) < 3:
-        heat_data = []
+        grid_data = []
         for i, (lat, lon, yield_val) in enumerate(zip(lats, lons, yields)):
             # Normalize yield for consistent coloring
             norm_yield = (yield_val - min_yield) / (max_yield - min_yield) if max_yield > min_yield else 0.5
-            norm_yield = max(0.0, min(1.0, norm_yield))  # Clamp to 0-1 range
-            heat_data.append([float(lat), float(lon), float(norm_yield)])
-        return None, heat_data
+            # Determine yield class (0-4)
+            yield_class = min(4, max(0, int(norm_yield * 5)))
+            grid_data.append({
+                'latitude': float(lat), 
+                'longitude': float(lon),
+                'yield_value': float(yield_val),
+                'yield_class': yield_class
+            })
+        return pd.DataFrame(grid_data)
     
-    # Create bounding box based on center and radius
     center_lat, center_lon = center_point
     
-    # Convert geographic area to a "flat" projection for better interpolation
-    # 111 km per degree of latitude, longitude varies with cosine of latitude
-    x_points = (lons - center_lon) * 111.0 * np.cos(np.radians(center_lat))  # km
-    y_points = (lats - center_lat) * 111.0  # km
-    z_points = yields  # The yield values we want to interpolate
+    # Calculate area to cover
+    lat_radius = radius_km / 111.0
+    lon_radius = radius_km / (111.0 * np.cos(np.radians(float(center_lat))))
     
-    # Define grid resolution for interpolation
-    grid_density = min(120, max(80, resolution))  # Higher resolution for detailed contours
+    # Grid boundaries
+    min_lat = center_lat - lat_radius
+    max_lat = center_lat + lat_radius
+    min_lon = center_lon - lon_radius
+    max_lon = center_lon + lon_radius
     
-    # Create a square grid that covers the circular search area
-    x_grid = np.linspace(-radius_km, radius_km, grid_density)
-    y_grid = np.linspace(-radius_km, radius_km, grid_density)
+    # Create grid
+    grid_lats = np.linspace(min_lat, max_lat, num_points)
+    grid_lons = np.linspace(min_lon, max_lon, num_points)
+    grid_lat, grid_lon = np.meshgrid(grid_lats, grid_lons)
     
-    # Create a grid of coordinates where we'll predict the yield
-    X_grid, Y_grid = np.meshgrid(x_grid, y_grid)
+    # Flatten grid for calculations
+    grid_lat_flat = grid_lat.flatten()
+    grid_lon_flat = grid_lon.flatten()
     
-    try:
-        # Use scikit-learn's Gaussian Process Regression (Kriging)
-        from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import RBF, WhiteKernel, Matern
+    # Data collection for the interpolated grid
+    grid_data = []
+    
+    # Convert to a simple projected space (km from center) for distance calculations
+    x_points = (lons - center_lon) * 111.0 * np.cos(np.radians(center_lat))
+    y_points = (lats - center_lat) * 111.0
+    
+    # Calculate yield range
+    yield_range = max_yield - min_yield
+    
+    # For each grid point, calculate IDW interpolation
+    for i in range(len(grid_lat_flat)):
+        grid_point_lat = grid_lat_flat[i]
+        grid_point_lon = grid_lon_flat[i]
         
-        # Prepare points for Kriging interpolation
-        xy_points = np.column_stack((x_points, y_points))
-        
-        # Define the kernel for groundwater modeling
-        # Matern kernel with nu=1.5 is good for geoscience applications
-        # It has less smoothness assumptions than RBF
-        kernel = 1.0 * Matern(length_scale=3.0, nu=1.5) + WhiteKernel(noise_level=0.1)
-        
-        # Create and fit Gaussian Process model
-        gp = GaussianProcessRegressor(
-            kernel=kernel, 
-            normalize_y=True,
-            n_restarts_optimizer=2,  # Multiple restarts for better fit
-            alpha=1e-10  # Small alpha for closer fit to data points
+        # Skip if outside search radius
+        dist_from_center_km = np.sqrt(
+            ((grid_point_lat - center_lat) * 111.0)**2 + 
+            ((grid_point_lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
         )
         
-        # Fit the model to our well data
-        gp.fit(xy_points, z_points)
-        
-        # Reshape the grid for predictions and mask to circular area
-        grid_xs = X_grid.flatten()
-        grid_ys = Y_grid.flatten()
-        grid_points = np.column_stack((grid_xs, grid_ys))
-        
-        # Only keep points within circular search radius
-        mask = np.sqrt(grid_xs**2 + grid_ys**2) <= radius_km
-        grid_points = grid_points[mask]
-        
-        if len(grid_points) == 0:
-            return None, []
-        
-        # Predict yields at each grid point using the GP model
-        predictions = gp.predict(grid_points)
-        
-        # Ensure all predictions are non-negative
-        predictions = np.maximum(0, predictions)
-        
-        # Convert projected coordinates back to geographic
-        geo_lons = (grid_points[:, 0] / (111.0 * np.cos(np.radians(center_lat)))) + center_lon
-        geo_lats = (grid_points[:, 1] / 111.0) + center_lat
-        
-        # Reshape grid and predictions for contour generation
-        # First create a mask of which points in the original grid were used
-        full_mask = np.zeros_like(X_grid, dtype=bool)
-        for i, (x, y) in enumerate(zip(grid_xs, grid_ys)):
-            if mask[i]:
-                # Find the indices in the original grid
-                x_idx = np.abs(x_grid - x).argmin()
-                y_idx = np.abs(y_grid - y).argmin()
-                full_mask[y_idx, x_idx] = True
-        
-        # Create a grid for the predictions
-        Z_grid = np.zeros_like(X_grid)
-        Z_grid[:] = np.nan  # Fill with NaN initially
-        
-        # Place predictions back into the grid
-        pred_idx = 0
-        for i in range(Z_grid.shape[0]):
-            for j in range(Z_grid.shape[1]):
-                if full_mask[i, j]:
-                    Z_grid[i, j] = predictions[pred_idx]
-                    pred_idx += 1
-        
-        # Generate contour lines for isopach map
-        import json
-        import geojson
-        
-        # Define contour levels (yield values)
-        yield_range = max_yield - min_yield
-        steps = 5  # Number of contour levels
-        levels = [min_yield + (yield_range * i / steps) for i in range(steps+1)]
-        
-        # Generate contours using matplotlib
-        contour_data = None
-        try:
-            # Generate contour lines with matplotlib
-            fig, ax = plt.figure(figsize=(8, 8)), plt.subplot(111)
-            contour = ax.contourf(X_grid, Y_grid, Z_grid, levels=levels, cmap='jet')
+        if dist_from_center_km > radius_km:
+            continue
             
-            # Convert matplotlib contours to GeoJSON for mapping
-            contour_geojson = {"type": "FeatureCollection", "features": []}
-            
-            # Extract contour polygons
-            for i, collection in enumerate(contour.collections):
-                for path in collection.get_paths():
-                    # Check if the path contains any points
-                    if not path.vertices.size:
-                        continue
-                        
-                    # Create polygon from the path vertices
-                    polygon_points = []
-                    
-                    # Convert back to geographic coordinates
-                    for x, y in path.vertices:
-                        # Convert from km back to lat/lon
-                        lon = (x / (111.0 * np.cos(np.radians(center_lat)))) + center_lon
-                        lat = (y / 111.0) + center_lat
-                        polygon_points.append([lon, lat])
-                    
-                    # Check for valid polygon
-                    if len(polygon_points) < 3:
-                        continue
-                    
-                    # Create polygon and add yield value as property
-                    yield_level = levels[min(i, len(levels)-1)]
-                    feature = {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [polygon_points]
-                        },
-                        "properties": {
-                            "yield_value": float(yield_level)
-                        }
-                    }
-                    contour_geojson["features"].append(feature)
-            
-            # Close the matplotlib figure to free memory
-            plt.close(fig)
-            
-            # Convert to proper geojson
-            contour_data = geojson.dumps(contour_geojson)
-            
-        except Exception as e:
-            print(f"Contour generation error: {e}")
-            contour_data = None
+        # Convert grid point to projected space
+        grid_x = (grid_point_lon - center_lon) * 111.0 * np.cos(np.radians(center_lat))
+        grid_y = (grid_point_lat - center_lat) * 111.0
         
-        # Create heat map data for fallback visualization
-        heat_data = []
+        # Calculate distances to all wells
+        distances = np.sqrt((grid_x - x_points)**2 + (grid_y - y_points)**2)
         
-        # Create normalized heat map data from interpolated grid
-        for i in range(len(geo_lats)):
-            # Normalize yield value using min/max yields for consistent colors
-            yield_val = predictions[i]
-            norm_val = (yield_val - min_yield) / (max_yield - min_yield) if max_yield > min_yield else 0.5
-            norm_val = max(0.0, min(1.0, norm_val))  # Clamp to 0-1 range
+        # IDW Parameters
+        power = 2.0  # Standard IDW power parameter
+        
+        # Calculate interpolated value
+        if np.min(distances) < 0.05:  # If very close to a well (within 50m)
+            # Find the closest well
+            closest_idx = np.argmin(distances)
+            interpolated_value = yields[closest_idx]
+        else:
+            # Apply IDW with distance power weighting
+            weights = 1.0 / (distances**power)
             
-            # Add to heat map data if significant
-            if norm_val > 0.01:
-                heat_data.append([
-                    float(geo_lats[i]),
-                    float(geo_lons[i]),
-                    float(norm_val)
-                ])
-        global_yield_range = max(0.1, global_max_yield - global_min_yield)
-        
-        # Add the interpolated grid points to the heat map
-        for i in range(len(geo_lats)):
-            yield_value = predictions[i]
+            # Handle potential division by zero
+            if np.any(np.isinf(weights)):
+                mask = np.isinf(weights)
+                weights[mask] = 1.0
+                weights[~mask] = 0.0
             
-            # Normalize using GLOBAL yield range for consistent colors
-            # This ensures heat map colors align with the legend and don't change on zoom
-            normalized_value = (yield_value - global_min_yield) / global_yield_range
-            normalized_value = max(0.0, min(1.0, normalized_value))  # Clamp to 0-1 range
+            # Normalize weights
+            if np.sum(weights) > 0:
+                weights = weights / np.sum(weights)
+                # Calculate weighted average
+                interpolated_value = np.sum(weights * yields)
+            else:
+                interpolated_value = 0.0
+        
+        # Determine yield class (0-4)
+        norm_yield = (interpolated_value - min_yield) / yield_range if yield_range > 0 else 0.5
+        norm_yield = min(1.0, max(0.0, norm_yield))  # Clamp to 0-1 range
+        yield_class = min(4, max(0, int(norm_yield * 5)))
+        
+        # Add to grid data
+        grid_data.append({
+            'latitude': float(grid_point_lat), 
+            'longitude': float(grid_point_lon),
+            'yield_value': float(interpolated_value),
+            'yield_class': yield_class
+        })
+    
+    # Also add the actual well points with their yield_class
+    for i, (lat, lon, yield_val) in enumerate(zip(lats, lons, yields)):
+        # Check if within search radius
+        dist_from_center_km = np.sqrt(
+            ((lat - center_lat) * 111.0)**2 + 
+            ((lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
+        )
+        
+        if dist_from_center_km <= radius_km:
+            # Determine yield class
+            norm_yield = (yield_val - min_yield) / yield_range if yield_range > 0 else 0.5
+            norm_yield = min(1.0, max(0.0, norm_yield))  # Clamp to 0-1 range
+            yield_class = min(4, max(0, int(norm_yield * 5)))
             
-            # Add to heat map if significant
-            if normalized_value > 0.01:
-                heat_data.append([
-                    float(geo_lats[i]),
-                    float(geo_lons[i]),
-                    float(normalized_value)  # Use normalized value for consistent colors
-                ])
-        
-        # Add the actual well points to ensure they're visible
-        for i, (lat, lon, yield_val) in enumerate(zip(lats, lons, yields)):
-            # Check if within search radius
-            dist_from_center_km = np.sqrt(
-                ((lat - center_lat) * 111.0)**2 + 
-                ((lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
-            )
-            
-            if dist_from_center_km <= radius_km:
-                # Normalize the well's yield using the same global scale
-                normalized_yield = (yield_val - global_min_yield) / global_yield_range
-                normalized_yield = max(0.0, min(1.0, normalized_yield))  # Clamp to 0-1
-                
-                # Add the exact well with its normalized yield value for consistent colors
-                heat_data.append([float(lat), float(lon), float(normalized_yield)])
-        
-        return heat_data
-        
-    except Exception as e:
-        print(f"Kriging interpolation error: {e}")
-        # Fall back to basic interpolation method
-        return fallback_interpolation(wells_df, center_point, radius_km)
+            grid_data.append({
+                'latitude': float(lat), 
+                'longitude': float(lon),
+                'yield_value': float(yield_val),
+                'yield_class': yield_class
+            })
+    
+    return pd.DataFrame(grid_data)
 
 def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
     """
@@ -315,9 +230,9 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
     y_points = (lats - center_lat) * 111.0
     
     # Find global min/max yield across all wells for consistent color mapping
-    global_min_yield = np.min(yields) if len(yields) > 0 else 0
-    global_max_yield = np.max(yields) if len(yields) > 0 else 1
-    global_yield_range = max(0.1, global_max_yield - global_min_yield)
+    min_yield = np.min(yields) if len(yields) > 0 else 0
+    max_yield = np.max(yields) if len(yields) > 0 else 1
+    yield_range = max(0.1, max_yield - min_yield)
     
     # For each grid point, calculate IDW interpolation
     for i in range(len(grid_lat_flat)):
@@ -368,7 +283,7 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
                 interpolated_value = 0.0
         
         # Normalize using the SAME GLOBAL scale for consistent colors
-        normalized_value = (interpolated_value - global_min_yield) / global_yield_range
+        normalized_value = (interpolated_value - min_yield) / yield_range
         normalized_value = max(0.0, min(1.0, normalized_value))  # Clamp to 0-1 range
         
         # Add to heat map with normalized value for consistent colors
@@ -379,25 +294,21 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
                 float(normalized_value)  # Use normalized value for consistent colors
             ])
     
-    # Always add the actual well points with their normalized values
-    for j in range(len(lats)):
+    # Always add the actual well points to ensure they're visible
+    for i, (lat, lon, yield_val) in enumerate(zip(lats, lons, yields)):
         # Check if within search radius
         dist_from_center_km = np.sqrt(
-            ((lats[j] - center_lat) * 111.0)**2 + 
-            ((lons[j] - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
+            ((lat - center_lat) * 111.0)**2 + 
+            ((lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
         )
         
         if dist_from_center_km <= radius_km:
-            # Normalize using the same global scale
-            normalized_yield = (yields[j] - global_min_yield) / global_yield_range
+            # Normalize the well's yield
+            normalized_yield = (yield_val - min_yield) / yield_range
             normalized_yield = max(0.0, min(1.0, normalized_yield))  # Clamp to 0-1
             
-            # Add with normalized value for consistent colors
-            heat_data.append([
-                float(lats[j]),
-                float(lons[j]),
-                float(normalized_yield)  # Use normalized yield value
-            ])
+            # Add the exact well with its normalized yield value
+            heat_data.append([float(lat), float(lon), float(normalized_yield)])
     
     return heat_data
 
@@ -419,98 +330,32 @@ def get_prediction_at_point(wells_df, point_lat, point_lon):
     float
         Predicted yield rate at the specified point
     """
-    if not isinstance(wells_df, pd.DataFrame) or wells_df.empty:
-        return 0
+    if wells_df.empty:
+        return 0.0
     
     # Extract coordinates and yields
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
     yields = wells_df['yield_rate'].values.astype(float)
     
-    # Convert to kilometer distances for better accuracy
-    # First, convert to flat projection (rough approximation using kilometers)
-    origin_lat, origin_lon = np.mean(lats), np.mean(lons)
-    x_coords = (lons - origin_lon) * 111.0 * np.cos(np.radians(origin_lat))
-    y_coords = (lats - origin_lat) * 111.0
+    # Calculate distances (in km) from point to each well
+    distances = np.array([
+        get_distance(point_lat, point_lon, lat, lon) 
+        for lat, lon in zip(lats, lons)
+    ])
     
-    # Convert prediction point to same projection
-    point_x = (point_lon - origin_lon) * 111.0 * np.cos(np.radians(origin_lat))
-    point_y = (point_lat - origin_lat) * 111.0
+    # If we have a very close well, just use its value
+    if np.min(distances) < 0.1:  # Within 100m
+        return yields[np.argmin(distances)]
     
-    try:
-        # Calculate distances to all wells (in kilometers)
-        distances = np.sqrt((point_x - x_coords)**2 + (point_y - y_coords)**2)
-        
-        # Parameters for modified IDW
-        # Higher power value creates sharper transitions between high and low yield areas
-        power = 2.5
-        smoothing = 0.1  # Small value to prevent division by zero
-        
-        # Maximum distance influence (in km)
-        # Points beyond this have minimal impact on prediction
-        max_influence_distance = 5.0  # 5km influence radius
-        
-        # Apply exponential distance decay to sharply reduce influence of distant wells
-        exp_weights = np.exp(-distances / (max_influence_distance / 3))
-        
-        # Apply traditional inverse distance power weighting with higher power
-        idw_weights = 1.0 / (distances + smoothing)**power
-        
-        # Combine both weighting strategies
-        weights = exp_weights * idw_weights
-        
-        # Normalize weights
-        if np.sum(weights) > 0:
-            weights = weights / np.sum(weights)
-            
-            # Calculate weighted average of yields
-            predicted_yield = np.sum(weights * yields)
-            
-            # If point is very far from any well, reduce confidence
-            nearest_dist = np.min(distances)
-            
-            if nearest_dist > max_influence_distance:
-                # Adjust prediction closer to area average for distant points
-                confidence = max(0.2, np.exp(-(nearest_dist - max_influence_distance) / max_influence_distance))
-                avg_yield = np.mean(yields)
-                predicted_yield = predicted_yield * confidence + avg_yield * (1 - confidence)
-            
-            return float(max(0, predicted_yield))  # Ensure non-negative yield
-        else:
-            return 0.0
+    # Use IDW with a power parameter of 2
+    power = 2.0
+    weights = 1.0 / (distances**power)
     
-    except Exception as e:
-        print(f"Prediction error: {e}")
-        # Fall back to basic IDW
-        return basic_idw_prediction(wells_df, point_lat, point_lon)
-
-def basic_idw_prediction(wells_df, point_lat, point_lon):
-    """
-    Calculate yield using basic Inverse Distance Weighting (IDW)
-    Used as a fallback method
-    """
-    if not isinstance(wells_df, pd.DataFrame) or wells_df.empty:
-        return 0
-        
-    # Calculate distance from each well to the point (in km)
-    distances = []
-    for idx, row in wells_df.iterrows():
-        lat = float(row['latitude'])
-        lon = float(row['longitude'])
-        # Convert to kilometers using approximate conversion
-        lat_dist = (lat - point_lat) * 111.0  # 1 degree latitude ≈ 111 km
-        lon_dist = (lon - point_lon) * 111.0 * np.cos(np.radians((lat + point_lat) / 2))
-        distance = np.sqrt(lat_dist**2 + lon_dist**2)
-        distances.append(max(0.1, distance))  # Prevent division by zero
+    # Normalize weights
+    weights = weights / np.sum(weights)
     
-    # Calculate inverse distance weights with power of 2
-    weights = [1 / (d**2) for d in distances]
-    total_weight = sum(weights)
+    # Calculate the weighted average
+    predicted_yield = np.sum(weights * yields)
     
-    if total_weight == 0:
-        # If all weights are zero (should be impossible with our minimum distance)
-        return 0
-    
-    # Calculate weighted average of yields
-    weighted_yield = sum(w * float(row['yield_rate']) for w, (idx, row) in zip(weights, wells_df.iterrows())) / total_weight
-    return float(max(0, weighted_yield))  # Ensure non-negative yield
+    return predicted_yield

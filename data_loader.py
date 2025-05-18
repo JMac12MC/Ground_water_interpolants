@@ -134,7 +134,7 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
     Parameters:
     -----------
     use_full_dataset : bool
-        Whether to load the full dataset from the API
+        Whether to load the full dataset
     search_center : tuple
         (latitude, longitude) of search center to filter by location
     search_radius_km : float
@@ -145,12 +145,17 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
     DataFrame
         Pandas DataFrame with the well data
     """
-    # If we're not using full dataset, try the cached data first
-    cache_file = "sample_data/nz_wells_cache.csv"
+    import requests
+    from io import StringIO
     
-    if not use_full_dataset and os.path.exists(cache_file):
+    # Local cache file paths
+    official_cache_file = "sample_data/nz_wells_official.csv"
+    processed_cache_file = "sample_data/nz_wells_processed.csv"
+    
+    # Try to use the processed cache first if we're not using full dataset
+    if not use_full_dataset and os.path.exists(processed_cache_file):
         try:
-            df = pd.read_csv(cache_file)
+            df = pd.read_csv(processed_cache_file)
             
             # If we have a specific search area, filter the cached data
             if search_center and search_radius_km:
@@ -169,53 +174,163 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                     st.success(f"Loaded {len(filtered_df)} wells from cached data within {search_radius_km} km radius")
                     return filtered_df
                 else:
-                    st.info("No wells found in the cached data for your search area. Trying to fetch from the NZ government API...")
+                    st.info("No wells found in the cached data for your search area.")
             else:
-                st.success(f"Loaded {len(df)} wells from cached data")
+                st.success(f"Loaded {len(df)} wells from processed cached data")
                 return df
                 
         except Exception as e:
-            st.warning(f"Error loading cached data: {e}")
+            st.warning(f"Error loading processed cached data: {e}")
     
-    # If we're using the full dataset or cache failed, try to fetch from the NZ API
-    if use_full_dataset or (search_center and search_radius_km):
-        st.info("Attempting to fetch data from the New Zealand government wells database...")
+    # Check if we need to download the official dataset
+    if use_full_dataset or not os.path.exists(official_cache_file):
+        st.info("Downloading official well data from New Zealand government catalog...")
+        
         try:
-            result = fetch_nz_wells_api(search_center, search_radius_km)
-            if isinstance(result, pd.DataFrame) and len(result) > 0:
-                return result
-            else:
-                st.warning("Could not retrieve data from NZ API. Using cached or generated data instead.")
-        except Exception as e:
-            st.error(f"Error connecting to NZ API: {e}")
-            st.info("Using cached or generated data instead.")
-    
-    # If we reach here, we need to use cached or generated data
-    if os.path.exists(cache_file):
-        try:
-            df = pd.read_csv(cache_file)
-            st.success(f"Using {len(df)} wells from previously cached data")
+            # Direct download link for the CSV file from data.govt.nz
+            # This is for the "Wells and Bores - All" dataset
+            csv_url = "https://data.mfe.govt.nz/tabledata/89712/csv?_ga=2.267982213.1190558128.1620150524-536494945.1620150524"
             
-            # Filter by distance if needed
+            # Download the CSV file
+            response = requests.get(csv_url, timeout=30)
+            
+            if response.status_code == 200:
+                # Save the raw CSV to cache
+                os.makedirs("sample_data", exist_ok=True)
+                with open(official_cache_file, "wb") as f:
+                    f.write(response.content)
+                
+                st.success("Successfully downloaded official New Zealand well data")
+            else:
+                st.error(f"Failed to download well data: Status code {response.status_code}")
+                # If we have processed data, use that instead
+                if os.path.exists(processed_cache_file):
+                    return pd.read_csv(processed_cache_file)
+                else:
+                    return generate_synthetic_nz_wells()
+        except Exception as e:
+            st.error(f"Error downloading official well data: {e}")
+            # If we have processed data, use that instead
+            if os.path.exists(processed_cache_file):
+                return pd.read_csv(processed_cache_file)
+            else:
+                return generate_synthetic_nz_wells()
+    
+    # Process the official data (whether newly downloaded or already cached)
+    if os.path.exists(official_cache_file):
+        try:
+            # Load the official data
+            st.info("Processing the New Zealand government well data...")
+            raw_df = pd.read_csv(official_cache_file)
+            
+            # Process and clean the data
+            # Map the columns to our standard format
+            column_mapping = {
+                # These column names are based on the expected CSV format from data.govt.nz
+                # Adjust as needed based on the actual CSV file
+                'well_id': 'well_id',
+                'Well No': 'well_id',
+                'Northing': 'northing',
+                'Easting': 'easting',
+                'Latitude': 'latitude',
+                'NZTMY': 'northing',
+                'NZTMX': 'easting',
+                'Lat': 'latitude',
+                'Long': 'longitude',
+                'Longitude': 'longitude',
+                'Depth': 'depth',
+                'DEPTH': 'depth',
+                'Depth_m': 'depth_m',
+                'GROUND_WATER_LEVEL': 'ground_water_level',
+                'Yield': 'yield_rate',
+                'YIELD': 'yield_rate',
+                'Yield_Rate': 'yield_rate',
+                'Yield_L_s': 'yield_rate',
+                'Yield_m3_d': 'yield_m3_d',
+                'Well_Type': 'well_type',
+                'WELL_TYPE': 'well_type',
+                'Purpose': 'well_type',
+                'Status': 'status',
+                'STATE': 'status'
+            }
+            
+            # Rename columns that exist in the DataFrame
+            columns_to_rename = {old: new for old, new in column_mapping.items() if old in raw_df.columns}
+            processed_df = raw_df.rename(columns=columns_to_rename)
+            
+            # Required columns for our application
+            required_columns = ['well_id', 'latitude', 'longitude', 'depth', 'yield_rate']
+            
+            # Check if we need to convert NZTM (New Zealand Transverse Mercator) to lat/long
+            if ('northing' in processed_df.columns and 'easting' in processed_df.columns and 
+                ('latitude' not in processed_df.columns or 'longitude' not in processed_df.columns)):
+                st.info("Converting NZTM coordinates to latitude/longitude...")
+                
+                # Simple approximation for NZTM to WGS84 (latitude/longitude)
+                # This is a very rough conversion and should be replaced with proper projection methods
+                # For a production app, use pyproj or a similar library for accurate conversion
+                processed_df['latitude'] = (processed_df['northing'] - 5400000) / 111000 * -1
+                processed_df['longitude'] = (processed_df['easting'] - 1600000) / 85000 + 172
+            
+            # Ensure we have all required columns
+            for col in required_columns:
+                if col not in processed_df.columns:
+                    if col == 'well_id':
+                        processed_df['well_id'] = [f"NZ-{i}" for i in range(len(processed_df))]
+                    elif col in ['latitude', 'longitude', 'depth', 'yield_rate']:
+                        processed_df[col] = 0.0
+            
+            # Ensure depth_m is present for UI consistency
+            if 'depth' in processed_df.columns and 'depth_m' not in processed_df.columns:
+                processed_df['depth_m'] = processed_df['depth']
+            
+            # Ensure well_type and status are present
+            if 'well_type' not in processed_df.columns:
+                processed_df['well_type'] = "Unknown"
+            if 'status' not in processed_df.columns:
+                processed_df['status'] = "Unknown"
+            
+            # Convert numeric columns to float
+            for col in ['latitude', 'longitude', 'depth', 'depth_m', 'yield_rate']:
+                if col in processed_df.columns:
+                    processed_df[col] = pd.to_numeric(processed_df[col], errors='coerce').fillna(0)
+            
+            # Filter out rows with invalid coordinates
+            processed_df = processed_df[
+                (processed_df['latitude'] != 0) & 
+                (processed_df['longitude'] != 0) &
+                (processed_df['latitude'] >= -50) & (processed_df['latitude'] <= -30) &  # Valid range for NZ
+                (processed_df['longitude'] >= 165) & (processed_df['longitude'] <= 180)   # Valid range for NZ
+            ]
+            
+            # Save the processed data to cache
+            processed_df.to_csv(processed_cache_file, index=False)
+            
+            st.success(f"Successfully processed {len(processed_df)} wells from New Zealand government data")
+            
+            # Apply spatial filtering if needed
             if search_center and search_radius_km:
                 from utils import get_distance
                 
                 center_lat, center_lon = search_center
-                df['distance'] = df.apply(
+                processed_df['distance'] = processed_df.apply(
                     lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
                     axis=1
                 )
-                filtered_df = df[df['distance'] <= search_radius_km].copy()
+                filtered_df = processed_df[processed_df['distance'] <= search_radius_km].copy()
                 filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
                 
+                st.info(f"Found {len(filtered_df)} wells within {search_radius_km} km of your selected location")
                 return filtered_df
-                
-            return df
+            
+            return processed_df
+            
         except Exception as e:
-            st.warning(f"Error loading cached data: {e}")
+            st.error(f"Error processing official well data: {e}")
+            return generate_synthetic_nz_wells()
     
     # If all else fails, generate synthetic data
-    st.info("Generating synthetic New Zealand well data...")
+    st.warning("Unable to access real New Zealand well data. Using synthetic data as a fallback.")
     return generate_synthetic_nz_wells()
     
 def fetch_nz_wells_api(search_center=None, search_radius_km=None):

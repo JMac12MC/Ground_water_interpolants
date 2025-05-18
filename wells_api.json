@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /api/explore/v2.1/datasets/ecan::wells-and-bores-all-1/</pre>
+</body>
+</html>

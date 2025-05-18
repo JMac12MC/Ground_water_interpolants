@@ -129,12 +129,12 @@ def load_custom_data(uploaded_file):
 
 def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_km=None):
     """
-    Load well data from New Zealand government database
+    Load well data from the official Canterbury Maps OpenData dataset
     
     Parameters:
     -----------
     use_full_dataset : bool
-        Whether to load the full dataset
+        Whether to load the full dataset (all 56,498 wells)
     search_center : tuple
         (latitude, longitude) of search center to filter by location
     search_radius_km : float
@@ -148,13 +148,14 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
     # Create the sample_data directory if it doesn't exist
     os.makedirs("sample_data", exist_ok=True)
     
-    # Path for our preprocessed dataset
-    nz_wells_file = "sample_data/nz_wells_data.csv"
+    # Paths for the original and processed data
+    canterbury_wells_file = "sample_data/canterbury_wells.csv"
+    processed_wells_file = "sample_data/nz_wells_processed.csv"
     
-    # Check if we already have the preprocessed data
-    if os.path.exists(nz_wells_file):
+    # Check if we already have the processed data
+    if os.path.exists(processed_wells_file):
         try:
-            df = pd.read_csv(nz_wells_file)
+            df = pd.read_csv(processed_wells_file)
             
             # If we have a specific search area, filter the data
             if search_center and search_radius_km:
@@ -173,188 +174,149 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                     st.success(f"Loaded {len(filtered_df)} wells within {search_radius_km} km radius of your selected location")
                     return filtered_df
                 else:
-                    st.info("No wells found in the dataset for your search area.")
+                    st.info("No wells found in the Canterbury dataset for your search area.")
                     # Generate some wells for the area if none found
                     return generate_wells_for_area(search_center, search_radius_km)
             else:
-                st.success(f"Loaded {len(df)} wells from New Zealand government data")
-                return df
+                if not use_full_dataset:
+                    # Return a sample for better performance if full dataset not needed
+                    sample_size = min(2000, len(df))
+                    sampled_df = df.sample(sample_size, random_state=42)
+                    st.success(f"Loaded sample of {len(sampled_df)} wells from Canterbury Maps OpenData (total: {len(df)} wells)")
+                    return sampled_df
+                else:
+                    st.success(f"Loaded all {len(df)} wells from Canterbury Maps OpenData")
+                    return df
         except Exception as e:
-            st.warning(f"Error loading well data: {e}")
+            st.warning(f"Error loading processed well data: {e}")
     
-    # If we don't have the file, create a comprehensive dataset of New Zealand wells
-    # This combines real coordinates with realistic well properties
-    st.info("Creating New Zealand wells dataset...")
-    
-    # Canterbury region wells
-    canterbury_wells = [
-        # Format: well_id, latitude, longitude, depth, yield_rate, well_type, status
-        # Central Canterbury Plains
-        {"well_id": "M35/1234", "latitude": -43.53, "longitude": 172.63, "depth": 120.0, "yield_rate": 22.5, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "M35/2850", "latitude": -43.51, "longitude": 172.58, "depth": 95.2, "yield_rate": 18.3, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "M35/3241", "latitude": -43.49, "longitude": 172.54, "depth": 110.5, "yield_rate": 20.7, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "M35/1876", "latitude": -43.48, "longitude": 172.61, "depth": 80.3, "yield_rate": 15.2, "well_type": "Domestic", "status": "Active"},
-        {"well_id": "M35/5412", "latitude": -43.47, "longitude": 172.57, "depth": 150.4, "yield_rate": 27.8, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "M35/3918", "latitude": -43.46, "longitude": 172.52, "depth": 105.8, "yield_rate": 19.5, "well_type": "Industrial", "status": "Active"},
-        {"well_id": "M35/7602", "latitude": -43.45, "longitude": 172.65, "depth": 72.1, "yield_rate": 14.6, "well_type": "Domestic", "status": "Active"},
-        
-        # West Melton area
-        {"well_id": "L35/0492", "latitude": -43.52, "longitude": 172.40, "depth": 131.0, "yield_rate": 25.3, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "L35/0713", "latitude": -43.50, "longitude": 172.38, "depth": 145.7, "yield_rate": 28.1, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "L35/0824", "latitude": -43.48, "longitude": 172.36, "depth": 128.6, "yield_rate": 24.2, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "L35/1105", "latitude": -43.47, "longitude": 172.39, "depth": 87.3, "yield_rate": 16.8, "well_type": "Domestic", "status": "Active"},
-        
-        # Darfield area
-        {"well_id": "L35/1342", "latitude": -43.49, "longitude": 172.12, "depth": 165.2, "yield_rate": 30.4, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "L35/1467", "latitude": -43.48, "longitude": 172.09, "depth": 158.6, "yield_rate": 29.2, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "L35/1583", "latitude": -43.47, "longitude": 172.14, "depth": 175.3, "yield_rate": 32.1, "well_type": "Irrigation", "status": "Active"},
-        
-        # Rangiora area
-        {"well_id": "M34/0237", "latitude": -43.30, "longitude": 172.61, "depth": 92.5, "yield_rate": 17.3, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "M34/0398", "latitude": -43.29, "longitude": 172.59, "depth": 88.1, "yield_rate": 16.7, "well_type": "Domestic", "status": "Active"},
-        {"well_id": "M34/0512", "latitude": -43.28, "longitude": 172.63, "depth": 105.3, "yield_rate": 20.1, "well_type": "Irrigation", "status": "Active"},
-        
-        # Oxford area
-        {"well_id": "L34/0182", "latitude": -43.32, "longitude": 172.18, "depth": 130.7, "yield_rate": 24.5, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "L34/0267", "latitude": -43.31, "longitude": 172.15, "depth": 125.6, "yield_rate": 23.2, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "L34/0352", "latitude": -43.30, "longitude": 172.19, "depth": 142.3, "yield_rate": 26.8, "well_type": "Irrigation", "status": "Active"},
-        
-        # Ashburton area
-        {"well_id": "K36/0123", "latitude": -43.90, "longitude": 171.80, "depth": 110.3, "yield_rate": 20.8, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "K36/0276", "latitude": -43.92, "longitude": 171.75, "depth": 118.5, "yield_rate": 21.9, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "K36/0382", "latitude": -43.88, "longitude": 171.78, "depth": 127.2, "yield_rate": 24.1, "well_type": "Irrigation", "status": "Active"},
-    ]
-    
-    # Waikato region wells (centered around Hamilton)
-    waikato_wells = [
-        {"well_id": "S14/0172", "latitude": -37.78, "longitude": 175.28, "depth": 85.3, "yield_rate": 15.8, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "S14/0243", "latitude": -37.80, "longitude": 175.30, "depth": 72.6, "yield_rate": 14.2, "well_type": "Domestic", "status": "Active"},
-        {"well_id": "S14/0318", "latitude": -37.76, "longitude": 175.25, "depth": 90.1, "yield_rate": 17.3, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "S14/0489", "latitude": -37.82, "longitude": 175.32, "depth": 65.4, "yield_rate": 12.8, "well_type": "Domestic", "status": "Active"},
-        {"well_id": "S14/0576", "latitude": -37.79, "longitude": 175.27, "depth": 110.5, "yield_rate": 20.6, "well_type": "Industrial", "status": "Active"},
-    ]
-    
-    # Hawke's Bay region wells (centered around Hastings/Napier)
-    hawkes_bay_wells = [
-        {"well_id": "V21/0425", "latitude": -39.65, "longitude": 176.85, "depth": 95.2, "yield_rate": 18.5, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "V21/0538", "latitude": -39.63, "longitude": 176.82, "depth": 105.6, "yield_rate": 19.8, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "V21/0671", "latitude": -39.61, "longitude": 176.89, "depth": 88.3, "yield_rate": 16.7, "well_type": "Domestic", "status": "Active"},
-        {"well_id": "V21/0794", "latitude": -39.58, "longitude": 176.84, "depth": 120.4, "yield_rate": 22.3, "well_type": "Irrigation", "status": "Active"},
-    ]
-    
-    # Marlborough region wells (centered around Blenheim)
-    marlborough_wells = [
-        {"well_id": "P28/0183", "latitude": -41.52, "longitude": 173.96, "depth": 70.2, "yield_rate": 14.1, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "P28/0267", "latitude": -41.54, "longitude": 173.95, "depth": 65.3, "yield_rate": 13.2, "well_type": "Domestic", "status": "Active"},
-        {"well_id": "P28/0356", "latitude": -41.51, "longitude": 173.92, "depth": 85.6, "yield_rate": 16.3, "well_type": "Irrigation", "status": "Active"},
-        {"well_id": "P28/0482", "latitude": -41.53, "longitude": 173.97, "depth": 75.8, "yield_rate": 15.1, "well_type": "Irrigation", "status": "Active"},
-    ]
-    
-    # Combine all regional wells
-    all_wells = canterbury_wells + waikato_wells + hawkes_bay_wells + marlborough_wells
-    
-    # Create initial DataFrame
-    df = pd.DataFrame(all_wells)
-    
-    # Generate more wells to reach at least 2000 wells for full New Zealand coverage
-    target_count = 2000
-    if len(df) < target_count:
-        # Create more wells by adding random variations to existing wells
-        additional_wells = []
-        well_id_counter = 10000
-        
-        regions = [
-            # Canterbury
-            {"center_lat": -43.53, "center_lon": 172.63, "radius_deg": 0.5, "count": 600},
-            # Waikato
-            {"center_lat": -37.78, "center_lon": 175.28, "radius_deg": 0.4, "count": 400},
-            # Hawke's Bay
-            {"center_lat": -39.65, "center_lon": 176.85, "radius_deg": 0.3, "count": 300},
-            # Marlborough
-            {"center_lat": -41.52, "center_lon": 173.96, "radius_deg": 0.25, "count": 200},
-            # Southland
-            {"center_lat": -46.10, "center_lon": 168.30, "radius_deg": 0.45, "count": 200},
-            # Bay of Plenty
-            {"center_lat": -38.00, "center_lon": 176.80, "radius_deg": 0.3, "count": 300}
-        ]
-        
-        for region in regions:
-            for i in range(region["count"]):
-                # Calculate random position within the region
-                angle = np.random.uniform(0, 2 * np.pi)
-                distance = np.random.uniform(0, region["radius_deg"]) ** 0.5  # Square root for more realistic distribution
+    # If we don't have the processed file, process the original Canterbury wells data
+    # from the official dataset
+    if os.path.exists(canterbury_wells_file):
+        try:
+            st.info("Processing the official Canterbury Maps well dataset...")
+            
+            # Load the raw Canterbury wells data
+            raw_df = pd.read_csv(canterbury_wells_file)
+            
+            # Determine which columns contain latitude/longitude information
+            # From inspection, the 'X' and 'Y' columns appear to be in a different coordinate system
+            # We'll use the NZTMX and NZTMY columns for conversion to lat/long
+            
+            # Create a mapping for standard column names
+            processed_df = pd.DataFrame()
+            processed_df['well_id'] = raw_df['WELL_NO']
+            
+            # Check if we already have latitude/longitude directly
+            if 'LAT' in raw_df.columns and 'LONG' in raw_df.columns:
+                processed_df['latitude'] = pd.to_numeric(raw_df['LAT'], errors='coerce')
+                processed_df['longitude'] = pd.to_numeric(raw_df['LONG'], errors='coerce')
+            # If we have NZTM coordinates, convert them to lat/long
+            elif 'NZTMX' in raw_df.columns and 'NZTMY' in raw_df.columns:
+                # Convert NZTM (New Zealand Transverse Mercator) to lat/long
+                # This is an approximation - for a more accurate conversion,
+                # a proper geospatial library like pyproj would be better
+                st.info("Converting NZTM coordinates to latitude/longitude...")
                 
-                lat = region["center_lat"] + distance * np.sin(angle)
-                lon = region["center_lon"] + distance * np.cos(angle)
+                # Convert to numeric first, handling any non-numeric values
+                nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
+                nztmy = pd.to_numeric(raw_df['NZTMY'], errors='coerce')
                 
-                # Generate realistic well properties
-                depth = np.random.lognormal(mean=4.0, sigma=0.5)
-                depth = min(500, max(10, depth))  # Limit depth between 10-500m
+                # Approximate conversion from NZTM to WGS84 (latitude/longitude)
+                # These formulas are simplified approximations for the Canterbury region
+                processed_df['latitude'] = (nztmy - 5400000) / 111000 * -1  # negative for southern hemisphere
+                processed_df['longitude'] = (nztmx - 1600000) / 85000 + 172
+            else:
+                # If we only have NZMG coordinates (older system)
+                st.info("Converting NZMG coordinates to latitude/longitude...")
+                nzmgx = pd.to_numeric(raw_df['NZMGX'], errors='coerce')
+                nzmgy = pd.to_numeric(raw_df['NZMGY'], errors='coerce')
                 
-                # Make deeper wells generally yield more water
-                base_yield = np.random.lognormal(mean=2.0, sigma=0.8)
-                depth_factor = min(1.0, depth / 200)
-                yield_rate = base_yield * (0.5 + 0.5 * depth_factor)
-                yield_rate = min(50, max(0.1, yield_rate))  # Limit to realistic values
+                # Approximate conversion from NZMG to WGS84
+                processed_df['latitude'] = (nzmgy - 6000000) / 111000 * -1
+                processed_df['longitude'] = (nzmgx - 2500000) / 85000 + 172
+            
+            # Add other important columns
+            processed_df['depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)
+            processed_df['depth_m'] = processed_df['depth']  # Ensure we have depth_m for UI consistency
+            
+            # Extract well type information
+            processed_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
+            processed_df['status'] = raw_df['WELL_STATUS_DESC'].fillna('Unknown')
+            
+            # Extract usage information if available
+            if 'USE_CODE_1_DESC' in raw_df.columns:
+                processed_df['usage'] = raw_df['USE_CODE_1_DESC'].fillna('Unknown')
+            
+            # Extract yield information if available
+            if 'MAX_YIELD' in raw_df.columns:
+                # Convert yield to liters per second (assuming it's already in l/s)
+                processed_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce').fillna(0)
+            else:
+                # Generate realistic yields based on depth if not available
+                # This uses the correlation between depth and yield that is common in groundwater
+                st.info("Generating yield estimates based on well depth...")
                 
-                # Select well type based on realistic distribution
-                well_types = ["Domestic", "Irrigation", "Stock", "Industrial", "Monitoring"]
-                well_type_probs = [0.2, 0.4, 0.3, 0.05, 0.05]
-                well_type = np.random.choice(well_types, p=well_type_probs)
+                # Base yield on depth with some randomness
+                # Deeper wells often (but not always) have higher yields
+                base_yield = np.maximum(processed_df['depth'] / 10, 1)  # At least 1 l/s for non-zero depth
+                randomness = np.random.uniform(0.5, 1.5, size=len(processed_df))
+                processed_df['yield_rate'] = base_yield * randomness
+                processed_df.loc[processed_df['depth'] == 0, 'yield_rate'] = 0  # Zero yield for zero depth
+            
+            # Add locality information if available
+            if 'LOCALITY' in raw_df.columns:
+                processed_df['locality'] = raw_df['LOCALITY'].fillna('Unknown')
+            
+            # Filter out wells with invalid coordinates
+            valid_df = processed_df[
+                (processed_df['latitude'] != 0) & 
+                (processed_df['longitude'] != 0) &
+                (processed_df['latitude'] >= -50) & (processed_df['latitude'] <= -30) &  # Valid range for NZ
+                (processed_df['longitude'] >= 165) & (processed_df['longitude'] <= 180)   # Valid range for NZ
+            ].copy()
+            
+            # Save the processed data
+            valid_df.to_csv(processed_wells_file, index=False)
+            
+            st.success(f"Successfully processed {len(valid_df)} wells from Canterbury Maps OpenData")
+            
+            # Apply spatial filtering if needed
+            if search_center and search_radius_km:
+                from utils import get_distance
                 
-                # Select status
-                status_types = ["Active", "Inactive", "Monitoring", "Abandoned"]
-                status_probs = [0.7, 0.15, 0.1, 0.05]
-                status = np.random.choice(status_types, p=status_probs)
+                center_lat, center_lon = search_center
+                valid_df['distance'] = valid_df.apply(
+                    lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
+                    axis=1
+                )
+                filtered_df = valid_df[valid_df['distance'] <= search_radius_km].copy()
+                filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
                 
-                # Create well record
-                well = {
-                    "well_id": f"NZ-{well_id_counter}",
-                    "latitude": float(lat),
-                    "longitude": float(lon),
-                    "depth": float(depth),
-                    "depth_m": float(depth),
-                    "yield_rate": float(yield_rate),
-                    "well_type": well_type,
-                    "status": status
-                }
+                if len(filtered_df) > 0:
+                    st.success(f"Found {len(filtered_df)} wells within {search_radius_km} km radius of your selected location")
+                    return filtered_df
+                else:
+                    # Generate some wells specifically for this area if none found
+                    return generate_wells_for_area(search_center, search_radius_km)
+            
+            # Return the full dataset or a sample depending on the parameter
+            if not use_full_dataset:
+                sample_size = min(2000, len(valid_df))
+                sampled_df = valid_df.sample(sample_size, random_state=42)
+                st.success(f"Loaded sample of {len(sampled_df)} wells from Canterbury Maps OpenData (total: {len(valid_df)} wells)")
+                return sampled_df
+            else:
+                return valid_df
                 
-                additional_wells.append(well)
-                well_id_counter += 1
-        
-        # Add the new wells to our DataFrame
-        additional_df = pd.DataFrame(additional_wells)
-        df = pd.concat([df, additional_df], ignore_index=True)
-    
-    # Ensure depth_m column exists for UI consistency
-    if 'depth_m' not in df.columns:
-        df['depth_m'] = df['depth']
-    
-    # Save to file
-    df.to_csv(nz_wells_file, index=False)
-    st.success(f"Created dataset with {len(df)} New Zealand wells")
-    
-    # If we have a specific search area, filter the data
-    if search_center and search_radius_km:
-        from utils import get_distance
-        
-        # Filter by distance
-        center_lat, center_lon = search_center
-        df['distance'] = df.apply(
-            lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
-            axis=1
-        )
-        filtered_df = df[df['distance'] <= search_radius_km].copy()
-        filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
-        
-        if len(filtered_df) > 0:
-            st.success(f"Found {len(filtered_df)} wells within {search_radius_km} km radius of your selected location")
-            return filtered_df
-        else:
-            # Generate some wells specifically for this area if none found
-            return generate_wells_for_area(search_center, search_radius_km)
-    
-    return df
+        except Exception as e:
+            st.error(f"Error processing Canterbury wells data: {e}")
+            # Generate some wells as a fallback
+            return generate_wells_for_area((-43.5, 172.5), 100)
+    else:
+        st.error("Canterbury wells data file not found. Please ensure the CSV file is in the correct location.")
+        # Generate some wells as a fallback
+        return generate_wells_for_area((-43.5, 172.5), 100)
 
 def generate_wells_for_area(center, radius_km):
     """

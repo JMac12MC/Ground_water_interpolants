@@ -176,8 +176,9 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                 # These conversion parameters have been tuned based on known well locations
                 
                 # Formula: Convert NZTM to latitude/longitude (WGS84)
-                wells_df['latitude'] = -44.0 + (nztmy - 5390000) / 90000
-                wells_df['longitude'] = 171.3 + (nztmx - 1520000) / 56000
+                # Fully adjusted to match actual Canterbury well locations
+                wells_df['latitude'] = -43.3 + (nztmy - 5390000) / 95000
+                wells_df['longitude'] = 172.0 + (nztmx - 1520000) / 56000
             
             # Fallback to NZMG coordinates if needed
             elif 'NZMGX' in raw_df.columns and 'NZMGY' in raw_df.columns:

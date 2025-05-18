@@ -8,7 +8,7 @@ import os
 import base64
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-import interpolation
+import kriging_interpolation
 
 # Set page configuration
 st.set_page_config(

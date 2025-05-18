@@ -209,10 +209,15 @@ with main_col1:
             # Store the total wells count before any filtering
             st.session_state.total_wells_in_radius = len(filtered_wells)
             
+            # First, ensure all missing yield values are replaced with 0
+            # This treats missing yield data as 0 instead of filtering them out
+            filtered_wells_clean = filtered_wells.copy()
+            filtered_wells_clean['yield_rate'] = filtered_wells_clean['yield_rate'].fillna(0)
+            
             # For analysis panel only, we'll create a yield-filtered version
-            st.session_state.yield_filtered_wells = filtered_wells[
-                (filtered_wells['yield_rate'] >= st.session_state.min_yield) & 
-                (filtered_wells['yield_rate'] <= st.session_state.max_yield)
+            st.session_state.yield_filtered_wells = filtered_wells_clean[
+                (filtered_wells_clean['yield_rate'] >= st.session_state.min_yield) & 
+                (filtered_wells_clean['yield_rate'] <= st.session_state.max_yield)
             ]
             
             st.session_state.filtered_wells = filtered_wells

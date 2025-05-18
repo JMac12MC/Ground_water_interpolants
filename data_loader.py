@@ -306,73 +306,17 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                 nearby_wells = valid_wells[valid_wells['distance'] <= search_radius_km].copy()
                 
                 if len(nearby_wells) > 0:
-                    # ALWAYS show ALL wells within the search radius without any filtering
-                    # Only limit if there are more than 5000 wells for extreme performance cases
-                    if len(nearby_wells) <= 5000:
-                        st.success(f"Found {len(nearby_wells)} wells within {search_radius_km} km of your location")
-                        return nearby_wells
-                    else:
-                        # Only in extreme cases with more than 5000 wells, limit for performance
-                        st.warning(f"Found {len(nearby_wells)} wells within {search_radius_km} km. Showing 5000 wells for better performance. Consider reducing the search radius to see all wells.")
-                        
-                        # Use a random sample to avoid biasing results
-                        # This is only used in extreme cases with very large search radius
-                        random_sample = nearby_wells.sample(n=5000, random_state=42)
-                        return random_sample
+                    # ALWAYS show ALL wells within the search radius without ANY filtering whatsoever
+                    # No limits, no sampling - show every single well even if there are thousands
+                    st.success(f"Found {len(nearby_wells)} wells within {search_radius_km} km of your location")
+                    return nearby_wells
                 else:
                     st.info(f"No wells found within {search_radius_km} km of your location. Generating sample wells for the area.")
                     return generate_wells_for_area(search_center, search_radius_km)
             
-            # Return dataset with performance considerations
-            # The full dataset with 56,498 wells can cause browser performance issues
-            # Even when using full dataset, limit to a reasonable number for browser rendering
-            if use_full_dataset:
-                # Limit to 5000 wells even when full dataset is requested to prevent browser crashes
-                max_wells = min(5000, len(valid_wells))
-                if len(valid_wells) > max_wells:
-                    # If we need to limit, select wells by a stratified sample across different areas
-                    st.warning(f"For performance reasons, showing {max_wells} representative wells from {len(valid_wells)} total wells")
-                    
-                    # Create grid-based stratified sampling to ensure geographic coverage
-                    # This is better than random sampling as it ensures wells from all areas
-                    valid_wells['lat_bin'] = pd.cut(valid_wells['latitude'], bins=30)
-                    valid_wells['lon_bin'] = pd.cut(valid_wells['longitude'], bins=30)
-                    
-                    # First get high-yield wells (ensure we get the most valuable data points)
-                    high_yield_wells = valid_wells.nlargest(max_wells // 5, 'yield_rate')
-                    
-                    # Then stratify the rest by geographic location
-                    remaining = max_wells - len(high_yield_wells)
-                    
-                    # Group by grid cell and sample from each
-                    sampled_remainder = valid_wells.groupby(['lat_bin', 'lon_bin']).apply(
-                        lambda x: x.sample(min(1, len(x)))
-                    ).reset_index(drop=True)
-                    
-                    # If we need more wells, get them randomly
-                    if len(sampled_remainder) < remaining:
-                        # Add random samples to reach the desired count
-                        extra_needed = remaining - len(sampled_remainder)
-                        extra_samples = valid_wells.drop(sampled_remainder.index).sample(
-                            min(extra_needed, len(valid_wells) - len(sampled_remainder))
-                        )
-                        sampled_remainder = pd.concat([sampled_remainder, extra_samples])
-                    else:
-                        # If we have too many, take a subset
-                        sampled_remainder = sampled_remainder.sample(remaining)
-                    
-                    # Combine high yield wells with geographic samples
-                    final_sample = pd.concat([high_yield_wells, sampled_remainder])
-                    return final_sample
-                else:
-                    st.success(f"Showing all {len(valid_wells)} wells")
-                    return valid_wells
-            else:
-                # Use a smaller sample for normal operation
-                sample_size = min(2000, len(valid_wells))
-                wells_sample = valid_wells.sample(n=sample_size, random_state=42)
-                st.info(f"Using a sample of {len(wells_sample)} wells from {len(valid_wells)} total wells")
-                return wells_sample
+            # Show ALL wells with no sampling - as requested by user
+            st.success(f"Showing all {len(valid_wells)} wells without any sampling")
+            return valid_wells
                 
         except Exception as e:
             st.error(f"Error processing Canterbury wells data: {e}")

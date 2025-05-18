@@ -344,27 +344,13 @@ with main_col1:
         st.session_state.selected_point = [clicked_lat, clicked_lng]
         st.rerun()
     
-    # Add manual coordinate selection
-    st.subheader("Manually Select Coordinates")
-    col1, col2, col3 = st.columns([2, 2, 1])
-    with col1:
-        latitude = st.number_input("Latitude", value=default_location[0], format="%.6f")
-    with col2:
-        longitude = st.number_input("Longitude", value=default_location[1], format="%.6f")
-    
-    button_col1, button_col2 = st.columns(2)
-    with button_col1:
-        if st.button("Set Location", use_container_width=True):
-            st.session_state.selected_point = [latitude, longitude]
-            st.rerun()
-    
-    with button_col2:
-        if st.button("Clear Results", use_container_width=True):
-            # Reset the session state
-            st.session_state.selected_point = None
-            st.session_state.filtered_wells = None
-            st.session_state.selected_well = None
-            st.rerun()
+    # Add a clear button to reset the map
+    if st.button("Clear Results", use_container_width=True):
+        # Reset the session state
+        st.session_state.selected_point = None
+        st.session_state.filtered_wells = None
+        st.session_state.selected_well = None
+        st.rerun()
 
 with main_col2:
     st.subheader("Analysis Results")

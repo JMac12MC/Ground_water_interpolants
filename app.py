@@ -48,6 +48,10 @@ if 'wells_data' not in st.session_state:
     st.session_state.wells_data = None
 if 'filtered_wells' not in st.session_state:
     st.session_state.filtered_wells = None
+if 'yield_filtered_wells' not in st.session_state:
+    st.session_state.yield_filtered_wells = None
+if 'total_wells_in_radius' not in st.session_state:
+    st.session_state.total_wells_in_radius = 0
 if 'heat_map_visibility' not in st.session_state:
     st.session_state.heat_map_visibility = True
 if 'well_markers_visibility' not in st.session_state:
@@ -197,11 +201,18 @@ with main_col1:
                 axis=1
             )
             
-            # Apply filters
+            # ONLY filter by distance - show ALL wells in the search radius regardless of yield
             filtered_wells = wells_df[
-                (wells_df['distance'] <= st.session_state.search_radius) & 
-                (wells_df['yield_rate'] >= st.session_state.min_yield) & 
-                (wells_df['yield_rate'] <= st.session_state.max_yield)
+                (wells_df['distance'] <= st.session_state.search_radius)
+            ]
+            
+            # Store the total wells count before any filtering
+            st.session_state.total_wells_in_radius = len(filtered_wells)
+            
+            # For analysis panel only, we'll create a yield-filtered version
+            st.session_state.yield_filtered_wells = filtered_wells[
+                (filtered_wells['yield_rate'] >= st.session_state.min_yield) & 
+                (filtered_wells['yield_rate'] <= st.session_state.max_yield)
             ]
             
             st.session_state.filtered_wells = filtered_wells
@@ -357,12 +368,22 @@ with main_col2:
     st.subheader("Analysis Results")
     
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
-        # Show summary stats
-        st.write(f"**Wells found:** {len(st.session_state.filtered_wells)}")
+        # Show summary stats for ALL wells in radius
+        st.write(f"**Total wells in radius:** {st.session_state.total_wells_in_radius}")
         
-        avg_yield = st.session_state.filtered_wells['yield_rate'].mean()
-        max_yield = st.session_state.filtered_wells['yield_rate'].max()
-        avg_depth = st.session_state.filtered_wells['depth'].mean()
+        # Show stats for wells that match the yield filter
+        st.write(f"**Wells matching yield filter:** {len(st.session_state.yield_filtered_wells)}")
+        
+        # Use yield-filtered wells for yield statistics to match the sidebar filter settings
+        if len(st.session_state.yield_filtered_wells) > 0:
+            avg_yield = st.session_state.yield_filtered_wells['yield_rate'].mean()
+            max_yield = st.session_state.yield_filtered_wells['yield_rate'].max()
+        else:
+            avg_yield = 0
+            max_yield = 0
+        
+        # Use all wells in radius for depth statistics
+        avg_depth = st.session_state.filtered_wells['depth'].mean() if not st.session_state.filtered_wells.empty else 0
         
         st.write(f"**Average Yield:** {avg_yield:.2f} L/s")
         st.write(f"**Maximum Yield:** {max_yield:.2f} L/s")

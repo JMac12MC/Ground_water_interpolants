@@ -6,7 +6,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 
 def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
     """
-    Generate heat map data using 2D Kriging interpolation for scientific groundwater mapping
+    Generate heat map data using 2D interpolation based on kriging techniques
     
     Parameters:
     -----------
@@ -17,129 +17,109 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
     radius_km : float
         Radius in kilometers to generate heat map data for
     resolution : int
-        Number of points to generate in each dimension (higher = more detailed but slower)
+        Number of points to generate in each dimension
         
     Returns:
     --------
     list
         List of [lat, lng, intensity] points for the heat map
     """
+    # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return []
     
-    # Extract coordinates and yields for wells within search radius
+    # Extract coordinates and yields
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
     yields = wells_df['yield_rate'].values.astype(float)
     
-    # For special case with too few wells, just show the wells as they are
+    # Handle case with too few data points
     if len(wells_df) < 3:
         heat_data = []
         for i, (lat, lon, yield_val) in enumerate(zip(lats, lons, yields)):
             heat_data.append([float(lat), float(lon), float(yield_val)])
         return heat_data
-    
-    # Create bounding box based on center and radius
+        
+    # Create simplified grid for interpolation
     center_lat, center_lon = center_point
-    
-    # Convert geographic area to a "flat" projection for better interpolation
-    # This is a simple approximation for small areas
-    # 111 km per degree of latitude, longitude varies with cosine of latitude
-    x_points = (lons - center_lon) * 111.0 * np.cos(np.radians(center_lat))  # km
-    y_points = (lats - center_lat) * 111.0  # km
-    z_points = yields  # The yield values we want to interpolate
-    
-    # Define the grid
-    grid_density = min(100, max(50, resolution))  # Higher resolution grid
-    
-    # Convert radius to a square in the local projection
-    x_grid = np.linspace(-radius_km, radius_km, grid_density)
-    y_grid = np.linspace(-radius_km, radius_km, grid_density)
-    
-    # Create a grid of coordinates where we'll predict the yield
-    X_grid, Y_grid = np.meshgrid(x_grid, y_grid)
+    grid_size = min(50, max(30, resolution))
     
     try:
-        # Use scikit-gstat's kriging implementation
-        from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+        # Convert to km-based coordinates (flat Earth approximation for small areas)
+        # This is essential for proper interpolation
+        km_per_degree_lat = 111.0  # km per degree of latitude
+        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # km per degree of longitude
         
-        # Prepare the input points for Kriging
-        xy_points = np.column_stack((x_points, y_points))
+        # Convert all coordinates to km from center
+        x_coords = (lons - center_lon) * km_per_degree_lon
+        y_coords = (lats - center_lat) * km_per_degree_lat
         
-        # Define the Gaussian Process model with RBF kernel - this is the core of Kriging
-        # RBF length scale ~5km - regional groundwater correlation typical scale
-        # WhiteKernel handles noise in the measurements
-        kernel = 1.0 * RBF(length_scale=5.0) + WhiteKernel(noise_level=0.1)
-        gp = GaussianProcessRegressor(kernel=kernel, normalize_y=True)
+        # Create grid in km space
+        grid_x = np.linspace(-radius_km, radius_km, grid_size)
+        grid_y = np.linspace(-radius_km, radius_km, grid_size)
+        grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
         
-        # Fit the model to our data points (wells)
-        gp.fit(xy_points, z_points)
+        # Flatten for interpolation
+        points = np.vstack([x_coords, y_coords]).T  # Well points in km
+        xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
         
-        # Prepare grid points for prediction
-        # Flatten the grid for prediction and filter points outside search radius
-        grid_xs = X_grid.flatten()
-        grid_ys = Y_grid.flatten()
+        # Filter points outside the radius
+        distances = np.sqrt(xi[:,0]**2 + xi[:,1]**2)
+        mask = distances <= radius_km
+        xi_inside = xi[mask]
         
-        # Create prediction points array
-        grid_points = np.column_stack((grid_xs, grid_ys))
+        # Basic 2D interpolation (linear)
+        from scipy.interpolate import griddata
         
-        # Only keep points within the radius
-        mask = np.sqrt(grid_xs**2 + grid_ys**2) <= radius_km
-        grid_points = grid_points[mask]
+        # First try linear interpolation
+        interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
         
-        if len(grid_points) == 0:
-            return []
+        # For areas with NaNs, apply nearest neighbor to fill gaps
+        if np.any(np.isnan(interpolated_z)):
+            nan_mask = np.isnan(interpolated_z)
+            interpolated_z[nan_mask] = griddata(
+                points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
+            )
         
-        # Predict the yield at each grid point using the GP model (Kriging)
-        predictions = gp.predict(grid_points)
+        # Make sure we don't have negative values
+        interpolated_z = np.maximum(0, interpolated_z)
         
-        # Make sure we don't predict negative yields
-        predictions = np.maximum(0, predictions)
-        
-        # Convert back to geographic coordinates
-        geo_lons = (grid_points[:, 0] / (111.0 * np.cos(np.radians(center_lat)))) + center_lon
-        geo_lats = (grid_points[:, 1] / 111.0) + center_lat
+        # Convert back to lat/lon coordinates
+        lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
+        lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
         
         # Create heat map data
         heat_data = []
         
-        # We need to normalize the predictions for the heatmap (0-1 scale)
-        # Find min/max of the predicted values
-        min_pred = np.min(predictions) if len(predictions) > 0 else 0
-        max_pred = np.max(predictions) if len(predictions) > 0 else 1
-        pred_range = max(0.1, max_pred - min_pred)  # Avoid division by zero
-        
-        # Add the interpolated grid points to the heat map
-        for i in range(len(geo_lats)):
-            # Normalize the predicted value to 0-1 range for the heat map
-            normalized_pred = (predictions[i] - min_pred) / pred_range
-            
-            # Add to heat map if significant
-            if normalized_pred > 0.01:
+        # Add interpolated points
+        for i in range(len(lat_points)):
+            # Only add points with meaningful values
+            if interpolated_z[i] > 0.01:
                 heat_data.append([
-                    float(geo_lats[i]),
-                    float(geo_lons[i]),
-                    float(predictions[i])  # Use actual yield value for color intensity
+                    float(lat_points[i]),  # Latitude
+                    float(lon_points[i]),  # Longitude
+                    float(interpolated_z[i])  # Yield value (actual value, not normalized)
                 ])
         
-        # Add the actual well points to ensure they're visible
-        for i, (lat, lon, yield_val) in enumerate(zip(lats, lons, yields)):
-            # Check if within search radius
-            dist_from_center_km = np.sqrt(
-                ((lat - center_lat) * 111.0)**2 + 
-                ((lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
+        # Make sure well points themselves are included
+        for j in range(len(lats)):
+            # Check if well is within search radius
+            well_dist_km = np.sqrt(
+                ((lats[j] - center_lat) * km_per_degree_lat)**2 +
+                ((lons[j] - center_lon) * km_per_degree_lon)**2
             )
             
-            if dist_from_center_km <= radius_km:
-                # Add the exact well with its actual yield
-                heat_data.append([float(lat), float(lon), float(yield_val)])
+            if well_dist_km <= radius_km:
+                heat_data.append([
+                    float(lats[j]),
+                    float(lons[j]),
+                    float(yields[j])
+                ])
         
         return heat_data
-        
+    
     except Exception as e:
-        print(f"Kriging interpolation error: {e}")
-        # Fall back to basic interpolation method
+        print(f"Interpolation error: {e}")
         return fallback_interpolation(wells_df, center_point, radius_km)
 
 def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):

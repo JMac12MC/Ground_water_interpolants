@@ -6,7 +6,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 
 def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
     """
-    Generate interpolated heat map data based on well yield rates
+    Generate heat map data based on well yield rates
     
     Parameters:
     -----------
@@ -32,12 +32,24 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
     lons = wells_df['longitude'].values.astype(float)
     yields = wells_df['yield_rate'].values.astype(float)
     
-    if len(wells_df) < 3:
-        # For very few wells, just show the exact well locations with their yields
+    if len(wells_df) < 2:
+        # For very few wells, just show the exact well locations with their colors
         max_yield = np.max(yields) if yields.size > 0 and np.max(yields) > 0 else 1
         normalized_yields = yields / max_yield
         simple_heat_data = [[float(lat), float(lon), float(y)] for lat, lon, y in zip(lats, lons, normalized_yields)]
         return simple_heat_data
+    
+    # Important: Normalize yields for color intensity (not distance)
+    max_yield = np.max(yields) if yields.size > 0 and np.max(yields) > 0 else 1
+    min_yield = np.min(yields)
+    
+    # Create normalized yield values (for colors only)
+    if max_yield > min_yield:
+        # Scale from 0.2 to 1.0 to keep colors visible but maintain differences
+        normalized_yields = 0.2 + 0.8 * (yields - min_yield) / (max_yield - min_yield)
+    else:
+        # If all yields are the same
+        normalized_yields = np.ones_like(yields) * 0.5
     
     # Calculate bounding box based on center and radius
     center_lat, center_lon = center_point
@@ -53,7 +65,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
     max_lon = center_lon + lon_radius
     
     # Create a grid of points for the heat map
-    adjusted_resolution = min(60, max(30, resolution))  # Balancing detail vs performance
+    adjusted_resolution = min(70, max(40, resolution))  # Higher resolution for better detail
     grid_lats = np.linspace(min_lat, max_lat, adjusted_resolution)
     grid_lons = np.linspace(min_lon, max_lon, adjusted_resolution)
     grid_lat, grid_lon = np.meshgrid(grid_lats, grid_lons)
@@ -62,141 +74,106 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
     grid_lat_flat = grid_lat.flatten()
     grid_lon_flat = grid_lon.flatten()
     
-    # Convert to kilometer distances for better accuracy
-    # First, convert to flat projection (rough approximation using kilometers)
-    origin_lat, origin_lon = center_lat, center_lon
-    x_coords = (lons - origin_lon) * 111.0 * np.cos(np.radians(origin_lat))
-    y_coords = (lats - origin_lat) * 111.0
-    
-    # Convert grid points to same projection
-    grid_x = (grid_lon_flat - origin_lon) * 111.0 * np.cos(np.radians(origin_lat))
-    grid_y = (grid_lat_flat - origin_lat) * 111.0
-    
     try:
-        # Use a modified Inverse Distance Weighting with distance-based falloff
-        # This gives much sharper contrast between high and low yield areas
+        # FIXED APPROACH: Use fixed radius circles around each well
+        # with color intensity based on yield but same distance coverage
         
-        # Parameters for the modified IDW
-        power = 2.5  # Higher power = sharper transitions (2 is standard IDW)
-        smoothing = 0.1  # Small value to prevent division by zero
+        # Parameters for heat map construction
+        fixed_influence_radius_km = 2.0  # Fixed 2km radius of influence around each well
         
-        # Maximum distance influence (in km) - points beyond this have minimal impact
-        # This is key to preventing high interpolation between distant points
-        max_influence_distance = min(radius_km / 3, 5.0)  # Smaller of 1/3 radius or 5km
-        
-        # Create array to store interpolated values
-        grid_values = np.zeros(len(grid_x))
-        
-        # For each point in the grid, calculate weighted yield
-        for i in range(len(grid_x)):
-            # Calculate distance to each well (in kilometers)
-            distances = np.sqrt((grid_x[i] - x_coords)**2 + (grid_y[i] - y_coords)**2)
-            
-            # Apply inverse distance weighting with sharp distance cutoff
-            # Use exponential decay for smoother transition
-            weights = np.exp(-distances / (max_influence_distance / 3))
-            
-            # Apply additional power-law decay (traditional IDW)
-            weights = weights / (distances + smoothing)**power
-            
-            # Normalize weights
-            if np.sum(weights) > 0:
-                weights = weights / np.sum(weights)
-                
-                # Calculate weighted average
-                grid_values[i] = np.sum(weights * yields)
-            else:
-                # If no wells have influence, set to very low value
-                grid_values[i] = 0.0001
-        
-        # Normalize values for heat map (0-1 scale)
-        min_val = np.min(grid_values)
-        max_val = np.max(grid_values)
-        
-        if max_val > min_val:
-            # Scale values, keeping a true zero and maintaining proportions
-            # Generate a distinct range from 0.05-1.0 for better visualization
-            if min_val > 0:
-                # If all values are positive, maintain proportions but start from a small value
-                normalized_values = 0.05 + 0.95 * (grid_values - min_val) / (max_val - min_val)
-            else:
-                # If we have zeroes, keep them close to zero
-                normalized_values = np.zeros_like(grid_values)
-                positive_mask = grid_values > 0
-                if np.any(positive_mask):
-                    normalized_values[positive_mask] = 0.05 + 0.95 * (grid_values[positive_mask] - min_val) / (max_val - min_val)
-        else:
-            # If all values are the same
-            normalized_values = np.ones_like(grid_values) * 0.5
-        
-        # Filter points to create a cleaner display
+        # Heat map data points collection
         heat_data = []
         
-        # Extra filtering to create more distinct high/low areas
-        for i in range(len(grid_x)):
-            # Skip very low values completely
-            if normalized_values[i] < 0.05:
+        # For each grid point, calculate its color based on nearby wells
+        for i in range(len(grid_lat_flat)):
+            grid_lat_point = grid_lat_flat[i]
+            grid_lon_point = grid_lon_flat[i]
+            
+            # Calculate distance from center of search radius
+            # Skip points outside the search radius
+            dist_from_center_km = np.sqrt(
+                ((grid_lat_point - center_lat) * 111.0)**2 + 
+                ((grid_lon_point - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
+            )
+            
+            if dist_from_center_km > radius_km:
                 continue
                 
-            # Calculate distance from center of search area (in km)
-            dist_from_center = np.sqrt((grid_x[i])**2 + (grid_y[i])**2)
+            # Calculate distances to all wells (in km)
+            well_distances = []
+            for j in range(len(lats)):
+                dist_km = np.sqrt(
+                    ((grid_lat_point - lats[j]) * 111.0)**2 + 
+                    ((grid_lon_point - lons[j]) * 111.0 * np.cos(np.radians(grid_lat_point)))**2
+                )
+                well_distances.append(dist_km)
             
-            # Skip points outside search radius
-            if dist_from_center > radius_km:
+            # Find the nearest well
+            if not well_distances:
+                continue
+                
+            min_dist = min(well_distances)
+            nearest_well_idx = well_distances.index(min_dist)
+            
+            # Only include points within the fixed radius of any well
+            if min_dist > fixed_influence_radius_km:
                 continue
             
-            # Apply distance-based attenuation from center
-            dist_factor = max(0.1, 1 - (dist_from_center / radius_km)**2)
+            # Calculate the distance factor (0-1) based on distance from well
+            # Use an exponential decay for smoother effect
+            # This makes intensity drop off sharply as you move away from a well
+            # but the distance is FIXED regardless of yield
+            distance_factor = np.exp(-3.0 * min_dist / fixed_influence_radius_km)
             
-            # Find distance to nearest actual well
-            nearest_well_dist = np.min(np.sqrt((grid_x[i] - x_coords)**2 + (grid_y[i] - y_coords)**2))
+            # Important: Final intensity combines:
+            # 1. Color from the well's yield (normalized_yields)
+            # 2. Intensity dropoff from distance (completely separate from yield)
+            color_intensity = normalized_yields[nearest_well_idx]
             
-            # Adjust intensity based on distance to nearest well
-            # Very important: Sharply reduce intensity for points far from any well
-            proximity_factor = np.exp(-nearest_well_dist / (max_influence_distance / 3))
-            
-            # Combine all factors
-            intensity = normalized_values[i] * dist_factor * proximity_factor
+            # Don't fade out color entirely, maintain at least 30% of the original color
+            final_intensity = color_intensity * (0.3 + 0.7 * distance_factor)
             
             # Skip very low intensity points
-            if intensity < 0.05:
+            if final_intensity < 0.05:
                 continue
                 
             # Add to heat map
             heat_data.append([
-                float(grid_lat_flat[i]), 
-                float(grid_lon_flat[i]), 
-                float(intensity)
+                float(grid_lat_point),
+                float(grid_lon_point),
+                float(final_intensity)
             ])
         
-        # Ensure actual well locations have correct intensity in the heatmap
-        # This is important to show exact well yields at their locations
-        for lat, lon, yield_val in zip(lats, lons, yields):
-            # Convert yield to normalized value
-            intensity = yield_val / max_val if max_val > 0 else 0.5
+        # Always add points directly at well locations to ensure they show correctly
+        for j in range(len(lats)):
+            lat = lats[j]
+            lon = lons[j]
             
-            # Check if within radius
-            dist_km = np.sqrt(
+            # Check if in search radius
+            dist_from_center_km = np.sqrt(
                 ((lat - center_lat) * 111.0)**2 + 
                 ((lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
             )
             
-            if dist_km <= radius_km:
-                # Add well point to heat map with adjusted intensity
-                heat_data.append([float(lat), float(lon), float(intensity)])
+            if dist_from_center_km <= radius_km:
+                heat_data.append([
+                    float(lat),
+                    float(lon),
+                    float(normalized_yields[j])  # Full intensity at exact well location
+                ])
         
         return heat_data
         
     except Exception as e:
         print(f"Interpolation error: {e}")
         
-        # Fall back to simple IDW interpolation
-        return fallback_interpolation(wells_df, center_point, radius_km, resolution)
+        # Fall back to simple visualization method
+        return fallback_interpolation(wells_df, center_point, radius_km)
 
 def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
     """
-    Simple fallback interpolation method using inverse distance weighting
-    with sharper distance decay
+    Simple fallback interpolation method that uses fixed radius around wells
+    with color based on yield
     """
     # Extract coordinates and yields
     lats = wells_df['latitude'].values.astype(float)
@@ -205,96 +182,111 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
     
     center_lat, center_lon = center_point
     
-    # Calculate bounding box
+    # Normalize yields for color only (not distance)
+    max_yield = np.max(yields) if yields.size > 0 and np.max(yields) > 0 else 1
+    min_yield = np.min(yields)
+    
+    # Scale colors from 0.2 to 1.0 for better visibility
+    if max_yield > min_yield:
+        normalized_yields = 0.2 + 0.8 * (yields - min_yield) / (max_yield - min_yield)
+    else:
+        normalized_yields = np.ones_like(yields) * 0.5
+    
+    # Heat map data collection
+    heat_data = []
+    
+    # Fixed parameters for all wells
+    fixed_radius_km = 2.0  # Each well has same 2km radius of influence
+    
+    # Create a simpler grid
+    grid_resolution = min(40, resolution)
+    
+    # Calculate area to cover
     lat_radius = radius_km / 111.0
     lon_radius = radius_km / (111.0 * np.cos(np.radians(float(center_lat))))
     
+    # Grid boundaries
     min_lat = center_lat - lat_radius
     max_lat = center_lat + lat_radius
     min_lon = center_lon - lon_radius
     max_lon = center_lon + lon_radius
     
-    # Create grid for interpolation
-    grid_lats = np.linspace(min_lat, max_lat, resolution)
-    grid_lons = np.linspace(min_lon, max_lon, resolution)
+    # Create grid
+    grid_lats = np.linspace(min_lat, max_lat, grid_resolution)
+    grid_lons = np.linspace(min_lon, max_lon, grid_resolution)
     grid_lat, grid_lon = np.meshgrid(grid_lats, grid_lons)
     
-    # Flatten grid for calculations
+    # Flatten grid
     grid_lat_flat = grid_lat.flatten()
     grid_lon_flat = grid_lon.flatten()
     
-    # Calculate a simple IDW interpolation with very sharp dropoff
-    heat_data = []
-    
-    # Parameters for a very sharp dropoff
-    power = 3.0  # Higher than standard IDW (2.0)
-    max_influence_km = 3.0  # Very limited influence radius
-    
+    # For each grid point
     for i in range(len(grid_lat_flat)):
         grid_point_lat = grid_lat_flat[i]
         grid_point_lon = grid_lon_flat[i]
         
-        # Skip points outside search radius
-        dist_from_center = np.sqrt(
+        # Skip if outside search radius
+        dist_from_center_km = np.sqrt(
             ((grid_point_lat - center_lat) * 111.0)**2 + 
             ((grid_point_lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
         )
         
-        if dist_from_center > radius_km:
+        if dist_from_center_km > radius_km:
             continue
         
-        # Calculate distances to all wells (in km)
-        weights = []
-        weight_sum = 0
-        value_sum = 0
+        # Find closest well
+        closest_well_idx = None
+        closest_dist = float('inf')
         
         for j in range(len(lats)):
-            # Calculate distance in km
-            dist = np.sqrt(
+            dist_km = np.sqrt(
                 ((grid_point_lat - lats[j]) * 111.0)**2 + 
                 ((grid_point_lon - lons[j]) * 111.0 * np.cos(np.radians(grid_point_lat)))**2
             )
             
-            # Apply very sharp distance cutoff
-            if dist > max_influence_km:
-                weight = 0
-            else:
-                # For points within influence, use inverse power law with exponential decay
-                weight = np.exp(-dist / (max_influence_km / 3)) / (dist + 0.1)**power
-            
-            weights.append(weight)
-            weight_sum += weight
-            value_sum += weight * yields[j]
+            if dist_km < closest_dist:
+                closest_dist = dist_km
+                closest_well_idx = j
         
-        # Calculate interpolated value
-        if weight_sum > 0:
-            interpolated_value = value_sum / weight_sum
+        # Skip if no wells in range or outside fixed radius
+        if closest_well_idx is None or closest_dist > fixed_radius_km:
+            continue
+        
+        # Color is from well yield
+        color_intensity = normalized_yields[closest_well_idx]
+        
+        # Distance factor (0=far, 1=at well location)
+        distance_factor = max(0, 1.0 - (closest_dist / fixed_radius_km))
+        
+        # Final intensity fades with distance but retains color from yield
+        final_intensity = color_intensity * distance_factor
+        
+        # Skip very low values
+        if final_intensity < 0.05:
+            continue
             
-            # Normalize to a 0-1 range using the max yield in the dataset
-            max_yield = np.max(yields) if np.max(yields) > 0 else 1
-            normalized_value = interpolated_value / max_yield
-            
-            # Apply distance-based attenuation from center
-            dist_factor = max(0.1, 1 - (dist_from_center / radius_km)**2)
-            
-            # Add point to heatmap if it has any significant value
-            intensity = normalized_value * dist_factor
-            if intensity > 0.05:
-                heat_data.append([float(grid_point_lat), float(grid_point_lon), float(intensity)])
+        # Add to heat map
+        heat_data.append([
+            float(grid_point_lat),
+            float(grid_point_lon),
+            float(final_intensity)
+        ])
     
-    # If we couldn't generate any heat map points, just use the actual well points
-    if not heat_data:
-        max_yield = np.max(yields) if np.max(yields) > 0 else 1
-        for i in range(len(lats)):
-            # Check if within search radius
-            dist_from_center = np.sqrt(
-                ((lats[i] - center_lat) * 111.0)**2 + 
-                ((lons[i] - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
-            )
-            
-            if dist_from_center <= radius_km:
-                normalized_yield = yields[i] / max_yield
-                heat_data.append([float(lats[i]), float(lons[i]), float(normalized_yield)])
+    # Always add the actual well points
+    for j in range(len(lats)):
+        # Check if in search radius
+        dist_from_center_km = np.sqrt(
+            ((lats[j] - center_lat) * 111.0)**2 + 
+            ((lons[j] - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
+        )
+        
+        if dist_from_center_km <= radius_km:
+            # Well points should have full color intensity
+            heat_data.append([
+                float(lats[j]),
+                float(lons[j]),
+                float(normalized_yields[j])
+            ])
     
     return heat_data
 

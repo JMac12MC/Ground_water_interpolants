@@ -68,46 +68,27 @@ add_banner()
 with st.sidebar:
     st.header("Data Options")
     
-    # Data source selection
-    data_source = st.radio(
-        "Select Data Source",
-        ["Sample Data", "NZ Government Data", "Custom Upload", "API Data"]
-    )
+    # Canterbury Wells Data Options
+    use_full_dataset = st.checkbox("Load all 56,498 Canterbury wells", 
+                                 value=False, 
+                                 help="Check to load the complete Canterbury dataset (slower but more comprehensive)")
     
-    if data_source == "Sample Data":
-        st.session_state.wells_data = load_sample_data()
-    elif data_source == "NZ Government Data":
-        # Add options for using full NZ dataset
-        use_full_dataset = st.checkbox("Load full dataset from NZ government API", value=False)
-        
-        if use_full_dataset:
-            st.info("When you select a location on the map, the app will fetch the latest well data around that point from the New Zealand government database.")
-        
-        # Check if we have a selected point for on-demand loading
-        if use_full_dataset and st.session_state.selected_point:
-            # Load data for the selected area
-            st.session_state.wells_data = load_nz_govt_data(
-                use_full_dataset=True,
-                search_center=st.session_state.selected_point,
-                search_radius_km=st.session_state.search_radius
-            )
-        else:
-            # Load cached data
-            st.session_state.wells_data = load_nz_govt_data(use_full_dataset=False)
-    elif data_source == "Custom Upload":
+    # Load Canterbury wells data
+    if st.session_state.wells_data is None:
+        with st.spinner("Loading Canterbury wells data..."):
+            st.session_state.wells_data = load_nz_govt_data(use_full_dataset=use_full_dataset)
+    elif 'use_full_dataset' not in st.session_state or st.session_state.use_full_dataset != use_full_dataset:
+        # Only reload if the dataset choice changed
+        with st.spinner(f"Loading {'all 56,498' if use_full_dataset else 'sample of'} Canterbury wells..."):
+            st.session_state.wells_data = load_nz_govt_data(use_full_dataset=use_full_dataset)
+            st.session_state.use_full_dataset = use_full_dataset
+    
+    # Advanced option for uploading custom data (hidden in expander)
+    with st.expander("Upload Custom Data (Optional)"):
         uploaded_file = st.file_uploader("Upload a CSV file with well data", type=["csv"])
         if uploaded_file is not None:
-            st.session_state.wells_data = load_custom_data(uploaded_file)
-    else:  # API Data
-        api_url = st.text_input("Enter API URL or type 'NZ' for New Zealand data")
-        api_key = st.text_input("API Key (if required)", type="password")
-        
-        if st.button("Fetch Data"):
-            if api_url:
-                st.session_state.wells_data = load_api_data(api_url, api_key)
-            else:
-                st.error("Please enter an API URL")
-                st.session_state.wells_data = load_sample_data()
+            with st.spinner("Loading custom data..."):
+                st.session_state.wells_data = load_custom_data(uploaded_file)
     
     st.header("Filters")
     
@@ -122,8 +103,13 @@ with st.sidebar:
     
     # Yield filter
     if st.session_state.wells_data is not None:
-        # Calculate max yield from data if available
-        max_data_yield = int(st.session_state.wells_data['yield_rate'].max()) + 100
+        # Calculate max yield from data if available, handling NaN values
+        valid_yield = st.session_state.wells_data['yield_rate'].dropna()
+        if len(valid_yield) > 0:
+            max_data_yield = int(valid_yield.max()) + 100
+        else:
+            max_data_yield = 1000  # Default if no valid yield data
+            
         min_yield, max_yield = st.slider(
             "Yield Rate Range (L/s)",
             min_value=0,

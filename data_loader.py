@@ -237,32 +237,43 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                 processed_df['longitude'] = (nzmgx - 2500000) / 85000 + 172
             
             # Add other important columns
-            processed_df['depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)
+            processed_df['depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce')
+            # Replace NaN values with zeros
+            processed_df['depth'] = processed_df['depth'].fillna(0)
             processed_df['depth_m'] = processed_df['depth']  # Ensure we have depth_m for UI consistency
             
             # Extract well type information
-            processed_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
-            processed_df['status'] = raw_df['WELL_STATUS_DESC'].fillna('Unknown')
+            processed_df['well_type'] = raw_df['WELL_TYPE_DESC'].astype(str).replace('nan', 'Unknown')
+            processed_df['status'] = raw_df['WELL_STATUS_DESC'].astype(str).replace('nan', 'Unknown')
             
             # Extract usage information if available
             if 'USE_CODE_1_DESC' in raw_df.columns:
-                processed_df['usage'] = raw_df['USE_CODE_1_DESC'].fillna('Unknown')
+                processed_df['usage'] = raw_df['USE_CODE_1_DESC'].astype(str).replace('nan', 'Unknown')
             
             # Extract yield information if available
             if 'MAX_YIELD' in raw_df.columns:
                 # Convert yield to liters per second (assuming it's already in l/s)
-                processed_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce').fillna(0)
+                processed_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
+                # Replace NaN values with zeros
+                processed_df['yield_rate'] = processed_df['yield_rate'].fillna(0)
             else:
                 # Generate realistic yields based on depth if not available
                 # This uses the correlation between depth and yield that is common in groundwater
                 st.info("Generating yield estimates based on well depth...")
                 
-                # Base yield on depth with some randomness
-                # Deeper wells often (but not always) have higher yields
-                base_yield = np.maximum(processed_df['depth'] / 10, 1)  # At least 1 l/s for non-zero depth
-                randomness = np.random.uniform(0.5, 1.5, size=len(processed_df))
-                processed_df['yield_rate'] = base_yield * randomness
-                processed_df.loc[processed_df['depth'] == 0, 'yield_rate'] = 0  # Zero yield for zero depth
+                # Base yield on depth with some randomness for wells with valid depths
+                depths = processed_df['depth'].values
+                # Create an empty array for yields
+                yields = np.zeros(len(depths))
+                
+                # Calculate only for wells with non-zero depths
+                valid_depths = depths > 0
+                # Generate reasonable yield values based on depths
+                yields[valid_depths] = (depths[valid_depths] / 10) * np.random.uniform(0.5, 1.5, size=sum(valid_depths))
+                # Apply a minimum 1 l/s for all valid wells
+                yields[valid_depths] = np.maximum(yields[valid_depths], 1.0)
+                
+                processed_df['yield_rate'] = yields
             
             # Add locality information if available
             if 'LOCALITY' in raw_df.columns:

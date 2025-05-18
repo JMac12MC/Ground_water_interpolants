@@ -10,7 +10,7 @@ from io import BytesIO
 import json
 from utils import get_distance
 
-def create_contour_json(wells_df, center_point=None, radius_km=None, min_yield=None, max_yield=None, num_points=100):
+def create_contour_json(wells_df, center_point, radius_km, min_yield=None, max_yield=None, num_points=80):
     """
     Generate contour data for an isopach map showing zones of equal yield values
     using scipy's griddata for interpolation.
@@ -54,35 +54,13 @@ def create_contour_json(wells_df, center_point=None, radius_km=None, min_yield=N
     if len(wells_df) < 3:
         return None
     
-    # If center point not provided, use center of all well points
-    if center_point is None:
-        center_lat = np.mean(lats)
-        center_lon = np.mean(lons)
-    else:
-        center_lat, center_lon = center_point
-    
-    # If radius not provided, calculate appropriate radius to cover all or most wells
-    if radius_km is None:
-        # Calculate distances from center to all points
-        distances = []
-        for lat, lon in zip(lats, lons):
-            distance = np.sqrt(((lat - center_lat) * 111.0)**2 + 
-                             ((lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2)
-            distances.append(distance)
-        
-        # Use a radius that includes most wells (95th percentile)
-        if distances:
-            radius_km = np.percentile(distances, 95)
-            # Make sure radius is reasonable (between 5km and 50km)
-            radius_km = max(5.0, min(50.0, radius_km))
-        else:
-            radius_km = 10.0  # Default if no wells
+    center_lat, center_lon = center_point
     
     # Calculate area to cover
     lat_radius = radius_km / 111.0
     lon_radius = radius_km / (111.0 * np.cos(np.radians(float(center_lat))))
     
-    # Grid boundaries (square grid that encompasses the region)
+    # Grid boundaries (square grid that encompasses the circular search area)
     min_lat = center_lat - lat_radius
     max_lat = center_lat + lat_radius
     min_lon = center_lon - lon_radius

@@ -1,16 +1,14 @@
 import streamlit as st
 import folium
-from folium.plugins import HeatMap, Draw
-from streamlit_folium import folium_static, st_folium
+from folium.plugins import HeatMap, MarkerCluster
+from streamlit_folium import folium_static
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import base64
-import json
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-import isopach
+import interpolation
 
 # Set page configuration
 st.set_page_config(
@@ -35,359 +33,534 @@ def get_color_for_yield(yield_value, min_yield, max_yield, color_gradient):
 # Banner image with opacity overlay and text
 def add_banner():
     banner_images = [
-        "https://pixabay.com/get/g05c0207a49d5248437f5982142626c75f1162b7b70bae40f24f9443b8711ff5e6d01382ef3f33d395a3abb0c6ee2d19776e986dcb5bd1ea9ae5c913e2832ab7e_1280.jpg",
-        "https://pixabay.com/get/g3dd7957e8d30d47521b260f1654a0dcffa87f6fd6a8ebaa4f8ba72de270754f6b1ad015b8bc19b503cbd5c12dfe935d4ab5c547948cecf08e4ded91ba49dce79_1280.jpg",
-        "https://pixabay.com/get/gb0bac1d41113e673a752c7a7148ed0ce5da8bc08c2dc48d6b5885b642d028f37a3ca9e7d4f79e4a8f326bab54c3160f53ccb8cf20cb1c9fbc2b3bba86216a20f_1280.jpg"
+        "https://pixabay.com/get/gada6da50f8fe938c58e71fb0d6fc33a6632c13da22335a91dd19c2a5fd0ef2c5e979f40f7f3a8ab79ad042d24833ba939cb86bc84ff82ba4d9bd16d955f1eb7f_1280.jpg",
+        "https://pixabay.com/get/g63e0006de12468c63fb460735538cca31a25230485a1a484ee5d4c7e23b10ed776f67120aa02d58917ac890ebc718d8cda8e94be7a8954a7a00d3195175771a6_1280.jpg",
+        "https://pixabay.com/get/gd84f75e8a71451844bca377d1f6579972a80b3c67d0565fdb32dc7c3004de061fecb4dfae7ccd12baf3df11a5eed41b44d98c9bb28c11a5c078a6935c88d3448_1280.jpg"
     ]
     
-    # Use the first image for the banner
-    banner_html = f"""
-    <div style="position: relative; text-align: center; color: white;">
-        <img src="{banner_images[0]}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 10px;">
-        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); border-radius: 10px;"></div>
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%;">
-            <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">Groundwater Finder</h1>
-            <p style="font-size: 1.2rem;">A data-driven approach to locating groundwater resources</p>
+    st.markdown(
+        f"""
+        <div style="position: relative; margin-bottom: 30px;">
+            <img src="{banner_images[0]}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 10px;">
+            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.4); border-radius: 10px;"></div>
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: white;">
+                <h1 style="font-size: 2.5rem; font-weight: bold; margin-bottom: 0;">Groundwater Finder</h1>
+                <p style="font-size: 1.2rem;">Helping farmers locate water resources using scientific data</p>
+            </div>
         </div>
-    </div>
-    """
-    st.markdown(banner_html, unsafe_allow_html=True)
+        """, 
+        unsafe_allow_html=True
+    )
 
 # Initialize session state variables
 if 'selected_point' not in st.session_state:
     st.session_state.selected_point = None
+if 'zoom_level' not in st.session_state:
+    st.session_state.zoom_level = 10
 if 'wells_data' not in st.session_state:
     st.session_state.wells_data = None
 if 'filtered_wells' not in st.session_state:
     st.session_state.filtered_wells = None
-if 'search_radius' not in st.session_state:
-    st.session_state.search_radius = 5.0  # Default radius in km
-if 'zoom_level' not in st.session_state:
-    st.session_state.zoom_level = 10
-if 'min_yield' not in st.session_state:
-    st.session_state.min_yield = 0.0
-if 'max_yield' not in st.session_state:
-    st.session_state.max_yield = 100.0
 if 'heat_map_visibility' not in st.session_state:
     st.session_state.heat_map_visibility = True
-if 'show_isopach' not in st.session_state:
-    st.session_state.show_isopach = True  # Show isopach map by default
+if 'well_markers_visibility' not in st.session_state:
+    st.session_state.well_markers_visibility = True
+if 'search_radius' not in st.session_state:
+    st.session_state.search_radius = 10
+if 'min_yield' not in st.session_state:
+    st.session_state.min_yield = 0
+if 'max_yield' not in st.session_state:
+    st.session_state.max_yield = 1000
+if 'selected_well' not in st.session_state:
+    st.session_state.selected_well = None
 
-# Handle when user clicks on the map
-def handle_map_click(event_data):
-    st.session_state.selected_point = [event_data["lat"], event_data["lng"]]
-    st.rerun()
+# Add banner
+add_banner()
 
-# Define color gradient for yield visualization
-gradient = {
-    0.0: 'blue',    # Lowest yield
-    0.2: 'cyan',    # Low yield 
-    0.4: 'green',   # Moderate yield
-    0.6: 'yellow',  # Good yield
-    0.8: 'orange',  # High yield
-    1.0: 'red'      # Highest yield
-}
-
-# Main app
-def main():
-    add_banner()
+# Sidebar - for options and filters
+with st.sidebar:
+    st.header("Data Options")
     
-    # Sidebar configuration
-    st.sidebar.header("Configuration")
-    
-    # Data source selector
-    data_source = st.sidebar.selectbox(
+    # Data source selection
+    data_source = st.radio(
         "Select Data Source",
-        ["New Zealand Sample Data", "Custom CSV Upload", "API Data"]
+        ["Sample Data", "NZ Government Data", "Custom Upload", "API Data"]
     )
     
-    # Load the appropriate data based on selected source
-    if data_source == "New Zealand Sample Data":
-        if st.session_state.wells_data is None:
-            with st.sidebar.status("Loading sample data..."):
-                st.session_state.wells_data = load_nz_govt_data()
-    
-    elif data_source == "Custom CSV Upload":
-        uploaded_file = st.sidebar.file_uploader("Upload Well Data CSV", type=["csv"])
-        if uploaded_file:
-            try:
-                st.session_state.wells_data = load_custom_data(uploaded_file)
-                st.sidebar.success(f"Loaded {len(st.session_state.wells_data)} wells from CSV")
-            except Exception as e:
-                st.sidebar.error(f"Error loading CSV: {e}")
-    
-    elif data_source == "API Data":
-        api_url = st.sidebar.text_input("API URL")
-        api_key = st.sidebar.text_input("API Key (if required)", type="password")
+    if data_source == "Sample Data":
+        st.session_state.wells_data = load_sample_data()
+    elif data_source == "NZ Government Data":
+        # Load the New Zealand government well data
+        st.session_state.wells_data = load_nz_govt_data()
+    elif data_source == "Custom Upload":
+        uploaded_file = st.file_uploader("Upload a CSV file with well data", type=["csv"])
+        if uploaded_file is not None:
+            st.session_state.wells_data = load_custom_data(uploaded_file)
+    else:  # API Data
+        api_url = st.text_input("Enter API URL or type 'NZ' for New Zealand data")
+        api_key = st.text_input("API Key (if required)", type="password")
         
-        if api_url and st.sidebar.button("Fetch Data"):
-            try:
-                with st.sidebar.status("Fetching data from API..."):
-                    st.session_state.wells_data = load_api_data(api_url, api_key)
-                st.sidebar.success(f"Loaded {len(st.session_state.wells_data)} wells from API")
-            except Exception as e:
-                st.sidebar.error(f"Error fetching API data: {e}")
+        if st.button("Fetch Data"):
+            if api_url:
+                st.session_state.wells_data = load_api_data(api_url, api_key)
+            else:
+                st.error("Please enter an API URL")
+                st.session_state.wells_data = load_sample_data()
     
-    # Yield range filter
-    st.sidebar.subheader("Yield Filter")
-    min_yield, max_yield = st.sidebar.slider(
-        "Yield Range (L/s)",
-        0.0, 100.0, (st.session_state.min_yield, st.session_state.max_yield)
-    )
-    st.session_state.min_yield = min_yield
-    st.session_state.max_yield = max_yield
+    st.header("Filters")
     
-    # Search radius configuration
-    st.sidebar.subheader("Search Radius")
-    search_radius = st.sidebar.slider(
+    # Radius filter
+    st.session_state.search_radius = st.slider(
         "Search Radius (km)",
-        1.0, 20.0, st.session_state.search_radius
+        min_value=1,
+        max_value=50,
+        value=st.session_state.search_radius,
+        step=1
     )
-    st.session_state.search_radius = search_radius
     
-    # Visualization options
-    st.sidebar.subheader("Visualization")
+    # Yield filter
+    if st.session_state.wells_data is not None:
+        # Calculate max yield from data if available
+        max_data_yield = int(st.session_state.wells_data['yield_rate'].max()) + 100
+        min_yield, max_yield = st.slider(
+            "Yield Rate Range (L/s)",
+            min_value=0,
+            max_value=max_data_yield,
+            value=(st.session_state.min_yield, min(st.session_state.max_yield, max_data_yield))
+        )
+        st.session_state.min_yield = min_yield
+        st.session_state.max_yield = max_yield
     
-    # Toggle for isopach visualization (one single control)
-    show_isopach = st.sidebar.checkbox(
-        "Show Yield Isopach Map", 
-        value=st.session_state.show_isopach,
-        help="Display interpolated yield contours across the entire area"
-    )
-    st.session_state.show_isopach = show_isopach
-    st.session_state.heat_map_visibility = show_isopach  # Keep both in sync
+    # Visibility options
+    st.header("Display Options")
+    st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
+    st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
+    
+    # Add some guidance info for farmers
+    st.header("About This Tool")
+    st.info("""
+    This tool helps you find potential groundwater locations by:
+    
+    1. Showing existing wells near your location
+    2. Creating a heat map of water yield
+    3. Providing data on depth and flow rates
+    
+    Click anywhere on the map to analyze that location.
+    """)
     
     # Add well drilling image
     st.image("https://pixabay.com/get/g3dd7957e8d30d47521b260f1654a0dcffa87f6fd6a8ebaa4f8ba72de270754f6b1ad015b8bc19b503cbd5c12dfe935d4ab5c547948cecf08e4ded91ba49dce79_1280.jpg", 
              caption="Water well drilling", use_column_width=True)
 
-    # Main content area
-    main_col1, main_col2 = st.columns([3, 1])
+# Main content area
+main_col1, main_col2 = st.columns([3, 1])
 
-    with main_col1:
-        # Default location (New Zealand as example)
-        default_location = [-43.5320, 172.6306]  # Christchurch, New Zealand
+with main_col1:
+    # Default location (New Zealand as example)
+    default_location = [-43.5320, 172.6306]  # Christchurch, New Zealand
+    
+    # Create map centered at default location
+    if st.session_state.selected_point:
+        center_location = st.session_state.selected_point
+    else:
+        center_location = default_location
+    
+    m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
+                  tiles="OpenStreetMap")
+    
+    # Add location search functionality
+    st.subheader("Search Location")
+    location_input = st.text_input("Enter address or coordinates (lat, lng)")
+    search_button = st.button("Search")
+    
+    if search_button and location_input:
+        try:
+            # Check if input is coordinates
+            if ',' in location_input:
+                parts = location_input.split(',')
+                if len(parts) == 2:
+                    try:
+                        lat = float(parts[0].strip())
+                        lng = float(parts[1].strip())
+                        st.session_state.selected_point = [lat, lng]
+                        st.rerun()
+                    except ValueError:
+                        st.error("Invalid coordinate format. Please use 'latitude, longitude'")
+            else:
+                # This would normally use a geocoding service
+                st.warning("Address search requires API integration (coming soon)")
+        except Exception as e:
+            st.error(f"Error searching location: {e}")
+    
+    # Process wells data if available
+    if st.session_state.wells_data is not None:
+        wells_df = st.session_state.wells_data
         
-        # Create map centered at default location
+        # Filter based on yield if selected point exists
         if st.session_state.selected_point:
-            center_location = st.session_state.selected_point
-        else:
-            center_location = default_location
-        
-        # Create map with interactive capabilities
-        m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
-                      tiles="OpenStreetMap")
-        
-        # No need for a second toggle since we already have one in the sidebar
-        
-        # Add location search functionality
-        st.subheader("Search Location")
-        location_input = st.text_input("Enter address or coordinates (lat, lng)")
-        search_button = st.button("Search")
-        
-        if search_button and location_input:
-            try:
-                # Check if input is coordinates
-                if ',' in location_input:
-                    parts = location_input.split(',')
-                    if len(parts) == 2:
-                        try:
-                            lat = float(parts[0].strip())
-                            lng = float(parts[1].strip())
-                            st.session_state.selected_point = [lat, lng]
-                            st.rerun()
-                        except ValueError:
-                            st.error("Invalid coordinate format. Please use 'latitude, longitude'")
-                else:
-                    # This would normally use a geocoding service
-                    st.warning("Address search requires API integration (coming soon)")
-            except Exception as e:
-                st.error(f"Error searching location: {e}")
-        
-        # Process wells data if available
-        if st.session_state.wells_data is not None:
-            wells_df = st.session_state.wells_data
+            # Calculate distances from selected point
+            wells_df['distance'] = wells_df.apply(
+                lambda row: get_distance(
+                    st.session_state.selected_point[0], 
+                    st.session_state.selected_point[1], 
+                    row['latitude'], 
+                    row['longitude']
+                ), 
+                axis=1
+            )
             
-            # Create feature group for wells
-            wells_group = folium.FeatureGroup(name="Wells")
+            # Apply filters
+            filtered_wells = wells_df[
+                (wells_df['distance'] <= st.session_state.search_radius) & 
+                (wells_df['yield_rate'] >= st.session_state.min_yield) & 
+                (wells_df['yield_rate'] <= st.session_state.max_yield)
+            ]
             
-            # Generate the global isopach map first (if enabled)
-            if st.session_state.show_isopach and st.session_state.heat_map_visibility:
-                # Generate smooth contours for the entire dataset
-                contour_layer = isopach.create_smooth_contours(
-                    wells_df,
-                    center_point=None,  # Auto-center based on well locations
-                    radius_km=None,     # Auto-radius to cover reasonable area
-                    min_yield=st.session_state.min_yield,
-                    max_yield=st.session_state.max_yield,
-                    num_points=200      # Higher resolution for smoother contours
-                )
-                
-                # Add smooth continuous contours to the map
-                if contour_layer:
-                    isopach.add_contour_to_map(m, contour_layer, name="Groundwater Yield Map")
+            st.session_state.filtered_wells = filtered_wells
             
-            # Filter based on yield if selected point exists
-            if st.session_state.selected_point:
-                # Calculate distances from selected point
-                wells_df['distance'] = wells_df.apply(
-                    lambda row: get_distance(
-                        st.session_state.selected_point[0], 
-                        st.session_state.selected_point[1], 
-                        row['latitude'], 
-                        row['longitude']
-                    ), 
-                    axis=1
-                )
+            # Create marker for selected point
+            folium.Marker(
+                location=st.session_state.selected_point,
+                popup="Selected Location",
+                icon=folium.Icon(color='red', icon='crosshairs', prefix='fa'),
+                tooltip="Your Selected Point"
+            ).add_to(m)
+            
+            # Draw circle for search radius
+            folium.Circle(
+                location=st.session_state.selected_point,
+                radius=st.session_state.search_radius * 1000,  # Convert km to meters
+                color="#3186cc",
+                fill=True,
+                fill_color="#3186cc",
+                fill_opacity=0.1
+            ).add_to(m)
+            
+            # Add yield visualization using isopach-style mapping
+            if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
+                # Create a feature group for the yield visualization
+                yield_group = folium.FeatureGroup(name="Yield Visualization")
                 
-                # Apply filters
-                filtered_wells = wells_df[
-                    (wells_df['distance'] <= st.session_state.search_radius) & 
-                    (wells_df['yield_rate'] >= st.session_state.min_yield) & 
-                    (wells_df['yield_rate'] <= st.session_state.max_yield)
-                ]
+                # Define color scheme for yield values
+                gradient = {
+                    0.0: 'blue',    # Lowest yield
+                    0.2: 'cyan',    # Low yield 
+                    0.4: 'green',   # Moderate yield
+                    0.6: 'yellow',  # Good yield
+                    0.8: 'orange',  # High yield
+                    1.0: 'red'      # Highest yield
+                }
                 
-                st.session_state.filtered_wells = filtered_wells
+                # Define yield boundaries
+                yield_min = st.session_state.min_yield
+                yield_max = st.session_state.max_yield
+                yield_range = yield_max - yield_min
                 
-                # Create marker for selected point
-                folium.Marker(
-                    location=st.session_state.selected_point,
-                    popup="Selected Location",
-                    icon=folium.Icon(color='red', icon='crosshairs', prefix='fa'),
-                    tooltip="Your Selected Point"
-                ).add_to(m)
-                
-                # Draw circle for search radius
-                folium.Circle(
-                    location=st.session_state.selected_point,
-                    radius=st.session_state.search_radius * 1000,  # Convert km to meters
-                    color="#3186cc",
-                    fill=True,
-                    fill_color="#3186cc",
-                    fill_opacity=0.1
-                ).add_to(m)
-                
-                # Calculate well statistics for the clicked location
-                stats = isopach.get_well_stats(
-                    wells_df, 
-                    st.session_state.selected_point[0],
-                    st.session_state.selected_point[1],
-                    st.session_state.search_radius
-                )
-                
-                # Display statistics in the sidebar
-                with main_col2:
-                    st.subheader("Well Statistics")
-                    st.write(f"**Wells Found:** {stats['well_count']}")
-                    st.write(f"**Average Yield:** {stats['avg_yield']} L/s")
-                    st.write(f"**Maximum Yield:** {stats['max_yield']} L/s")
-                    st.write(f"**Average Depth:** {stats['avg_depth']} m")
-                    st.write(f"**Predicted Yield:** {stats['predicted_yield']} L/s")
+                try:
+                    # Generate isopach contour map using smooth interpolation
+                    contour_json = interpolation.create_contour_json(
+                        filtered_wells,
+                        st.session_state.selected_point,
+                        st.session_state.search_radius,
+                        yield_min,
+                        yield_max,
+                        num_points=100  # Higher resolution for smoother contours
+                    )
                     
-                    # Colored indicator based on predicted yield
-                    if stats['predicted_yield'] > 0:
-                        norm_yield = (stats['predicted_yield'] - st.session_state.min_yield) / (st.session_state.max_yield - st.session_state.min_yield)
-                        norm_yield = max(0.0, min(1.0, norm_yield))
+                    if contour_json is not None:
+                        # Add isopach contours to the map as filled polygons
+                        # Define style function for the contours based on yield value
+                        style_function = lambda feature: {
+                            'fillColor': get_color_for_yield(
+                                feature['properties']['yield_value'], 
+                                yield_min, 
+                                yield_max, 
+                                gradient
+                            ),
+                            'color': 'black',
+                            'weight': 0.5,
+                            'fillOpacity': 0.7,
+                        }
                         
-                        # Find color for this yield value
+                        # Add tooltip to show yield value on hover
+                        tooltip = folium.GeoJsonTooltip(
+                            fields=['yield_value'],
+                            aliases=['Yield (L/s):'],
+                            localize=True,
+                            sticky=False,
+                            labels=True,
+                            style="""
+                                background-color: #F0EFEF;
+                                border: 1px solid black;
+                                border-radius: 3px;
+                                box-shadow: 3px 3px 3px rgba(0,0,0,0.25);
+                            """
+                        )
+                        
+                        # Add the GeoJSON contours to the map
+                        folium.GeoJson(
+                            data=contour_json,
+                            name='Yield Contours',
+                            style_function=style_function,
+                            tooltip=tooltip,
+                            overlay=True
+                        ).add_to(yield_group)
+                    
+                    # Add the actual wells with their yield values
+                    for _, row in filtered_wells.iterrows():
+                        # Calculate normalized yield for consistent colors
+                        norm_yield = (row['yield_rate'] - yield_min) / yield_range if yield_range > 0 else 0.5
+                        norm_yield = min(1.0, max(0.0, norm_yield))
+                        
+                        # Find the closest color in our gradient
                         closest_key = min(gradient.keys(), key=lambda x: abs(x - norm_yield))
                         color = gradient[closest_key]
                         
-                        # Show colored indicator
-                        st.markdown(f"""
-                        <div style="background-color: {color}; width: 100%; height: 20px; 
-                                    border-radius: 5px; margin-top: 10px;"></div>
-                        <p style="text-align: center; margin-top: 5px;">Yield Potential Indicator</p>
-                        """, unsafe_allow_html=True)
-                
-                # Show filtered wells info
-                if not filtered_wells.empty:
-                    st.write(f"Found {len(filtered_wells)} wells within {st.session_state.search_radius} km.")
+                        # Add well as a larger circle marker
+                        folium.CircleMarker(
+                            location=[float(row['latitude']), float(row['longitude'])],
+                            radius=8,
+                            color='black',
+                            fill=True,
+                            fill_color=color,
+                            fill_opacity=0.8,
+                            weight=1,
+                            popup=f"""
+                            <b>Well ID:</b> {row['well_id']}<br>
+                            <b>Yield:</b> {row['yield_rate']:.1f} L/s<br>
+                            <b>Depth:</b> {row['depth']:.1f} m
+                            """
+                        ).add_to(yield_group)
                     
-                    # Offer download option for filtered wells
-                    if st.button("Download Filtered Wells Data"):
-                        csv_data = download_as_csv(filtered_wells)
-                        st.download_button(
-                            label="Download CSV",
-                            data=csv_data,
-                            file_name="filtered_wells.csv",
-                            mime="text/csv"
-                        )
-                else:
-                    st.write("No wells found in the selected area.")
-            
-            # Add all wells to the map (with different colors based on yield)
-            for _, row in wells_df.iterrows():
-                # Skip wells outside the yield filter range
-                if row['yield_rate'] < st.session_state.min_yield or row['yield_rate'] > st.session_state.max_yield:
-                    continue
+                    # Create a legend for the yield classes
+                    steps = 5
+                    legend_html = """
+                    <div style="position: fixed; bottom: 50px; left: 50px; background-color: white; 
+                                padding: 10px; border: 1px solid grey; z-index: 9999; border-radius: 5px;">
+                        <h4 style="margin-top: 0;">Yield (L/s)</h4>
+                    """
                     
-                # Normalize the yield value for color selection
-                norm_yield = (row['yield_rate'] - st.session_state.min_yield) / (st.session_state.max_yield - st.session_state.min_yield)
-                norm_yield = min(1.0, max(0.0, norm_yield))
+                    for i in range(steps):
+                        start_yield = yield_min + (yield_range * i / steps)
+                        end_yield = yield_min + (yield_range * (i+1) / steps)
+                        norm_val = i / (steps - 1) if steps > 1 else 0.5
+                        closest_key = min(gradient.keys(), key=lambda x: abs(x - norm_val))
+                        color = gradient[closest_key]
+                        
+                        legend_html += f"""
+                        <div style="display: flex; align-items: center; margin: 3px 0;">
+                            <div style="width: 20px; height: 20px; background-color: {color}; margin-right: 5px;"></div>
+                            <span>{start_yield:.1f} - {end_yield:.1f}</span>
+                        </div>
+                        """
+                    
+                    legend_html += "</div>"
+                    
+                    # Add the legend to the map
+                    yield_group.add_child(folium.Element(legend_html))
+                    
+                    # Add yield group to the map
+                    yield_group.add_to(m)
                 
-                # Get the closest color from our gradient
-                closest_key = min(gradient.keys(), key=lambda x: abs(x - norm_yield))
-                color = gradient[closest_key]
+                except Exception as e:
+                    st.error(f"Error generating yield visualization: {e}")
                 
-                # Create circle marker for the well
-                folium.CircleMarker(
-                    location=[float(row['latitude']), float(row['longitude'])],
-                    radius=5,
-                    color='black',
-                    weight=1,
-                    fill=True,
-                    fill_color=color,
-                    fill_opacity=0.8,
-                    tooltip=f"Well ID: {row['well_id']}<br>Yield: {row['yield_rate']:.1f} L/s"
-                ).add_to(wells_group)
+                # Add visualization legend matching the heat map gradient
+                colormap = folium.LinearColormap(
+                    colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
+                    vmin=st.session_state.min_yield,
+                    vmax=st.session_state.max_yield,
+                    caption='Estimated Water Yield (L/s)'
+                )
+                colormap.add_to(m)
             
-            # Add wells group to the map
-            wells_group.add_to(m)
-            
-            # Add layer control to toggle layers
-            folium.LayerControl().add_to(m)
+            # Add ALL wells to the map as dots, not just filtered ones
+            if st.session_state.well_markers_visibility:
+                # Add ALL wells as small dots
+                all_wells_layer = folium.FeatureGroup(name="All Wells").add_to(m)
+                
+                # Create markers for all wells (small markers)
+                for idx, row in wells_df.iterrows():
+                    # Use a smaller CircleMarker for all wells
+                    folium.CircleMarker(
+                        location=(float(row['latitude']), float(row['longitude'])),
+                        radius=3,  # Small dot
+                        color='gray',
+                        fill=True,
+                        fill_color='darkblue',
+                        fill_opacity=0.7,
+                        tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s"
+                    ).add_to(all_wells_layer)
+                
+                # Add filtered wells with more details
+                if isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
+                    marker_cluster = MarkerCluster(name="Filtered Wells").add_to(m)
+                    
+                    for idx, row in filtered_wells.iterrows():
+                        # Create popup content with well information
+                        popup_content = f"""
+                        <b>Well ID:</b> {row['well_id']}<br>
+                        <b>Depth:</b> {row['depth']} m<br>
+                        <b>Yield Rate:</b> {row['yield_rate']} L/s<br>
+                        <b>Distance:</b> {row['distance']:.2f} km<br>
+                        <button onclick="
+                            parent.postMessage({{
+                                type: 'streamlit:setComponentValue', 
+                                value: '{row['well_id']}'
+                            }}, '*');
+                        ">View Details</button>
+                        """
+                        
+                        # Create marker with popup
+                        folium.Marker(
+                            location=(float(row['latitude']), float(row['longitude'])),
+                            popup=folium.Popup(popup_content, max_width=300),
+                            tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s",
+                            icon=folium.Icon(color='blue', icon='tint', prefix='fa')
+                        ).add_to(marker_cluster)
         
-        # Add the click handler to update the selected point
-        m.add_child(folium.LatLngPopup())
+        # Add click event to capture coordinates (only need this once)
+        folium.LatLngPopup().add_to(m)
         
-        # Use st_folium to enable map click events
-        map_data = st_folium(m, width=800, height=600, key="main_map")
+        # Add a simple click handler that manually tracks clicks
+        folium.LayerControl().add_to(m)
         
-        # Handle map click events
-        if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
-            # Extract coordinates from click
-            clicked_lat = map_data["last_clicked"]["lat"]
-            clicked_lng = map_data["last_clicked"]["lng"]
-            
-            # Update selected point and trigger rerun
-            st.session_state.selected_point = [clicked_lat, clicked_lng]
-            st.rerun()
-        # This duplicate code is removed
+        # Create a custom click handler
+        from folium.plugins import MousePosition
+        MousePosition().add_to(m)
     
-    # Right column for displaying well information
-    with main_col2:
-        if st.session_state.selected_point is None:
-            st.info("Click on the map to select a location")
+    # Display the map
+    st.subheader("Interactive Map")
+    st.caption("Click on the map to select a location or use the search box above")
+    
+    # Use st_folium instead of folium_static to capture clicks
+    from streamlit_folium import st_folium
+    
+    # Make sure we disable folium_static's existing click handlers
+    m.add_child(folium.Element("""
+    <script>
+    // Clear any existing click handlers
+    </script>
+    """))
+    
+    # Use st_folium with return_clicked_latlon to get click coordinates
+    map_data = st_folium(m, width=800, zoom=st.session_state.zoom_level, 
+                       key="interactive_map", returned_objects=["last_clicked"])
+    
+    # Process clicks from the map
+    if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+        # Get the coordinates from the click
+        clicked_lat = map_data["last_clicked"]["lat"]
+        clicked_lng = map_data["last_clicked"]["lng"]
         
-        if st.session_state.wells_data is not None and not st.session_state.wells_data.empty:
-            st.subheader("All Wells Overview")
-            st.write(f"Total wells in dataset: {len(st.session_state.wells_data)}")
-            
-            # Basic statistics
-            yield_mean = st.session_state.wells_data['yield_rate'].mean()
-            yield_max = st.session_state.wells_data['yield_rate'].max()
-            
-            st.write(f"Average yield: {yield_mean:.2f} L/s")
-            st.write(f"Maximum yield: {yield_max:.2f} L/s")
-            
-            # Basic histogram of yield distribution
-            if st.checkbox("Show Yield Distribution"):
-                fig, ax = plt.subplots(figsize=(4, 3))
-                st.session_state.wells_data['yield_rate'].hist(bins=20, ax=ax)
-                ax.set_xlabel('Yield (L/s)')
-                ax.set_ylabel('Number of Wells')
-                st.pyplot(fig)
+        # Update session state with the new coordinates
+        st.session_state.selected_point = [clicked_lat, clicked_lng]
+        st.rerun()
+    
+    # Add manual coordinate selection
+    st.subheader("Manually Select Coordinates")
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        latitude = st.number_input("Latitude", value=default_location[0], format="%.6f")
+    with col2:
+        longitude = st.number_input("Longitude", value=default_location[1], format="%.6f")
+    
+    button_col1, button_col2 = st.columns(2)
+    with button_col1:
+        if st.button("Set Location", use_container_width=True):
+            st.session_state.selected_point = [latitude, longitude]
+            st.rerun()
+    
+    with button_col2:
+        if st.button("Clear Results", use_container_width=True):
+            # Reset the session state
+            st.session_state.selected_point = None
+            st.session_state.filtered_wells = None
+            st.session_state.selected_well = None
+            st.rerun()
 
-if __name__ == "__main__":
-    main()
+with main_col2:
+    st.subheader("Analysis Results")
+    
+    if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
+        # Show summary stats
+        st.write(f"**Wells found:** {len(st.session_state.filtered_wells)}")
+        
+        avg_yield = st.session_state.filtered_wells['yield_rate'].mean()
+        max_yield = st.session_state.filtered_wells['yield_rate'].max()
+        avg_depth = st.session_state.filtered_wells['depth'].mean()
+        
+        st.write(f"**Average Yield:** {avg_yield:.2f} L/s")
+        st.write(f"**Maximum Yield:** {max_yield:.2f} L/s")
+        st.write(f"**Average Depth:** {avg_depth:.2f} m")
+        
+        # Add visualization image
+        st.image("https://pixabay.com/get/gb0bac1d41113e673a752c7a7148ed0ce5da8bc08c2dc48d6b5885b642d028f37a3ca9e7d4f79e4a8f326bab54c3160f53ccb8cf20cb1c9fbc2b3bba86216a20f_1280.jpg", 
+                 caption="Groundwater visualization", use_column_width=True)
+        
+        # Show detailed well info if selected
+        if st.session_state.selected_well:
+            well_details = st.session_state.filtered_wells[
+                st.session_state.filtered_wells['well_id'] == st.session_state.selected_well
+            ]
+            
+            if isinstance(well_details, pd.DataFrame) and not well_details.empty:
+                well = well_details.iloc[0]
+                st.subheader(f"Well {well['well_id']} Details")
+                
+                details_col1, details_col2 = st.columns(2)
+                
+                with details_col1:
+                    st.write(f"**Latitude:** {well['latitude']}")
+                    st.write(f"**Depth:** {well['depth']} m")
+                    st.write(f"**Status:** {well['status']}")
+                
+                with details_col2:
+                    st.write(f"**Longitude:** {well['longitude']}")
+                    st.write(f"**Yield Rate:** {well['yield_rate']} L/s")
+                    st.write(f"**Distance:** {well['distance']:.2f} km")
+                
+                # Clear selection button
+                if st.button("Close Well Details"):
+                    st.session_state.selected_well = None
+                    st.rerun()
+        
+        # Add export data option
+        st.subheader("Export Data")
+        if st.button("Download Wells Data"):
+            csv_data = download_as_csv(st.session_state.filtered_wells)
+            st.download_button(
+                label="Download CSV",
+                data=csv_data,
+                file_name="nearby_wells.csv",
+                mime="text/csv"
+            )
+    elif st.session_state.selected_point:
+        st.warning("No wells found in the selected area with current filters. Try increasing the search radius or adjusting yield filters.")
+    else:
+        st.info("Click on the map to select a location and view nearby wells")
+        
+        # Add information about water well drilling
+        st.subheader("Finding Groundwater")
+        st.write("""
+        Traditional methods like water divining lack scientific basis. Our tool uses actual well data 
+        to help you make informed decisions about where to drill based on:
+        
+        * Proximity to existing successful wells
+        * Water yield patterns in your area
+        * Depth trends for accessing groundwater
+        
+        The heat map shows areas where higher yields are likely based on interpolation of existing data.
+        """)
+        
+        # Additional info image
+        st.image("https://pixabay.com/get/g05c0207a49d5248437f5982142626c75f1162b7b70bae40f24f9443b8711ff5e6d01382ef3f33d395a3abb0c6ee2d19776e986dcb5bd1ea9ae5c913e2832ab7e_1280.jpg", 
+                 caption="Water well drilling equipment", use_column_width=True)
+
+# Add footer
+st.markdown("""
+<div style="text-align: center; margin-top: 40px; padding: 20px; background-color: #f0f2f6; border-radius: 10px;">
+    <p>© 2023 Groundwater Finder | Data sourced from public well databases</p>
+    <p>This tool is designed to assist farmers in locating potential groundwater sources. Results are based on existing data and interpolation techniques.</p>
+</div>
+""", unsafe_allow_html=True)

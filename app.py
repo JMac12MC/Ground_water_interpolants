@@ -231,10 +231,11 @@ with main_col1:
                     st.session_state.search_radius
                 )
                 
-                # Updated gradient colors where red = high yield (not distance)
+                # Fixed gradient for isopach-style map visualization
+                # Use actual yield values to determine colors regardless of zoom level
                 gradient = {
                     0.0: 'blue',    # Lowest yield
-                    0.2: 'cyan',    # Low yield
+                    0.2: 'cyan',    # Low yield 
                     0.4: 'green',   # Moderate yield
                     0.6: 'yellow',  # Good yield
                     0.8: 'orange',  # High yield

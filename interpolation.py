@@ -104,23 +104,26 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
         # Create heat map data
         heat_data = []
         
-        # We need to normalize the predictions for the heatmap (0-1 scale)
-        # Find min/max of the predicted values
-        min_pred = np.min(predictions) if len(predictions) > 0 else 0
-        max_pred = np.max(predictions) if len(predictions) > 0 else 1
-        pred_range = max(0.1, max_pred - min_pred)  # Avoid division by zero
+        # Find global min/max from all wells for consistent color scaling
+        global_min_yield = np.min(yields) if len(yields) > 0 else 0
+        global_max_yield = np.max(yields) if len(yields) > 0 else 1
+        global_yield_range = max(0.1, global_max_yield - global_min_yield)
         
         # Add the interpolated grid points to the heat map
         for i in range(len(geo_lats)):
-            # Normalize the predicted value to 0-1 range for the heat map
-            normalized_pred = (predictions[i] - min_pred) / pred_range
+            yield_value = predictions[i]
+            
+            # Normalize using GLOBAL yield range for consistent colors
+            # This ensures heat map colors align with the legend and don't change on zoom
+            normalized_value = (yield_value - global_min_yield) / global_yield_range
+            normalized_value = max(0.0, min(1.0, normalized_value))  # Clamp to 0-1 range
             
             # Add to heat map if significant
-            if normalized_pred > 0.01:
+            if normalized_value > 0.01:
                 heat_data.append([
                     float(geo_lats[i]),
                     float(geo_lons[i]),
-                    float(predictions[i])  # Use actual yield value for color intensity
+                    float(normalized_value)  # Use normalized value for consistent colors
                 ])
         
         # Add the actual well points to ensure they're visible
@@ -132,8 +135,12 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
             )
             
             if dist_from_center_km <= radius_km:
-                # Add the exact well with its actual yield
-                heat_data.append([float(lat), float(lon), float(yield_val)])
+                # Normalize the well's yield using the same global scale
+                normalized_yield = (yield_val - global_min_yield) / global_yield_range
+                normalized_yield = max(0.0, min(1.0, normalized_yield))  # Clamp to 0-1
+                
+                # Add the exact well with its normalized yield value for consistent colors
+                heat_data.append([float(lat), float(lon), float(normalized_yield)])
         
         return heat_data
         
@@ -187,6 +194,11 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
     x_points = (lons - center_lon) * 111.0 * np.cos(np.radians(center_lat))
     y_points = (lats - center_lat) * 111.0
     
+    # Find global min/max yield across all wells for consistent color mapping
+    global_min_yield = np.min(yields) if len(yields) > 0 else 0
+    global_max_yield = np.max(yields) if len(yields) > 0 else 1
+    global_yield_range = max(0.1, global_max_yield - global_min_yield)
+    
     # For each grid point, calculate IDW interpolation
     for i in range(len(grid_lat_flat)):
         grid_point_lat = grid_lat_flat[i]
@@ -235,15 +247,19 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
                 # This shouldn't happen, but just in case
                 interpolated_value = 0.0
         
-        # Add to heat map with interpolated value (actual yield value)
-        if interpolated_value > 0.01:  # Only add significant points
+        # Normalize using the SAME GLOBAL scale for consistent colors
+        normalized_value = (interpolated_value - global_min_yield) / global_yield_range
+        normalized_value = max(0.0, min(1.0, normalized_value))  # Clamp to 0-1 range
+        
+        # Add to heat map with normalized value for consistent colors
+        if normalized_value > 0.01:  # Only add significant points
             heat_data.append([
                 float(grid_point_lat), 
                 float(grid_point_lon),
-                float(interpolated_value)  # Use actual yield value
+                float(normalized_value)  # Use normalized value for consistent colors
             ])
     
-    # Always add the actual well points with their values
+    # Always add the actual well points with their normalized values
     for j in range(len(lats)):
         # Check if within search radius
         dist_from_center_km = np.sqrt(
@@ -252,10 +268,15 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
         )
         
         if dist_from_center_km <= radius_km:
+            # Normalize using the same global scale
+            normalized_yield = (yields[j] - global_min_yield) / global_yield_range
+            normalized_yield = max(0.0, min(1.0, normalized_yield))  # Clamp to 0-1
+            
+            # Add with normalized value for consistent colors
             heat_data.append([
                 float(lats[j]),
                 float(lons[j]),
-                float(yields[j])  # Use actual yield value
+                float(normalized_yield)  # Use normalized yield value
             ])
     
     return heat_data

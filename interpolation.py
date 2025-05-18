@@ -49,27 +49,29 @@ def create_isopach_map(wells_df, center_point, radius_km, min_yield=None, max_yi
     if max_yield is None:
         max_yield = np.max(yields) if len(yields) > 0 else 1
     
-    # For special case with too few wells, just show the wells as they are
+    # For special case with too few wells, just return heat map data without contours
     if len(wells_df) < 3:
         heat_data = []
         for i, (lat, lon, yield_val) in enumerate(zip(lats, lons, yields)):
-            heat_data.append([float(lat), float(lon), float(yield_val)])
-        return heat_data
+            # Normalize yield for consistent coloring
+            norm_yield = (yield_val - min_yield) / (max_yield - min_yield) if max_yield > min_yield else 0.5
+            norm_yield = max(0.0, min(1.0, norm_yield))  # Clamp to 0-1 range
+            heat_data.append([float(lat), float(lon), float(norm_yield)])
+        return None, heat_data
     
     # Create bounding box based on center and radius
     center_lat, center_lon = center_point
     
     # Convert geographic area to a "flat" projection for better interpolation
-    # This is a simple approximation for small areas
     # 111 km per degree of latitude, longitude varies with cosine of latitude
     x_points = (lons - center_lon) * 111.0 * np.cos(np.radians(center_lat))  # km
     y_points = (lats - center_lat) * 111.0  # km
     z_points = yields  # The yield values we want to interpolate
     
-    # Define the grid
-    grid_density = min(100, max(50, resolution))  # Higher resolution grid
+    # Define grid resolution for interpolation
+    grid_density = min(120, max(80, resolution))  # Higher resolution for detailed contours
     
-    # Convert radius to a square in the local projection
+    # Create a square grid that covers the circular search area
     x_grid = np.linspace(-radius_km, radius_km, grid_density)
     y_grid = np.linspace(-radius_km, radius_km, grid_density)
     
@@ -77,53 +79,154 @@ def create_isopach_map(wells_df, center_point, radius_km, min_yield=None, max_yi
     X_grid, Y_grid = np.meshgrid(x_grid, y_grid)
     
     try:
-        # Use scikit-gstat's kriging implementation
+        # Use scikit-learn's Gaussian Process Regression (Kriging)
         from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+        from sklearn.gaussian_process.kernels import RBF, WhiteKernel, Matern
         
-        # Prepare the input points for Kriging
+        # Prepare points for Kriging interpolation
         xy_points = np.column_stack((x_points, y_points))
         
-        # Define the Gaussian Process model with RBF kernel - this is the core of Kriging
-        # RBF length scale ~5km - regional groundwater correlation typical scale
-        # WhiteKernel handles noise in the measurements
-        kernel = 1.0 * RBF(length_scale=5.0) + WhiteKernel(noise_level=0.1)
-        gp = GaussianProcessRegressor(kernel=kernel, normalize_y=True)
+        # Define the kernel for groundwater modeling
+        # Matern kernel with nu=1.5 is good for geoscience applications
+        # It has less smoothness assumptions than RBF
+        kernel = 1.0 * Matern(length_scale=3.0, nu=1.5) + WhiteKernel(noise_level=0.1)
         
-        # Fit the model to our data points (wells)
+        # Create and fit Gaussian Process model
+        gp = GaussianProcessRegressor(
+            kernel=kernel, 
+            normalize_y=True,
+            n_restarts_optimizer=2,  # Multiple restarts for better fit
+            alpha=1e-10  # Small alpha for closer fit to data points
+        )
+        
+        # Fit the model to our well data
         gp.fit(xy_points, z_points)
         
-        # Prepare grid points for prediction
-        # Flatten the grid for prediction and filter points outside search radius
+        # Reshape the grid for predictions and mask to circular area
         grid_xs = X_grid.flatten()
         grid_ys = Y_grid.flatten()
-        
-        # Create prediction points array
         grid_points = np.column_stack((grid_xs, grid_ys))
         
-        # Only keep points within the radius
+        # Only keep points within circular search radius
         mask = np.sqrt(grid_xs**2 + grid_ys**2) <= radius_km
         grid_points = grid_points[mask]
         
         if len(grid_points) == 0:
-            return []
+            return None, []
         
-        # Predict the yield at each grid point using the GP model (Kriging)
+        # Predict yields at each grid point using the GP model
         predictions = gp.predict(grid_points)
         
-        # Make sure we don't predict negative yields
+        # Ensure all predictions are non-negative
         predictions = np.maximum(0, predictions)
         
-        # Convert back to geographic coordinates
+        # Convert projected coordinates back to geographic
         geo_lons = (grid_points[:, 0] / (111.0 * np.cos(np.radians(center_lat)))) + center_lon
         geo_lats = (grid_points[:, 1] / 111.0) + center_lat
         
-        # Create heat map data
+        # Reshape grid and predictions for contour generation
+        # First create a mask of which points in the original grid were used
+        full_mask = np.zeros_like(X_grid, dtype=bool)
+        for i, (x, y) in enumerate(zip(grid_xs, grid_ys)):
+            if mask[i]:
+                # Find the indices in the original grid
+                x_idx = np.abs(x_grid - x).argmin()
+                y_idx = np.abs(y_grid - y).argmin()
+                full_mask[y_idx, x_idx] = True
+        
+        # Create a grid for the predictions
+        Z_grid = np.zeros_like(X_grid)
+        Z_grid[:] = np.nan  # Fill with NaN initially
+        
+        # Place predictions back into the grid
+        pred_idx = 0
+        for i in range(Z_grid.shape[0]):
+            for j in range(Z_grid.shape[1]):
+                if full_mask[i, j]:
+                    Z_grid[i, j] = predictions[pred_idx]
+                    pred_idx += 1
+        
+        # Generate contour lines for isopach map
+        import json
+        import geojson
+        
+        # Define contour levels (yield values)
+        yield_range = max_yield - min_yield
+        steps = 5  # Number of contour levels
+        levels = [min_yield + (yield_range * i / steps) for i in range(steps+1)]
+        
+        # Generate contours using matplotlib
+        contour_data = None
+        try:
+            # Generate contour lines with matplotlib
+            fig, ax = plt.figure(figsize=(8, 8)), plt.subplot(111)
+            contour = ax.contourf(X_grid, Y_grid, Z_grid, levels=levels, cmap='jet')
+            
+            # Convert matplotlib contours to GeoJSON for mapping
+            contour_geojson = {"type": "FeatureCollection", "features": []}
+            
+            # Extract contour polygons
+            for i, collection in enumerate(contour.collections):
+                for path in collection.get_paths():
+                    # Check if the path contains any points
+                    if not path.vertices.size:
+                        continue
+                        
+                    # Create polygon from the path vertices
+                    polygon_points = []
+                    
+                    # Convert back to geographic coordinates
+                    for x, y in path.vertices:
+                        # Convert from km back to lat/lon
+                        lon = (x / (111.0 * np.cos(np.radians(center_lat)))) + center_lon
+                        lat = (y / 111.0) + center_lat
+                        polygon_points.append([lon, lat])
+                    
+                    # Check for valid polygon
+                    if len(polygon_points) < 3:
+                        continue
+                    
+                    # Create polygon and add yield value as property
+                    yield_level = levels[min(i, len(levels)-1)]
+                    feature = {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [polygon_points]
+                        },
+                        "properties": {
+                            "yield_value": float(yield_level)
+                        }
+                    }
+                    contour_geojson["features"].append(feature)
+            
+            # Close the matplotlib figure to free memory
+            plt.close(fig)
+            
+            # Convert to proper geojson
+            contour_data = geojson.dumps(contour_geojson)
+            
+        except Exception as e:
+            print(f"Contour generation error: {e}")
+            contour_data = None
+        
+        # Create heat map data for fallback visualization
         heat_data = []
         
-        # Find global min/max from all wells for consistent color scaling
-        global_min_yield = np.min(yields) if len(yields) > 0 else 0
-        global_max_yield = np.max(yields) if len(yields) > 0 else 1
+        # Create normalized heat map data from interpolated grid
+        for i in range(len(geo_lats)):
+            # Normalize yield value using min/max yields for consistent colors
+            yield_val = predictions[i]
+            norm_val = (yield_val - min_yield) / (max_yield - min_yield) if max_yield > min_yield else 0.5
+            norm_val = max(0.0, min(1.0, norm_val))  # Clamp to 0-1 range
+            
+            # Add to heat map data if significant
+            if norm_val > 0.01:
+                heat_data.append([
+                    float(geo_lats[i]),
+                    float(geo_lons[i]),
+                    float(norm_val)
+                ])
         global_yield_range = max(0.1, global_max_yield - global_min_yield)
         
         # Add the interpolated grid points to the heat map

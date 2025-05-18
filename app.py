@@ -247,10 +247,18 @@ with main_col1:
                 ).add_to(m)
                 
                 # Add visualization legend matching the heat map gradient
+                # Use fixed values for the colormap range from 0 to max value in the filtered data
+                max_yield_value = 100  # Default max value
+                if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
+                    # Get max yield from filtered wells, handle empty dataframe
+                    valid_yields = st.session_state.filtered_wells['yield_rate'].dropna()
+                    if len(valid_yields) > 0:
+                        max_yield_value = max(valid_yields.max(), 100)  # At least 100 for visibility
+                
                 colormap = folium.LinearColormap(
                     colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
-                    vmin=st.session_state.min_yield,
-                    vmax=st.session_state.max_yield,
+                    vmin=0,  # Always start from 0
+                    vmax=max_yield_value,
                     caption='Estimated Water Yield (L/s)'
                 )
                 colormap.add_to(m)

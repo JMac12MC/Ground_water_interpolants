@@ -8,7 +8,7 @@ import os
 import base64
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-import interpolation
+from interpolation import generate_heat_map_data
 
 # Set page configuration
 st.set_page_config(
@@ -16,19 +16,6 @@ st.set_page_config(
     page_icon="💧",
     layout="wide",
 )
-
-# Helper function to get color for yield value from gradient
-def get_color_for_yield(yield_value, min_yield, max_yield, color_gradient):
-    """Return a color from the gradient based on the yield value"""
-    if min_yield == max_yield:
-        norm_val = 0.5
-    else:
-        norm_val = (yield_value - min_yield) / (max_yield - min_yield)
-        norm_val = max(0.0, min(1.0, norm_val))
-    
-    # Find the closest gradient key
-    closest_key = min(color_gradient.keys(), key=lambda x: abs(x - norm_val))
-    return color_gradient[closest_key]
 
 # Banner image with opacity overlay and text
 def add_banner():
@@ -236,134 +223,34 @@ with main_col1:
                 fill_opacity=0.1
             ).add_to(m)
             
-            # Add yield visualization using isopach-style mapping
+            # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Create a feature group for the yield visualization
-                yield_group = folium.FeatureGroup(name="Yield Visualization")
+                heat_data = generate_heat_map_data(
+                    filtered_wells, 
+                    st.session_state.selected_point, 
+                    st.session_state.search_radius
+                )
                 
-                # Define color scheme for yield values
+                # Updated gradient colors where red = high yield (not distance)
                 gradient = {
                     0.0: 'blue',    # Lowest yield
-                    0.2: 'cyan',    # Low yield 
+                    0.2: 'cyan',    # Low yield
                     0.4: 'green',   # Moderate yield
                     0.6: 'yellow',  # Good yield
                     0.8: 'orange',  # High yield
                     1.0: 'red'      # Highest yield
                 }
                 
-                # Define yield boundaries
-                yield_min = st.session_state.min_yield
-                yield_max = st.session_state.max_yield
-                yield_range = yield_max - yield_min
-                
-                try:
-                    # Generate isopach contour map using smooth interpolation
-                    contour_json = interpolation.create_contour_json(
-                        filtered_wells,
-                        st.session_state.selected_point,
-                        st.session_state.search_radius,
-                        yield_min,
-                        yield_max,
-                        num_points=100  # Higher resolution for smoother contours
-                    )
-                    
-                    if contour_json is not None:
-                        # Add isopach contours to the map as filled polygons
-                        # Define style function for the contours based on yield value
-                        style_function = lambda feature: {
-                            'fillColor': get_color_for_yield(
-                                feature['properties']['yield_value'], 
-                                yield_min, 
-                                yield_max, 
-                                gradient
-                            ),
-                            'color': 'black',
-                            'weight': 0.5,
-                            'fillOpacity': 0.7,
-                        }
-                        
-                        # Add tooltip to show yield value on hover
-                        tooltip = folium.GeoJsonTooltip(
-                            fields=['yield_value'],
-                            aliases=['Yield (L/s):'],
-                            localize=True,
-                            sticky=False,
-                            labels=True,
-                            style="""
-                                background-color: #F0EFEF;
-                                border: 1px solid black;
-                                border-radius: 3px;
-                                box-shadow: 3px 3px 3px rgba(0,0,0,0.25);
-                            """
-                        )
-                        
-                        # Add the GeoJSON contours to the map
-                        folium.GeoJson(
-                            data=contour_json,
-                            name='Yield Contours',
-                            style_function=style_function,
-                            tooltip=tooltip,
-                            overlay=True
-                        ).add_to(yield_group)
-                    
-                    # Add the actual wells with their yield values
-                    for _, row in filtered_wells.iterrows():
-                        # Calculate normalized yield for consistent colors
-                        norm_yield = (row['yield_rate'] - yield_min) / yield_range if yield_range > 0 else 0.5
-                        norm_yield = min(1.0, max(0.0, norm_yield))
-                        
-                        # Find the closest color in our gradient
-                        closest_key = min(gradient.keys(), key=lambda x: abs(x - norm_yield))
-                        color = gradient[closest_key]
-                        
-                        # Add well as a larger circle marker
-                        folium.CircleMarker(
-                            location=[float(row['latitude']), float(row['longitude'])],
-                            radius=8,
-                            color='black',
-                            fill=True,
-                            fill_color=color,
-                            fill_opacity=0.8,
-                            weight=1,
-                            popup=f"""
-                            <b>Well ID:</b> {row['well_id']}<br>
-                            <b>Yield:</b> {row['yield_rate']:.1f} L/s<br>
-                            <b>Depth:</b> {row['depth']:.1f} m
-                            """
-                        ).add_to(yield_group)
-                    
-                    # Create a legend for the yield classes
-                    steps = 5
-                    legend_html = """
-                    <div style="position: fixed; bottom: 50px; left: 50px; background-color: white; 
-                                padding: 10px; border: 1px solid grey; z-index: 9999; border-radius: 5px;">
-                        <h4 style="margin-top: 0;">Yield (L/s)</h4>
-                    """
-                    
-                    for i in range(steps):
-                        start_yield = yield_min + (yield_range * i / steps)
-                        end_yield = yield_min + (yield_range * (i+1) / steps)
-                        norm_val = i / (steps - 1) if steps > 1 else 0.5
-                        closest_key = min(gradient.keys(), key=lambda x: abs(x - norm_val))
-                        color = gradient[closest_key]
-                        
-                        legend_html += f"""
-                        <div style="display: flex; align-items: center; margin: 3px 0;">
-                            <div style="width: 20px; height: 20px; background-color: {color}; margin-right: 5px;"></div>
-                            <span>{start_yield:.1f} - {end_yield:.1f}</span>
-                        </div>
-                        """
-                    
-                    legend_html += "</div>"
-                    
-                    # Add the legend to the map
-                    yield_group.add_child(folium.Element(legend_html))
-                    
-                    # Add yield group to the map
-                    yield_group.add_to(m)
-                
-                except Exception as e:
-                    st.error(f"Error generating yield visualization: {e}")
+                # Create heat map with fixed radius and improved settings
+                HeatMap(
+                    heat_data,
+                    radius=18,           # Slightly larger radius for better visibility
+                    gradient=gradient,   # Use our yield-based gradient
+                    blur=12,             # Smoother transitions
+                    max_zoom=15,         # Allow more detail at higher zoom levels
+                    min_opacity=0.35,    # Ensure visibility at all zoom levels
+                    overlay=True,        # Keep as overlay
+                ).add_to(m)
                 
                 # Add visualization legend matching the heat map gradient
                 colormap = folium.LinearColormap(

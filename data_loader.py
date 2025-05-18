@@ -237,27 +237,30 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
     import requests
     
     try:
-        # The New Zealand government catalog URL for wells and bores
-        # Using the Wells and Bores dataset from https://catalogue.data.govt.nz/dataset/wells-and-bores-all4
-        api_url = "https://data.gns.cri.nz/pbe-wfs/ows"
+        # The New Zealand government Wells and Bores API 
+        # Using the direct data service API instead of the catalog
+        api_url = "https://geomapapi.ecangeoportal.govt.nz/geoserver/ows"
         
-        # Set up parameters for the WFS request
+        # Set up parameters for the WFS request to GeoServer
         params = {
             "service": "WFS",
-            "version": "2.0.0",
+            "version": "1.0.0",
             "request": "GetFeature",
-            "typeName": "hyd:well",  # Wells layer
+            "typeName": "CMaps:Wells",  # Wells layer from Canterbury Maps
             "outputFormat": "application/json",
-            "maxFeatures": 5000  # Limit the number of features to prevent timeout
+            "maxFeatures": 5000,  # Limit the number of features to prevent timeout
+            "srsName": "EPSG:4326"  # Return coordinates in WGS84 (lat/long)
         }
         
-        # If we have a search area, add a geographic filter
+        # If we have a search area, add coordinates filter with GeoServer's BBox filter
         if search_center and search_radius_km:
             center_lat, center_lon = search_center
             
-            # Convert radius from km to degrees (approximate)
-            lat_radius = search_radius_km / 111.0
-            lon_radius = search_radius_km / (111.0 * np.cos(np.radians(center_lat)))
+            st.info(f"Searching for wells within {search_radius_km} km of {center_lat:.4f}, {center_lon:.4f}")
+            
+            # Convert radius from km to degrees
+            lat_radius = search_radius_km / 111.0  # approx 111 km per degree latitude
+            lon_radius = search_radius_km / (111.0 * np.cos(np.radians(center_lat)))  # adjust for longitude
             
             # Create bounding box
             min_lat = center_lat - lat_radius
@@ -265,8 +268,8 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
             min_lon = center_lon - lon_radius
             max_lon = center_lon + lon_radius
             
-            # Add bounding box filter to params (GeoServer WFS format)
-            params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat},EPSG:4326"
+            # GeoServer WFS BBox filter (minx,miny,maxx,maxy)
+            params["bbox"] = f"{min_lon},{min_lat},{max_lon},{max_lat}"
         
         # Make the API request
         st.info(f"Fetching well data from the New Zealand government API...")
@@ -277,68 +280,135 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
             try:
                 data = response.json()
                 
-                # Check if we got valid data
-                if "features" not in data or len(data["features"]) == 0:
-                    st.warning("No wells found in the API response")
-                    return None
-                
-                # Process the GeoJSON features
-                wells = []
-                for feature in data["features"]:
-                    props = feature.get("properties", {})
-                    geom = feature.get("geometry", {})
+                # Check if we got valid data in the CKAN API format
+                if "success" in data and data["success"] and "result" in data:
+                    records = data["result"].get("records", [])
                     
-                    # Check if we have valid geometry
-                    if geom and geom.get("type") == "Point" and "coordinates" in geom:
-                        lon, lat = geom["coordinates"]
-                        
-                        # Extract well properties - field names from the actual NZ API
-                        well_id = props.get("id") or props.get("WELL_NO", f"NZ-{len(wells)}")
-                        depth = float(props.get("DEPTH") or 0)
-                        
-                        # Try different field names for yield
-                        yield_rate = 0
-                        for field in ["YIELD", "FLOW_RATE", "YIELD_RATE", "FLOW"]:
-                            if field in props and props[field] is not None:
-                                try:
-                                    yield_rate = float(props[field])
+                    if not records:
+                        st.warning("No wells found in the API response")
+                        return None
+                    
+                    # Process the records from the CKAN API
+                    wells = []
+                    for record in records:
+                        try:
+                            # Handle different possible field names
+                            lat = None
+                            lon = None
+                            
+                            # Try different field name patterns for coordinates
+                            for lat_field in ['latitude', 'lat', 'y', 'northing']:
+                                if lat_field in record and record[lat_field] is not None:
+                                    try:
+                                        lat = float(record[lat_field])
+                                        break
+                                    except (ValueError, TypeError):
+                                        pass
+                                        
+                            for lon_field in ['longitude', 'lon', 'long', 'x', 'easting']:
+                                if lon_field in record and record[lon_field] is not None:
+                                    try:
+                                        lon = float(record[lon_field])
+                                        break
+                                    except (ValueError, TypeError):
+                                        pass
+                            
+                            if lat is None or lon is None:
+                                continue  # Skip records without valid coordinates
+                                
+                            # Extract well ID
+                            well_id = None
+                            for id_field in ['well_no', 'id', 'well_id', 'bore_id', 'nzgd_well_no']:
+                                if id_field in record and record[id_field] is not None:
+                                    well_id = str(record[id_field])
                                     break
-                                except (ValueError, TypeError):
-                                    pass
+                                    
+                            if well_id is None:
+                                well_id = f"NZ-{len(wells)}"
+                            
+                            # Extract depth
+                            depth = 0
+                            for depth_field in ['depth', 'well_depth', 'bore_depth', 'total_depth']:
+                                if depth_field in record and record[depth_field] is not None:
+                                    try:
+                                        depth = float(record[depth_field])
+                                        break
+                                    except (ValueError, TypeError):
+                                        pass
+                            
+                            # Extract yield rate
+                            yield_rate = 0
+                            for yield_field in ['yield', 'flow_rate', 'yield_rate', 'flow', 'discharge']:
+                                if yield_field in record and record[yield_field] is not None:
+                                    try:
+                                        yield_rate = float(record[yield_field])
+                                        break
+                                    except (ValueError, TypeError):
+                                        pass
+                            
+                            # Extract well type and status
+                            well_type = "Unknown"
+                            for type_field in ['well_type', 'bore_type', 'usage', 'purpose']:
+                                if type_field in record and record[type_field] is not None:
+                                    well_type = str(record[type_field])
+                                    break
+                                    
+                            status = "Unknown"
+                            for status_field in ['status', 'well_status', 'condition']:
+                                if status_field in record and record[status_field] is not None:
+                                    status = str(record[status_field])
+                                    break
                         
-                        # Get well type and status
-                        well_type = props.get("WELL_TYPE", "Unknown")
-                        status = props.get("STATUS", "Unknown")
+                            # Create the well record after checking and cleaning the data
+                            well = {
+                                "well_id": well_id,
+                                "latitude": float(lat),
+                                "longitude": float(lon),
+                                "depth": float(depth),
+                                "depth_m": float(depth),  # For UI consistency
+                                "yield_rate": float(yield_rate),
+                                "well_type": well_type,
+                                "status": status
+                            }
+                            
+                            # If we have search coordinates, calculate distance
+                            if search_center and search_radius_km:
+                                from utils import get_distance
+                                center_lat, center_lon = search_center
+                                distance = get_distance(center_lat, center_lon, lat, lon)
+                                
+                                # Only include wells within the search radius
+                                if distance <= search_radius_km:
+                                    wells.append(well)
+                            else:
+                                wells.append(well)
+                                
+                        except Exception as e:
+                            # Skip records with processing errors
+                            # Log with st.write if in debug mode - can be commented out for production
+                            # st.write(f"Error processing record: {e}")
+                            continue
+                    
+                    # Create DataFrame from the processed wells
+                    if wells:
+                        df = pd.DataFrame(wells)
+                        st.success(f"Successfully fetched {len(df)} wells from the NZ government API")
                         
-                        # Create the well record
-                        well = {
-                            "well_id": well_id,
-                            "latitude": float(lat),
-                            "longitude": float(lon),
-                            "depth": float(depth),
-                            "depth_m": float(depth),  # For UI consistency
-                            "yield_rate": float(yield_rate),
-                            "well_type": well_type,
-                            "status": status
-                        }
-                        wells.append(well)
-                
-                # Create DataFrame
-                if wells:
-                    df = pd.DataFrame(wells)
-                    st.success(f"Successfully fetched {len(df)} wells from the NZ government API")
-                    
-                    # Cache the data for future use
-                    try:
-                        os.makedirs("sample_data", exist_ok=True)
-                        df.to_csv("sample_data/nz_wells_cache.csv", index=False)
-                        st.info("Saved fetched data to cache for future use")
-                    except Exception as e:
-                        st.warning(f"Could not save cache: {e}")
-                    
-                    return df
+                        # Cache the data for future use
+                        try:
+                            os.makedirs("sample_data", exist_ok=True)
+                            df.to_csv("sample_data/nz_wells_api_cache.csv", index=False)
+                            st.info("Saved fetched data to cache for future use")
+                        except Exception as e:
+                            st.warning(f"Could not save cache: {e}")
+                        
+                        return df
+                    else:
+                        st.warning("No valid well data found within your search area")
+                        return None
                 else:
-                    st.warning("No valid well data found in the API response")
+                    st.warning("Unexpected API response format. The NZ government API may have changed.")
+                    st.info("Response data: " + str(data)[:200] + "...")
                     return None
             
             except Exception as e:

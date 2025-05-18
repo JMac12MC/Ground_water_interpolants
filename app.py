@@ -231,26 +231,30 @@ with main_col1:
                     st.session_state.search_radius
                 )
                 
+                # Updated gradient colors where red = high yield (not distance)
                 gradient = {
-                    0.0: 'blue',
-                    0.25: 'cyan',
-                    0.5: 'lime',
-                    0.75: 'yellow',
-                    1.0: 'red'
+                    0.0: 'blue',    # Lowest yield
+                    0.2: 'cyan',    # Low yield
+                    0.4: 'green',   # Moderate yield
+                    0.6: 'yellow',  # Good yield
+                    0.8: 'orange',  # High yield
+                    1.0: 'red'      # Highest yield
                 }
                 
+                # Create heat map with fixed radius and improved settings
                 HeatMap(
                     heat_data,
-                    radius=15,
-                    gradient=gradient,
-                    blur=10,
-                    max_zoom=10,
-                    overlay=True,
+                    radius=18,           # Slightly larger radius for better visibility
+                    gradient=gradient,   # Use our yield-based gradient
+                    blur=12,             # Smoother transitions
+                    max_zoom=15,         # Allow more detail at higher zoom levels
+                    min_opacity=0.35,    # Ensure visibility at all zoom levels
+                    overlay=True,        # Keep as overlay
                 ).add_to(m)
                 
-                # Add visualization legend
+                # Add visualization legend matching the heat map gradient
                 colormap = folium.LinearColormap(
-                    colors=['blue', 'cyan', 'lime', 'yellow', 'red'],
+                    colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
                     vmin=st.session_state.min_yield,
                     vmax=st.session_state.max_yield,
                     caption='Estimated Water Yield (L/s)'

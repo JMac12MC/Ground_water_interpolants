@@ -262,14 +262,14 @@ with main_col1:
                 )
                 colormap.add_to(m)
             
-            # Add ALL wells to the map as dots, not just filtered ones
+            # ONLY show wells within the search radius when a point is selected
             if st.session_state.well_markers_visibility:
-                # Add ALL wells as small dots
-                all_wells_layer = folium.FeatureGroup(name="All Wells").add_to(m)
+                # Only add wells within the search radius (filtered_wells)
+                radius_wells_layer = folium.FeatureGroup(name="Wells Within Radius").add_to(m)
                 
-                # Create markers for all wells (small markers)
-                for idx, row in wells_df.iterrows():
-                    # Use a smaller CircleMarker for all wells
+                # Create markers for ONLY wells within the radius (small markers)
+                for idx, row in filtered_wells.iterrows():
+                    # Use a smaller CircleMarker for wells within radius
                     folium.CircleMarker(
                         location=(float(row['latitude']), float(row['longitude'])),
                         radius=3,  # Small dot
@@ -278,7 +278,7 @@ with main_col1:
                         fill_color='darkblue',
                         fill_opacity=0.7,
                         tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s"
-                    ).add_to(all_wells_layer)
+                    ).add_to(radius_wells_layer)
                 
                 # Add filtered wells with more details
                 if isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:

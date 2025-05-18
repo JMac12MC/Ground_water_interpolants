@@ -173,9 +173,37 @@ def main():
         else:
             center_location = default_location
         
-        # Create map
+        # Create map with click callback
         m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                       tiles="OpenStreetMap")
+                      
+        # Add click handler to map
+        m.add_child(folium.LatLngPopup())
+        
+        # Add JavaScript to capture clicks and pass them to Streamlit
+        click_callback = """
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                var map = document.querySelector('.folium-map');
+                map.addEventListener('click', function(e) {
+                    // Get click coordinates from the map
+                    if (e.latlng) {
+                        // Send the click data to Streamlit
+                        var lat = e.latlng.lat;
+                        var lng = e.latlng.lng;
+                        parent.postMessage({
+                            type: 'streamlit:setComponentValue',
+                            value: {lat: lat, lng: lng},
+                            dataType: 'json'
+                        }, '*');
+                    }
+                });
+            }, 1000);
+        });
+        </script>
+        """
+        m.get_root().html.add_child(folium.Element(click_callback))
         
         # No need for a second toggle since we already have one in the sidebar
         

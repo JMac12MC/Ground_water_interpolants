@@ -7,7 +7,7 @@ from matplotlib import cm
 import json
 from utils import get_distance
 
-def create_kriging_contours(wells_df, center_point=None, radius_km=None, min_yield=None, max_yield=None, num_points=100):
+def create_kriging_contours(wells_df, center_point=None, radius_km=None, min_yield=None, max_yield=None, num_points=150):
     """
     Generate contour data for an isopach map showing zones of equal yield values
     using Radial Basis Function (similar to kriging) for interpolation.
@@ -142,12 +142,22 @@ def create_kriging_contours(wells_df, center_point=None, radius_km=None, min_yie
             level_max = levels[i+1]
             level_value = (level_min + level_max) / 2.0  # Middle value for each level
             
-            # Create boolean mask for this level range
-            level_mask = (grid_z >= level_min) & (grid_z < level_max)
+            # Get contour lines directly from matplotlib instead of using boolean mask
+            # This produces much smoother contours
+            cs = ax.contour(grid_lon, grid_lat, grid_z, levels=[level_min])
             
-            # Use scikit-image to find contour polygons
-            from skimage import measure
-            contours = measure.find_contours(level_mask.astype(float), 0.5)
+            # Extract contours from the matplotlib contour set
+            contours = []
+            for collection in cs.collections:
+                for path in collection.get_paths():
+                    # Get the contour points
+                    v = path.vertices
+                    # Convert to row, col format
+                    contour = np.column_stack([
+                        np.interp(v[:, 1], grid_lats, np.arange(len(grid_lats))),
+                        np.interp(v[:, 0], grid_lons, np.arange(len(grid_lons)))
+                    ])
+                    contours.append(contour)
             
             # Process each contour
             for contour in contours:

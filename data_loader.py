@@ -307,15 +307,30 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                     st.info(f"No wells found within {search_radius_km} km of your location. Generating sample wells for the area.")
                     return generate_wells_for_area(search_center, search_radius_km)
             
-            # Return complete dataset or sample based on user preference
-            if not use_full_dataset:
-                # Sample for better performance if full dataset not needed
+            # Return dataset with performance considerations
+            # The full dataset with 56,498 wells can cause browser performance issues
+            # Even when using full dataset, limit to a reasonable number for browser rendering
+            if use_full_dataset:
+                # Limit to 5000 wells even when full dataset is requested to prevent browser crashes
+                max_wells = min(5000, len(valid_wells))
+                if len(valid_wells) > max_wells:
+                    # If we need to limit, get a stratified sample based on yield rate to ensure representative data
+                    st.warning(f"For performance reasons, showing {max_wells} representative wells from {len(valid_wells)} total wells")
+                    
+                    # Sort by yield rate and take an evenly distributed sample
+                    sorted_wells = valid_wells.sort_values(by='yield_rate', ascending=False)
+                    step = max(1, len(sorted_wells) // max_wells)
+                    sampled_wells = sorted_wells.iloc[::step].head(max_wells)
+                    return sampled_wells
+                else:
+                    st.success(f"Showing all {len(valid_wells)} wells")
+                    return valid_wells
+            else:
+                # Use a smaller sample for normal operation
                 sample_size = min(2000, len(valid_wells))
                 wells_sample = valid_wells.sample(n=sample_size, random_state=42)
                 st.info(f"Using a sample of {len(wells_sample)} wells from {len(valid_wells)} total wells")
                 return wells_sample
-            else:
-                return valid_wells
                 
         except Exception as e:
             st.error(f"Error processing Canterbury wells data: {e}")

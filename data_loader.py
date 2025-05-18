@@ -237,12 +237,22 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
     import requests
     
     try:
-        # Create NZ well dataset direct from regional councils in New Zealand
+        # Try to fetch New Zealand well data from the most reliable sources
         # We'll try multiple endpoints to get comprehensive coverage
         nz_api_endpoints = [
             {
-                "name": "Canterbury Regional Council",
-                "url": "https://opendata.canterburymaps.govt.nz/datasets/canterbury::wells/FeatureServer/0/query",
+                "name": "Land Information NZ",
+                "url": "https://data.linz.govt.nz/services/query/v1/vector.json",
+                "params": {
+                    "key": "d01f05f7fc4945ad9a52b0ed27c734e2",  # Public API key for LINZ data service
+                    "layer": 51576,  # Wells and bores layer
+                    "max_features": 5000,
+                    "with_field_names": "true"
+                }
+            },
+            {
+                "name": "Auckland Council",
+                "url": "https://services1.arcgis.com/n4yPwebTjJCmXB6W/arcgis/rest/services/Groundwater_bore_details/FeatureServer/0/query",
                 "params": {
                     "where": "1=1",
                     "outFields": "*",
@@ -252,8 +262,8 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
                 }
             },
             {
-                "name": "Greater Wellington",
-                "url": "https://maps.gw.govt.nz/arcgis/rest/services/GW/GW_Groundwater/MapServer/0/query",
+                "name": "Northland Regional Council",
+                "url": "https://services8.arcgis.com/KUkRlc3XYmrIXIFP/arcgis/rest/services/Bores/FeatureServer/0/query",
                 "params": {
                     "where": "1=1",
                     "outFields": "*",
@@ -263,8 +273,8 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
                 }
             },
             {
-                "name": "Marlborough District Council",
-                "url": "https://maps.marlborough.govt.nz/server/rest/services/OpenData/Wells/MapServer/0/query",
+                "name": "Taranaki Regional Council",
+                "url": "https://maps.trc.govt.nz/arcgis/rest/services/Public/LAWA_Service/MapServer/4/query",
                 "params": {
                     "where": "1=1",
                     "outFields": "*",
@@ -330,6 +340,13 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
                                 if "y" in geometry and "x" in geometry:
                                     lat = geometry.get("y")
                                     lon = geometry.get("x")
+                                elif "coordinates" in geometry:
+                                    # GeoJSON format for LINZ and some other sources
+                                    coords = geometry.get("coordinates", [])
+                                    if len(coords) >= 2:
+                                        # GeoJSON is [longitude, latitude]
+                                        lon = coords[0]
+                                        lat = coords[1]
                                 
                                 # Skip records without valid coordinates
                                 if lat is None or lon is None:

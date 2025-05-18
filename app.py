@@ -257,8 +257,8 @@ with main_col1:
                 yield_range = yield_max - yield_min
                 
                 try:
-                    # Generate isopach contour map using improved interpolation
-                    contour_json = interpolation.generate_contour_geojson(
+                    # Generate isopach contour map using smooth interpolation
+                    contour_json = interpolation.create_contour_json(
                         filtered_wells,
                         st.session_state.selected_point,
                         st.session_state.search_radius,

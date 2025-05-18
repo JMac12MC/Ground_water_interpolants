@@ -4,6 +4,7 @@ from folium.plugins import HeatMap
 from streamlit_folium import folium_static
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 import base64
 from utils import get_distance, download_as_csv
@@ -146,13 +147,14 @@ def main():
     # Visualization options
     st.sidebar.subheader("Visualization")
     
-    # Toggle for yield visualization
-    heat_map_visibility = st.sidebar.checkbox(
-        "Show Yield Visualization", 
-        value=st.session_state.heat_map_visibility,
-        help="Display yield values on the map"
+    # Toggle for isopach visualization (one single control)
+    show_isopach = st.sidebar.checkbox(
+        "Show Yield Isopach Map", 
+        value=st.session_state.show_isopach,
+        help="Display interpolated yield contours across the entire area"
     )
-    st.session_state.heat_map_visibility = heat_map_visibility
+    st.session_state.show_isopach = show_isopach
+    st.session_state.heat_map_visibility = show_isopach  # Keep both in sync
     
     # Add well drilling image
     st.image("https://pixabay.com/get/g3dd7957e8d30d47521b260f1654a0dcffa87f6fd6a8ebaa4f8ba72de270754f6b1ad015b8bc19b503cbd5c12dfe935d4ab5c547948cecf08e4ded91ba49dce79_1280.jpg", 
@@ -175,13 +177,7 @@ def main():
         m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                       tiles="OpenStreetMap")
         
-        # Add isopach map toggle
-        col_toggle1, col_toggle2 = st.columns([1, 3])
-        with col_toggle1:
-            show_isopach = st.checkbox("Show Isopach Map", 
-                value=st.session_state.show_isopach,
-                help="Display the interpolated yield map across the entire area")
-            st.session_state.show_isopach = show_isopach
+        # No need for a second toggle since we already have one in the sidebar
         
         # Add location search functionality
         st.subheader("Search Location")

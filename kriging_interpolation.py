@@ -155,17 +155,24 @@ def create_kriging_contours(wells_df, center_point=None, radius_km=None, min_yie
                 if len(contour) < 5:
                     continue
                     
-                # Convert from array indices to lat/lon coordinates
-                # Note: contour indices are (row, col) but we need (lat, lon)
+                # Create polygon coordinates manually from grid cells
+                # This creates smoother, more continuous contours
                 contour_coords = []
-                for point in contour:
-                    row, col = point
-                    # Convert indices to actual coordinates
-                    if 0 <= row < len(grid_lats) and 0 <= col < len(grid_lons):
-                        lat = grid_lats[int(min(row, len(grid_lats)-1))]
-                        lon = grid_lons[int(min(col, len(grid_lons)-1))]
-                        # Store as [lon, lat] for GeoJSON
-                        contour_coords.append([float(lon), float(lat)])
+                
+                # Convert scikit-image contour to lat/lon coordinates
+                for i in range(len(contour)):
+                    row, col = contour[i]
+                    
+                    # Convert row/col indices to lat/lon positions
+                    grid_row = min(int(row), len(grid_lats)-1)
+                    grid_col = min(int(col), len(grid_lons)-1)
+                    
+                    # Get lat/lon for this point
+                    lat = float(grid_lats[grid_row])
+                    lon = float(grid_lons[grid_col])
+                    
+                    # Store as [lon, lat] for GeoJSON format
+                    contour_coords.append([lon, lat])
                 
                 # Ensure polygon is closed
                 if len(contour_coords) > 3 and contour_coords[0] != contour_coords[-1]:

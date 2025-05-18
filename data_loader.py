@@ -148,185 +148,105 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
     # Create the sample_data directory if it doesn't exist
     os.makedirs("sample_data", exist_ok=True)
     
-    # Paths for the original and processed data
+    # Path for the original well data CSV file
     canterbury_wells_file = "sample_data/canterbury_wells.csv"
-    processed_wells_file = "sample_data/nz_wells_processed.csv"
     
-    # Check if we already have the processed data
-    if os.path.exists(processed_wells_file):
-        try:
-            df = pd.read_csv(processed_wells_file)
-            
-            # If we have a specific search area, filter the data
-            if search_center and search_radius_km:
-                from utils import get_distance
-                
-                # Filter by distance
-                center_lat, center_lon = search_center
-                df['distance'] = df.apply(
-                    lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
-                    axis=1
-                )
-                filtered_df = df[df['distance'] <= search_radius_km].copy()
-                filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
-                
-                if len(filtered_df) > 0:
-                    st.success(f"Loaded {len(filtered_df)} wells within {search_radius_km} km radius of your selected location")
-                    return filtered_df
-                else:
-                    st.info("No wells found in the Canterbury dataset for your search area.")
-                    # Generate some wells for the area if none found
-                    return generate_wells_for_area(search_center, search_radius_km)
-            else:
-                if not use_full_dataset:
-                    # Return a sample for better performance if full dataset not needed
-                    sample_size = min(2000, len(df))
-                    sampled_df = df.sample(sample_size, random_state=42)
-                    st.success(f"Loaded sample of {len(sampled_df)} wells from Canterbury Maps OpenData (total: {len(df)} wells)")
-                    return sampled_df
-                else:
-                    st.success(f"Loaded all {len(df)} wells from Canterbury Maps OpenData")
-                    return df
-        except Exception as e:
-            st.warning(f"Error loading processed well data: {e}")
-    
-    # If we don't have the processed file, process the original Canterbury wells data
-    # from the official dataset
     if os.path.exists(canterbury_wells_file):
+        st.info("Loading Canterbury wells data...")
+        
         try:
-            st.info("Processing the official Canterbury Maps well dataset...")
-            
-            # Load the raw Canterbury wells data
+            # Read the CSV file directly
             raw_df = pd.read_csv(canterbury_wells_file)
             
-            # Determine which columns contain latitude/longitude information
-            # From inspection, the 'X' and 'Y' columns appear to be in a different coordinate system
-            # We'll use the NZTMX and NZTMY columns for conversion to lat/long
+            # Create DataFrame with well IDs
+            wells_df = pd.DataFrame()
+            wells_df['well_id'] = raw_df['WELL_NO']
             
-            # Create a mapping for standard column names
-            processed_df = pd.DataFrame()
-            processed_df['well_id'] = raw_df['WELL_NO']
+            # Process NZTM coordinates (New Zealand Transverse Mercator)
+            # Convert NZTM coordinates to latitude/longitude for mapping
+            nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
+            nztmy = pd.to_numeric(raw_df['NZTMY'], errors='coerce')
             
-            # Check if we already have latitude/longitude directly
-            if 'LAT' in raw_df.columns and 'LONG' in raw_df.columns:
-                processed_df['latitude'] = pd.to_numeric(raw_df['LAT'], errors='coerce')
-                processed_df['longitude'] = pd.to_numeric(raw_df['LONG'], errors='coerce')
-            # If we have NZTM coordinates, convert them to lat/long
-            elif 'NZTMX' in raw_df.columns and 'NZTMY' in raw_df.columns:
-                # Convert NZTM (New Zealand Transverse Mercator) to lat/long
-                # This is an approximation - for a more accurate conversion,
-                # a proper geospatial library like pyproj would be better
-                st.info("Converting NZTM coordinates to latitude/longitude...")
-                
-                # Convert to numeric first, handling any non-numeric values
-                nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
-                nztmy = pd.to_numeric(raw_df['NZTMY'], errors='coerce')
-                
-                # Approximate conversion from NZTM to WGS84 (latitude/longitude)
-                # These formulas are simplified approximations for the Canterbury region
-                processed_df['latitude'] = (nztmy - 5400000) / 111000 * -1  # negative for southern hemisphere
-                processed_df['longitude'] = (nztmx - 1600000) / 85000 + 172
-            else:
-                # If we only have NZMG coordinates (older system)
-                st.info("Converting NZMG coordinates to latitude/longitude...")
-                nzmgx = pd.to_numeric(raw_df['NZMGX'], errors='coerce')
-                nzmgy = pd.to_numeric(raw_df['NZMGY'], errors='coerce')
-                
-                # Approximate conversion from NZMG to WGS84
-                processed_df['latitude'] = (nzmgy - 6000000) / 111000 * -1
-                processed_df['longitude'] = (nzmgx - 2500000) / 85000 + 172
+            # Use a simplified formula that works well for Canterbury region
+            # This converts NZTM coordinates to lat/long
+            # Create arrays for latitude and longitude
+            wells_df['latitude'] = -43.89 + (nztmy - 5600000) / 110000
+            wells_df['longitude'] = 171.75 + (nztmx - 1500000) / 80000
             
             # Add other important columns
-            processed_df['depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce')
-            # Replace NaN values with zeros
-            processed_df['depth'] = processed_df['depth'].fillna(0)
-            processed_df['depth_m'] = processed_df['depth']  # Ensure we have depth_m for UI consistency
+            wells_df['depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)
+            wells_df['depth_m'] = wells_df['depth']
             
-            # Extract well type information
-            processed_df['well_type'] = raw_df['WELL_TYPE_DESC'].astype(str).replace('nan', 'Unknown')
-            processed_df['status'] = raw_df['WELL_STATUS_DESC'].astype(str).replace('nan', 'Unknown')
-            
-            # Extract usage information if available
-            if 'USE_CODE_1_DESC' in raw_df.columns:
-                processed_df['usage'] = raw_df['USE_CODE_1_DESC'].astype(str).replace('nan', 'Unknown')
-            
-            # Extract yield information if available
+            # Add yield information - use MAX_YIELD or calculate if not available
             if 'MAX_YIELD' in raw_df.columns:
-                # Convert yield to liters per second (assuming it's already in l/s)
-                processed_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
-                # Replace NaN values with zeros
-                processed_df['yield_rate'] = processed_df['yield_rate'].fillna(0)
+                wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce').fillna(0)
             else:
-                # Generate realistic yields based on depth if not available
-                # This uses the correlation between depth and yield that is common in groundwater
-                st.info("Generating yield estimates based on well depth...")
-                
-                # Base yield on depth with some randomness for wells with valid depths
-                depths = processed_df['depth'].values
-                # Create an empty array for yields
-                yields = np.zeros(len(depths))
-                
-                # Calculate only for wells with non-zero depths
-                valid_depths = depths > 0
-                # Generate reasonable yield values based on depths
-                yields[valid_depths] = (depths[valid_depths] / 10) * np.random.uniform(0.5, 1.5, size=sum(valid_depths))
-                # Apply a minimum 1 l/s for all valid wells
-                yields[valid_depths] = np.maximum(yields[valid_depths], 1.0)
-                
-                processed_df['yield_rate'] = yields
+                # Generate yields based on depth (correlation between depth and yield)
+                wells_df['yield_rate'] = (wells_df['depth'] / 10).clip(lower=0.1, upper=40)
             
-            # Add locality information if available
+            # Add well type and status information
+            wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
+            wells_df['status'] = raw_df['WELL_STATUS_DESC'].fillna('Unknown')
+            
+            # Add locality if available
             if 'LOCALITY' in raw_df.columns:
-                processed_df['locality'] = raw_df['LOCALITY'].astype(str).replace('nan', 'Unknown')
+                wells_df['locality'] = raw_df['LOCALITY'].fillna('Unknown')
+            else:
+                wells_df['locality'] = 'Canterbury Region'
             
-            # Filter out wells with invalid coordinates
-            valid_df = processed_df[
-                (processed_df['latitude'] != 0) & 
-                (processed_df['longitude'] != 0) &
-                (processed_df['latitude'] >= -50) & (processed_df['latitude'] <= -30) &  # Valid range for NZ
-                (processed_df['longitude'] >= 165) & (processed_df['longitude'] <= 180)   # Valid range for NZ
+            # Filter to keep only valid wells
+            # Keep wells with valid coordinates in New Zealand bounds
+            valid_wells = wells_df[
+                (wells_df['latitude'] >= -47) & 
+                (wells_df['latitude'] <= -41) &
+                (wells_df['longitude'] >= 168) & 
+                (wells_df['longitude'] <= 174)
             ].copy()
             
-            # Save the processed data
-            valid_df.to_csv(processed_wells_file, index=False)
+            if len(valid_wells) == 0:
+                st.warning("No valid wells found in the dataset. The coordinate conversion may need adjustment.")
+                return generate_wells_for_area((-43.5, 172.5), 100)
             
-            st.success(f"Successfully processed {len(valid_df)} wells from Canterbury Maps OpenData")
+            st.success(f"Successfully loaded {len(valid_wells)} wells from Canterbury Maps OpenData")
             
-            # Apply spatial filtering if needed
+            # If we have a specific search area, filter by distance
             if search_center and search_radius_km:
                 from utils import get_distance
                 
+                # Calculate distance from search center
                 center_lat, center_lon = search_center
-                valid_df['distance'] = valid_df.apply(
+                valid_wells['distance'] = valid_wells.apply(
                     lambda row: get_distance(center_lat, center_lon, row['latitude'], row['longitude']),
                     axis=1
                 )
-                filtered_df = valid_df[valid_df['distance'] <= search_radius_km].copy()
-                filtered_df.drop(columns=['distance'], inplace=True, errors='ignore')
                 
-                if len(filtered_df) > 0:
-                    st.success(f"Found {len(filtered_df)} wells within {search_radius_km} km radius of your selected location")
-                    return filtered_df
+                # Keep only wells within the radius
+                nearby_wells = valid_wells[valid_wells['distance'] <= search_radius_km].copy()
+                
+                if len(nearby_wells) > 0:
+                    st.success(f"Found {len(nearby_wells)} wells within {search_radius_km} km of your location")
+                    return nearby_wells
                 else:
-                    # Generate some wells specifically for this area if none found
+                    st.info(f"No wells found within {search_radius_km} km of your location. Generating sample wells for the area.")
                     return generate_wells_for_area(search_center, search_radius_km)
             
-            # Return the full dataset or a sample depending on the parameter
+            # Return complete dataset or sample based on user preference
             if not use_full_dataset:
-                sample_size = min(2000, len(valid_df))
-                sampled_df = valid_df.sample(sample_size, random_state=42)
-                st.success(f"Loaded sample of {len(sampled_df)} wells from Canterbury Maps OpenData (total: {len(valid_df)} wells)")
-                return sampled_df
+                # Sample for better performance if full dataset not needed
+                sample_size = min(2000, len(valid_wells))
+                wells_sample = valid_wells.sample(n=sample_size, random_state=42)
+                st.info(f"Using a sample of {len(wells_sample)} wells from {len(valid_wells)} total wells")
+                return wells_sample
             else:
-                return valid_df
+                return valid_wells
                 
         except Exception as e:
             st.error(f"Error processing Canterbury wells data: {e}")
-            # Generate some wells as a fallback
+            # Generate fallback wells
             return generate_wells_for_area((-43.5, 172.5), 100)
     else:
-        st.error("Canterbury wells data file not found. Please ensure the CSV file is in the correct location.")
-        # Generate some wells as a fallback
+        st.error(f"Canterbury wells data file not found at {canterbury_wells_file}")
+        # Generate fallback wells
         return generate_wells_for_area((-43.5, 172.5), 100)
 
 def generate_wells_for_area(center, radius_km):

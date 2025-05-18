@@ -1,15 +1,16 @@
 import streamlit as st
 import folium
-from folium.plugins import HeatMap
-from streamlit_folium import folium_static
+from folium.plugins import HeatMap, Draw
+from streamlit_folium import folium_static, st_folium
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import base64
+import json
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-import kriging_interpolation
+import isopach
 
 # Set page configuration
 st.set_page_config(
@@ -173,37 +174,9 @@ def main():
         else:
             center_location = default_location
         
-        # Create map with click callback
+        # Create map with interactive capabilities
         m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                       tiles="OpenStreetMap")
-                      
-        # Add click handler to map
-        m.add_child(folium.LatLngPopup())
-        
-        # Add JavaScript to capture clicks and pass them to Streamlit
-        click_callback = """
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() {
-                var map = document.querySelector('.folium-map');
-                map.addEventListener('click', function(e) {
-                    // Get click coordinates from the map
-                    if (e.latlng) {
-                        // Send the click data to Streamlit
-                        var lat = e.latlng.lat;
-                        var lng = e.latlng.lng;
-                        parent.postMessage({
-                            type: 'streamlit:setComponentValue',
-                            value: {lat: lat, lng: lng},
-                            dataType: 'json'
-                        }, '*');
-                    }
-                });
-            }, 1000);
-        });
-        </script>
-        """
-        m.get_root().html.add_child(folium.Element(click_callback))
         
         # No need for a second toggle since we already have one in the sidebar
         
@@ -243,14 +216,14 @@ def main():
                 # Create a feature group for the isopach visualization
                 isopach_group = folium.FeatureGroup(name="Isopach Map")
                 
-                # Generate kriging-based contour map for the entire dataset
-                contour_json = kriging_interpolation.create_kriging_contours(
+                # Generate smooth contours for the entire dataset
+                contour_layer = isopach.create_smooth_contours(
                     wells_df,
                     center_point=None,  # Auto-center based on well locations
                     radius_km=None,     # Auto-radius to cover reasonable area
                     min_yield=st.session_state.min_yield,
                     max_yield=st.session_state.max_yield,
-                    num_points=120      # Higher resolution for smoother contours
+                    num_points=200      # Higher resolution for smoother contours
                 )
                 
                 if contour_json:
@@ -335,7 +308,7 @@ def main():
                 ).add_to(m)
                 
                 # Calculate well statistics for the clicked location
-                stats = kriging_interpolation.get_well_stats(
+                stats = isopach.get_well_stats(
                     wells_df, 
                     st.session_state.selected_point[0],
                     st.session_state.selected_point[1],
@@ -418,8 +391,18 @@ def main():
         # Add the click handler to update the selected point
         m.add_child(folium.LatLngPopup())
         
-        # Display the map
-        folium_static(m, width=800, height=600)
+        # Use st_folium which supports click events
+        map_data = st_folium(m, width=800, height=600, key="main_map")
+        
+        # Handle map click events
+        if map_data["last_clicked"]:
+            # Extract coordinates from click
+            clicked_lat = map_data["last_clicked"]["lat"]
+            clicked_lng = map_data["last_clicked"]["lng"]
+            
+            # Update selected point and trigger rerun
+            st.session_state.selected_point = [clicked_lat, clicked_lng]
+            st.rerun()
         
         # Handle map click (stores in session state for next render)
         map_data = st.session_state.get('last_clicked')

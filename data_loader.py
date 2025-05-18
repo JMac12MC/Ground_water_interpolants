@@ -256,7 +256,12 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
             
             # Add yield information - use MAX_YIELD or calculate if not available
             if 'MAX_YIELD' in raw_df.columns:
+                # Convert to numeric and fill missing values with 0 as requested
+                # This ensures wells with missing yield data are still displayed and treated as having 0 yield
                 wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce').fillna(0)
+            elif 'YIELD_RATE' in raw_df.columns:
+                # Also check if YIELD_RATE column exists
+                wells_df['yield_rate'] = pd.to_numeric(raw_df['YIELD_RATE'], errors='coerce').fillna(0)
             else:
                 # Generate yields based on depth (correlation between depth and yield)
                 wells_df['yield_rate'] = (wells_df['depth'] / 10).clip(lower=0.1, upper=40)

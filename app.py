@@ -212,7 +212,12 @@ with main_col1:
             # First, ensure all missing yield values are replaced with 0
             # This treats missing yield data as 0 instead of filtering them out
             filtered_wells_clean = filtered_wells.copy()
-            filtered_wells_clean['yield_rate'] = filtered_wells_clean['yield_rate'].fillna(0)
+            
+            # Convert NaN values to 0 using pandas methods
+            if 'yield_rate' in filtered_wells_clean.columns:
+                # Check if column exists and handle missing values properly
+                if pd.isna(filtered_wells_clean['yield_rate']).any():
+                    filtered_wells_clean['yield_rate'] = filtered_wells_clean['yield_rate'].fillna(0)
             
             # For analysis panel only, we'll create a yield-filtered version
             st.session_state.yield_filtered_wells = filtered_wells_clean[

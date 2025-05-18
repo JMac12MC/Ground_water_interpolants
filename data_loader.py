@@ -277,7 +277,7 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
             
             # Add locality information if available
             if 'LOCALITY' in raw_df.columns:
-                processed_df['locality'] = raw_df['LOCALITY'].fillna('Unknown')
+                processed_df['locality'] = raw_df['LOCALITY'].astype(str).replace('nan', 'Unknown')
             
             # Filter out wells with invalid coordinates
             valid_df = processed_df[

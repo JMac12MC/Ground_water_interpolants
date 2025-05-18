@@ -17,6 +17,19 @@ st.set_page_config(
     layout="wide",
 )
 
+# Helper function to get color for yield value from gradient
+def get_color_for_yield(yield_value, min_yield, max_yield, color_gradient):
+    """Return a color from the gradient based on the yield value"""
+    if min_yield == max_yield:
+        norm_val = 0.5
+    else:
+        norm_val = (yield_value - min_yield) / (max_yield - min_yield)
+        norm_val = max(0.0, min(1.0, norm_val))
+    
+    # Find the closest gradient key
+    closest_key = min(color_gradient.keys(), key=lambda x: abs(x - norm_val))
+    return color_gradient[closest_key]
+
 # Banner image with opacity overlay and text
 def add_banner():
     banner_images = [
@@ -244,45 +257,54 @@ with main_col1:
                 yield_range = yield_max - yield_min
                 
                 try:
-                    # Calculate interpolated values using IDW
-                    interpolated_df = interpolation.calculate_interpolated_grid(
+                    # Generate isopach contour map using improved interpolation
+                    contour_json = interpolation.generate_contour_geojson(
                         filtered_wells,
                         st.session_state.selected_point,
                         st.session_state.search_radius,
                         yield_min,
                         yield_max,
-                        num_points=60  # Grid resolution
+                        num_points=100  # Higher resolution for smoother contours
                     )
                     
-                    if interpolated_df is not None and not interpolated_df.empty:
-                        # Group by yield_class for isopach-style visualization
-                        for yield_class in range(0, 5):  # 5 classes from 0-4
-                            yield_df = interpolated_df[interpolated_df['yield_class'] == yield_class]
-                            
-                            if not yield_df.empty:
-                                # Calculate color for this yield class
-                                norm_val = yield_class / 4.0  # 0-1 scale (0, 0.25, 0.5, 0.75, 1.0)
-                                
-                                # Find closest color in our gradient
-                                closest_key = min(gradient.keys(), key=lambda x: abs(x - norm_val))
-                                color = gradient[closest_key]
-                                
-                                # Calculate yield range for this class
-                                class_min = yield_min + (yield_range * yield_class / 5)
-                                class_max = yield_min + (yield_range * (yield_class + 1) / 5)
-                                
-                                # Add points as circle markers
-                                for _, row in yield_df.iterrows():
-                                    folium.CircleMarker(
-                                        location=[row['latitude'], row['longitude']],
-                                        radius=3,  # Small points for the interpolated grid
-                                        color=color,
-                                        fill=True,
-                                        fill_color=color,
-                                        fill_opacity=0.5,
-                                        weight=0,
-                                        tooltip=f"Yield: {row['yield_value']:.1f} L/s"
-                                    ).add_to(yield_group)
+                    if contour_json is not None:
+                        # Add isopach contours to the map as filled polygons
+                        # Define style function for the contours based on yield value
+                        style_function = lambda feature: {
+                            'fillColor': get_color_for_yield(
+                                feature['properties']['yield_value'], 
+                                yield_min, 
+                                yield_max, 
+                                gradient
+                            ),
+                            'color': 'black',
+                            'weight': 0.5,
+                            'fillOpacity': 0.7,
+                        }
+                        
+                        # Add tooltip to show yield value on hover
+                        tooltip = folium.GeoJsonTooltip(
+                            fields=['yield_value'],
+                            aliases=['Yield (L/s):'],
+                            localize=True,
+                            sticky=False,
+                            labels=True,
+                            style="""
+                                background-color: #F0EFEF;
+                                border: 1px solid black;
+                                border-radius: 3px;
+                                box-shadow: 3px 3px 3px rgba(0,0,0,0.25);
+                            """
+                        )
+                        
+                        # Add the GeoJSON contours to the map
+                        folium.GeoJson(
+                            data=contour_json,
+                            name='Yield Contours',
+                            style_function=style_function,
+                            tooltip=tooltip,
+                            overlay=True
+                        ).add_to(yield_group)
                     
                     # Add the actual wells with their yield values
                     for _, row in filtered_wells.iterrows():

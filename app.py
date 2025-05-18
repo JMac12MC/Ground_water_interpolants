@@ -105,23 +105,9 @@ with st.sidebar:
         step=1
     )
     
-    # Yield filter
-    if st.session_state.wells_data is not None:
-        # Calculate max yield from data if available, handling NaN values
-        valid_yield = st.session_state.wells_data['yield_rate'].dropna()
-        if len(valid_yield) > 0:
-            max_data_yield = int(valid_yield.max()) + 100
-        else:
-            max_data_yield = 1000  # Default if no valid yield data
-            
-        min_yield, max_yield = st.slider(
-            "Yield Rate Range (L/s)",
-            min_value=0,
-            max_value=max_data_yield,
-            value=(st.session_state.min_yield, min(st.session_state.max_yield, max_data_yield))
-        )
-        st.session_state.min_yield = min_yield
-        st.session_state.max_yield = max_yield
+    # Informational note about wells with missing yield data
+    st.write("**NOTE:** All wells within the search radius are displayed.")
+    st.write("Wells with missing yield values are treated as having 0 yield for map interpolation.")
     
     # Visibility options
     st.header("Display Options")
@@ -206,26 +192,17 @@ with main_col1:
                 (wells_df['distance'] <= st.session_state.search_radius)
             ]
             
-            # Store the total wells count before any filtering
-            st.session_state.total_wells_in_radius = len(filtered_wells)
-            
-            # First, ensure all missing yield values are replaced with 0
+            # Ensure all missing yield values are replaced with 0
             # This treats missing yield data as 0 instead of filtering them out
-            filtered_wells_clean = filtered_wells.copy()
+            if 'yield_rate' in filtered_wells.columns:
+                # Replace NaN yield values with 0
+                filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
             
-            # Convert NaN values to 0 using pandas methods
-            if 'yield_rate' in filtered_wells_clean.columns:
-                # Check if column exists and handle missing values properly
-                if pd.isna(filtered_wells_clean['yield_rate']).any():
-                    filtered_wells_clean['yield_rate'] = filtered_wells_clean['yield_rate'].fillna(0)
-            
-            # For analysis panel only, we'll create a yield-filtered version
-            st.session_state.yield_filtered_wells = filtered_wells_clean[
-                (filtered_wells_clean['yield_rate'] >= st.session_state.min_yield) & 
-                (filtered_wells_clean['yield_rate'] <= st.session_state.max_yield)
-            ]
-            
+            # Store all wells in radius - NO yield filtering whatsoever
             st.session_state.filtered_wells = filtered_wells
+            
+            # Store total count
+            st.session_state.total_wells_in_radius = len(filtered_wells)
             
             # Create marker for selected point
             folium.Marker(
@@ -378,19 +355,14 @@ with main_col2:
     st.subheader("Analysis Results")
     
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
-        # Show summary stats for ALL wells in radius
+        # Show the total wells count in radius
         st.write(f"**Total wells in radius:** {st.session_state.total_wells_in_radius}")
         
-        # Show stats for wells that match the yield filter
-        st.write(f"**Wells matching yield filter:** {len(st.session_state.yield_filtered_wells)}")
-        
-        # Use yield-filtered wells for yield statistics to match the sidebar filter settings
-        if len(st.session_state.yield_filtered_wells) > 0:
-            avg_yield = st.session_state.yield_filtered_wells['yield_rate'].mean()
-            max_yield = st.session_state.yield_filtered_wells['yield_rate'].max()
-        else:
-            avg_yield = 0
-            max_yield = 0
+        # Calculate statistics using ALL wells in the radius (no yield filtering)
+        # Replace NaN with 0 for yield calculations
+        yields = st.session_state.filtered_wells['yield_rate'].fillna(0)
+        avg_yield = yields.mean() if len(yields) > 0 else 0
+        max_yield = yields.max() if len(yields) > 0 else 0
         
         # Use all wells in radius for depth statistics
         avg_depth = st.session_state.filtered_wells['depth'].mean() if not st.session_state.filtered_wells.empty else 0

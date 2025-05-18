@@ -2,11 +2,15 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib import cm
 from scipy.spatial import Voronoi, voronoi_plot_2d
+import base64
+from io import BytesIO
 
-def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
+def create_isopach_map(wells_df, center_point, radius_km, min_yield=None, max_yield=None, resolution=80):
     """
-    Generate heat map data using 2D Kriging interpolation for scientific groundwater mapping
+    Generate GeoJSON contour data for an isopach map showing zones of equal yield values
     
     Parameters:
     -----------
@@ -15,22 +19,35 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
     center_point : tuple
         Tuple containing (latitude, longitude) of the center point
     radius_km : float
-        Radius in kilometers to generate heat map data for
+        Radius in kilometers to generate isopach map for
+    min_yield : float, optional
+        Minimum yield value for normalization
+    max_yield : float, optional
+        Maximum yield value for normalization
     resolution : int
-        Number of points to generate in each dimension (higher = more detailed but slower)
+        Grid resolution for interpolation (higher = more detailed but slower)
         
     Returns:
     --------
-    list
-        List of [lat, lng, intensity] points for the heat map
+    tuple
+        (geojson_contours, heat_data)
+        Where:
+        - geojson_contours: GeoJSON features with contour polygons
+        - heat_data: list of [lat, lng, normalized_yield] points for fallback heat map
     """
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
-        return []
+        return None, []
     
     # Extract coordinates and yields for wells within search radius
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
     yields = wells_df['yield_rate'].values.astype(float)
+    
+    # Set default min/max yield if not provided
+    if min_yield is None:
+        min_yield = np.min(yields) if len(yields) > 0 else 0
+    if max_yield is None:
+        max_yield = np.max(yields) if len(yields) > 0 else 1
     
     # For special case with too few wells, just show the wells as they are
     if len(wells_df) < 3:

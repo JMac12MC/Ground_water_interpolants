@@ -223,16 +223,12 @@ with main_col1:
                 fill_opacity=0.1
             ).add_to(m)
             
-            # Add heat map based on yield
+            # Add yield visualization as an isopach map showing contours of equal yield values
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                heat_data = generate_heat_map_data(
-                    filtered_wells, 
-                    st.session_state.selected_point, 
-                    st.session_state.search_radius
-                )
+                # Create interpolated grid for isopach map
+                from interpolation import create_isopach_map
                 
-                # Fixed gradient for isopach-style map visualization
-                # Use actual yield values to determine colors regardless of zoom level
+                # Define color scheme
                 gradient = {
                     0.0: 'blue',    # Lowest yield
                     0.2: 'cyan',    # Low yield 
@@ -242,16 +238,131 @@ with main_col1:
                     1.0: 'red'      # Highest yield
                 }
                 
-                # Create heat map with fixed radius and improved settings
-                HeatMap(
-                    heat_data,
-                    radius=18,           # Slightly larger radius for better visibility
-                    gradient=gradient,   # Use our yield-based gradient
-                    blur=12,             # Smoother transitions
-                    max_zoom=15,         # Allow more detail at higher zoom levels
-                    min_opacity=0.35,    # Ensure visibility at all zoom levels
-                    overlay=True,        # Keep as overlay
-                ).add_to(m)
+                # Define yield boundaries for contour levels
+                yield_min = st.session_state.min_yield
+                yield_max = st.session_state.max_yield
+                
+                # Create isopach map overlay
+                try:
+                    # Create isopach contour maps
+                    contour_geojson, heat_data = create_isopach_map(
+                        filtered_wells, 
+                        st.session_state.selected_point,
+                        st.session_state.search_radius,
+                        yield_min,
+                        yield_max
+                    )
+                    
+                    # Add GeoJSON contours to map if available
+                    if contour_geojson:
+                        # Add contour lines as an overlay
+                        contour_style = lambda x: {
+                            'fillColor': gradient[min(1.0, max(0.0, (x['properties']['yield_value'] - yield_min) / 
+                                                           (yield_max - yield_min)))],
+                            'color': 'black',
+                            'weight': 1,
+                            'fillOpacity': 0.5
+                        }
+                        
+                        folium.GeoJson(
+                            contour_geojson,
+                            name="Yield Contours",
+                            style_function=contour_style,
+                            tooltip=folium.GeoJsonTooltip(
+                                fields=['yield_value'],
+                                aliases=['Yield (L/s):'],
+                                labels=True,
+                                sticky=False
+                            )
+                        ).add_to(heat_group)
+                    
+                    # Mark well locations
+                    for _, row in filtered_wells.iterrows():
+                        # Calculate normalized yield value for color
+                        norm_yield = (row['yield_rate'] - yield_min) / (yield_max - yield_min) 
+                        norm_yield = min(1.0, max(0.0, norm_yield))  # Clamp to 0-1 range
+                        
+                        # Get color from gradient based on normalized yield
+                        closest_key = min([k for k in gradient.keys()], key=lambda x: abs(x - norm_yield))
+                        color = gradient[closest_key]
+                        
+                        # Add well marker
+                        folium.CircleMarker(
+                            location=[float(row['latitude']), float(row['longitude'])],
+                            radius=7,
+                            color='black',
+                            weight=1,
+                            fill=True,
+                            fill_color=color,
+                            fill_opacity=0.8,
+                            popup=f"""
+                            <b>Well ID:</b> {row['well_id']}<br>
+                            <b>Yield:</b> {row['yield_rate']:.1f} L/s<br>
+                            <b>Depth:</b> {row['depth']:.1f} m
+                            """
+                        ).add_to(heat_group)
+                    
+                    # Create legend for the isopach map
+                    steps = 5  # Number of contour levels
+                    yield_range = yield_max - yield_min
+                    
+                    legend_html = """
+                    <div style="position: fixed; bottom: 50px; left: 50px; background-color: white; 
+                                padding: 10px; border: 1px solid grey; z-index: 9999; border-radius: 5px;">
+                        <h4 style="margin-top: 0;">Yield (L/s)</h4>
+                    """
+                    
+                    for i in range(steps):
+                        start_yield = yield_min + (yield_range * i / steps)
+                        end_yield = yield_min + (yield_range * (i+1) / steps)
+                        color = list(gradient.values())[i]
+                        
+                        legend_html += f"""
+                        <div style="display: flex; align-items: center; margin: 3px 0;">
+                            <div style="width: 20px; height: 20px; background-color: {color}; margin-right: 5px;"></div>
+                            <span>{start_yield:.1f} - {end_yield:.1f}</span>
+                        </div>
+                        """
+                    
+                    legend_html += "</div>"
+                    
+                    # Add the legend to the map
+                    m.get_root().html.add_child(folium.Element(legend_html))
+                    
+                    # Add background heatmap for smoother visualization if contours aren't available
+                    if not contour_geojson and heat_data:
+                        HeatMap(
+                            heat_data,
+                            radius=15,
+                            gradient=gradient,
+                            blur=10,
+                            max_zoom=15,
+                            min_opacity=0.4,
+                            overlay=True,
+                        ).add_to(heat_group)
+                
+                except Exception as e:
+                    st.error(f"Error generating isopach map: {e}")
+                    # Fallback to simple heat map
+                    try:
+                        from interpolation import generate_heat_map_data
+                        heat_data = generate_heat_map_data(
+                            filtered_wells, 
+                            st.session_state.selected_point, 
+                            st.session_state.search_radius
+                        )
+                        
+                        HeatMap(
+                            heat_data,
+                            radius=15,
+                            gradient=gradient,
+                            blur=10,
+                            max_zoom=15,
+                            min_opacity=0.4,
+                            overlay=True,
+                        ).add_to(heat_group)
+                    except Exception as fallback_error:
+                        st.error(f"Fallback visualization error: {fallback_error}")
                 
                 # Add visualization legend matching the heat map gradient
                 colormap = folium.LinearColormap(

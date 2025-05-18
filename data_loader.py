@@ -172,14 +172,41 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                 nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
                 nztmy = pd.to_numeric(raw_df['NZTMY'], errors='coerce')
                 
-                # Improved conversion specifically calibrated for Canterbury region
-                # The Canterbury region is roughly centered around -43.5, 172.5
-                # These conversion parameters have been tuned based on known well locations
+                # Use pyproj to perform proper coordinate transformation
+                # NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326)
+                transformer = pyproj.Transformer.from_crs(
+                    "EPSG:2193",  # NZTM2000 
+                    "EPSG:4326",  # WGS84 (standard lat/long)
+                    always_xy=True
+                )
                 
-                # Formula: Convert NZTM to latitude/longitude (WGS84)
-                # Fully adjusted to match actual Canterbury well locations
-                wells_df['latitude'] = -43.3 + (nztmy - 5390000) / 95000
-                wells_df['longitude'] = 172.0 + (nztmx - 1520000) / 56000
+                # Create dataframe with valid coordinates only
+                valid_coords = ~nztmx.isna() & ~nztmy.isna()
+                
+                # Initialize with placeholder values
+                lat = np.full(len(nztmy), np.nan)
+                lon = np.full(len(nztmx), np.nan)
+                
+                # Only transform coordinates that are valid
+                if valid_coords.any():
+                    # Get valid coordinates
+                    valid_x = nztmx[valid_coords].values
+                    valid_y = nztmy[valid_coords].values
+                    
+                    # Transform coordinates using pyproj
+                    transformed_lon, transformed_lat = transformer.transform(valid_x, valid_y)
+                    
+                    # Assign transformed coordinates back to arrays
+                    lon[valid_coords] = transformed_lon
+                    lat[valid_coords] = transformed_lat
+                
+                # Set latitude and longitude in wells_df
+                wells_df['latitude'] = lat
+                wells_df['longitude'] = lon
+                
+                # Also keep original NZTM coordinates
+                wells_df['nztm_x'] = nztmx
+                wells_df['nztm_y'] = nztmy
             
             # Fallback to NZMG coordinates if needed
             elif 'NZMGX' in raw_df.columns and 'NZMGY' in raw_df.columns:
@@ -187,9 +214,41 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                 nzmgx = pd.to_numeric(raw_df['NZMGX'], errors='coerce')
                 nzmgy = pd.to_numeric(raw_df['NZMGY'], errors='coerce')
                 
-                # NZMG to WGS84 conversion
-                wells_df['latitude'] = -43.525 + (nzmgy - 5740000) / 111000  
-                wells_df['longitude'] = 172.625 + (nzmgx - 2460000) / 85000
+                # Use pyproj to perform proper coordinate transformation
+                # NZMG (EPSG:27200) to WGS84 (EPSG:4326)
+                transformer = pyproj.Transformer.from_crs(
+                    "EPSG:27200",  # NZMG (New Zealand Map Grid) 
+                    "EPSG:4326",   # WGS84 (standard lat/long)
+                    always_xy=True
+                )
+                
+                # Create dataframe with valid coordinates only
+                valid_coords = ~nzmgx.isna() & ~nzmgy.isna()
+                
+                # Initialize with placeholder values
+                lat = np.full(len(nzmgy), np.nan)
+                lon = np.full(len(nzmgx), np.nan)
+                
+                # Only transform coordinates that are valid
+                if valid_coords.any():
+                    # Get valid coordinates
+                    valid_x = nzmgx[valid_coords].values
+                    valid_y = nzmgy[valid_coords].values
+                    
+                    # Transform coordinates using pyproj
+                    transformed_lon, transformed_lat = transformer.transform(valid_x, valid_y)
+                    
+                    # Assign transformed coordinates back to arrays
+                    lon[valid_coords] = transformed_lon
+                    lat[valid_coords] = transformed_lat
+                
+                # Set latitude and longitude in wells_df
+                wells_df['latitude'] = lat
+                wells_df['longitude'] = lon
+                
+                # Also keep original NZMG coordinates
+                wells_df['nzmg_x'] = nzmgx
+                wells_df['nzmg_y'] = nzmgy
             
             # Add other important columns
             wells_df['depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)

@@ -241,7 +241,8 @@ with main_col1:
                 heat_data = generate_heat_map_data(
                     filtered_wells, 
                     st.session_state.selected_point, 
-                    st.session_state.search_radius
+                    st.session_state.search_radius,
+                    method=st.session_state.interpolation_method
                 )
                 
                 # Updated gradient colors where red = high yield (not distance)

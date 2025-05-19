@@ -3,10 +3,12 @@ import pandas as pd
 from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from scipy.spatial import Voronoi, voronoi_plot_2d
+from sklearn.ensemble import RandomForestRegressor
+from pykrige.ok import OrdinaryKriging
 
-def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
+def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging'):
     """
-    Generate heat map data using 2D interpolation based on kriging techniques
+    Generate heat map data using various interpolation techniques
     
     Parameters:
     -----------
@@ -18,6 +20,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
         Radius in kilometers to generate heat map data for
     resolution : int
         Number of points to generate in each dimension
+    method : str
+        Interpolation method to use ('kriging', 'idw', 'rf_kriging')
         
     Returns:
     --------
@@ -68,18 +72,74 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50):
         mask = distances <= radius_km
         xi_inside = xi[mask]
         
-        # Basic 2D interpolation (linear)
-        from scipy.interpolate import griddata
-        
-        # First try linear interpolation
-        interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
-        
-        # For areas with NaNs, apply nearest neighbor to fill gaps
-        if np.any(np.isnan(interpolated_z)):
-            nan_mask = np.isnan(interpolated_z)
-            interpolated_z[nan_mask] = griddata(
-                points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
-            )
+        # Choose interpolation method
+        if method == 'rf_kriging' and len(wells_df) >= 10:
+            try:
+                print("Using Random Forest + Kriging interpolation")
+                # Prepare data for Random Forest
+                features = np.vstack([x_coords, y_coords]).T  # Features are [x, y] coordinates in km
+                target = yields  # Target is the yield values
+                
+                # Train Random Forest model
+                rf = RandomForestRegressor(n_estimators=100, random_state=42)
+                rf.fit(features, target)
+                
+                # Get RF predictions for all grid points
+                rf_predictions = rf.predict(xi_inside)
+                
+                # Calculate residuals on training data
+                rf_train_preds = rf.predict(features)
+                residuals = target - rf_train_preds
+                
+                # If enough points, apply Kriging to the residuals
+                if len(features) >= 5:
+                    # Convert back to lon/lat for kriging (pykrige expects lon/lat)
+                    lon_values = x_coords / km_per_degree_lon + center_lon
+                    lat_values = y_coords / km_per_degree_lat + center_lat
+                    xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
+                    xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
+                    
+                    # Apply Ordinary Kriging to residuals
+                    OK = OrdinaryKriging(
+                        lon_values, lat_values, residuals,
+                        variogram_model='spherical',
+                        verbose=False,
+                        enable_plotting=False
+                    )
+                    # Execute kriging on grid points
+                    kriged_residuals, _ = OK.execute('points', xi_lon, xi_lat)
+                    
+                    # Combine RF predictions with kriged residuals
+                    interpolated_z = rf_predictions + kriged_residuals
+                else:
+                    # Not enough points for kriging, use RF predictions only
+                    interpolated_z = rf_predictions
+            except Exception as e:
+                print(f"RF+Kriging error: {e}, falling back to standard interpolation")
+                # Fall back to standard interpolation
+                # Basic 2D interpolation (linear)
+                from scipy.interpolate import griddata
+                interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
+                
+                # For areas with NaNs, apply nearest neighbor to fill gaps
+                if np.any(np.isnan(interpolated_z)):
+                    nan_mask = np.isnan(interpolated_z)
+                    interpolated_z[nan_mask] = griddata(
+                        points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
+                    )
+        else:
+            # Basic 2D interpolation (linear)
+            from scipy.interpolate import griddata
+            
+            # First try linear interpolation
+            interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
+            
+            # For areas with NaNs, apply nearest neighbor to fill gaps
+            if np.any(np.isnan(interpolated_z)):
+                nan_mask = np.isnan(interpolated_z)
+                interpolated_z[nan_mask] = griddata(
+                    points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
+                )
         
         # Make sure we don't have negative values
         interpolated_z = np.maximum(0, interpolated_z)

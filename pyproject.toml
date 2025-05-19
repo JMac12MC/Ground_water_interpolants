@@ -17,4 +17,5 @@ dependencies = [
     "scikit-learn>=1.6.1",
     "matplotlib>=3.10.3",
     "pyproj>=3.7.1",
+    "pykrige>=1.7.2",
 ]

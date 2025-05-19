@@ -104,6 +104,25 @@ with st.sidebar:
     st.write("**NOTE:** All wells within the search radius are displayed.")
     st.write("Wells with missing yield values are treated as having 0 yield for map interpolation.")
     
+    # Interpolation method selection
+    st.header("Analysis Options")
+    interpolation_method = st.selectbox(
+        "Interpolation Method",
+        options=["Standard Kriging", "Random Forest + Kriging"],
+        index=0,
+        help="Choose the method used to interpolate water yield between wells."
+    )
+    
+    # Map method selection to internal code
+    if 'interpolation_method' not in st.session_state:
+        st.session_state.interpolation_method = 'kriging'
+    
+    # Update the session state based on selection
+    if interpolation_method == "Standard Kriging":
+        st.session_state.interpolation_method = 'kriging'
+    elif interpolation_method == "Random Forest + Kriging":
+        st.session_state.interpolation_method = 'rf_kriging'
+    
     # Visibility options
     st.header("Display Options")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)

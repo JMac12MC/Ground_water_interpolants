@@ -1,0 +1,38 @@
+Well Yield Interpolation Using Kriging and Random Forest
+
+import pandas as pd import numpy as np import matplotlib.pyplot as plt from pykrige.ok import OrdinaryKriging from sklearn.ensemble import RandomForestRegressor from sklearn.model_selection import train_test_split from sklearn.metrics import mean_squared_error import geopandas as gpd
+
+Load your well data - replace this with your actual file path or source
+
+df = pd.read_csv("wells.csv")  # Expecting columns: longitude, latitude, yield_l_sec
+
+Drop missing values and rename for convenience
+
+df = df.dropna(subset=["longitude", "latitude", "yield_l_sec"]) x = df["longitude"] y = df["latitude"] z = df["yield_l_sec"]
+
+Define interpolation grid
+
+grid_x = np.linspace(x.min(), x.max(), 100) grid_y = np.linspace(y.min(), y.max(), 100) grid_xx, grid_yy = np.meshgrid(grid_x, grid_y)
+
+---- Ordinary Kriging ----
+
+print("Running Ordinary Kriging...") OK = OrdinaryKriging( x, y, z, variogram_model='spherical', verbose=False, enable_plotting=False ) z_kriged, ss = OK.execute('grid', grid_x, grid_y)
+
+plt.figure(figsize=(10, 6)) plt.contourf(grid_x, grid_y, z_kriged, cmap='viridis') plt.scatter(x, y, c=z, edgecolors='k', cmap='viridis') plt.colorbar(label='Yield (L/sec)') plt.title('Kriging Interpolation of Well Yield') plt.xlabel('Longitude') plt.ylabel('Latitude') plt.show()
+
+---- Random Forest Regressor ----
+
+print("Running Random Forest Regressor...") features = df[["longitude", "latitude"]] target = df["yield_l_sec"]
+
+X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42) rf = RandomForestRegressor(n_estimators=100, random_state=42) rf.fit(X_train, y_train)
+
+Evaluate
+
+y_pred = rf.predict(X_test) rmse = mean_squared_error(y_test, y_pred, squared=False) print(f"Random Forest RMSE: {rmse:.2f} L/sec")
+
+Predict over the grid
+
+grid_points = np.c_[grid_xx.ravel(), grid_yy.ravel()] z_rf = rf.predict(grid_points).reshape(grid_xx.shape)
+
+plt.figure(figsize=(10, 6)) plt.contourf(grid_x, grid_y, z_rf, cmap='viridis') plt.scatter(x, y, c=z, edgecolors='k', cmap='viridis') plt.colorbar(label='Predicted Yield (L/sec)') plt.title('Random Forest Interpolation of Well Yield') plt.xlabel('Longitude') plt.ylabel('Latitude') plt.show()
+

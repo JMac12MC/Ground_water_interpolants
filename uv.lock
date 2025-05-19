@@ -948,6 +948,26 @@ wheels = [
 ]
 
 [[package]]
+name = "pykrige"
+version = "1.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ea/00/d815833441d8c52bf4a6930952e77d3de77d0bf67b3202ccc12dabdae279/pykrige-1.7.2.tar.gz", hash = "sha256:25b45a4173714c0b62098d19019404cb3978fa8bd8abae9ba55a272a53979e35", size = 618688 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/cd/65fab13b7ffb8c219ec0f3b7308e5be9c50721562e212e1f302e4d467727/PyKrige-1.7.2-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:725bac8d185078f6e9853acb89cf2cc6eee3ce193419c0c7ec2b9b43b55f4057", size = 224629 },
+    { url = "https://files.pythonhosted.org/packages/ac/91/1282b2561a455eda659b481816771f722b3c68fad75506a5d4d70d0f1726/PyKrige-1.7.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:b4e68fc84df9fb521a27a1bec2dee60c12a95988712fee31e0a8753c5e51f3df", size = 212734 },
+    { url = "https://files.pythonhosted.org/packages/51/a3/20535a4e2ab56539dfd169fbad55fd302745bde52d6e4041a1dc02324e97/PyKrige-1.7.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:175f1b12dfe3cd1751f2c70c872c8d16ca712b55569fe98fd5ae4bd58fb49cc3", size = 979627 },
+    { url = "https://files.pythonhosted.org/packages/50/c4/b2465d12e370dc4a20539a163b7ca84d0bb6dc8a41a37dbed9b7069bcb97/PyKrige-1.7.2-cp311-cp311-win_amd64.whl", hash = "sha256:36b8fec0e761f6406de992f16dbc6f82a7616a918f6e2dc0a13002a419831827", size = 205591 },
+    { url = "https://files.pythonhosted.org/packages/1f/57/a0161ed40ca24be480a02067410a849317d38d736fa3894190c0dc4280ab/PyKrige-1.7.2-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:91cd18ec9044d28fe5b397e5788b712b7f36c0c116de22ae7d56952f83b253ca", size = 227348 },
+    { url = "https://files.pythonhosted.org/packages/2c/f8/a4d6909126020c4193051c97a86b5a7bd6e312f96c88f85794a4b69ab8ce/PyKrige-1.7.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:2bdc676f5d3ddad2552dbf1e6d9699cc186039379dd0a84a5c9c2c27cbf9dc53", size = 214825 },
+    { url = "https://files.pythonhosted.org/packages/01/39/214da796fd63f74bfe78be57cda7d1ab0305a0b2345974ce0d65955f219c/PyKrige-1.7.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a6e15c999435de303f76413b41d6ba4d271e12d96a93ac2f1acd4d80d526fab2", size = 961681 },
+    { url = "https://files.pythonhosted.org/packages/e5/f1/df7322867f2279ce82a79211196c1dfd62c230bd62a889e0016ea4f6c7cf/PyKrige-1.7.2-cp312-cp312-win_amd64.whl", hash = "sha256:e0138c1dfdbbaeb76df20a304f90deeccec56951518ceae81e34bfbbb49649f5", size = 205914 },
+]
+
+[[package]]
 name = "pyogrio"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1120,6 +1140,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "pykrige" },
     { name = "pyproj" },
     { name = "requests" },
     { name = "scikit-gstat" },
@@ -1137,6 +1158,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=2.2.5" },
     { name = "pandas", specifier = ">=2.2.3" },
+    { name = "pykrige", specifier = ">=1.7.2" },
     { name = "pyproj", specifier = ">=3.7.1" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "scikit-gstat", specifier = ">=1.0.21" },

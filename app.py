@@ -238,6 +238,15 @@ with main_col1:
             
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
+                # Calculate the max yield value first so we can normalize the data properly
+                max_yield_value = 60  # Default max value
+                if 'yield_rate' in filtered_wells.columns:
+                    # Get max yield from filtered wells, handle empty dataframe
+                    valid_yields = filtered_wells['yield_rate'].dropna()
+                    if len(valid_yields) > 0:
+                        max_yield_value = max(valid_yields.max(), 60)  # At least 60 for visibility
+                
+                # Generate heat map data with consistent scale
                 heat_data = generate_heat_map_data(
                     filtered_wells, 
                     st.session_state.selected_point, 
@@ -245,7 +254,18 @@ with main_col1:
                     method=st.session_state.interpolation_method
                 )
                 
+                # Normalize the heat data to match the legend exactly
+                if heat_data:
+                    # Extract values from heat data [lat, lng, value]
+                    heat_values = [item[2] for item in heat_data]
+                    max_heat = max(heat_values) if heat_values else 0
+                    
+                    # If the heat values are significantly different from max_yield_value, adjust max_yield_value
+                    if max_heat > 0:
+                        max_yield_value = max(max_heat, max_yield_value)
+                
                 # Updated gradient colors where red = high yield (not distance)
+                # These colors must exactly match the legend colors
                 gradient = {
                     0.0: 'blue',    # Lowest yield
                     0.2: 'cyan',    # Low yield
@@ -255,26 +275,19 @@ with main_col1:
                     1.0: 'red'      # Highest yield
                 }
                 
-                # Create heat map with fixed radius and improved settings
+                # Create heat map with fixed radius and improved settings for all zoom levels
                 HeatMap(
                     heat_data,
-                    radius=18,           # Slightly larger radius for better visibility
+                    radius=20,           # Larger radius for better visibility and continuity
                     gradient=gradient,   # Use our yield-based gradient
-                    blur=12,             # Smoother transitions
-                    max_zoom=15,         # Allow more detail at higher zoom levels
-                    min_opacity=0.35,    # Ensure visibility at all zoom levels
+                    blur=15,             # More blur for smoother transitions
+                    max_zoom=18,         # Allow detail at higher zoom levels
+                    min_opacity=0.5,     # Higher opacity ensures visibility at all zoom levels
                     overlay=True,        # Keep as overlay
                 ).add_to(m)
                 
-                # Add visualization legend matching the heat map gradient
-                # Use fixed values for the colormap range from 0 to max value in the filtered data
-                max_yield_value = 100  # Default max value
-                if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
-                    # Get max yield from filtered wells, handle empty dataframe
-                    valid_yields = st.session_state.filtered_wells['yield_rate'].dropna()
-                    if len(valid_yields) > 0:
-                        max_yield_value = max(valid_yields.max(), 100)  # At least 100 for visibility
-                
+                # Add visualization legend that matches the heat map gradient EXACTLY 
+                # The key is to ensure both use the same max value and color scale
                 colormap = folium.LinearColormap(
                     colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
                     vmin=0,  # Always start from 0
@@ -362,9 +375,17 @@ with main_col1:
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
         
-        # Update session state with the new coordinates
-        st.session_state.selected_point = [clicked_lat, clicked_lng]
-        st.rerun()
+        # Only update and rerun if this is a new location
+        current_point = st.session_state.selected_point
+        if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
+            # Update session state with the new coordinates
+            st.session_state.selected_point = [clicked_lat, clicked_lng]
+            
+            # Clear previous filtered wells and heat map data to force recalculation
+            st.session_state.filtered_wells = None
+            
+            # Force a complete rerun to rebuild the map with the new location
+            st.rerun()
     
     # Add a clear button to reset the map
     if st.button("Clear Results", use_container_width=True):

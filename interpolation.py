@@ -27,6 +27,12 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     --------
     list
         List of [lat, lng, intensity] points for the heat map
+    
+    Notes:
+    ------
+    This function is called each time a new location is selected to create an
+    entirely fresh interpolation. The results should always be specific to the
+    current center_point and never reuse old interpolation data.
     """
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:

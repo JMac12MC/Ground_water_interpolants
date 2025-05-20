@@ -209,11 +209,13 @@ with main_col1:
             # Ensure all missing yield values are replaced with 0
             # This treats missing yield data as 0 instead of filtering them out
             if 'yield_rate' in filtered_wells.columns:
-                # Replace NaN yield values with 0
+                # Need to replace NaN yield values with 0 - using proper pandas approach
+                filtered_wells = filtered_wells.copy()  # Make a copy to avoid SettingWithCopyWarning
                 filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
             
             # Store all wells in radius - NO yield filtering whatsoever
-            st.session_state.filtered_wells = filtered_wells
+            # Clear the previous filtered_wells to force complete recalculation
+            st.session_state.filtered_wells = filtered_wells.copy()  # Make a copy to ensure clean data
             
             # Store total count
             st.session_state.total_wells_in_radius = len(filtered_wells)
@@ -238,21 +240,28 @@ with main_col1:
             
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
+                # Reset any old map data to ensure a fresh interpolation
+                if 'heat_map_data' in st.session_state:
+                    del st.session_state.heat_map_data
+                    
                 # Calculate the max yield value first so we can normalize the data properly
                 max_yield_value = 60  # Default max value
                 if 'yield_rate' in filtered_wells.columns:
                     # Get max yield from filtered wells, handle empty dataframe
                     valid_yields = filtered_wells['yield_rate'].dropna()
                     if len(valid_yields) > 0:
-                        max_yield_value = max(valid_yields.max(), 60)  # At least 60 for visibility
+                        max_yield_value = max(float(valid_yields.max()), 60.0)  # At least 60 for visibility
                 
-                # Generate heat map data with consistent scale
+                # Generate completely new heat map data for current location
                 heat_data = generate_heat_map_data(
-                    filtered_wells, 
+                    filtered_wells.copy(), 
                     st.session_state.selected_point, 
                     st.session_state.search_radius,
                     method=st.session_state.interpolation_method
                 )
+                
+                # Store for reference
+                st.session_state.heat_map_data = heat_data
                 
                 # Normalize the heat data to match the legend exactly
                 if heat_data:

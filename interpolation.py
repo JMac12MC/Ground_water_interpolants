@@ -76,43 +76,60 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         if method == 'rf_kriging' and len(wells_df) >= 10:
             try:
                 print("Using Random Forest + Kriging interpolation")
+                # OPTIMIZATION: Reduce number of trees for faster performance
+                # For large datasets, we need to prioritize speed over slight accuracy improvements
+                
                 # Prepare data for Random Forest
                 features = np.vstack([x_coords, y_coords]).T  # Features are [x, y] coordinates in km
                 target = yields  # Target is the yield values
                 
-                # Train Random Forest model
-                rf = RandomForestRegressor(n_estimators=100, random_state=42)
+                # OPTIMIZATION: Use fewer trees (50 instead of 100) and limit max_depth
+                # This significantly speeds up training and prediction with minimal accuracy loss
+                rf = RandomForestRegressor(
+                    n_estimators=50,       # Reduced from 100 for faster performance
+                    max_depth=15,          # Limit tree depth for faster training
+                    min_samples_split=5,   # Require more samples per split (reduces overfitting)
+                    n_jobs=-1,             # Use all available cores
+                    random_state=42
+                )
                 rf.fit(features, target)
                 
                 # Get RF predictions for all grid points
                 rf_predictions = rf.predict(xi_inside)
                 
-                # Calculate residuals on training data
-                rf_train_preds = rf.predict(features)
-                residuals = target - rf_train_preds
-                
-                # If enough points, apply Kriging to the residuals
-                if len(features) >= 5:
-                    # Convert back to lon/lat for kriging (pykrige expects lon/lat)
-                    lon_values = x_coords / km_per_degree_lon + center_lon
-                    lat_values = y_coords / km_per_degree_lat + center_lat
-                    xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-                    xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
+                # OPTIMIZATION: Skip kriging for very large datasets (>1000 points)
+                # as it becomes the main performance bottleneck
+                if len(features) < 1000:
+                    # Calculate residuals on training data
+                    rf_train_preds = rf.predict(features)
+                    residuals = target - rf_train_preds
                     
-                    # Apply Ordinary Kriging to residuals
-                    OK = OrdinaryKriging(
-                        lon_values, lat_values, residuals,
-                        variogram_model='spherical',
-                        verbose=False,
-                        enable_plotting=False
-                    )
-                    # Execute kriging on grid points
-                    kriged_residuals, _ = OK.execute('points', xi_lon, xi_lat)
-                    
-                    # Combine RF predictions with kriged residuals
-                    interpolated_z = rf_predictions + kriged_residuals
+                    # If enough points, apply Kriging to the residuals
+                    if len(features) >= 5 and len(features) < 1000:
+                        # Convert back to lon/lat for kriging (pykrige expects lon/lat)
+                        lon_values = x_coords / km_per_degree_lon + center_lon
+                        lat_values = y_coords / km_per_degree_lat + center_lat
+                        xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
+                        xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
+                        
+                        # OPTIMIZATION: Use a simpler variogram model and limit kriging calculations
+                        OK = OrdinaryKriging(
+                            lon_values, lat_values, residuals,
+                            variogram_model='linear',  # Simpler model than spherical - much faster
+                            verbose=False,
+                            enable_plotting=False
+                        )
+                        # Execute kriging on grid points
+                        kriged_residuals, _ = OK.execute('points', xi_lon, xi_lat)
+                        
+                        # Combine RF predictions with kriged residuals
+                        interpolated_z = rf_predictions + kriged_residuals
+                    else:
+                        # Not enough points for kriging, use RF predictions only
+                        interpolated_z = rf_predictions
                 else:
-                    # Not enough points for kriging, use RF predictions only
+                    # Too many points for efficient kriging, use RF predictions only
+                    print("Using RF predictions only (skipping kriging for large dataset)")
                     interpolated_z = rf_predictions
             except Exception as e:
                 print(f"RF+Kriging error: {e}, falling back to standard interpolation")
@@ -128,18 +145,90 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
                     )
         else:
-            # Basic 2D interpolation (linear)
+            # OPTIMIZATION: For standard kriging method
+            # Basic 2D interpolation - import statement at top of file
             from scipy.interpolate import griddata
             
-            # First try linear interpolation
-            interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
-            
-            # For areas with NaNs, apply nearest neighbor to fill gaps
-            if np.any(np.isnan(interpolated_z)):
-                nan_mask = np.isnan(interpolated_z)
-                interpolated_z[nan_mask] = griddata(
-                    points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
+            # OPTIMIZATION: For large datasets, use fewer points and faster method
+            if len(points) > 2000:
+                print(f"Large dataset optimization: Sampling from {len(points)} points")
+                # For very large datasets, we'll use a random sample to improve performance
+                sample_size = min(2000, len(points))
+                # Use stratified sampling for better representation (divide area into regions)
+                # Create grid cells (10x10)
+                lat_bins = np.linspace(np.min(lats), np.max(lats), 10)
+                lon_bins = np.linspace(np.min(lons), np.max(lons), 10)
+                
+                # Create a mask for sampling points from each cell
+                sample_indices = []
+                for i in range(9):
+                    for j in range(9):
+                        # Get points in this cell
+                        cell_mask = (
+                            (lats >= lat_bins[i]) & (lats < lat_bins[i+1]) & 
+                            (lons >= lon_bins[j]) & (lons < lon_bins[j+1])
+                        )
+                        cell_indices = np.where(cell_mask)[0]
+                        
+                        # If there are points in this cell, sample a proportional amount
+                        if len(cell_indices) > 0:
+                            # Calculate how many points to sample from this cell
+                            # (proportional to the cell's share of total points)
+                            cell_sample_size = max(1, int(sample_size * len(cell_indices) / len(points)))
+                            # Sample randomly from this cell
+                            if len(cell_indices) > cell_sample_size:
+                                cell_sample = np.random.choice(cell_indices, cell_sample_size, replace=False)
+                                sample_indices.extend(cell_sample)
+                            else:
+                                # If cell has fewer points than needed, take all of them
+                                sample_indices.extend(cell_indices)
+                
+                # Ensure we have enough sample points
+                if len(sample_indices) < sample_size:
+                    # Add more random points if needed
+                    remaining = sample_size - len(sample_indices)
+                    all_indices = np.arange(len(points))
+                    remaining_indices = np.setdiff1d(all_indices, sample_indices)
+                    if len(remaining_indices) > 0:
+                        additional_samples = np.random.choice(
+                            remaining_indices, 
+                            min(remaining, len(remaining_indices)), 
+                            replace=False
+                        )
+                        sample_indices.extend(additional_samples)
+                
+                # Use the sampled points for interpolation
+                sampled_points = points[sample_indices]
+                sampled_yields = yields[sample_indices]
+                
+                # Use linear interpolation for speed with large datasets
+                interpolated_z = griddata(
+                    sampled_points, sampled_yields, xi_inside, 
+                    method='linear', fill_value=0.0
                 )
+                
+                # For areas with NaNs, apply nearest neighbor to fill gaps
+                if np.any(np.isnan(interpolated_z)):
+                    nan_mask = np.isnan(interpolated_z)
+                    interpolated_z[nan_mask] = griddata(
+                        sampled_points, sampled_yields, xi_inside[nan_mask],
+                        method='nearest', fill_value=0.0
+                    )
+            else:
+                # Standard approach for smaller datasets
+                # First try linear interpolation
+                interpolated_z = griddata(
+                    points, yields, xi_inside, 
+                    method='linear', fill_value=0.0
+                )
+                
+                # For areas with NaNs, apply nearest neighbor to fill gaps
+                if np.any(np.isnan(interpolated_z)):
+                    nan_mask = np.isnan(interpolated_z)
+                    interpolated_z[nan_mask] = griddata(
+                        points, yields, xi_inside[nan_mask],
+                        method='nearest', fill_value=0.0
+                    )
         
         # Make sure we don't have negative values
         interpolated_z = np.maximum(0, interpolated_z)
@@ -151,17 +240,64 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # Create heat map data
         heat_data = []
         
-        # Add interpolated points
-        for i in range(len(lat_points)):
-            # Only add points with meaningful values
-            if interpolated_z[i] > 0.01:
-                heat_data.append([
-                    float(lat_points[i]),  # Latitude
-                    float(lon_points[i]),  # Longitude
-                    float(interpolated_z[i])  # Yield value (actual value, not normalized)
-                ])
+        # OPTIMIZATION: For large datasets, reduce the number of heat map points for better performance
+        # First, detect if we need to sample points due to a large dataset
+        max_heat_points = 2500  # Maximum points for smooth performance
         
-        # Make sure well points themselves are included
+        if len(lat_points) > max_heat_points:
+            # Use a grid-based sampling approach to maintain visual accuracy with fewer points
+            print(f"Optimizing heatmap visualization: sampling {max_heat_points} points from {len(lat_points)} total")
+            
+            # Create a grid with target number of cells
+            grid_size = int(np.sqrt(max_heat_points))
+            
+            # Find min and max lat/lon
+            min_lat, max_lat = np.min(lat_points), np.max(lat_points)
+            min_lon, max_lon = np.min(lon_points), np.max(lon_points)
+            
+            # Create grid
+            lat_grid = np.linspace(min_lat, max_lat, grid_size)
+            lon_grid = np.linspace(min_lon, max_lon, grid_size)
+            
+            # Sample points by selecting representative points in each grid cell
+            heat_data = []
+            for i in range(len(lat_grid)-1):
+                for j in range(len(lon_grid)-1):
+                    # Find points in this grid cell
+                    cell_mask = (
+                        (lat_points >= lat_grid[i]) & (lat_points < lat_grid[i+1]) &
+                        (lon_points >= lon_grid[j]) & (lon_points < lon_grid[j+1])
+                    )
+                    
+                    if np.any(cell_mask):
+                        # Select a point with the maximum value from this cell (important for yield visualization)
+                        cell_values = interpolated_z[cell_mask]
+                        cell_lat = lat_points[cell_mask]
+                        cell_lon = lon_points[cell_mask]
+                        
+                        if np.max(cell_values) > 0.01:  # Only add significant values
+                            max_idx = np.argmax(cell_values)
+                            heat_data.append([
+                                float(cell_lat[max_idx]),  # Latitude
+                                float(cell_lon[max_idx]),  # Longitude
+                                float(cell_values[max_idx])  # Yield value (actual value)
+                            ])
+        else:
+            # Standard approach for smaller datasets
+            heat_data = []
+            # Add interpolated points
+            for i in range(len(lat_points)):
+                # Only add points with meaningful values
+                if interpolated_z[i] > 0.01:
+                    heat_data.append([
+                        float(lat_points[i]),  # Latitude
+                        float(lon_points[i]),  # Longitude
+                        float(interpolated_z[i])  # Yield value (actual value, not normalized)
+                    ])
+        
+        # Always make sure well points themselves are included for accuracy
+        # These are the actual data points we have, so they should be shown
+        well_points_added = 0
         for j in range(len(lats)):
             # Check if well is within search radius
             well_dist_km = np.sqrt(
@@ -175,6 +311,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     float(lons[j]),
                     float(yields[j])
                 ])
+                well_points_added += 1
         
         return heat_data
     

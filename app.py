@@ -240,19 +240,11 @@ with main_col1:
             
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Reset any old map data to ensure a fresh interpolation
+                # Start fresh with new data
                 if 'heat_map_data' in st.session_state:
                     del st.session_state.heat_map_data
-                    
-                # Calculate the max yield value first so we can normalize the data properly
-                max_yield_value = 60  # Default max value
-                if 'yield_rate' in filtered_wells.columns:
-                    # Get max yield from filtered wells, handle empty dataframe
-                    valid_yields = filtered_wells['yield_rate'].dropna()
-                    if len(valid_yields) > 0:
-                        max_yield_value = max(float(valid_yields.max()), 60.0)  # At least 60 for visibility
                 
-                # Generate completely new heat map data for current location
+                # Generate heat map data for this location
                 heat_data = generate_heat_map_data(
                     filtered_wells.copy(), 
                     st.session_state.selected_point, 
@@ -260,75 +252,40 @@ with main_col1:
                     method=st.session_state.interpolation_method
                 )
                 
-                # Store for reference
-                st.session_state.heat_map_data = heat_data
-                
-                # Normalize the heat data to match the legend exactly
-                if heat_data:
-                    # Extract values from heat data [lat, lng, value]
-                    heat_values = [item[2] for item in heat_data]
-                    max_heat = max(heat_values) if heat_values else 0
-                    
-                    # If the heat values are significantly different from max_yield_value, adjust max_yield_value
-                    if max_heat > 0:
-                        max_yield_value = max(max_heat, max_yield_value)
-                
-                # Updated gradient colors where red = high yield (not distance)
-                # These colors must exactly match the legend colors
-                gradient = {
-                    0.0: 'blue',    # Lowest yield
-                    0.2: 'cyan',    # Low yield
-                    0.4: 'green',   # Moderate yield
-                    0.6: 'yellow',  # Good yield
-                    0.8: 'orange',  # High yield
-                    1.0: 'red'      # Highest yield
-                }
-                
-                # CRITICAL FIX: We need to ensure that the heat map values are properly scaled
-                # First, get the actual min and max values from the heat data
-                if heat_data:
+                # Only proceed if we have data to show
+                if heat_data and len(heat_data) > 0:
+                    # Get the maximum yield for scaling
                     heat_values = [point[2] for point in heat_data]
-                    min_yield = 0  # Always start from 0
-                    max_yield = max(heat_values)
+                    max_yield_value = max(heat_values) if heat_values else 60.0
                     
-                    # Create a custom folium HTML element to define the exact intensity to color mapping
-                    # This ensures the heat map values are rendered precisely as they should be
-                    custom_js = f"""
-                    <script>
-                    // Custom heat layer with proper scaling
-                    var heat_data = {heat_data};
-                    var max_yield = {max_yield};
+                    # Simple consistent gradient
+                    gradient = {
+                        0.0: 'blue',
+                        0.2: 'cyan',
+                        0.4: 'green',
+                        0.6: 'yellow',
+                        0.8: 'orange',
+                        1.0: 'red'
+                    }
                     
-                    // Create a heat layer with proper scaling to match the legend exactly
-                    var heat = L.heatLayer(heat_data, {{
-                        radius: 20, 
-                        blur: 15,
-                        max: max_yield,  // Critical: this sets the upper bound for color scaling
-                        minOpacity: 0.5,
-                        gradient: {{
-                            0.0: 'blue',
-                            0.2: 'cyan',
-                            0.4: 'green',
-                            0.6: 'yellow',
-                            0.8: 'orange',
-                            1.0: 'red'
-                        }}
-                    }}).addTo(map);
-                    </script>
-                    """
+                    # Create and add the heat map
+                    HeatMap(
+                        data=heat_data,
+                        radius=15,
+                        min_opacity=0.6,
+                        max_val=float(max_yield_value),  # Critical for proper scaling
+                        blur=12,
+                        gradient=gradient,
+                    ).add_to(m)
                     
-                    # Inject the custom JavaScript to properly scale the heat map
-                    folium.Element(custom_js).add_to(m)
-                
-                # Add visualization legend that matches the heat map gradient EXACTLY 
-                # The key is to ensure both use the same max value and color scale
-                colormap = folium.LinearColormap(
-                    colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
-                    vmin=0,  # Always start from 0
-                    vmax=float(max_yield),  # Use the actual maximum from the heat data
-                    caption='Estimated Water Yield (L/s)'
-                )
-                colormap.add_to(m)
+                    # Add matching color legend
+                    colormap = folium.LinearColormap(
+                        colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
+                        vmin=0,
+                        vmax=float(max_yield_value),
+                        caption='Estimated Water Yield (L/s)'
+                    )
+                    colormap.add_to(m)
             
             # ONLY show wells within the search radius when a point is selected
             if st.session_state.well_markers_visibility:

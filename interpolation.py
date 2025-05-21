@@ -11,8 +11,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
     
-    This function converts the interpolated data into a GeoJSON format with small polygon
-    cells, each colored according to the exact yield value at that location.
+    This function creates a smooth, continuous interpolation surface with GeoJSON format
+    for optimal visualization of groundwater yield patterns.
     
     Parameters:
     -----------
@@ -32,8 +32,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     dict
         GeoJSON data structure with interpolated yield values
     """
-    # First get the interpolated data using our existing function
-    interpolated_data = generate_heat_map_data(wells_df, center_point, radius_km, resolution, method)
+    # Handle empty datasets
+    if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
+        return {"type": "FeatureCollection", "features": []}
     
     # Extract the original grid information
     center_lat, center_lon = center_point
@@ -46,51 +47,228 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     min_lon = center_lon - (radius_km / km_per_degree_lon)
     max_lon = center_lon + (radius_km / km_per_degree_lon)
     
-    # Create a more reasonable grid size for GeoJSON (too many cells makes it slow)
-    grid_size = min(40, resolution)  # Limit to reasonable number for browser performance
+    # Optimize grid size for performance while maintaining smooth appearance
+    # Higher resolution for smaller searches, lower for larger datasets
+    # This ensures reasonable performance on all devices
+    wells_count = len(wells_df)
+    if wells_count > 5000:
+        grid_size = 32  # Coarser grid for very large datasets
+    elif wells_count > 1000:
+        grid_size = 48  # Medium grid for large datasets
+    else:
+        grid_size = 64  # Finer grid for smaller datasets
+        
+    # Create the grid for our GeoJSON polygons
     lat_vals = np.linspace(min_lat, max_lat, grid_size)
     lon_vals = np.linspace(min_lon, max_lon, grid_size)
     
-    # Get a grid of values using our existing interpolated data
-    grid_values = np.zeros((grid_size-1, grid_size-1))
+    # Extract coordinates and yields from the wells dataframe
+    lats = wells_df['latitude'].values.astype(float)
+    lons = wells_df['longitude'].values.astype(float)
+    yields = wells_df['yield_rate'].values.astype(float)
+    
+    # Convert to km-based coordinates for proper interpolation
+    x_coords = (lons - center_lon) * km_per_degree_lon
+    y_coords = (lats - center_lat) * km_per_degree_lat
+    
+    # Create interpolation points for the grid
+    grid_x, grid_y = np.meshgrid(
+        np.linspace(-radius_km, radius_km, grid_size),
+        np.linspace(-radius_km, radius_km, grid_size)
+    )
+    
+    # Calculate distance from center for each point
+    distances = np.sqrt(grid_x**2 + grid_y**2)
+    mask = distances <= radius_km  # Only keep points within radius
+    
+    # Perform interpolation
+    points = np.vstack([x_coords, y_coords]).T
+    
+    try:
+        # Choose interpolation method based on parameter and dataset size
+        if method == 'rf_kriging' and len(wells_df) >= 10 and len(wells_df) < 3000:
+            # Use the Random Forest model for interpolation
+            # But use simpler/faster settings for better performance
+            rf = RandomForestRegressor(
+                n_estimators=30,  # Fewer trees for speed
+                max_depth=10,     # Limited depth
+                min_samples_split=5,
+                n_jobs=-1,
+                random_state=42
+            )
+            rf.fit(points, yields)
+            
+            # Create grid points for prediction
+            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
+            interpolated_z = rf.predict(grid_points)
+        else:
+            # Use standard griddata interpolation for other cases
+            # This is much faster than kriging for large datasets
+            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
+            interpolated_z = griddata(
+                points, yields, grid_points,
+                method='linear', fill_value=0.0
+            )
+            
+            # Fill any NaN values with nearest neighbor interpolation
+            nan_mask = np.isnan(interpolated_z)
+            if np.any(nan_mask):
+                interpolated_z[nan_mask] = griddata(
+                    points, yields, grid_points[nan_mask],
+                    method='nearest', fill_value=0.0
+                )
+                
+            # Apply smoothing to the interpolated values
+            # This creates a nicer visual appearance
+            from scipy.ndimage import gaussian_filter
+            
+            # Reshape to 2D grid for smoothing
+            grid_shape = grid_x[mask].shape
+            if len(grid_shape) == 1:
+                # Handle edge case with 1D array
+                pass
+            else:
+                # Reshape and apply smoothing filter
+                try:
+                    z_grid = np.zeros_like(grid_x)
+                    z_grid[mask] = interpolated_z
+                    z_smooth = gaussian_filter(z_grid, sigma=1.0)
+                    interpolated_z = z_smooth[mask]
+                except Exception as e:
+                    # If smoothing fails, continue with unsmoothed data
+                    print(f"Smoothing error: {e}, using raw interpolation")
+    except Exception as e:
+        # Fallback to simple IDW interpolation if the above methods fail
+        print(f"Interpolation error: {e}, using fallback method")
+        interpolated_z = np.zeros(grid_points.shape[0])
+        for i, point in enumerate(grid_points):
+            weights = 1.0 / (np.sqrt(np.sum((points - point)**2, axis=1)) + 1e-5)
+            interpolated_z[i] = np.sum(weights * yields) / np.sum(weights)
+    
+    # Convert grid coordinates back to lat/lon
+    grid_lats = (grid_y[mask].ravel() / km_per_degree_lat) + center_lat
+    grid_lons = (grid_x[mask].ravel() / km_per_degree_lon) + center_lon
     
     # Build the GeoJSON structure
     features = []
-    for i in range(len(lat_vals)-1):
-        for j in range(len(lon_vals)-1):
-            # Calculate center point of this grid cell
-            cell_lat = (lat_vals[i] + lat_vals[i+1]) / 2
-            cell_lon = (lon_vals[j] + lon_vals[j+1]) / 2
+    
+    # Create polygons only where needed - use a Delaunay triangulation approach
+    # for a more organic-looking interpolation surface
+    from scipy.spatial import Delaunay
+    
+    try:
+        # Create a Delaunay triangulation of the interpolation points
+        points_2d = np.vstack([grid_lons, grid_lats]).T
+        
+        # Only create triangulation if we have enough points
+        if len(points_2d) > 3:
+            tri = Delaunay(points_2d)
             
-            # Find yield value for this cell by looking for the closest point
-            # in our interpolated data
-            closest_value = 0
-            min_dist = float('inf')
-            
-            for point in interpolated_data:
-                point_lat, point_lon, value = point
-                dist = ((point_lat - cell_lat)**2 + (point_lon - cell_lon)**2)**0.5
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_value = value
-            
-            # Only add cells with meaningful values
-            if closest_value > 0.01:
-                # Create polygon for this grid cell
+            # Process each triangle to create a polygon
+            for simplex in tri.simplices:
+                # Get the three points of this triangle
+                vertices = points_2d[simplex]
+                
+                # Get the yield values for these points
+                vertex_values = interpolated_z[simplex]
+                
+                # Calculate the average yield for this triangle
+                avg_yield = float(np.mean(vertex_values))
+                
+                # Only add triangles with meaningful values and within our radius
+                if avg_yield > 0.01:
+                    # Create polygon for this triangle
+                    poly = {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[
+                                [float(vertices[0,0]), float(vertices[0,1])],
+                                [float(vertices[1,0]), float(vertices[1,1])],
+                                [float(vertices[2,0]), float(vertices[2,1])],
+                                [float(vertices[0,0]), float(vertices[0,1])]
+                            ]]
+                        },
+                        "properties": {
+                            "yield": avg_yield
+                        }
+                    }
+                    features.append(poly)
+        else:
+            # Fallback to rectangular grid if triangulation is not possible
+            for i in range(len(lat_vals)-1):
+                for j in range(len(lon_vals)-1):
+                    # Calculate center point of this grid cell
+                    cell_lat = (lat_vals[i] + lat_vals[i+1]) / 2
+                    cell_lon = (lon_vals[j] + lon_vals[j+1]) / 2
+                    
+                    # Skip cells outside our radius
+                    dist_km = np.sqrt(
+                        ((cell_lat - center_lat) * km_per_degree_lat)**2 + 
+                        ((cell_lon - center_lon) * km_per_degree_lon)**2
+                    )
+                    if dist_km > radius_km:
+                        continue
+                    
+                    # Find interpolated value for this cell
+                    cell_x = (cell_lon - center_lon) * km_per_degree_lon
+                    cell_y = (cell_lat - center_lat) * km_per_degree_lat
+                    
+                    # Use nearest neighbor interpolation for the grid cell
+                    cell_point = np.array([cell_x, cell_y])
+                    distances = np.sqrt(np.sum((points - cell_point)**2, axis=1))
+                    if len(distances) > 0:
+                        idx = np.argmin(distances)
+                        cell_value = yields[idx]
+                    else:
+                        cell_value = 0
+                    
+                    # Only add cells with meaningful values
+                    if cell_value > 0.01:
+                        # Create polygon for this grid cell
+                        poly = {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [[
+                                    [float(lon_vals[j]), float(lat_vals[i])],
+                                    [float(lon_vals[j+1]), float(lat_vals[i])],
+                                    [float(lon_vals[j+1]), float(lat_vals[i+1])],
+                                    [float(lon_vals[j]), float(lat_vals[i+1])],
+                                    [float(lon_vals[j]), float(lat_vals[i])]
+                                ]]
+                            },
+                            "properties": {
+                                "yield": float(cell_value)
+                            }
+                        }
+                        features.append(poly)
+    except Exception as e:
+        # If triangulation fails, fall back to the simpler grid method
+        print(f"Triangulation error: {e}, using grid method")
+        for i in range(len(grid_lats)):
+            # Only process points with meaningful values
+            if interpolated_z[i] > 0.01:
+                # Create a small circle as a polygon (approximated with 8 points)
+                radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])
+                radius_deg_lon = 0.5 * (lon_vals[1] - lon_vals[0])
+                
+                # Create the polygon coordinates
+                coords = []
+                for angle in np.linspace(0, 2*np.pi, 9):
+                    x = grid_lons[i] + radius_deg_lon * np.cos(angle)
+                    y = grid_lats[i] + radius_deg_lat * np.sin(angle)
+                    coords.append([float(x), float(y)])
+                
+                # Create the polygon feature
                 poly = {
                     "type": "Feature",
                     "geometry": {
                         "type": "Polygon",
-                        "coordinates": [[
-                            [float(lon_vals[j]), float(lat_vals[i])],
-                            [float(lon_vals[j+1]), float(lat_vals[i])],
-                            [float(lon_vals[j+1]), float(lat_vals[i+1])],
-                            [float(lon_vals[j]), float(lat_vals[i+1])],
-                            [float(lon_vals[j]), float(lat_vals[i])]
-                        ]]
+                        "coordinates": [coords]
                     },
                     "properties": {
-                        "yield": float(closest_value)
+                        "yield": float(interpolated_z[i])
                     }
                 }
                 features.append(poly)

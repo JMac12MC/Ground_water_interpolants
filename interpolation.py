@@ -1,10 +1,107 @@
 import numpy as np
 import pandas as pd
+import json
 from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from scipy.spatial import Voronoi, voronoi_plot_2d
 from sklearn.ensemble import RandomForestRegressor
 from pykrige.ok import OrdinaryKriging
+
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging'):
+    """
+    Generate GeoJSON grid with interpolated yield values for accurate visualization
+    
+    This function converts the interpolated data into a GeoJSON format with small polygon
+    cells, each colored according to the exact yield value at that location.
+    
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        DataFrame containing well data
+    center_point : tuple
+        (latitude, longitude) of center point
+    radius_km : float
+        Radius in km to include in the grid
+    resolution : int
+        Grid resolution (number of cells per dimension)
+    method : str
+        Interpolation method to use
+        
+    Returns:
+    --------
+    dict
+        GeoJSON data structure with interpolated yield values
+    """
+    # First get the interpolated data using our existing function
+    interpolated_data = generate_heat_map_data(wells_df, center_point, radius_km, resolution, method)
+    
+    # Extract the original grid information
+    center_lat, center_lon = center_point
+    km_per_degree_lat = 111.0  # ~111km per degree of latitude
+    km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # Longitude degrees vary with latitude
+    
+    # Create grid in lat/lon space
+    min_lat = center_lat - (radius_km / km_per_degree_lat)
+    max_lat = center_lat + (radius_km / km_per_degree_lat)
+    min_lon = center_lon - (radius_km / km_per_degree_lon)
+    max_lon = center_lon + (radius_km / km_per_degree_lon)
+    
+    # Create a more reasonable grid size for GeoJSON (too many cells makes it slow)
+    grid_size = min(40, resolution)  # Limit to reasonable number for browser performance
+    lat_vals = np.linspace(min_lat, max_lat, grid_size)
+    lon_vals = np.linspace(min_lon, max_lon, grid_size)
+    
+    # Get a grid of values using our existing interpolated data
+    grid_values = np.zeros((grid_size-1, grid_size-1))
+    
+    # Build the GeoJSON structure
+    features = []
+    for i in range(len(lat_vals)-1):
+        for j in range(len(lon_vals)-1):
+            # Calculate center point of this grid cell
+            cell_lat = (lat_vals[i] + lat_vals[i+1]) / 2
+            cell_lon = (lon_vals[j] + lon_vals[j+1]) / 2
+            
+            # Find yield value for this cell by looking for the closest point
+            # in our interpolated data
+            closest_value = 0
+            min_dist = float('inf')
+            
+            for point in interpolated_data:
+                point_lat, point_lon, value = point
+                dist = ((point_lat - cell_lat)**2 + (point_lon - cell_lon)**2)**0.5
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_value = value
+            
+            # Only add cells with meaningful values
+            if closest_value > 0.01:
+                # Create polygon for this grid cell
+                poly = {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [float(lon_vals[j]), float(lat_vals[i])],
+                            [float(lon_vals[j+1]), float(lat_vals[i])],
+                            [float(lon_vals[j+1]), float(lat_vals[i+1])],
+                            [float(lon_vals[j]), float(lat_vals[i+1])],
+                            [float(lon_vals[j]), float(lat_vals[i])]
+                        ]]
+                    },
+                    "properties": {
+                        "yield": float(closest_value)
+                    }
+                }
+                features.append(poly)
+    
+    # Create the full GeoJSON object
+    geojson = {
+        "type": "FeatureCollection",
+        "features": features
+    }
+    
+    return geojson
 
 def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging'):
     """

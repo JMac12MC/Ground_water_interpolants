@@ -8,7 +8,7 @@ import os
 import base64
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data
+from interpolation import generate_heat_map_data, generate_geo_json_grid
 
 # Set page configuration
 st.set_page_config(
@@ -241,46 +241,66 @@ with main_col1:
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
                 # Start fresh with new data
-                if 'heat_map_data' in st.session_state:
-                    del st.session_state.heat_map_data
+                if 'geo_json_data' in st.session_state:
+                    del st.session_state.geo_json_data
                 
-                # Generate heat map data for this location
-                heat_data = generate_heat_map_data(
+                # Generate GeoJSON grid data with exact yield values
+                geojson_data = generate_geo_json_grid(
                     filtered_wells.copy(), 
                     st.session_state.selected_point, 
                     st.session_state.search_radius,
                     method=st.session_state.interpolation_method
                 )
                 
-                # Only proceed if we have data to show
-                if heat_data and len(heat_data) > 0:
-                    # Get the maximum yield for scaling
-                    heat_values = [point[2] for point in heat_data]
-                    max_yield_value = max(heat_values) if heat_values else 60.0
+                # Only proceed if we have features in our GeoJSON
+                if geojson_data and len(geojson_data['features']) > 0:
+                    # Store for reference
+                    st.session_state.geo_json_data = geojson_data
                     
-                    # Simple consistent gradient
-                    gradient = {
-                        0.0: 'blue',
-                        0.2: 'cyan',
-                        0.4: 'green',
-                        0.6: 'yellow',
-                        0.8: 'orange',
-                        1.0: 'red'
+                    # Get max yield for coloring
+                    max_yield_value = 0
+                    for feature in geojson_data['features']:
+                        max_yield_value = max(max_yield_value, feature['properties']['yield'])
+                    
+                    # Ensure a reasonable minimum max for visualization
+                    max_yield_value = max(max_yield_value, 20.0)
+                    
+                    # Create a JavaScript function for coloring by yield value
+                    style_function = lambda x: {
+                        'fillColor': '#'+folium.utilities.color_brewer('YlOrRd', 9)[
+                            min(8, int(8 * x['properties']['yield'] / max_yield_value))
+                        ],
+                        'color': 'none',
+                        'fillOpacity': 0.7
                     }
                     
-                    # Create and add the heat map
-                    HeatMap(
-                        data=heat_data,
-                        radius=15,
-                        min_opacity=0.6,
-                        max_val=float(max_yield_value),  # Critical for proper scaling
-                        blur=12,
-                        gradient=gradient,
+                    # Tooltip to show actual yield value
+                    tooltip = folium.features.GeoJsonTooltip(
+                        fields=['yield'],
+                        aliases=['Yield (L/s):'],
+                        localize=True,
+                        sticky=False,
+                        labels=True,
+                        style="""
+                            background-color: #F0EFEF;
+                            border: 2px solid black;
+                            border-radius: 3px;
+                            box-shadow: 3px;
+                        """,
+                        max_width=800,
+                    )
+                    
+                    # Add the GeoJSON data as a choropleth map
+                    folium.GeoJson(
+                        geojson_data,
+                        style_function=style_function,
+                        tooltip=tooltip,
+                        name="Yield Interpolation"
                     ).add_to(m)
                     
-                    # Add matching color legend
+                    # Add a matching color legend
                     colormap = folium.LinearColormap(
-                        colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
+                        colors=folium.utilities.color_brewer('YlOrRd', 9),
                         vmin=0,
                         vmax=float(max_yield_value),
                         caption='Estimated Water Yield (L/s)'

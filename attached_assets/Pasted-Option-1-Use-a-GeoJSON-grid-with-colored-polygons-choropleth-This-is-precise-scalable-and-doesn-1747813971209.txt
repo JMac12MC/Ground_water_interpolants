@@ -1,0 +1,97 @@
+Option 1: Use a GeoJSON grid with colored polygons (choropleth)
+This is precise, scalable, and doesn’t require image uploads.
+
+✅ How it works:
+Convert your Kriged 2D grid into GeoJSON polygons (each cell = a small rectangle).
+
+Use Leaflet’s L.geoJSON to display them with a color scale matching the yield.
+
+🧠 Advantages:
+Accurate mapping of values.
+
+Interactive (hover, click, tooltips).
+
+Lightweight and easy to style dynamically.
+
+📌 Python snippet (server-side pre-processing):
+python
+Copy
+Edit
+import json
+import numpy as np
+
+# Assuming grid_x, grid_y, z_kriged from Kriging
+features = []
+for i in range(len(grid_x)-1):
+    for j in range(len(grid_y)-1):
+        value = float(z_kriged[j, i])  # Note: rows = y, cols = x
+        poly = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [grid_x[i], grid_y[j]],
+                    [grid_x[i+1], grid_y[j]],
+                    [grid_x[i+1], grid_y[j+1]],
+                    [grid_x[i], grid_y[j+1]],
+                    [grid_x[i], grid_y[j]]
+                ]]
+            },
+            "properties": {
+                "yield": value
+            }
+        }
+        features.append(poly)
+
+geojson = {
+    "type": "FeatureCollection",
+    "features": features
+}
+
+with open("kriged_grid.geojson", "w") as f:
+    json.dump(geojson, f)
+Then in JavaScript:
+
+javascript
+Copy
+Edit
+function getColor(yield) {
+  return yield > 28 ? '#54278f' :
+         yield > 14 ? '#756bb1' :
+         yield > 8  ? '#9e9ac8' :
+         yield > 4  ? '#cbc9e2' :
+         yield > 0  ? '#f2f0f7' :
+                      '#ffffff';
+}
+
+L.geoJSON(geojsonData, {
+  style: function(feature) {
+    return {
+      fillColor: getColor(feature.properties.yield),
+      weight: 0.1,
+      fillOpacity: 0.7
+    };
+  },
+  onEachFeature: function (feature, layer) {
+    layer.bindTooltip(`Yield: ${feature.properties.yield.toFixed(1)} L/s`);
+  }
+}).addTo(map);
+Option 2: Use a JavaScript canvas overlay
+If you want smoother heatmap-like rendering:
+
+✔️ Use leaflet-canvaslayer-field
+It lets you render an actual 2D numeric matrix over Leaflet tiles using a custom color scale.
+
+javascript
+Copy
+Edit
+const field = L.fieldLayer({
+  latlngs: zKriged2DArray, // array of arrays with lat/lng/value
+  color: 'viridis', // or a custom D3 scale
+  opacity: 0.7
+}).addTo(map);
+This method avoids images but offers better control than L.heatLayer().
+
+❌ What Not to Use
+L.heatLayer: It's designed for intensity/density maps, not real metric-based surfaces. It auto-normalizes values (0–1), which is why your yield values are misrepresented.
+

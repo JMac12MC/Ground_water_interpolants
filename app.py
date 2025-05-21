@@ -278,7 +278,7 @@ with main_col1:
                             return '#FF0000'  # red for high
                     
                     # Style function that uses our color mapping
-                    def style_function(feature):
+                    def style_feature(feature):
                         yield_value = feature['properties']['yield']
                         return {
                             'fillColor': get_color(yield_value),
@@ -291,7 +291,12 @@ with main_col1:
                     folium.GeoJson(
                         data=geojson_data,
                         name='Yield Interpolation',
-                        style_function=style_function,
+                        style_function=lambda feature: {
+                            'fillColor': get_color(feature['properties']['yield']),
+                            'color': 'none',
+                            'weight': 0,
+                            'fillOpacity': 0.7
+                        },
                         tooltip=folium.GeoJsonTooltip(
                             fields=['yield'],
                             aliases=['Yield (L/s):'],
@@ -329,15 +334,16 @@ with main_col1:
                     # This provides exact reference points with known values
                     if 'yield_rate' in filtered_wells.columns:
                         for _, row in filtered_wells.iterrows():
-                            if pd.notna(row['yield_rate']) and float(row['yield_rate']) > 0:
+                            yield_value = row['yield_rate']
+                            if isinstance(yield_value, (int, float)) and yield_value > 0:
                                 folium.CircleMarker(
-                                    location=[row['latitude'], row['longitude']],
-                                    radius=float(row['yield_rate'])/5 + 2,  # Size based on yield
+                                    location=(float(row['latitude']), float(row['longitude'])),
+                                    radius=float(yield_value)/5 + 2,  # Size based on yield
                                     color='black',
                                     fill=True,
                                     fill_color='yellow',
                                     fill_opacity=0.7,
-                                    tooltip=f"Well yield: {row['yield_rate']} L/s"
+                                    tooltip=f"Well yield: {yield_value} L/s"
                                 ).add_to(m)
             
             # ONLY show wells within the search radius when a point is selected

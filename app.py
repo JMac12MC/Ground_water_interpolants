@@ -240,45 +240,67 @@ with main_col1:
             
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Start fresh with new data
-                if 'heat_map_data' in st.session_state:
-                    del st.session_state.heat_map_data
-                
-                # Generate standard heat map data for this location
-                heat_data = generate_heat_map_data(
+                # Generate proper GeoJSON grid with interpolated yield values
+                geojson_data = generate_geo_json_grid(
                     filtered_wells.copy(), 
                     st.session_state.selected_point, 
                     st.session_state.search_radius,
+                    resolution=100,  # Higher resolution for smoother appearance
                     method=st.session_state.interpolation_method
                 )
                 
-                # Only proceed if we have data to show
-                if heat_data and len(heat_data) > 0:
-                    # Store for reference
-                    st.session_state.heat_map_data = heat_data
+                if geojson_data and len(geojson_data['features']) > 0:
+                    # Calculate max yield for setting the color scale
+                    max_yield_value = 0
+                    for feature in geojson_data['features']:
+                        max_yield_value = max(max_yield_value, feature['properties']['yield'])
                     
-                    # Extract the yield values from the heat map data
-                    heat_values = [point[2] for point in heat_data]
-                    max_yield_value = max(heat_values) if heat_values else 60.0
+                    # Ensure reasonable minimum for visualization
+                    max_yield_value = max(max_yield_value, 20.0)
                     
-                    # Create standard heat map with improved settings
-                    heatmap = HeatMap(
-                        data=heat_data,
-                        radius=20,
-                        min_opacity=0.7,
-                        max_val=float(max_yield_value), 
-                        blur=15,
-                        gradient={
-                            0.0: 'blue',
-                            0.2: 'cyan', 
-                            0.4: 'green',
-                            0.6: 'yellow',
-                            0.8: 'orange',
-                            1.0: 'red'
+                    # Instead of choropleth, use direct GeoJSON styling for more control
+                    # This allows us to precisely map yield values to colors
+                    
+                    # Define color function that maps yield values to our desired gradient
+                    def get_color(yield_value):
+                        # Create a color scale from blue (low) to red (high)
+                        if yield_value <= 0:
+                            return '#0000FF'  # blue for zero/low
+                        elif yield_value < max_yield_value * 0.2:
+                            return '#00FFFF'  # cyan 
+                        elif yield_value < max_yield_value * 0.4:
+                            return '#00FF00'  # green
+                        elif yield_value < max_yield_value * 0.6:
+                            return '#FFFF00'  # yellow
+                        elif yield_value < max_yield_value * 0.8:
+                            return '#FFA500'  # orange
+                        else:
+                            return '#FF0000'  # red for high
+                    
+                    # Style function that uses our color mapping
+                    def style_function(feature):
+                        yield_value = feature['properties']['yield']
+                        return {
+                            'fillColor': get_color(yield_value),
+                            'color': 'none',
+                            'weight': 0,
+                            'fillOpacity': 0.7
                         }
+                            
+                    # Add the GeoJSON with our custom styling
+                    folium.GeoJson(
+                        data=geojson_data,
+                        name='Yield Interpolation',
+                        style_function=style_function,
+                        tooltip=folium.GeoJsonTooltip(
+                            fields=['yield'],
+                            aliases=['Yield (L/s):'],
+                            labels=True,
+                            sticky=False
+                        )
                     ).add_to(m)
                     
-                    # Add a colormap legend that matches the heatmap values
+                    # Add a smooth colormap legend that properly matches yield values
                     colormap = folium.LinearColormap(
                         colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
                         vmin=0,
@@ -287,7 +309,23 @@ with main_col1:
                     )
                     colormap.add_to(m)
                     
-                    # Let's also add markers for the actual well points with yield values
+                    # Add tooltips to show yield values on hover
+                    style_function = lambda x: {'fillColor': 'transparent', 'color': 'transparent'}
+                    highlight_function = lambda x: {'fillOpacity': 0.8}
+                    
+                    # Add GeoJSON overlay for tooltips
+                    folium.GeoJson(
+                        geojson_data,
+                        style_function=style_function,
+                        tooltip=folium.GeoJsonTooltip(
+                            fields=['yield'],
+                            aliases=['Yield (L/s):'],
+                            labels=True,
+                            sticky=False
+                        )
+                    ).add_to(m)
+                    
+                    # Also add markers for the actual well points with yield values
                     # This provides exact reference points with known values
                     if 'yield_rate' in filtered_wells.columns:
                         for _, row in filtered_wells.iterrows():

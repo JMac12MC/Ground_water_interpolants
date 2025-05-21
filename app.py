@@ -284,23 +284,48 @@ with main_col1:
                     1.0: 'red'      # Highest yield
                 }
                 
-                # Create heat map with fixed radius and improved settings for all zoom levels
-                HeatMap(
-                    heat_data,
-                    radius=20,           # Larger radius for better visibility and continuity
-                    gradient=gradient,   # Use our yield-based gradient
-                    blur=15,             # More blur for smoother transitions
-                    max_zoom=18,         # Allow detail at higher zoom levels
-                    min_opacity=0.5,     # Higher opacity ensures visibility at all zoom levels
-                    overlay=True,        # Keep as overlay
-                ).add_to(m)
+                # CRITICAL FIX: We need to ensure that the heat map values are properly scaled
+                # First, get the actual min and max values from the heat data
+                if heat_data:
+                    heat_values = [point[2] for point in heat_data]
+                    min_yield = 0  # Always start from 0
+                    max_yield = max(heat_values)
+                    
+                    # Create a custom folium HTML element to define the exact intensity to color mapping
+                    # This ensures the heat map values are rendered precisely as they should be
+                    custom_js = f"""
+                    <script>
+                    // Custom heat layer with proper scaling
+                    var heat_data = {heat_data};
+                    var max_yield = {max_yield};
+                    
+                    // Create a heat layer with proper scaling to match the legend exactly
+                    var heat = L.heatLayer(heat_data, {{
+                        radius: 20, 
+                        blur: 15,
+                        max: max_yield,  // Critical: this sets the upper bound for color scaling
+                        minOpacity: 0.5,
+                        gradient: {{
+                            0.0: 'blue',
+                            0.2: 'cyan',
+                            0.4: 'green',
+                            0.6: 'yellow',
+                            0.8: 'orange',
+                            1.0: 'red'
+                        }}
+                    }}).addTo(map);
+                    </script>
+                    """
+                    
+                    # Inject the custom JavaScript to properly scale the heat map
+                    folium.Element(custom_js).add_to(m)
                 
                 # Add visualization legend that matches the heat map gradient EXACTLY 
                 # The key is to ensure both use the same max value and color scale
                 colormap = folium.LinearColormap(
                     colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
                     vmin=0,  # Always start from 0
-                    vmax=max_yield_value,
+                    vmax=float(max_yield),  # Use the actual maximum from the heat data
                     caption='Estimated Water Yield (L/s)'
                 )
                 colormap.add_to(m)

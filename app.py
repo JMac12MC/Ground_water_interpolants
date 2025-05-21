@@ -262,17 +262,24 @@ with main_col1:
                     # This allows us to precisely map yield values to colors
                     
                     # Define color function that maps yield values to our desired gradient
+                    # Ensure more precision at lower yield values
                     def get_color(yield_value):
-                        # Create a color scale from blue (low) to red (high)
+                        # Create a color scale from blue (low) to red (high) with more steps at lower yields
                         if yield_value <= 0:
-                            return '#0000FF'  # blue for zero/low
-                        elif yield_value < max_yield_value * 0.2:
-                            return '#00FFFF'  # cyan 
-                        elif yield_value < max_yield_value * 0.4:
+                            return '#0000FF'  # dark blue for zero
+                        elif yield_value < 2:  # Very low values
+                            return '#0040FF'  # blue
+                        elif yield_value < 5:  # Low values
+                            return '#0080FF'  # light blue
+                        elif yield_value < 10:  # Below average values
+                            return '#00FFFF'  # cyan
+                        elif yield_value < max_yield_value * 0.3:
+                            return '#00FF80'  # blue-green
+                        elif yield_value < max_yield_value * 0.5:
                             return '#00FF00'  # green
-                        elif yield_value < max_yield_value * 0.6:
+                        elif yield_value < max_yield_value * 0.7:
                             return '#FFFF00'  # yellow
-                        elif yield_value < max_yield_value * 0.8:
+                        elif yield_value < max_yield_value * 0.85:
                             return '#FFA500'  # orange
                         else:
                             return '#FF0000'  # red for high
@@ -305,9 +312,12 @@ with main_col1:
                         )
                     ).add_to(m)
                     
-                    # Add a smooth colormap legend that properly matches yield values
+                    # Add a detailed colormap legend that properly shows low yield values
                     colormap = folium.LinearColormap(
-                        colors=['blue', 'cyan', 'green', 'yellow', 'orange', 'red'],
+                        colors=['#0000FF', '#0040FF', '#0080FF', '#00FFFF', '#00FF80', 
+                                '#00FF00', '#FFFF00', '#FFA500', '#FF0000'],
+                        index=[0, 2, 5, 10, max_yield_value*0.3, max_yield_value*0.5, 
+                               max_yield_value*0.7, max_yield_value*0.85, max_yield_value],
                         vmin=0,
                         vmax=float(max_yield_value),
                         caption='Estimated Water Yield (L/s)'

@@ -47,16 +47,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     min_lon = center_lon - (radius_km / km_per_degree_lon)
     max_lon = center_lon + (radius_km / km_per_degree_lon)
     
-    # Optimize grid size for performance while maintaining smooth appearance
+    # Increase grid resolution for more detailed visualization
     # Higher resolution for smaller searches, lower for larger datasets
-    # This ensures reasonable performance on all devices
+    # This ensures reasonable performance while showing finer detail
     wells_count = len(wells_df)
     if wells_count > 5000:
-        grid_size = 32  # Coarser grid for very large datasets
+        grid_size = 48  # Improved resolution for very large datasets
     elif wells_count > 1000:
-        grid_size = 48  # Medium grid for large datasets
+        grid_size = 72  # Higher resolution for large datasets
     else:
-        grid_size = 64  # Finer grid for smaller datasets
+        grid_size = 96  # Fine resolution for smaller datasets
         
     # Create the grid for our GeoJSON polygons
     lat_vals = np.linspace(min_lat, max_lat, grid_size)

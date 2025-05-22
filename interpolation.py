@@ -175,36 +175,68 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if len(points_2d) > 3:
             tri = Delaunay(points_2d)
             
-            # Process each triangle to create a polygon
+            # Process each triangle to create smooth gradient polygons using barycentric interpolation
             for simplex in tri.simplices:
-                # Get the three points of this triangle
+                # Get the three vertices of this triangle
                 vertices = points_2d[simplex]
-                
-                # Get the yield values for these points
                 vertex_values = interpolated_z[simplex]
                 
-                # Calculate the average yield for this triangle
-                avg_yield = float(np.mean(vertex_values))
+                # Skip triangles with all zero values
+                if np.all(vertex_values <= 0.01):
+                    continue
                 
-                # Only add triangles with meaningful values and within our radius
-                if avg_yield > 0.01:
-                    # Create polygon for this triangle
-                    poly = {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [[
-                                [float(vertices[0,0]), float(vertices[0,1])],
-                                [float(vertices[1,0]), float(vertices[1,1])],
-                                [float(vertices[2,0]), float(vertices[2,1])],
-                                [float(vertices[0,0]), float(vertices[0,1])]
-                            ]]
-                        },
-                        "properties": {
-                            "yield": avg_yield
-                        }
-                    }
-                    features.append(poly)
+                # Create multiple sub-triangles for smooth barycentric interpolation
+                # This creates a smooth gradient across the triangle surface
+                subdivisions = 8  # Number of subdivisions for smooth gradients
+                
+                for i in range(subdivisions):
+                    for j in range(subdivisions - i):
+                        # Calculate barycentric coordinates for sub-triangle vertices
+                        u1, v1 = i / subdivisions, j / subdivisions
+                        w1 = 1 - u1 - v1
+                        
+                        u2, v2 = (i + 1) / subdivisions, j / subdivisions
+                        w2 = 1 - u2 - v2
+                        
+                        u3, v3 = i / subdivisions, (j + 1) / subdivisions
+                        w3 = 1 - u3 - v3
+                        
+                        # Skip if any barycentric coordinate is negative (outside triangle)
+                        if min(w1, w2, w3) < 0:
+                            continue
+                        
+                        # Calculate interpolated positions using barycentric coordinates
+                        p1 = w1 * vertices[0] + u1 * vertices[1] + v1 * vertices[2]
+                        p2 = w2 * vertices[0] + u2 * vertices[1] + v2 * vertices[2]
+                        p3 = w3 * vertices[0] + u3 * vertices[1] + v3 * vertices[2]
+                        
+                        # Calculate interpolated yield values using barycentric coordinates
+                        yield1 = w1 * vertex_values[0] + u1 * vertex_values[1] + v1 * vertex_values[2]
+                        yield2 = w2 * vertex_values[0] + u2 * vertex_values[1] + v2 * vertex_values[2]
+                        yield3 = w3 * vertex_values[0] + u3 * vertex_values[1] + v3 * vertex_values[2]
+                        
+                        # Use the average yield for this sub-triangle
+                        avg_yield = float(np.mean([yield1, yield2, yield3]))
+                        
+                        # Only add meaningful sub-triangles
+                        if avg_yield > 0.01:
+                            # Create polygon for this sub-triangle
+                            poly = {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "Polygon",
+                                    "coordinates": [[
+                                        [float(p1[0]), float(p1[1])],
+                                        [float(p2[0]), float(p2[1])],
+                                        [float(p3[0]), float(p3[1])],
+                                        [float(p1[0]), float(p1[1])]
+                                    ]]
+                                },
+                                "properties": {
+                                    "yield": avg_yield
+                                }
+                            }
+                            features.append(poly)
         else:
             # Fallback to rectangular grid if triangulation is not possible
             for i in range(len(lat_vals)-1):

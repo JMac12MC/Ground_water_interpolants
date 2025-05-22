@@ -128,6 +128,15 @@ with st.sidebar:
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     
+    # Add kriging visualization toggle
+    if st.session_state.heat_map_visibility:
+        st.session_state.kriging_display_mode = st.selectbox(
+            "📊 Kriging Display Mode",
+            ["yield_predictions", "error_variance"],
+            index=0,
+            help="Choose whether to display yield predictions or kriging error variance"
+        )
+    
     # Add some guidance info for farmers
     st.header("About This Tool")
     st.info("""
@@ -241,12 +250,14 @@ with main_col1:
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
                 # Generate proper GeoJSON grid with interpolated yield values
+                display_mode = getattr(st.session_state, 'kriging_display_mode', 'yield_predictions')
                 geojson_data = generate_geo_json_grid(
                     filtered_wells.copy(), 
                     st.session_state.selected_point, 
                     st.session_state.search_radius,
                     resolution=100,  # Higher resolution for smoother appearance
-                    method=st.session_state.interpolation_method
+                    method=st.session_state.interpolation_method,
+                    display_mode=display_mode
                 )
                 
                 if geojson_data and len(geojson_data['features']) > 0:

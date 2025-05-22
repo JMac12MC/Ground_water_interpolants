@@ -160,8 +160,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     grid_lats = (grid_y[mask].ravel() / km_per_degree_lat) + center_lat
     grid_lons = (grid_x[mask].ravel() / km_per_degree_lon) + center_lon
     
-    # Build the GeoJSON structure
+    # Build the GeoJSON structure with performance optimization
     features = []
+    max_polygons = 6000  # Limit to prevent message size issues while maintaining quality
     
     # Create polygons only where needed - use a Delaunay triangulation approach
     # for a more organic-looking interpolation surface
@@ -176,7 +177,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             tri = Delaunay(points_2d)
             
             # Process each triangle to create smooth gradient polygons using barycentric interpolation
-            for simplex in tri.simplices:
+            # Sort triangles by maximum yield value to prioritize high-value areas
+            triangle_priorities = []
+            for i, simplex in enumerate(tri.simplices):
+                vertex_values = interpolated_z[simplex]
+                max_yield = np.max(vertex_values)
+                triangle_priorities.append((max_yield, i, simplex))
+            
+            # Sort by yield value (descending) to process high-yield areas first
+            triangle_priorities.sort(reverse=True)
+            
+            for max_yield, _, simplex in triangle_priorities:
                 # Get the three vertices of this triangle
                 vertices = points_2d[simplex]
                 vertex_values = interpolated_z[simplex]
@@ -185,9 +196,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 if np.all(vertex_values <= 0.01):
                     continue
                 
-                # Create multiple sub-triangles for smooth barycentric interpolation
-                # This creates a smooth gradient across the triangle surface
-                subdivisions = 8  # Number of subdivisions for smooth gradients
+                # Create optimized sub-triangles for smooth barycentric interpolation
+                # Balance between visual quality and performance
+                subdivisions = 4  # Reduced subdivisions for better performance
                 
                 for i in range(subdivisions):
                     for j in range(subdivisions - i):
@@ -218,25 +229,36 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         # Use the average yield for this sub-triangle
                         avg_yield = float(np.mean([yield1, yield2, yield3]))
                         
-                        # Only add meaningful sub-triangles
+                        # Only add meaningful sub-triangles with smart filtering
                         if avg_yield > 0.01:
-                            # Create polygon for this sub-triangle
-                            poly = {
-                                "type": "Feature",
-                                "geometry": {
-                                    "type": "Polygon",
-                                    "coordinates": [[
-                                        [float(p1[0]), float(p1[1])],
-                                        [float(p2[0]), float(p2[1])],
-                                        [float(p3[0]), float(p3[1])],
-                                        [float(p1[0]), float(p1[1])]
-                                    ]]
-                                },
-                                "properties": {
-                                    "yield": avg_yield
+                            # Skip very small triangles that won't be visible
+                            triangle_area = abs((p2[0] - p1[0]) * (p3[1] - p1[1]) - (p3[0] - p1[0]) * (p2[1] - p1[1])) / 2
+                            if triangle_area > 1e-8:  # Filter out tiny triangles
+                                # Create polygon for this sub-triangle
+                                poly = {
+                                    "type": "Feature",
+                                    "geometry": {
+                                        "type": "Polygon",
+                                        "coordinates": [[
+                                            [float(p1[0]), float(p1[1])],
+                                            [float(p2[0]), float(p2[1])],
+                                            [float(p3[0]), float(p3[1])],
+                                            [float(p1[0]), float(p1[1])]
+                                        ]]
+                                    },
+                                    "properties": {
+                                        "yield": avg_yield
+                                    }
                                 }
-                            }
-                            features.append(poly)
+                                features.append(poly)
+                                
+                                # Stop if we reach the polygon limit to prevent message size issues
+                                if len(features) >= max_polygons:
+                                    break
+                    
+                    # Break outer loop if limit reached
+                    if len(features) >= max_polygons:
+                        break
         else:
             # Fallback to rectangular grid if triangulation is not possible
             for i in range(len(lat_vals)-1):

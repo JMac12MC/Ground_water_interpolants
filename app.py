@@ -261,28 +261,32 @@ with main_col1:
                     # Instead of choropleth, use direct GeoJSON styling for more control
                     # This allows us to precisely map yield values to colors
                     
-                    # Define color function that maps yield values to our desired gradient
-                    # Ensure more precision at lower yield values
+                    # Define 15 precise color bands for professional visualization
                     def get_color(yield_value):
-                        # Create a color scale from blue (low) to red (high) with more steps at lower yields
-                        if yield_value <= 0:
-                            return '#0000FF'  # dark blue for zero
-                        elif yield_value < 2:  # Very low values
-                            return '#0040FF'  # blue
-                        elif yield_value < 5:  # Low values
-                            return '#0080FF'  # light blue
-                        elif yield_value < 10:  # Below average values
-                            return '#00FFFF'  # cyan
-                        elif yield_value < max_yield_value * 0.3:
-                            return '#00FF80'  # blue-green
-                        elif yield_value < max_yield_value * 0.5:
-                            return '#00FF00'  # green
-                        elif yield_value < max_yield_value * 0.7:
-                            return '#FFFF00'  # yellow
-                        elif yield_value < max_yield_value * 0.85:
-                            return '#FFA500'  # orange
-                        else:
-                            return '#FF0000'  # red for high
+                        # Create 15-band color scale like professional kriging software
+                        step = max_yield_value / 15.0
+                        
+                        colors = [
+                            '#000080',  # Band 1: Dark blue
+                            '#0000B3',  # Band 2: Blue
+                            '#0000E6',  # Band 3: Bright blue
+                            '#0033FF',  # Band 4: Blue-cyan
+                            '#0066FF',  # Band 5: Light blue
+                            '#0099FF',  # Band 6: Sky blue
+                            '#00CCFF',  # Band 7: Cyan
+                            '#00FFCC',  # Band 8: Cyan-green
+                            '#00FF99',  # Band 9: Aqua green
+                            '#00FF66',  # Band 10: Green-yellow
+                            '#33FF33',  # Band 11: Green
+                            '#99FF00',  # Band 12: Yellow-green
+                            '#FFFF00',  # Band 13: Yellow
+                            '#FF9900',  # Band 14: Orange
+                            '#FF0000'   # Band 15: Red
+                        ]
+                        
+                        # Determine which band the value falls into
+                        band_index = min(14, int(yield_value / step))
+                        return colors[band_index]
                     
                     # Style function that uses our color mapping
                     def style_feature(feature):
@@ -312,15 +316,14 @@ with main_col1:
                         )
                     ).add_to(m)
                     
-                    # Add a detailed colormap legend that properly shows low yield values
+                    # Add 15-band colormap legend to match the visualization
                     colormap = folium.LinearColormap(
-                        colors=['#0000FF', '#0040FF', '#0080FF', '#00FFFF', '#00FF80', 
-                                '#00FF00', '#FFFF00', '#FFA500', '#FF0000'],
-                        index=[0, 2, 5, 10, max_yield_value*0.3, max_yield_value*0.5, 
-                               max_yield_value*0.7, max_yield_value*0.85, max_yield_value],
+                        colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
+                                '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
+                                '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
                         vmin=0,
                         vmax=float(max_yield_value),
-                        caption='Estimated Water Yield (L/s)'
+                        caption='Estimated Water Yield (L/s) - 15 Bands'
                     )
                     colormap.add_to(m)
                     

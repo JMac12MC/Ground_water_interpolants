@@ -47,16 +47,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     min_lon = center_lon - (radius_km / km_per_degree_lon)
     max_lon = center_lon + (radius_km / km_per_degree_lon)
     
-    # Increase grid resolution for more detailed visualization
-    # Higher resolution for smaller searches, lower for larger datasets
-    # This ensures reasonable performance while showing finer detail
+    # High resolution grid for smooth professional visualization
+    # Increase resolution significantly for smoother appearance like kriging software
     wells_count = len(wells_df)
     if wells_count > 5000:
-        grid_size = 48  # Improved resolution for very large datasets
+        grid_size = 80   # Higher resolution for very large datasets
     elif wells_count > 1000:
-        grid_size = 72  # Higher resolution for large datasets
+        grid_size = 120  # High resolution for large datasets
     else:
-        grid_size = 96  # Fine resolution for smaller datasets
+        grid_size = 150  # Very fine resolution for smaller datasets
         
     # Create the grid for our GeoJSON polygons
     lat_vals = np.linspace(min_lat, max_lat, grid_size)
@@ -118,25 +117,37 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     method='nearest', fill_value=0.0
                 )
                 
-            # Apply smoothing to the interpolated values
-            # This creates a nicer visual appearance
+            # Apply advanced smoothing for professional kriging-like appearance
             from scipy.ndimage import gaussian_filter
             
             # Reshape to 2D grid for smoothing
-            grid_shape = grid_x[mask].shape
-            if len(grid_shape) == 1:
-                # Handle edge case with 1D array
-                pass
-            else:
-                # Reshape and apply smoothing filter
+            try:
+                # Create full 2D grid for smoothing
+                z_grid = np.zeros_like(grid_x)
+                z_grid[mask] = interpolated_z
+                
+                # Apply multiple smoothing passes for ultra-smooth appearance
+                # First pass: moderate smoothing
+                z_smooth = gaussian_filter(z_grid, sigma=1.5)
+                # Second pass: fine smoothing for professional appearance
+                z_smooth = gaussian_filter(z_smooth, sigma=0.8)
+                
+                # Extract smoothed values for our mask
+                interpolated_z = z_smooth[mask]
+                
+                # Ensure values stay within reasonable bounds
+                interpolated_z = np.maximum(0, interpolated_z)
+                
+            except Exception as e:
+                # If smoothing fails, apply basic smoothing
+                print(f"Advanced smoothing error: {e}, using basic smoothing")
                 try:
                     z_grid = np.zeros_like(grid_x)
                     z_grid[mask] = interpolated_z
                     z_smooth = gaussian_filter(z_grid, sigma=1.0)
                     interpolated_z = z_smooth[mask]
-                except Exception as e:
-                    # If smoothing fails, continue with unsmoothed data
-                    print(f"Smoothing error: {e}, using raw interpolation")
+                except:
+                    print("Basic smoothing also failed, using raw interpolation")
     except Exception as e:
         # Fallback to simple IDW interpolation if the above methods fail
         print(f"Interpolation error: {e}, using fallback method")

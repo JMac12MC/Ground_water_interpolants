@@ -328,13 +328,19 @@ with main_col1:
                     ).add_to(m)
                     
                     # Add 15-band colormap legend to match the visualization
+                    # Different caption based on display mode
+                    if display_mode == 'error_variance':
+                        caption_text = 'Kriging Error Variance (Standard Deviation)'
+                    else:
+                        caption_text = 'Estimated Water Yield (L/s) - 15 Bands'
+                        
                     colormap = folium.LinearColormap(
                         colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
                                 '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
                                 '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
                         vmin=0,
                         vmax=float(max_yield_value),
-                        caption='Estimated Water Yield (L/s) - 15 Bands'
+                        caption=caption_text
                     )
                     colormap.add_to(m)
                     

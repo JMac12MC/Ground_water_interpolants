@@ -84,12 +84,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     points = np.vstack([x_coords, y_coords]).T
     
     try:
-        # Use actual kriging for smooth professional results
+        # Use actual kriging for smooth professional results across the grid
         if len(wells_df) >= 3:
-            # Convert grid points for kriging (needs lat/lon coordinates)
-            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
-            grid_lons_k = (grid_points[:, 0] / km_per_degree_lon) + center_lon
-            grid_lats_k = (grid_points[:, 1] / km_per_degree_lat) + center_lat
+            # Create the full grid for kriging interpolation
+            # Convert grid coordinates back to lat/lon for kriging
+            grid_lons_full = (grid_x / km_per_degree_lon) + center_lon
+            grid_lats_full = (grid_y / km_per_degree_lat) + center_lat
             
             # Create kriging model with optimized settings
             OK = OrdinaryKriging(
@@ -100,17 +100,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 coordinates_type='geographic'
             )
             
-            # Execute kriging to get both predictions and variance
-            kriged_predictions, kriged_variance = OK.execute('points', grid_lons_k, grid_lats_k)
+            # Execute kriging across the entire grid to get spatial surface
+            kriged_predictions, kriged_variance = OK.execute('grid', grid_lons_full[0, :], grid_lats_full[:, 0])
             
             # Choose what to display based on mode
             if display_mode == 'error_variance':
-                interpolated_z = kriged_variance
+                interpolated_surface = kriged_variance
                 # Normalize variance for better visualization
-                interpolated_z = np.sqrt(interpolated_z)  # Use standard deviation
+                interpolated_surface = np.sqrt(interpolated_surface)  # Use standard deviation
             else:
-                interpolated_z = kriged_predictions
+                interpolated_surface = kriged_predictions
                 
+            # Extract values only for points within our radius mask
+            interpolated_z = interpolated_surface[mask]
+            
             # Ensure non-negative values
             interpolated_z = np.maximum(0, interpolated_z)
             

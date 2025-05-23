@@ -128,6 +128,15 @@ with st.sidebar:
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     
+    # Kriging variance option
+    if 'show_kriging_variance' not in st.session_state:
+        st.session_state.show_kriging_variance = False
+    st.session_state.show_kriging_variance = st.checkbox(
+        "Show Kriging Uncertainty (Variance)", 
+        value=st.session_state.show_kriging_variance,
+        help="Display kriging variance to show prediction uncertainty at each location"
+    )
+    
     # Add some guidance info for farmers
     st.header("About This Tool")
     st.info("""

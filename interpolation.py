@@ -7,7 +7,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 from sklearn.ensemble import RandomForestRegressor
 from pykrige.ok import OrdinaryKriging
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging'):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
     
@@ -84,8 +84,35 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     points = np.vstack([x_coords, y_coords]).T
     
     try:
+        # Initialize variance array for kriging uncertainty
+        kriging_variance = None
+        
         # Choose interpolation method based on parameter and dataset size
-        if method == 'rf_kriging' and len(wells_df) >= 10 and len(wells_df) < 3000:
+        if show_variance and (method == 'kriging' or method == 'rf_kriging') and len(wells_df) >= 5:
+            # Use actual kriging with variance calculation when variance is requested
+            print("Calculating kriging with variance estimation")
+            
+            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
+            lon_values = x_coords / km_per_degree_lon + center_lon
+            lat_values = y_coords / km_per_degree_lat + center_lat
+            
+            # Create grid points for kriging
+            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
+            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
+            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
+            
+            # Set up kriging with variance calculation
+            OK = OrdinaryKriging(
+                lon_values, lat_values, yields,
+                variogram_model='linear',  # Fast and stable
+                verbose=False,
+                enable_plotting=False
+            )
+            
+            # Execute kriging to get both predictions and variance
+            interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
+            
+        elif method == 'rf_kriging' and len(wells_df) >= 10 and len(wells_df) < 3000:
             # Use the Random Forest model for interpolation
             # But use simpler/faster settings for better performance
             rf = RandomForestRegressor(
@@ -180,11 +207,18 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 # Get the three points of this triangle
                 vertices = points_2d[simplex]
                 
-                # Get the yield values for these points
-                vertex_values = interpolated_z[simplex]
+                # Get the values for these points (yield or variance)
+                if show_variance and kriging_variance is not None:
+                    vertex_values = kriging_variance[simplex]
+                    avg_value = float(np.mean(vertex_values))
+                    # For variance, show all values (including 0)
+                    value_threshold = -1  # Show all variance values
+                else:
+                    vertex_values = interpolated_z[simplex]
+                    avg_value = float(np.mean(vertex_values))
+                    value_threshold = 0.01  # Only show meaningful yield values
                 
-                # Calculate the average yield for this triangle
-                avg_yield = float(np.mean(vertex_values))
+                avg_yield = avg_value  # Keep for backwards compatibility
                 
                 # Only add triangles with meaningful values and within our radius
                 if avg_yield > 0.01:

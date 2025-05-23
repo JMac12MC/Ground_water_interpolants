@@ -110,6 +110,9 @@ with st.sidebar:
         "Map Visualization Type",
         options=[
             "Standard Kriging (Yield)", 
+            "Kriging (Auto-Fitted Spherical)",
+            "Kriging (Auto-Fitted Gaussian)", 
+            "Kriging (Auto-Fitted Exponential)",
             "Random Forest + Kriging (Yield)",
             "Kriging Uncertainty (Fixed Model)",
             "Kriging Uncertainty (Auto-Fitted Spherical)",
@@ -135,6 +138,21 @@ with st.sidebar:
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
+    elif visualization_method == "Kriging (Auto-Fitted Spherical)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
+    elif visualization_method == "Kriging (Auto-Fitted Gaussian)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'gaussian'
+    elif visualization_method == "Kriging (Auto-Fitted Exponential)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'exponential'
     elif visualization_method == "Random Forest + Kriging (Yield)":
         st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False

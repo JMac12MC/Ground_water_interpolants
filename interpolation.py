@@ -7,7 +7,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 from sklearn.ensemble import RandomForestRegressor
 from pykrige.ok import OrdinaryKriging
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical'):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
     
@@ -102,12 +102,24 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
             
             # Set up kriging with variance calculation
-            OK = OrdinaryKriging(
-                lon_values, lat_values, yields,
-                variogram_model='linear',  # Fast and stable
-                verbose=False,
-                enable_plotting=False
-            )
+            if auto_fit_variogram:
+                # Use auto-fitted variogram for more accurate uncertainty estimation
+                print(f"Auto-fitting {variogram_model} variogram model...")
+                OK = OrdinaryKriging(
+                    lon_values, lat_values, yields,
+                    variogram_model=variogram_model,
+                    verbose=False,
+                    enable_plotting=False,
+                    variogram_parameters=None  # Let PyKrige auto-fit parameters
+                )
+            else:
+                # Use fixed variogram model for speed
+                OK = OrdinaryKriging(
+                    lon_values, lat_values, yields,
+                    variogram_model='linear',  # Fast and stable
+                    verbose=False,
+                    enable_plotting=False
+                )
             
             # Execute kriging to get both predictions and variance
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)

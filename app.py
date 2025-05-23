@@ -137,6 +137,26 @@ with st.sidebar:
         help="Display kriging variance to show prediction uncertainty at each location"
     )
     
+    # Auto-fitted variogram option (only show when variance is enabled)
+    if st.session_state.show_kriging_variance:
+        if 'auto_fit_variogram' not in st.session_state:
+            st.session_state.auto_fit_variogram = False
+        st.session_state.auto_fit_variogram = st.checkbox(
+            "Enable Auto-Fitted Variogram (Experimental)", 
+            value=st.session_state.auto_fit_variogram,
+            help="Automatically fit variogram parameters to data for more accurate uncertainty estimation"
+        )
+        
+        # Variogram model selection
+        if 'variogram_model' not in st.session_state:
+            st.session_state.variogram_model = 'spherical'
+        st.session_state.variogram_model = st.selectbox(
+            "Variogram Model Type",
+            options=['spherical', 'gaussian', 'exponential', 'linear'],
+            index=0,
+            help="Choose the variogram model type for kriging interpolation"
+        )
+    
     # Add some guidance info for farmers
     st.header("About This Tool")
     st.info("""
@@ -256,7 +276,9 @@ with main_col1:
                     st.session_state.search_radius,
                     resolution=100,  # Higher resolution for smoother appearance
                     method=st.session_state.interpolation_method,
-                    show_variance=st.session_state.show_kriging_variance
+                    show_variance=st.session_state.show_kriging_variance,
+                    auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
+                    variogram_model=st.session_state.get('variogram_model', 'spherical')
                 )
                 
                 if geojson_data and len(geojson_data['features']) > 0:

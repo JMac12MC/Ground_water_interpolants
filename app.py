@@ -104,58 +104,66 @@ with st.sidebar:
     st.write("**NOTE:** All wells within the search radius are displayed.")
     st.write("Wells with missing yield values are treated as having 0 yield for map interpolation.")
     
-    # Interpolation method selection
+    # Visualization method selection - single dropdown for all options
     st.header("Analysis Options")
-    interpolation_method = st.selectbox(
-        "Interpolation Method",
-        options=["Standard Kriging", "Random Forest + Kriging"],
+    visualization_method = st.selectbox(
+        "Map Visualization Type",
+        options=[
+            "Standard Kriging (Yield)", 
+            "Random Forest + Kriging (Yield)",
+            "Kriging Uncertainty (Fixed Model)",
+            "Kriging Uncertainty (Auto-Fitted Spherical)",
+            "Kriging Uncertainty (Auto-Fitted Gaussian)",
+            "Kriging Uncertainty (Auto-Fitted Exponential)"
+        ],
         index=0,
-        help="Choose the method used to interpolate water yield between wells."
+        help="Choose the visualization type: yield estimation or uncertainty analysis"
     )
     
-    # Map method selection to internal code
+    # Map visualization selection to internal parameters
     if 'interpolation_method' not in st.session_state:
         st.session_state.interpolation_method = 'kriging'
+    if 'show_kriging_variance' not in st.session_state:
+        st.session_state.show_kriging_variance = False
+    if 'auto_fit_variogram' not in st.session_state:
+        st.session_state.auto_fit_variogram = False
+    if 'variogram_model' not in st.session_state:
+        st.session_state.variogram_model = 'spherical'
     
-    # Update the session state based on selection
-    if interpolation_method == "Standard Kriging":
+    # Update session state based on selection
+    if visualization_method == "Standard Kriging (Yield)":
         st.session_state.interpolation_method = 'kriging'
-    elif interpolation_method == "Random Forest + Kriging":
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = False
+    elif visualization_method == "Random Forest + Kriging (Yield)":
         st.session_state.interpolation_method = 'rf_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = False
+    elif visualization_method == "Kriging Uncertainty (Fixed Model)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = True
+        st.session_state.auto_fit_variogram = False
+        st.session_state.variogram_model = 'linear'
+    elif visualization_method == "Kriging Uncertainty (Auto-Fitted Spherical)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = True
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
+    elif visualization_method == "Kriging Uncertainty (Auto-Fitted Gaussian)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = True
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'gaussian'
+    elif visualization_method == "Kriging Uncertainty (Auto-Fitted Exponential)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = True
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'exponential'
     
-    # Visibility options
+    # Display options
     st.header("Display Options")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
-    
-    # Kriging variance option
-    if 'show_kriging_variance' not in st.session_state:
-        st.session_state.show_kriging_variance = False
-    st.session_state.show_kriging_variance = st.checkbox(
-        "Show Kriging Uncertainty (Variance)", 
-        value=st.session_state.show_kriging_variance,
-        help="Display kriging variance to show prediction uncertainty at each location"
-    )
-    
-    # Auto-fitted variogram option (only show when variance is enabled)
-    if st.session_state.show_kriging_variance:
-        if 'auto_fit_variogram' not in st.session_state:
-            st.session_state.auto_fit_variogram = False
-        st.session_state.auto_fit_variogram = st.checkbox(
-            "Enable Auto-Fitted Variogram (Experimental)", 
-            value=st.session_state.auto_fit_variogram,
-            help="Automatically fit variogram parameters to data for more accurate uncertainty estimation"
-        )
-        
-        # Variogram model selection
-        if 'variogram_model' not in st.session_state:
-            st.session_state.variogram_model = 'spherical'
-        st.session_state.variogram_model = st.selectbox(
-            "Variogram Model Type",
-            options=['spherical', 'gaussian', 'exponential', 'linear'],
-            index=0,
-            help="Choose the variogram model type for kriging interpolation"
-        )
     
     # Add some guidance info for farmers
     st.header("About This Tool")

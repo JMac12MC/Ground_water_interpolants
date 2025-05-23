@@ -87,6 +87,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # Initialize variance array for kriging uncertainty
         kriging_variance = None
         
+        # Debug output to track which path is taken
+        print(f"DEBUG: method={method}, show_variance={show_variance}, auto_fit_variogram={auto_fit_variogram}, variogram_model={variogram_model}, wells_count={len(wells_df)}")
+        
         # Choose interpolation method based on parameter and dataset size
         if show_variance and (method == 'kriging' or method == 'rf_kriging') and len(wells_df) >= 5:
             # Use actual kriging with variance calculation when variance is requested

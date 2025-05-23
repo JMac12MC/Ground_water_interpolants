@@ -138,7 +138,6 @@ with st.sidebar:
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
-        st.session_state.variogram_model = 'linear'  # Ensure standard kriging uses linear model
     elif visualization_method == "Kriging (Auto-Fitted Spherical)":
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = False
@@ -158,7 +157,6 @@ with st.sidebar:
         st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
-        st.session_state.variogram_model = 'linear'  # Ensure RF+Kriging uses linear model
     elif visualization_method == "Kriging Uncertainty (Fixed Model)":
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = True
@@ -298,14 +296,6 @@ with main_col1:
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
                 # Generate proper GeoJSON grid with interpolated yield values
-                # Set parameters for Standard Kriging to match original behavior
-                if st.session_state.interpolation_method == 'kriging' and not st.session_state.get('auto_fit_variogram', False):
-                    # Standard Kriging uses linear model like it did an hour ago
-                    variogram_param = 'linear'
-                else:
-                    # Auto-fitted options use their specific models
-                    variogram_param = st.session_state.get('variogram_model', 'linear')
-                
                 geojson_data = generate_geo_json_grid(
                     filtered_wells.copy(), 
                     st.session_state.selected_point, 
@@ -314,7 +304,7 @@ with main_col1:
                     method=st.session_state.interpolation_method,
                     show_variance=st.session_state.show_kriging_variance,
                     auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                    variogram_model=variogram_param
+                    variogram_model=st.session_state.get('variogram_model', 'spherical')
                 )
                 
                 if geojson_data and len(geojson_data['features']) > 0:

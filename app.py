@@ -138,6 +138,7 @@ with st.sidebar:
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
+        st.session_state.variogram_model = 'linear'  # Ensure standard kriging uses linear model
     elif visualization_method == "Kriging (Auto-Fitted Spherical)":
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = False
@@ -157,6 +158,7 @@ with st.sidebar:
         st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
+        st.session_state.variogram_model = 'linear'  # Ensure RF+Kriging uses linear model
     elif visualization_method == "Kriging Uncertainty (Fixed Model)":
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = True

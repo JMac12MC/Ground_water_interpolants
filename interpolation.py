@@ -139,9 +139,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Create grid points for prediction
             grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
             interpolated_z = rf.predict(grid_points)
-        elif method == 'kriging' and auto_fit_variogram and len(wells_df) >= 5:
-            # Perform kriging with auto-fitted variogram for yield visualization (without variance output)
-            print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
+        elif method == 'kriging' and len(wells_df) >= 5:
+            # Perform kriging for yield visualization (covers both auto-fitted and standard)
+            print(f"Performing kriging with {variogram_model} variogram model (auto-fit: {auto_fit_variogram})...")
             
             # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
             lon_values = x_coords / km_per_degree_lon + center_lon
@@ -152,10 +152,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
             
-            # Set up kriging with auto-fitted variogram
+            # Use the specified variogram model
+            actual_model = variogram_model if auto_fit_variogram else 'linear'
+            print(f"Using variogram model: {actual_model}")
+            
+            # Set up kriging with the correct variogram
             OK = OrdinaryKriging(
                 lon_values, lat_values, yields,
-                variogram_model=variogram_model,
+                variogram_model=actual_model,
                 verbose=False,
                 enable_plotting=False,
                 variogram_parameters=None  # Let PyKrige auto-fit parameters

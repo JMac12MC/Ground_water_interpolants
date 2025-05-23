@@ -221,7 +221,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 avg_yield = avg_value  # Keep for backwards compatibility
                 
                 # Only add triangles with meaningful values and within our radius
-                if avg_yield > 0.01:
+                if avg_yield > value_threshold:
                     # Create polygon for this triangle
                     poly = {
                         "type": "Feature",

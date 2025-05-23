@@ -255,46 +255,68 @@ with main_col1:
                     st.session_state.selected_point, 
                     st.session_state.search_radius,
                     resolution=100,  # Higher resolution for smoother appearance
-                    method=st.session_state.interpolation_method
+                    method=st.session_state.interpolation_method,
+                    show_variance=st.session_state.show_kriging_variance
                 )
                 
                 if geojson_data and len(geojson_data['features']) > 0:
-                    # Calculate max yield for setting the color scale
-                    max_yield_value = 0
+                    # Calculate max value for setting the color scale
+                    max_value = 0
                     for feature in geojson_data['features']:
-                        max_yield_value = max(max_yield_value, feature['properties']['yield'])
+                        max_value = max(max_value, feature['properties']['yield'])
                     
                     # Ensure reasonable minimum for visualization
-                    max_yield_value = max(max_yield_value, 20.0)
+                    max_value = max(max_value, 20.0)
                     
                     # Instead of choropleth, use direct GeoJSON styling for more control
-                    # This allows us to precisely map yield values to colors
+                    # This allows us to precisely map values to colors
                     
-                    # Define 15 precise color bands for professional visualization
-                    def get_color(yield_value):
-                        # Create 15-band color scale like professional kriging software
-                        step = max_yield_value / 15.0
+                    # Define colors based on what we're displaying
+                    def get_color(value):
+                        # Create 15-band color scale
+                        step = max_value / 15.0
                         
-                        colors = [
-                            '#000080',  # Band 1: Dark blue
-                            '#0000B3',  # Band 2: Blue
-                            '#0000E6',  # Band 3: Bright blue
-                            '#0033FF',  # Band 4: Blue-cyan
-                            '#0066FF',  # Band 5: Light blue
-                            '#0099FF',  # Band 6: Sky blue
-                            '#00CCFF',  # Band 7: Cyan
-                            '#00FFCC',  # Band 8: Cyan-green
-                            '#00FF99',  # Band 9: Aqua green
-                            '#00FF66',  # Band 10: Green-yellow
-                            '#33FF33',  # Band 11: Green
-                            '#99FF00',  # Band 12: Yellow-green
-                            '#FFFF00',  # Band 13: Yellow
-                            '#FF9900',  # Band 14: Orange
-                            '#FF0000'   # Band 15: Red
-                        ]
+                        if st.session_state.show_kriging_variance:
+                            # Variance colors: blue (low uncertainty) to red (high uncertainty)
+                            colors = [
+                                '#0000ff',  # Blue (low uncertainty)
+                                '#0033ff',
+                                '#0066ff',
+                                '#0099ff',
+                                '#00ccff',
+                                '#00ffff',  # Cyan
+                                '#33ffcc',
+                                '#66ff99',
+                                '#99ff66',
+                                '#ccff33',
+                                '#ffff00',  # Yellow
+                                '#ffcc00',
+                                '#ff9900',
+                                '#ff6600',
+                                '#ff0000',  # Red (high uncertainty)
+                            ]
+                        else:
+                            # Yield colors: blue (low yield) to red (high yield)
+                            colors = [
+                                '#000080',  # Band 1: Dark blue
+                                '#0000B3',  # Band 2: Blue
+                                '#0000E6',  # Band 3: Bright blue
+                                '#0033FF',  # Band 4: Blue-cyan
+                                '#0066FF',  # Band 5: Light blue
+                                '#0099FF',  # Band 6: Sky blue
+                                '#00CCFF',  # Band 7: Cyan
+                                '#00FFCC',  # Band 8: Cyan-green
+                                '#00FF99',  # Band 9: Aqua green
+                                '#00FF66',  # Band 10: Green-yellow
+                                '#33FF33',  # Band 11: Green
+                                '#99FF00',  # Band 12: Yellow-green
+                                '#FFFF00',  # Band 13: Yellow
+                                '#FF9900',  # Band 14: Orange
+                                '#FF0000'   # Band 15: Red
+                            ]
                         
                         # Determine which band the value falls into
-                        band_index = min(14, int(yield_value / step))
+                        band_index = min(14, int(value / step))
                         return colors[band_index]
                     
                     # Style function that uses our color mapping
@@ -326,14 +348,26 @@ with main_col1:
                     ).add_to(m)
                     
                     # Add 15-band colormap legend to match the visualization
-                    colormap = folium.LinearColormap(
-                        colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
-                                '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
-                                '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
-                        vmin=0,
-                        vmax=float(max_yield_value),
-                        caption='Estimated Water Yield (L/s) - 15 Bands'
-                    )
+                    if st.session_state.show_kriging_variance:
+                        # Variance legend with different colors
+                        colormap = folium.LinearColormap(
+                            colors=['#0000ff', '#0033ff', '#0066ff', '#0099ff', '#00ccff', 
+                                    '#00ffff', '#33ffcc', '#66ff99', '#99ff66', '#ccff33', 
+                                    '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff0000'],
+                            vmin=0,
+                            vmax=float(max_value),
+                            caption='Kriging Uncertainty (Variance) - 15 Bands'
+                        )
+                    else:
+                        # Yield legend with original colors
+                        colormap = folium.LinearColormap(
+                            colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
+                                    '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
+                                    '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
+                            vmin=0,
+                            vmax=float(max_value),
+                            caption='Estimated Water Yield (L/s) - 15 Bands'
+                        )
                     colormap.add_to(m)
                     
                     # Add tooltips to show yield values on hover

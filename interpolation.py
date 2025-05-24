@@ -61,10 +61,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     lat_vals = np.linspace(min_lat, max_lat, grid_size)
     lon_vals = np.linspace(min_lon, max_lon, grid_size)
     
-    # Extract coordinates and yields from the wells dataframe
+    # Extract coordinates and values from the wells dataframe
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
-    yields = wells_df['yield_rate'].values.astype(float)
+    
+    # Choose which values to interpolate based on method
+    if method == 'depth_kriging':
+        yields = wells_df['depth'].values.astype(float)  # Use depth values for depth interpolation
+    else:
+        yields = wells_df['yield_rate'].values.astype(float)  # Use yield values for standard interpolation
     
     # Convert to km-based coordinates for proper interpolation
     x_coords = (lons - center_lon) * km_per_degree_lon
@@ -139,7 +144,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Create grid points for prediction
             grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
             interpolated_z = rf.predict(grid_points)
-        elif method == 'kriging' and auto_fit_variogram and len(wells_df) >= 5:
+        elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield visualization (without variance output)
             print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
             

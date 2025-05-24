@@ -113,6 +113,8 @@ with st.sidebar:
             "Kriging (Auto-Fitted Spherical)",
             "Kriging (Auto-Fitted Gaussian)", 
             "Kriging (Auto-Fitted Exponential)",
+            "Depth to Groundwater (Standard Kriging)",
+            "Depth to Groundwater (Auto-Fitted Spherical)",
             "Random Forest + Kriging (Yield)",
             "Kriging Uncertainty (Fixed Model)",
             "Kriging Uncertainty (Auto-Fitted Spherical)",
@@ -153,6 +155,15 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'exponential'
+    elif visualization_method == "Depth to Groundwater (Standard Kriging)":
+        st.session_state.interpolation_method = 'depth_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = False
+    elif visualization_method == "Depth to Groundwater (Auto-Fitted Spherical)":
+        st.session_state.interpolation_method = 'depth_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
     elif visualization_method == "Random Forest + Kriging (Yield)":
         st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False
@@ -350,6 +361,25 @@ with main_col1:
                                 '#ff9900',
                                 '#ff6600',
                                 '#ff0000',  # Red (high uncertainty)
+                            ]
+                        elif st.session_state.interpolation_method == 'depth_kriging':
+                            # Depth colors: green (shallow) to red (deep)
+                            colors = [
+                                '#00ff00',  # Green (shallow depth)
+                                '#33ff00',
+                                '#66ff00',
+                                '#99ff00',
+                                '#ccff00',
+                                '#ffff00',  # Yellow
+                                '#ffcc00',
+                                '#ff9900',
+                                '#ff6600',
+                                '#ff3300',
+                                '#ff0000',  # Red (deep depth)
+                                '#cc0000',
+                                '#990000',
+                                '#660000',
+                                '#330000'   # Dark red (very deep)
                             ]
                         else:
                             # Yield colors: blue (low yield) to red (high yield)

@@ -250,8 +250,29 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                 wells_df['nzmg_x'] = nzmgx
                 wells_df['nzmg_y'] = nzmgy
             
-            # Add other important columns
-            wells_df['depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)
+            # Calculate depth to groundwater using lowest screen depth (most accurate for groundwater analysis)
+            # First get all screen depths
+            screen_depths = []
+            for screen_col in ['TOP_SCREEN_1', 'TOP_SCREEN_2', 'TOP_SCREEN_3', 'BOTTOM_SCREEN_1', 'BOTTOM_SCREEN_2', 'BOTTOM_SCREEN_3']:
+                if screen_col in raw_df.columns:
+                    screen_depths.append(pd.to_numeric(raw_df[screen_col], errors='coerce'))
+            
+            if screen_depths:
+                # Combine all screen depths and find the minimum (shallowest groundwater)
+                all_screens = pd.concat(screen_depths, axis=1)
+                wells_df['depth_to_groundwater'] = all_screens.min(axis=1, skipna=True)
+                
+                # For wells with no screen data, mark as dry wells with very deep groundwater
+                wells_df['depth_to_groundwater'] = wells_df['depth_to_groundwater'].fillna(999)  # 999m indicates dry/no screen
+                wells_df['is_dry_well'] = wells_df['depth_to_groundwater'] == 999
+            else:
+                # Fallback to drill depth if no screen data available
+                wells_df['depth_to_groundwater'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(999)
+                wells_df['is_dry_well'] = wells_df['depth_to_groundwater'] == 999
+            
+            # Keep original depth for reference
+            wells_df['drill_hole_depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)
+            wells_df['depth'] = wells_df['depth_to_groundwater']  # Use groundwater depth for interpolation
             wells_df['depth_m'] = wells_df['depth']
             
             # Add yield information - use MAX_YIELD or calculate if not available

@@ -534,7 +534,7 @@ with main_col1:
                         fill=True,
                         fill_color='darkblue',
                         fill_opacity=0.7,
-                        tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Depth: {row['depth']:.1f}m"
+                        tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m{'(Dry)' if row.get('is_dry_well', False) else ''}"
                     ).add_to(radius_wells_layer)
                 
                 # Add filtered wells with more details
@@ -634,7 +634,7 @@ with main_col1:
             st.metric(
                 "Average Depth to Groundwater", 
                 f"{avg_depth:.1f} m",
-                help="Mean depth to first well screen"
+                help="Mean depth to shallowest water screen (actual groundwater depth)"
             )
             
         with col2:
@@ -663,11 +663,20 @@ with main_col1:
             )
             
             high_yield_wells = len(wells_data[wells_data['yield_rate'] > 5])
+            dry_wells = len(wells_data[wells_data.get('is_dry_well', False) == True]) if 'is_dry_well' in wells_data.columns else 0
+            
             st.metric(
                 "High-Yield Wells", 
                 f"{high_yield_wells}",
                 help="Wells with yield > 5 L/s"
             )
+            
+            if dry_wells > 0:
+                st.metric(
+                    "Dry Wells", 
+                    f"{dry_wells}",
+                    help="Wells with no water screen (likely dry)"
+                )
         
         # Detailed data table
         st.subheader("📋 Detailed Well Information")

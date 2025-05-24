@@ -295,6 +295,12 @@ with main_col1:
             
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
+                # Show progress bar for heatmap generation
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                status_text.text('Generating heatmap interpolation...')
+                progress_bar.progress(25)
+                
                 # Generate proper GeoJSON grid with interpolated yield values
                 geojson_data = generate_geo_json_grid(
                     filtered_wells.copy(), 
@@ -306,6 +312,8 @@ with main_col1:
                     auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
                     variogram_model=st.session_state.get('variogram_model', 'spherical')
                 )
+                
+                progress_bar.progress(75)
                 
                 if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
@@ -418,6 +426,15 @@ with main_col1:
                         )
                     colormap.add_to(m)
                     
+                    progress_bar.progress(100)
+                    status_text.text('Heatmap generation complete!')
+                    
+                    # Clear progress indicators after a moment
+                    import time
+                    time.sleep(0.5)
+                    progress_bar.empty()
+                    status_text.empty()
+                    
                     # Add tooltips to show yield values on hover
                     style_function = lambda x: {'fillColor': 'transparent', 'color': 'transparent'}
                     highlight_function = lambda x: {'fillOpacity': 0.8}
@@ -487,7 +504,7 @@ with main_col1:
                         fill=True,
                         fill_color='darkblue',
                         fill_opacity=0.7,
-                        tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s"
+                        tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Depth: {row['depth']:.1f}m"
                     ).add_to(radius_wells_layer)
                 
                 # Add filtered wells with more details
@@ -563,6 +580,92 @@ with main_col1:
             # Force a complete rerun to rebuild the map with the new location
             st.rerun()
     
+    # Add comprehensive well data summary report
+    if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
+        st.subheader("📊 Well Data Summary Report")
+        
+        # Create summary statistics
+        wells_data = st.session_state.filtered_wells
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Total Wells Found", 
+                len(wells_data),
+                help="Number of wells within the selected radius"
+            )
+            
+            # Depth statistics
+            avg_depth = wells_data['depth'].mean()
+            min_depth = wells_data['depth'].min()
+            max_depth = wells_data['depth'].max()
+            
+            st.metric(
+                "Average Depth to Groundwater", 
+                f"{avg_depth:.1f} m",
+                help="Mean depth to first well screen"
+            )
+            
+        with col2:
+            # Yield statistics  
+            yields = wells_data['yield_rate'].fillna(0)
+            avg_yield = yields.mean()
+            productive_wells = len(wells_data[wells_data['yield_rate'] > 1])
+            
+            st.metric(
+                "Average Yield Rate", 
+                f"{avg_yield:.2f} L/s",
+                help="Mean water yield across all wells"
+            )
+            
+            st.metric(
+                "Productive Wells", 
+                f"{productive_wells}",
+                help="Wells with yield > 1 L/s"
+            )
+            
+        with col3:
+            st.metric(
+                "Depth Range", 
+                f"{min_depth:.1f} - {max_depth:.1f} m",
+                help="Minimum to maximum depth range"
+            )
+            
+            high_yield_wells = len(wells_data[wells_data['yield_rate'] > 5])
+            st.metric(
+                "High-Yield Wells", 
+                f"{high_yield_wells}",
+                help="Wells with yield > 5 L/s"
+            )
+        
+        # Detailed data table
+        st.subheader("📋 Detailed Well Information")
+        
+        # Display top wells by yield
+        top_wells = wells_data.nlargest(10, 'yield_rate')[['well_id', 'yield_rate', 'depth', 'distance', 'status']]
+        st.write("**Top 10 Wells by Yield Rate:**")
+        st.dataframe(
+            top_wells,
+            column_config={
+                "well_id": "Well ID",
+                "yield_rate": st.column_config.NumberColumn("Yield (L/s)", format="%.2f"),
+                "depth": st.column_config.NumberColumn("Depth (m)", format="%.1f"),
+                "distance": st.column_config.NumberColumn("Distance (km)", format="%.2f"),
+                "status": "Status"
+            },
+            hide_index=True
+        )
+        
+        # Downloadable CSV
+        csv_data = wells_data.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Complete Well Data (CSV)",
+            data=csv_data,
+            file_name=f"well_data_{st.session_state.selected_point[0]:.4f}_{st.session_state.selected_point[1]:.4f}.csv",
+            mime="text/csv"
+        )
+
     # Add a clear button to reset the map
     if st.button("Clear Results", use_container_width=True):
         # Reset the session state

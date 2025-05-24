@@ -67,7 +67,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # Choose which values to interpolate based on method
     if method == 'depth_kriging':
-        yields = wells_df['depth'].values.astype(float)  # Use depth values for depth interpolation
+        # For depth interpolation, only use wells that actually have water (not dry wells)
+        productive_wells = wells_df[~wells_df.get('is_dry_well', False)]
+        if len(productive_wells) == 0:
+            # If no productive wells, fall back to all wells
+            productive_wells = wells_df
+        
+        lats = productive_wells['latitude'].values.astype(float)
+        lons = productive_wells['longitude'].values.astype(float)
+        yields = productive_wells['depth'].values.astype(float)  # Use depth values for depth interpolation
     else:
         yields = wells_df['yield_rate'].values.astype(float)  # Use yield values for standard interpolation
     

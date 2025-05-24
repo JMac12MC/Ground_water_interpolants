@@ -264,7 +264,9 @@ def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_
                 
                 # For wells with no screen data, mark as dry wells with very deep groundwater
                 wells_df['depth_to_groundwater'] = wells_df['depth_to_groundwater'].fillna(999)  # 999m indicates dry/no screen
-                wells_df['is_dry_well'] = wells_df['depth_to_groundwater'] == 999
+                
+                # Wells are dry if they have no screen data OR no yield data
+                wells_df['is_dry_well'] = (wells_df['depth_to_groundwater'] == 999) | (wells_df['yield_rate'] <= 0)
             else:
                 # Fallback to drill depth if no screen data available
                 wells_df['depth_to_groundwater'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(999)

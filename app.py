@@ -598,19 +598,26 @@ with main_col1:
     """))
     
     # Use st_folium with return_clicked_latlon to get click coordinates
-    # Preserve map view state during processing
+    # Restore saved map view after processing, or use current view state
+    current_center = st.session_state.get('saved_center', st.session_state.get('map_center', [-43.5321, 172.6362]))
+    current_zoom = st.session_state.get('saved_zoom', st.session_state.get('map_zoom', 8))
+    
     map_data = st_folium(m, width=800, 
-                       center=st.session_state.get('map_center', [-43.5321, 172.6362]),
-                       zoom=st.session_state.get('map_zoom', 8),
+                       center=tuple(current_center) if current_center else None,
+                       zoom=current_zoom,
                        key="interactive_map", 
                        returned_objects=["last_clicked", "zoom", "center"])
     
-    # Save map view state from user interactions
+    # Save map view state from user interactions and store current view before processing
     if map_data:
         if "zoom" in map_data and map_data["zoom"]:
             st.session_state.map_zoom = map_data["zoom"]
+            # Store the view state when user interacts with map
+            st.session_state.saved_zoom = map_data["zoom"]
         if "center" in map_data and map_data["center"]:
             st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+            # Store the center state when user interacts with map
+            st.session_state.saved_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
     
     # Process clicks from the map and handle new location processing without page reload
     new_location_clicked = False
@@ -622,6 +629,12 @@ with main_col1:
         # Only update if this is a new location
         current_point = st.session_state.selected_point
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
+            # Capture the current view state before processing starts
+            if "zoom" in map_data and map_data["zoom"]:
+                st.session_state.saved_zoom = map_data["zoom"]
+            if "center" in map_data and map_data["center"]:
+                st.session_state.saved_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+            
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
             new_location_clicked = True

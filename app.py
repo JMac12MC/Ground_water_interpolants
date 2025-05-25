@@ -689,7 +689,7 @@ with main_col1:
     
     # Process clicks from the map and handle new location processing without page reload
     new_location_clicked = False
-    if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+    if map_data and "last_clicked" in map_data and map_data["last_clicked"] is not None:
         # Get the coordinates from the click
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
@@ -699,7 +699,13 @@ with main_col1:
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
+            # Reset interpolation cache for new location
+            st.session_state.cached_geojson = None
+            st.session_state.interpolation_complete = False
+            st.session_state.interpolation_processing = False
+            st.session_state.last_processed_point = None
             new_location_clicked = True
+            st.rerun()
     
     # If a new location was clicked, process it immediately in this cycle to avoid map reset
     if new_location_clicked or (st.session_state.selected_point and st.session_state.filtered_wells is None):

@@ -329,24 +329,8 @@ with main_col1:
                     st.session_state.interpolation_complete = False
                     st.session_state.last_processed_point = current_point_key
                     
-                    # Show progress indicator that stays visible during processing
-                    progress_placeholder = st.empty()
-                    with progress_placeholder.container():
-                        st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        status_text.write("📍 **Step 1/3:** Initializing interpolation engine...")
-                        progress_bar.progress(10)
-                    
                     # Generate proper GeoJSON grid with interpolated yield values
                     try:
-                        with progress_placeholder.container():
-                            st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
-                            progress_bar = st.progress(30)
-                            status_text = st.empty()
-                            status_text.write("📍 **Step 2/3:** Processing well data and generating interpolation...")
-                        
                         geojson_data = generate_geo_json_grid(
                             filtered_wells.copy(), 
                             st.session_state.selected_point, 
@@ -358,21 +342,11 @@ with main_col1:
                             variogram_model=st.session_state.get('variogram_model', 'spherical')
                         )
                         
-                        with progress_placeholder.container():
-                            st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
-                            progress_bar = st.progress(90)
-                            status_text = st.empty()
-                            status_text.write("📍 **Step 3/3:** Finalizing visualization...")
-                        
                         # Cache the results
                         st.session_state.cached_geojson = geojson_data
                         st.session_state.interpolation_complete = True
                         
-                        # Clear progress indicator
-                        progress_placeholder.empty()
-                        
                     except Exception as e:
-                        progress_placeholder.empty()
                         st.error(f"Interpolation failed: {e}")
                         geojson_data = None
                     finally:
@@ -383,8 +357,6 @@ with main_col1:
                     geojson_data = st.session_state.cached_geojson
                 else:
                     # Still processing, show progress and use empty data
-                    if st.session_state.interpolation_processing:
-                        st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
                     geojson_data = None
                 
                 if geojson_data and len(geojson_data['features']) > 0:
@@ -613,7 +585,37 @@ with main_col1:
         from folium.plugins import MousePosition
         MousePosition().add_to(m)
     
-    # Display the map
+    # Check if we're currently processing interpolation
+    is_processing = (
+        st.session_state.get('interpolation_processing', False) or 
+        (st.session_state.selected_point and not st.session_state.get('interpolation_complete', False))
+    )
+    
+    # Show processing indicator if interpolation is running
+    if is_processing:
+        st.subheader("🔄 Processing Interpolation Analysis")
+        st.info("""
+        **Please wait while we analyze the groundwater data for your selected location.**
+        
+        This process involves:
+        - Filtering wells within your search radius
+        - Running interpolation algorithms on yield data
+        - Generating heat map visualization
+        
+        The map and results will appear when processing is complete.
+        """)
+        
+        # Show a progress bar for visual feedback
+        progress_bar = st.progress(0)
+        import time
+        for i in range(100):
+            time.sleep(0.01)  # Small delay for visual effect
+            progress_bar.progress(i + 1)
+        
+        # Stop here and don't show map/results during processing
+        st.stop()
+    
+    # Display the map (only when not processing)
     st.subheader("Interactive Map")
     st.caption("Click on the map to select a location or use the search box above")
     

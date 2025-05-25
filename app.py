@@ -306,11 +306,20 @@ with main_col1:
             
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Show progress bar for heatmap generation
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                status_text.text('Generating heatmap interpolation...')
-                progress_bar.progress(25)
+                # Clear processing flag to prevent overlay after data is ready
+                if st.session_state.get('processing', False):
+                    st.session_state.processing = False
+                
+                # Show progress overlay during processing with better visibility
+                progress_container = st.container()
+                with progress_container:
+                    st.info("🔄 **Analysis in Progress** - Map view will be preserved")
+                    
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    status_text.write("📍 **Step 1/4:** Processing well locations...")
+                    progress_bar.progress(25)
                 
                 # Generate proper GeoJSON grid with interpolated yield values
                 geojson_data = generate_geo_json_grid(
@@ -589,8 +598,19 @@ with main_col1:
     """))
     
     # Use st_folium with return_clicked_latlon to get click coordinates
-    map_data = st_folium(m, width=800, zoom=st.session_state.zoom_level, 
-                       key="interactive_map", returned_objects=["last_clicked"])
+    # Preserve map view state during processing
+    map_data = st_folium(m, width=800, 
+                       center=st.session_state.get('map_center', [-43.5321, 172.6362]),
+                       zoom=st.session_state.get('map_zoom', 8),
+                       key="interactive_map", 
+                       returned_objects=["last_clicked", "zoom", "center"])
+    
+    # Save map view state from user interactions
+    if map_data:
+        if "zoom" in map_data and map_data["zoom"]:
+            st.session_state.map_zoom = map_data["zoom"]
+        if "center" in map_data and map_data["center"]:
+            st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
     
     # Process clicks from the map
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
@@ -606,6 +626,9 @@ with main_col1:
             
             # Clear previous filtered wells and heat map data to force recalculation
             st.session_state.filtered_wells = None
+            
+            # Set processing flag to show overlay
+            st.session_state.processing = True
             
             # Force a complete rerun to rebuild the map with the new location
             st.rerun()

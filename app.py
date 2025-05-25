@@ -305,34 +305,87 @@ with main_col1:
             
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Clear processing flag to prevent overlay after data is ready
-                if st.session_state.get('processing', False):
-                    st.session_state.processing = False
+                # Initialize processing state if not exists
+                if 'interpolation_processing' not in st.session_state:
+                    st.session_state.interpolation_processing = False
+                if 'interpolation_complete' not in st.session_state:
+                    st.session_state.interpolation_complete = False
+                if 'cached_geojson' not in st.session_state:
+                    st.session_state.cached_geojson = None
+                if 'last_processed_point' not in st.session_state:
+                    st.session_state.last_processed_point = None
                 
-                # Show progress overlay during processing with better visibility
-                progress_container = st.container()
-                with progress_container:
-                    st.info("🔄 **Analysis in Progress** - Map view will be preserved")
-                    
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    status_text.write("📍 **Step 1/4:** Processing well locations...")
-                    progress_bar.progress(25)
-                
-                # Generate proper GeoJSON grid with interpolated yield values
-                geojson_data = generate_geo_json_grid(
-                    filtered_wells.copy(), 
-                    st.session_state.selected_point, 
-                    st.session_state.search_radius,
-                    resolution=100,  # Higher resolution for smoother appearance
-                    method=st.session_state.interpolation_method,
-                    show_variance=st.session_state.show_kriging_variance,
-                    auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                    variogram_model=st.session_state.get('variogram_model', 'spherical')
+                # Check if we need to process interpolation for this location
+                current_point_key = f"{st.session_state.selected_point[0]:.6f},{st.session_state.selected_point[1]:.6f},{st.session_state.search_radius},{st.session_state.interpolation_method}"
+                need_processing = (
+                    st.session_state.last_processed_point != current_point_key or
+                    st.session_state.cached_geojson is None or
+                    not st.session_state.interpolation_complete
                 )
                 
-                progress_bar.progress(75)
+                if need_processing and not st.session_state.interpolation_processing:
+                    # Start processing
+                    st.session_state.interpolation_processing = True
+                    st.session_state.interpolation_complete = False
+                    st.session_state.last_processed_point = current_point_key
+                    
+                    # Show progress indicator that stays visible during processing
+                    progress_placeholder = st.empty()
+                    with progress_placeholder.container():
+                        st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        status_text.write("📍 **Step 1/3:** Initializing interpolation engine...")
+                        progress_bar.progress(10)
+                    
+                    # Generate proper GeoJSON grid with interpolated yield values
+                    try:
+                        with progress_placeholder.container():
+                            st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
+                            progress_bar = st.progress(30)
+                            status_text = st.empty()
+                            status_text.write("📍 **Step 2/3:** Processing well data and generating interpolation...")
+                        
+                        geojson_data = generate_geo_json_grid(
+                            filtered_wells.copy(), 
+                            st.session_state.selected_point, 
+                            st.session_state.search_radius,
+                            resolution=100,  # Higher resolution for smoother appearance
+                            method=st.session_state.interpolation_method,
+                            show_variance=st.session_state.show_kriging_variance,
+                            auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
+                            variogram_model=st.session_state.get('variogram_model', 'spherical')
+                        )
+                        
+                        with progress_placeholder.container():
+                            st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
+                            progress_bar = st.progress(90)
+                            status_text = st.empty()
+                            status_text.write("📍 **Step 3/3:** Finalizing visualization...")
+                        
+                        # Cache the results
+                        st.session_state.cached_geojson = geojson_data
+                        st.session_state.interpolation_complete = True
+                        
+                        # Clear progress indicator
+                        progress_placeholder.empty()
+                        
+                    except Exception as e:
+                        progress_placeholder.empty()
+                        st.error(f"Interpolation failed: {e}")
+                        geojson_data = None
+                    finally:
+                        st.session_state.interpolation_processing = False
+                
+                elif st.session_state.interpolation_complete and st.session_state.cached_geojson:
+                    # Use cached results
+                    geojson_data = st.session_state.cached_geojson
+                else:
+                    # Still processing, show progress and use empty data
+                    if st.session_state.interpolation_processing:
+                        st.info("🔄 **Interpolation Analysis in Progress** - Please wait, map view will be preserved")
+                    geojson_data = None
                 
                 if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
@@ -342,9 +395,6 @@ with main_col1:
                     
                     # Ensure reasonable minimum for visualization
                     max_value = max(max_value, 20.0)
-                    
-                    # Instead of choropleth, use direct GeoJSON styling for more control
-                    # This allows us to precisely map values to colors
                     
                     # Define colors based on what we're displaying
                     def get_color(value):
@@ -412,16 +462,6 @@ with main_col1:
                         # Determine which band the value falls into
                         band_index = min(14, int(value / step))
                         return colors[band_index]
-                    
-                    # Style function that uses our color mapping
-                    def style_feature(feature):
-                        yield_value = feature['properties']['yield']
-                        return {
-                            'fillColor': get_color(yield_value),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        }
                             
                     # Add the GeoJSON with our custom styling
                     folium.GeoJson(
@@ -463,15 +503,6 @@ with main_col1:
                             caption='Estimated Water Yield (L/s) - 15 Bands'
                         )
                     colormap.add_to(m)
-                    
-                    progress_bar.progress(100)
-                    status_text.text('Heatmap generation complete!')
-                    
-                    # Clear progress indicators after a moment
-                    import time
-                    time.sleep(0.5)
-                    progress_bar.empty()
-                    status_text.empty()
                     
                     # Add tooltips to show yield values on hover
                     style_function = lambda x: {'fillColor': 'transparent', 'color': 'transparent'}
@@ -760,6 +791,11 @@ with main_col1:
         st.session_state.selected_point = None
         st.session_state.filtered_wells = None
         st.session_state.selected_well = None
+        # Clear interpolation cache
+        st.session_state.cached_geojson = None
+        st.session_state.interpolation_complete = False
+        st.session_state.interpolation_processing = False
+        st.session_state.last_processed_point = None
         st.rerun()
 
 with main_col2:

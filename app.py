@@ -612,26 +612,44 @@ with main_col1:
         if "center" in map_data and map_data["center"]:
             st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
     
-    # Process clicks from the map
+    # Process clicks from the map and handle new location processing without page reload
+    new_location_clicked = False
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         # Get the coordinates from the click
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
         
-        # Only update and rerun if this is a new location
+        # Only update if this is a new location
         current_point = st.session_state.selected_point
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
+            new_location_clicked = True
+    
+    # If a new location was clicked, process it immediately in this cycle to avoid map reset
+    if new_location_clicked or (st.session_state.selected_point and st.session_state.filtered_wells is None):
+        if st.session_state.wells_data is not None and st.session_state.selected_point:
+            # Process wells for the selected location
+            wells_df = st.session_state.wells_data
+            selected_point = st.session_state.selected_point
+            search_radius_km = st.session_state.search_radius
             
-            # Clear previous filtered wells and heat map data to force recalculation
-            st.session_state.filtered_wells = None
+            # Calculate distances and filter wells
+            wells_df['distance'] = wells_df.apply(
+                lambda row: get_distance(
+                    selected_point[0], selected_point[1], 
+                    row['latitude'], row['longitude']
+                ), axis=1
+            )
             
-            # Set processing flag to show overlay
-            st.session_state.processing = True
+            filtered_wells = wells_df[wells_df['distance'] <= search_radius_km].copy()
             
-            # Force a complete rerun to rebuild the map with the new location
-            st.rerun()
+            # Handle missing yield values
+            if 'yield_rate' in filtered_wells.columns:
+                filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
+            
+            # Store the filtered wells
+            st.session_state.filtered_wells = filtered_wells
     
     # Add comprehensive well data summary report
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:

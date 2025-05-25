@@ -585,39 +585,73 @@ with main_col1:
         from folium.plugins import MousePosition
         MousePosition().add_to(m)
     
+    # Display the map header always
+    st.subheader("Interactive Map")
+    st.caption("Click on the map to select a location or use the search box above")
+    
     # Check if we're currently processing interpolation
     is_processing = (
         st.session_state.get('interpolation_processing', False) or 
         (st.session_state.selected_point and not st.session_state.get('interpolation_complete', False))
     )
     
-    # Show processing indicator if interpolation is running
+    # Show processing indicator overlay if interpolation is running
     if is_processing:
-        st.subheader("🔄 Processing Interpolation Analysis")
-        st.info("""
-        **Please wait while we analyze the groundwater data for your selected location.**
+        # Create a prominent processing overlay
+        st.markdown("""
+        <div style="
+            position: relative;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        ">
+            <h2 style="margin: 0 0 15px 0; font-size: 28px;">🔄 Analyzing Groundwater Data</h2>
+            <p style="margin: 0 0 20px 0; font-size: 18px; opacity: 0.9;">
+                Processing interpolation for your selected location...
+            </p>
+            <div style="
+                background: rgba(255,255,255,0.2);
+                border-radius: 10px;
+                padding: 15px;
+                margin: 15px 0;
+            ">
+                <p style="margin: 5px 0; font-size: 16px;">✓ Filtering wells within search radius</p>
+                <p style="margin: 5px 0; font-size: 16px;">🔄 Running interpolation algorithms</p>
+                <p style="margin: 5px 0; font-size: 16px;">📊 Generating heat map visualization</p>
+            </div>
+            <p style="margin: 10px 0 0 0; font-size: 14px; opacity: 0.8;">
+                Map and results will appear when processing completes
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        This process involves:
-        - Filtering wells within your search radius
-        - Running interpolation algorithms on yield data
-        - Generating heat map visualization
-        
-        The map and results will appear when processing is complete.
-        """)
-        
-        # Show a progress bar for visual feedback
-        progress_bar = st.progress(0)
-        import time
-        for i in range(100):
-            time.sleep(0.01)  # Small delay for visual effect
-            progress_bar.progress(i + 1)
+        # Show animated progress bar
+        progress_container = st.container()
+        with progress_container:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Animate progress with status updates
+            import time
+            steps = [
+                (20, "Initializing analysis..."),
+                (40, "Filtering nearby wells..."),
+                (60, "Calculating interpolation..."),
+                (80, "Generating visualization..."),
+                (100, "Finalizing results...")
+            ]
+            
+            for progress, status in steps:
+                progress_bar.progress(progress)
+                status_text.text(status)
+                time.sleep(0.3)  # Brief pause for visual feedback
         
         # Stop here and don't show map/results during processing
         st.stop()
-    
-    # Display the map (only when not processing)
-    st.subheader("Interactive Map")
-    st.caption("Click on the map to select a location or use the search box above")
     
     # Use st_folium instead of folium_static to capture clicks
     from streamlit_folium import st_folium

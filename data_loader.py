@@ -263,18 +263,22 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 all_screens = pd.concat(screen_depths, axis=1)
                 wells_df['depth_to_groundwater'] = all_screens.min(axis=1, skipna=True)
                 
-                # For wells with no screen data, mark as dry wells with very deep groundwater
-                wells_df['depth_to_groundwater'] = wells_df['depth_to_groundwater'].fillna(999)  # 999m indicates dry/no screen
-                wells_df['is_dry_well'] = wells_df['depth_to_groundwater'] == 999
+                # Mark wells with no screen data as dry wells but don't assign artificial depth
+                wells_df['is_dry_well'] = wells_df['depth_to_groundwater'].isna()
+                # For dry wells, keep NaN depth for groundwater interpolation (they'll be excluded)
+                # But for display purposes, we can show the drill hole depth
+                wells_df['display_depth'] = wells_df['depth_to_groundwater'].fillna(pd.to_numeric(raw_df['DEPTH'], errors='coerce'))
             else:
                 # Fallback to drill depth if no screen data available
-                wells_df['depth_to_groundwater'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(999)
-                wells_df['is_dry_well'] = wells_df['depth_to_groundwater'] == 999
+                wells_df['depth_to_groundwater'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce')
+                wells_df['is_dry_well'] = wells_df['depth_to_groundwater'].isna()
+                wells_df['display_depth'] = wells_df['depth_to_groundwater']
             
             # Keep original depth for reference
             wells_df['drill_hole_depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)
-            wells_df['depth'] = wells_df['depth_to_groundwater']  # Use groundwater depth for interpolation
-            wells_df['depth_m'] = wells_df['depth']
+            # For general display, use display_depth (which includes drill depth for dry wells)
+            wells_df['depth'] = wells_df['display_depth']
+            wells_df['depth_m'] = wells_df['display_depth']
             
             # Add yield information - use MAX_YIELD or calculate if not available
             if 'MAX_YIELD' in raw_df.columns:

@@ -256,7 +256,7 @@ with main_col1:
                 # Show progress overlay during processing with better visibility
                 progress_container = st.container()
                 with progress_container:
-                    st.info("🔄 **Analysis in Progress** - Map view will be preserved")
+                    st.info("🔄 **Analysis in Progress** - Please wait while we process the data...")
 
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -700,10 +700,6 @@ with main_col2:
         st.write(f"**Average Yield:** {avg_yield:.2f} L/s")
         st.write(f"**Maximum Yield:** {max_yield:.2f} L/s")
         st.write(f"**Average Depth:** {avg_depth:.2f} m")
-
-        # Add visualization image
-        st.image("https://pixabay.com/get/gb0bac1d41113e673a752c7a7148ed0ce5da8bc08c2dc48d6b5885b642d028f37a3ca9e7d4f79e4a8f326bab54c3160f53ccb8cf20cb1c9fbc2b3bba86216a20f_1280.jpg", 
-                 caption="Groundwater visualization", use_container_width=True)
 
         # Show detailed well info if selected
         if st.session_state.selected_well:

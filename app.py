@@ -672,7 +672,7 @@ with main_col1:
 
         with col3:
             st.metric(
-                ""Depth Range", 
+                "Depth Range", 
                 f"{min_depth:.1f} - {max_depth:.1f} m",
                 help="Minimum to maximum depth range"
             )

@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import os
 import base64
+import requests
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid
@@ -192,27 +193,123 @@ with main_col1:
 
     # Add location search functionality
     st.subheader("Search Location")
-    location_input = st.text_input("Enter address or coordinates (lat, lng)")
-    search_button = st.button("Search")
+    
+    # Create columns for search input and button
+    search_col1, search_col2 = st.columns([4, 1])
+    
+    with search_col1:
+        location_input = st.text_input(
+            "Enter address or coordinates (lat, lng)",
+            placeholder="e.g. Christchurch, New Zealand or -43.532, 172.636",
+            help="Type an address for suggestions or enter coordinates as 'lat, lng'"
+        )
+    
+    with search_col2:
+        search_button = st.button("🔍 Search", use_container_width=True)
 
+    # Address autocomplete suggestions
+    if location_input and len(location_input) > 3 and not (',' in location_input and location_input.count(',') == 1):
+        try:
+            import requests
+            import time
+            
+            # Rate limiting - only search every 2 characters to avoid spam
+            if len(location_input) % 2 == 0:
+                # Use Nominatim for address suggestions
+                search_url = "https://nominatim.openstreetmap.org/search"
+                params = {
+                    'q': location_input,
+                    'format': 'json',
+                    'limit': 5,
+                    'countrycodes': 'nz',  # Focus on New Zealand
+                    'addressdetails': 1
+                }
+                
+                headers = {
+                    'User-Agent': 'GroundwaterFinder/1.0'
+                }
+                
+                response = requests.get(search_url, params=params, headers=headers, timeout=3)
+                
+                if response.status_code == 200:
+                    suggestions = response.json()
+                    
+                    if suggestions:
+                        st.write("**Address Suggestions:**")
+                        for i, suggestion in enumerate(suggestions[:3]):  # Show top 3
+                            display_name = suggestion.get('display_name', '')
+                            lat = float(suggestion.get('lat', 0))
+                            lon = float(suggestion.get('lon', 0))
+                            
+                            if st.button(f"📍 {display_name}", key=f"suggestion_{i}"):
+                                st.session_state.selected_point = [lat, lon]
+                                st.rerun()
+                
+        except Exception as e:
+            # Silently fail autocomplete to not disrupt user experience
+            pass
+
+    # Handle search button click
     if search_button and location_input:
         try:
             # Check if input is coordinates
-            if ',' in location_input:
+            if ',' in location_input and location_input.count(',') == 1:
                 parts = location_input.split(',')
                 if len(parts) == 2:
                     try:
                         lat = float(parts[0].strip())
                         lng = float(parts[1].strip())
-                        st.session_state.selected_point = [lat, lng]
-                        st.rerun()
+                        
+                        # Validate coordinates are reasonable for New Zealand
+                        if -48 <= lat <= -34 and 166 <= lng <= 179:
+                            st.session_state.selected_point = [lat, lng]
+                            st.success(f"Location set to: {lat:.4f}, {lng:.4f}")
+                            st.rerun()
+                        else:
+                            st.error("Coordinates seem to be outside New Zealand. Please check your input.")
                     except ValueError:
                         st.error("Invalid coordinate format. Please use 'latitude, longitude'")
             else:
-                # This would normally use a geocoding service
-                st.warning("Address search requires API integration (coming soon)")
+                # Search for address using geocoding
+                import requests
+                
+                search_url = "https://nominatim.openstreetmap.org/search"
+                params = {
+                    'q': location_input,
+                    'format': 'json',
+                    'limit': 1,
+                    'countrycodes': 'nz',
+                    'addressdetails': 1
+                }
+                
+                headers = {
+                    'User-Agent': 'GroundwaterFinder/1.0'
+                }
+                
+                with st.spinner("Searching for address..."):
+                    response = requests.get(search_url, params=params, headers=headers, timeout=5)
+                
+                if response.status_code == 200:
+                    results = response.json()
+                    
+                    if results:
+                        result = results[0]
+                        lat = float(result.get('lat', 0))
+                        lon = float(result.get('lon', 0))
+                        display_name = result.get('display_name', '')
+                        
+                        st.session_state.selected_point = [lat, lon]
+                        st.success(f"Found: {display_name}")
+                        st.info(f"Coordinates: {lat:.4f}, {lon:.4f}")
+                        st.rerun()
+                    else:
+                        st.error("Address not found. Please try a different search term or use coordinates.")
+                else:
+                    st.error("Search service temporarily unavailable. Please try coordinates instead.")
+                    
         except Exception as e:
-            st.error(f"Error searching location: {e}")
+            st.error(f"Error searching location: {str(e)}")
+            st.info("Try using coordinates format: latitude, longitude (e.g. -43.532, 172.636)")
 
     # Process wells data if available
     if st.session_state.wells_data is not None:

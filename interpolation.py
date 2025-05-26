@@ -68,26 +68,30 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Choose which values to interpolate based on method
     if method == 'depth_kriging':
         # For depth interpolation, ONLY use wells that have actual groundwater access
-        if 'depth_to_groundwater' in wells_df.columns and 'is_dry_well' in wells_df.columns:
-            # Filter: must have depth_to_groundwater data AND not be marked as dry well
-            valid_depth_mask = (
-                (~wells_df['depth_to_groundwater'].isna()) & 
-                (~wells_df['is_dry_well']) & 
-                (wells_df['depth_to_groundwater'] > 0)  # Additional check for positive depth
-            )
+        # First check if we have the proper dry well marking
+        if 'is_dry_well' in wells_df.columns:
+            # Use the explicit dry well marking - exclude any well marked as dry
+            valid_depth_mask = (~wells_df['is_dry_well'])
+            
+            # Also require valid depth_to_groundwater data if available
+            if 'depth_to_groundwater' in wells_df.columns:
+                valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
+            elif 'depth' in wells_df.columns:
+                valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
+                
         elif 'depth_to_groundwater' in wells_df.columns:
-            # If no is_dry_well column, use depth_to_groundwater data and exclude wells with 0 yield
+            # If no explicit dry well column, use depth_to_groundwater data 
+            # and exclude wells with missing depth data (likely dry wells)
             valid_depth_mask = (
                 (~wells_df['depth_to_groundwater'].isna()) & 
-                (wells_df['depth_to_groundwater'] > 0) &
-                (wells_df['yield_rate'].fillna(0) > 0)  # Exclude wells with 0 yield (likely dry)
+                (wells_df['depth_to_groundwater'] > 0)
             )
         else:
-            # Fallback: exclude wells with 0 yield and use regular depth
+            # Final fallback: use regular depth column and exclude wells with missing depth
+            # Do NOT use yield for depth interpolation filtering
             valid_depth_mask = (
                 (~wells_df['depth'].isna()) & 
-                (wells_df['depth'] > 0) &
-                (wells_df['yield_rate'].fillna(0) > 0)
+                (wells_df['depth'] > 0)
             )
         
         if valid_depth_mask.any():
@@ -102,6 +106,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         else:
             return {"type": "FeatureCollection", "features": []}  # No valid depth data
     else:
+        # For yield interpolation, use ALL wells (including dry wells with 0 yield)
         yields = wells_df['yield_rate'].values.astype(float)  # Use yield values for standard interpolation
 
     # Convert to km-based coordinates for proper interpolation
@@ -436,26 +441,30 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     # Extract coordinates and yields based on method
     if method == 'depth_kriging':
         # For depth interpolation, ONLY use wells that have actual groundwater access
-        if 'depth_to_groundwater' in wells_df.columns and 'is_dry_well' in wells_df.columns:
-            # Filter: must have depth_to_groundwater data AND not be marked as dry well
-            valid_depth_mask = (
-                (~wells_df['depth_to_groundwater'].isna()) & 
-                (~wells_df['is_dry_well']) & 
-                (wells_df['depth_to_groundwater'] > 0)  # Additional check for positive depth
-            )
+        # First check if we have the proper dry well marking
+        if 'is_dry_well' in wells_df.columns:
+            # Use the explicit dry well marking - exclude any well marked as dry
+            valid_depth_mask = (~wells_df['is_dry_well'])
+            
+            # Also require valid depth_to_groundwater data if available
+            if 'depth_to_groundwater' in wells_df.columns:
+                valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
+            elif 'depth' in wells_df.columns:
+                valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
+                
         elif 'depth_to_groundwater' in wells_df.columns:
-            # If no is_dry_well column, use depth_to_groundwater data and exclude wells with 0 yield
+            # If no explicit dry well column, use depth_to_groundwater data 
+            # and exclude wells with missing depth data (likely dry wells)
             valid_depth_mask = (
                 (~wells_df['depth_to_groundwater'].isna()) & 
-                (wells_df['depth_to_groundwater'] > 0) &
-                (wells_df['yield_rate'].fillna(0) > 0)  # Exclude wells with 0 yield (likely dry)
+                (wells_df['depth_to_groundwater'] > 0)
             )
         else:
-            # Fallback: exclude wells with 0 yield and use regular depth
+            # Final fallback: use regular depth column and exclude wells with missing depth
+            # Do NOT use yield for depth interpolation filtering
             valid_depth_mask = (
                 (~wells_df['depth'].isna()) & 
-                (wells_df['depth'] > 0) &
-                (wells_df['yield_rate'].fillna(0) > 0)
+                (wells_df['depth'] > 0)
             )
         
         if valid_depth_mask.any():
@@ -470,7 +479,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         else:
             return []  # No valid depth data
     else:
-        # For yield interpolation, include all wells
+        # For yield interpolation, include ALL wells (including dry wells with 0 yield)
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['yield_rate'].values.astype(float)

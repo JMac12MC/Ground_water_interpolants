@@ -215,55 +215,92 @@ with main_col1:
     if 'search_performed' not in st.session_state:
         st.session_state.search_performed = False
 
-    # Real-time address verification
-    if location_input and len(location_input) > 3:
+    # Real-time address verification with improved search
+    if location_input and len(location_input) > 2:
         # Check if this is a coordinate input
         if not (',' in location_input and location_input.count(',') == 1):
             try:
                 import requests
+                import time
                 
-                # Use Nominatim for address verification
-                search_url = "https://nominatim.openstreetmap.org/search"
-                params = {
-                    'q': location_input,
-                    'format': 'json',
-                    'limit': 10,  # Get more options for verification
-                    'countrycodes': 'nz',  # Focus on New Zealand
-                    'addressdetails': 1
-                }
+                # Debounce API calls - only search after user stops typing for 1 second
+                current_time = time.time()
+                if 'last_search_time' not in st.session_state:
+                    st.session_state.last_search_time = current_time
+                if 'last_search_input' not in st.session_state:
+                    st.session_state.last_search_input = ""
                 
-                headers = {
-                    'User-Agent': 'GroundwaterFinder/1.0'
-                }
-                
-                # Only make API call when user stops typing (every 3 characters)
-                if len(location_input) % 3 == 0 or st.session_state.search_performed:
-                    with st.spinner("Verifying address..."):
-                        response = requests.get(search_url, params=params, headers=headers, timeout=5)
+                # Only search if input changed and enough time passed
+                if (location_input != st.session_state.last_search_input and 
+                    current_time - st.session_state.last_search_time > 0.5):
                     
-                    if response.status_code == 200:
-                        suggestions = response.json()
-                        
-                        if suggestions:
-                            # Process and deduplicate suggestions
-                            processed_suggestions = []
-                            seen_locations = set()
+                    st.session_state.last_search_time = current_time
+                    st.session_state.last_search_input = location_input
+                    
+                    # Use multiple search strategies for better results
+                    search_queries = [
+                        location_input,  # Original query
+                        f"{location_input}, New Zealand",  # Add country
+                        f"{location_input}, Canterbury, New Zealand"  # Add region
+                    ]
+                    
+                    all_suggestions = []
+                    
+                    for query in search_queries:
+                        try:
+                            # Use Nominatim for address verification
+                            search_url = "https://nominatim.openstreetmap.org/search"
+                            params = {
+                                'q': query,
+                                'format': 'json',
+                                'limit': 5,
+                                'countrycodes': 'nz',
+                                'addressdetails': 1,
+                                'dedupe': 1  # Remove duplicates
+                            }
                             
-                            for suggestion in suggestions:
+                            headers = {
+                                'User-Agent': 'GroundwaterFinder/1.0 (contact@example.com)'
+                            }
+                            
+                            response = requests.get(search_url, params=params, headers=headers, timeout=3)
+                            
+                            if response.status_code == 200:
+                                suggestions = response.json()
+                                all_suggestions.extend(suggestions)
+                            
+                            # Small delay between requests
+                            time.sleep(0.1)
+                            
+                        except requests.RequestException:
+                            continue
+                    
+                    if all_suggestions:
+                        # Process and deduplicate suggestions
+                        processed_suggestions = []
+                        seen_locations = set()
+                        
+                        for suggestion in all_suggestions:
+                            try:
                                 display_name = suggestion.get('display_name', '')
                                 lat = float(suggestion.get('lat', 0))
                                 lon = float(suggestion.get('lon', 0))
                                 
+                                # Skip if coordinates are invalid for New Zealand
+                                if not (-48 <= lat <= -34 and 166 <= lon <= 179):
+                                    continue
+                                
                                 # Create a location key for deduplication
-                                location_key = f"{lat:.4f},{lon:.4f}"
+                                location_key = f"{lat:.3f},{lon:.3f}"
                                 
                                 if location_key not in seen_locations and display_name:
                                     # Extract useful address components
                                     address = suggestion.get('address', {})
                                     house_number = address.get('house_number', '')
                                     road = address.get('road', '')
-                                    suburb = address.get('suburb', '')
+                                    suburb = address.get('suburb', address.get('neighbourhood', ''))
                                     city = address.get('city', address.get('town', address.get('village', '')))
+                                    region = address.get('state', address.get('region', ''))
                                     
                                     # Create a cleaner display format
                                     address_parts = []
@@ -276,30 +313,48 @@ with main_col1:
                                         address_parts.append(suburb)
                                     if city:
                                         address_parts.append(city)
+                                    if region and region not in display_name.split(',')[-2:]:
+                                        address_parts.append(region)
                                     
-                                    clean_address = ", ".join(address_parts) if address_parts else display_name
+                                    clean_address = ", ".join(address_parts) if address_parts else display_name.split(',')[0]
+                                    
+                                    # Determine address type
+                                    osm_type = suggestion.get('type', 'address')
+                                    if osm_type in ['house', 'building']:
+                                        addr_type = 'Address'
+                                    elif osm_type in ['village', 'town', 'city']:
+                                        addr_type = 'City'
+                                    elif osm_type in ['suburb', 'neighbourhood']:
+                                        addr_type = 'Suburb'
+                                    else:
+                                        addr_type = 'Location'
                                     
                                     processed_suggestions.append({
                                         'display': clean_address,
                                         'full_address': display_name,
                                         'lat': lat,
                                         'lon': lon,
-                                        'type': suggestion.get('type', 'address')
+                                        'type': addr_type,
+                                        'importance': suggestion.get('importance', 0)
                                     })
                                     seen_locations.add(location_key)
-                            
-                            st.session_state.address_suggestions = processed_suggestions[:8]  # Limit to 8 suggestions
-                            st.session_state.show_suggestions = True
-                        else:
-                            st.session_state.address_suggestions = []
-                            st.session_state.show_suggestions = False
+                            except (ValueError, KeyError):
+                                continue
+                        
+                        # Sort by importance and limit results
+                        processed_suggestions.sort(key=lambda x: x['importance'], reverse=True)
+                        st.session_state.address_suggestions = processed_suggestions[:8]
+                        st.session_state.show_suggestions = True
                     else:
+                        st.session_state.address_suggestions = []
                         st.session_state.show_suggestions = False
                         
             except Exception as e:
                 st.session_state.show_suggestions = False
+                st.error(f"Address search error: {str(e)}")
     else:
-        st.session_state.show_suggestions = False
+        if len(location_input) <= 2:
+            st.session_state.show_suggestions = False
 
     # Display address suggestions dropdown
     if st.session_state.show_suggestions and st.session_state.address_suggestions:
@@ -315,8 +370,8 @@ with main_col1:
                 
                 with col1:
                     # Show the clean address with type indicator
-                    address_type = suggestion['type'].title() if suggestion['type'] != 'address' else ''
-                    type_indicator = f" ({address_type})" if address_type and address_type != 'Address' else ''
+                    address_type = suggestion.get('type', 'Location')
+                    type_indicator = f" ({address_type})" if address_type != 'Address' else ''
                     
                     if st.button(
                         f"📍 {suggestion['display']}{type_indicator}",
@@ -341,9 +396,12 @@ with main_col1:
             st.session_state.address_suggestions = []
             st.rerun()
     
-    elif location_input and len(location_input) > 3 and not st.session_state.show_suggestions:
+    elif location_input and len(location_input) > 2 and not st.session_state.show_suggestions:
         if not (',' in location_input and location_input.count(',') == 1):
-            st.info("💡 Start typing an address to see suggestions, or use coordinates format: lat, lng")
+            if st.session_state.get('address_suggestions', []) == []:
+                st.warning("⚠️ No addresses found. Please try a different search term or use coordinates.")
+            else:
+                st.info("💡 Continue typing for address suggestions, or use coordinates format: lat, lng")
 
     # Handle search button click
     if search_button and location_input:
@@ -388,28 +446,46 @@ with main_col1:
                     }
                     
                     with st.spinner("🔍 Searching for address..."):
-                        response = requests.get(search_url, params=params, headers=headers, timeout=5)
-                    
-                    if response.status_code == 200:
-                        results = response.json()
+                        # Try multiple search approaches
+                        search_attempts = [
+                            location_input,
+                            f"{location_input}, New Zealand",
+                            f"{location_input}, Canterbury, New Zealand"
+                        ]
                         
-                        if results:
-                            # Process results for suggestions
-                            processed_suggestions = []
-                            seen_locations = set()
-                            
-                            for result in results:
+                        all_results = []
+                        for search_query in search_attempts:
+                            params['q'] = search_query
+                            try:
+                                response = requests.get(search_url, params=params, headers=headers, timeout=5)
+                                if response.status_code == 200:
+                                    results = response.json()
+                                    all_results.extend(results)
+                            except:
+                                continue
+                    
+                    if all_results:
+                        # Process results for suggestions
+                        processed_suggestions = []
+                        seen_locations = set()
+                        
+                        for result in all_results:
+                            try:
                                 display_name = result.get('display_name', '')
                                 lat = float(result.get('lat', 0))
                                 lon = float(result.get('lon', 0))
                                 
-                                location_key = f"{lat:.4f},{lon:.4f}"
+                                # Validate New Zealand coordinates
+                                if not (-48 <= lat <= -34 and 166 <= lon <= 179):
+                                    continue
+                                
+                                location_key = f"{lat:.3f},{lon:.3f}"
                                 
                                 if location_key not in seen_locations and display_name:
                                     address = result.get('address', {})
                                     house_number = address.get('house_number', '')
                                     road = address.get('road', '')
-                                    suburb = address.get('suburb', '')
+                                    suburb = address.get('suburb', address.get('neighbourhood', ''))
                                     city = address.get('city', address.get('town', address.get('village', '')))
                                     
                                     address_parts = []
@@ -423,28 +499,31 @@ with main_col1:
                                     if city:
                                         address_parts.append(city)
                                     
-                                    clean_address = ", ".join(address_parts) if address_parts else display_name
+                                    clean_address = ", ".join(address_parts) if address_parts else display_name.split(',')[0]
                                     
                                     processed_suggestions.append({
                                         'display': clean_address,
                                         'full_address': display_name,
                                         'lat': lat,
                                         'lon': lon,
-                                        'type': result.get('type', 'address')
+                                        'type': result.get('type', 'address'),
+                                        'importance': result.get('importance', 0)
                                     })
                                     seen_locations.add(location_key)
-                            
-                            if processed_suggestions:
-                                st.session_state.address_suggestions = processed_suggestions[:8]
-                                st.session_state.show_suggestions = True
-                                st.success(f"Found {len(processed_suggestions)} address matches. Please select one below:")
-                                st.rerun()
-                            else:
-                                st.error("No addresses found matching your search.")
+                            except (ValueError, KeyError):
+                                continue
+                        
+                        if processed_suggestions:
+                            # Sort by importance
+                            processed_suggestions.sort(key=lambda x: x['importance'], reverse=True)
+                            st.session_state.address_suggestions = processed_suggestions[:8]
+                            st.session_state.show_suggestions = True
+                            st.success(f"Found {len(processed_suggestions)} address matches. Please select one below:")
+                            st.rerun()
                         else:
-                            st.error("No addresses found. Please try a different search term or use coordinates.")
+                            st.error("No valid New Zealand addresses found matching your search.")
                     else:
-                        st.error("Search service temporarily unavailable. Please try coordinates instead.")
+                        st.error("No addresses found. Please try a different search term or use coordinates.")
                 else:
                     st.info("Please select an address from the suggestions above, or modify your search.")
                     

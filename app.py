@@ -396,6 +396,16 @@ with main_col1:
                             vmax=float(max_value),
                             caption='Kriging Uncertainty (Variance) - 15 Bands'
                         )
+                    elif st.session_state.interpolation_method == 'depth_kriging':
+                        # Depth legend with depth-appropriate colors
+                        colormap = folium.LinearColormap(
+                            colors=['#00ff00', '#33ff00', '#66ff00', '#99ff00', '#ccff00', 
+                                    '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff3300', 
+                                    '#ff0000', '#cc0000', '#990000', '#660000', '#330000'],
+                            vmin=0,
+                            vmax=float(max_value),
+                            caption='Depth to Groundwater (m) - 15 Bands'
+                        )
                     else:
                         # Yield legend with original colors
                         colormap = folium.LinearColormap(
@@ -417,17 +427,28 @@ with main_col1:
                     progress_bar.empty()
                     status_text.empty()
 
-                    # Add tooltips to show yield values on hover
+                    # Add tooltips to show appropriate values on hover
                     style_function = lambda x: {'fillColor': 'transparent', 'color': 'transparent'}
                     highlight_function = lambda x: {'fillOpacity': 0.8}
+
+                    # Determine tooltip label based on visualization type
+                    if st.session_state.show_kriging_variance:
+                        tooltip_field = 'yield'
+                        tooltip_label = 'Variance:'
+                    elif st.session_state.interpolation_method == 'depth_kriging':
+                        tooltip_field = 'yield'
+                        tooltip_label = 'Depth (m):'
+                    else:
+                        tooltip_field = 'yield'
+                        tooltip_label = 'Yield (L/s):'
 
                     # Add GeoJSON overlay for tooltips
                     folium.GeoJson(
                         geojson_data,
                         style_function=style_function,
                         tooltip=folium.GeoJsonTooltip(
-                            fields=['yield'],
-                            aliases=['Yield (L/s):'],
+                            fields=[tooltip_field],
+                            aliases=[tooltip_label],
                             labels=True,
                             sticky=False
                         )

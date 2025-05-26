@@ -153,7 +153,8 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
     canterbury_wells_file = "sample_data/canterbury_wells.csv"
     
     if os.path.exists(canterbury_wells_file):
-        st.info("Loading Canterbury wells data...")
+        with st.spinner("Loading well database..."):
+            pass
         
         try:
             # Read the CSV file directly
@@ -310,7 +311,9 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 st.warning("No valid wells found in the dataset. The coordinate conversion may need adjustment.")
                 return generate_wells_for_area((-43.5, 172.5), 100)
             
-            st.success(f"Successfully loaded {len(valid_wells)} wells from Canterbury Maps OpenData")
+            # Simple message showing well count without technical jargon
+            if len(valid_wells) > 0:
+                st.info(f"Using {len(valid_wells):,} wells from Canterbury region database")
             
             # If we have a specific search area, filter by distance
             if search_center and search_radius_km:
@@ -329,14 +332,11 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 if len(nearby_wells) > 0:
                     # ALWAYS show ALL wells within the search radius without ANY filtering whatsoever
                     # No limits, no sampling - show every single well even if there are thousands
-                    st.success(f"Found {len(nearby_wells)} wells within {search_radius_km} km of your location")
                     return nearby_wells
                 else:
                     st.info(f"No wells found within {search_radius_km} km of your location. Generating sample wells for the area.")
                     return generate_wells_for_area(search_center, search_radius_km)
             
-            # Show ALL wells with no sampling - as requested by user
-            st.success(f"Showing all {len(valid_wells)} wells without any sampling")
             return valid_wells
                 
         except Exception as e:

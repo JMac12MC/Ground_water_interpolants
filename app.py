@@ -547,7 +547,7 @@ with main_col1:
         st.session_state.map_center = [-43.5321, 172.6362]
         st.session_state.map_zoom = 8
 
-    map_data = st_folium(m, width=800, 
+    map_data = st_folium(m, use_container_width=True, height=600,
                        key="interactive_map", 
                        returned_objects=["last_clicked"])
 

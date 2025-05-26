@@ -818,6 +818,3 @@ st.markdown("""
     <p>This tool is designed to assist farmers in locating potential groundwater sources. Results are based on existing data and interpolation techniques.</p>
 </div>
 """, unsafe_allow_html=True)
-```
-
-The code has been updated to replace `use_column_width=True` with `use_container_width=True` for images and the clear button.

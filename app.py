@@ -17,23 +17,13 @@ st.set_page_config(
     layout="wide",
 )
 
-# Banner image with opacity overlay and text
+# Clean title header without image
 def add_banner():
-    banner_images = [
-        "https://pixabay.com/get/gada6da50f8fe938c58e71fb0d6fc33a6632c13da22335a91dd19c2a5fd0ef2c5e979f40f7f3a8ab79ad042d24833ba939cb86bc84ff82ba4d9bd16d955f1eb7f_1280.jpg",
-        "https://pixabay.com/get/g63e0006de12468c63fb460735538cca31a25230485a1a484ee5d4c7e23b10ed776f67120aa02d58917ac890ebc718d8cda8e94be7a8954a7a00d3195175771a6_1280.jpg",
-        "https://pixabay.com/get/gd84f75e8a71451844bca377d1f6579972a80b3c67d0565fdb32dc7c3004de061fecb4dfae7ccd12baf3df11a5eed41b44d98c9bb28c11a5c078a6935c88d3448_1280.jpg"
-    ]
-
     st.markdown(
-        f"""
-        <div style="position: relative; margin-bottom: 30px;">
-            <img src="{banner_images[0]}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 10px;">
-            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.4); border-radius: 10px;"></div>
-            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: white;">
-                <h1 style="font-size: 2.5rem; font-weight: bold; margin-bottom: 0;">Groundwater Finder</h1>
-                <p style="font-size: 1.2rem;">Helping farmers locate water resources using scientific data</p>
-            </div>
+        """
+        <div style="text-align: center; margin-bottom: 30px; padding: 40px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white;">
+            <h1 style="font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Groundwater Finder</h1>
+            <p style="font-size: 1.2rem; margin-bottom: 0; opacity: 0.9;">Helping farmers locate water resources using scientific data</p>
         </div>
         """, 
         unsafe_allow_html=True

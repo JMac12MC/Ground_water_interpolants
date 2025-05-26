@@ -191,7 +191,7 @@ with main_col1:
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
 
-    
+
 
     # Process wells data if available
     if st.session_state.wells_data is not None:

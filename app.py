@@ -82,7 +82,7 @@ with st.sidebar:
 
     # Informational note about wells with missing yield data
     st.write("**NOTE:** All wells within the search radius are displayed.")
-    st.write("Wells with missing yield values are treated as having 0 yield for map interpolation.")
+    st.write("Wells with missing yield values are treated as dry wells.")
 
     # Visualization method selection - single dropdown for all options
     st.header("Analysis Options")
@@ -173,22 +173,6 @@ with st.sidebar:
     st.header("Display Options")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
-
-    # Add some guidance info for farmers
-    st.header("About This Tool")
-    st.info("""
-    This tool helps you find potential groundwater locations by:
-
-    1. Showing existing wells near your location
-    2. Creating a heat map of water yield
-    3. Providing data on depth and flow rates
-
-    Click anywhere on the map to analyze that location.
-    """)
-
-    # Add well drilling image
-    st.image("https://pixabay.com/get/g3dd7957e8d30d47521b260f1654a0dcffa87f6fd6a8ebaa4f8ba72de270754f6b1ad015b8bc19b503cbd5c12dfe935d4ab5c547948cecf08e4ded91ba49dce79_1280.jpg", 
-             caption="Water well drilling", use_container_width=True)
 
 # Main content area
 main_col1, main_col2 = st.columns([3, 1])
@@ -791,10 +775,8 @@ with main_col2:
         to help you make informed decisions about where to drill based on:
 
         * Proximity to existing successful wells
-        * Water yield patterns in your area
+        * Aquifer yield patterns in your area
         * Depth trends for accessing groundwater
-
-        The heat map shows areas where higher yields are likely based on interpolation of existing data.
         """)
 
         # Additional info image

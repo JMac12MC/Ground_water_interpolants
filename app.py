@@ -67,20 +67,10 @@ add_banner()
 with st.sidebar:
     st.header("Data Options")
     
-    # Canterbury Wells Data Options
-    use_full_dataset = st.checkbox("Load all 56,498 Canterbury wells", 
-                                 value=False, 
-                                 help="Check to load the complete Canterbury dataset (slower but more comprehensive)")
-    
     # Load Canterbury wells data
     if st.session_state.wells_data is None:
         with st.spinner("Loading Canterbury wells data..."):
-            st.session_state.wells_data = load_nz_govt_data(use_full_dataset=use_full_dataset)
-    elif 'use_full_dataset' not in st.session_state or st.session_state.use_full_dataset != use_full_dataset:
-        # Only reload if the dataset choice changed
-        with st.spinner(f"Loading {'all 56,498' if use_full_dataset else 'sample of'} Canterbury wells..."):
-            st.session_state.wells_data = load_nz_govt_data(use_full_dataset=use_full_dataset)
-            st.session_state.use_full_dataset = use_full_dataset
+            st.session_state.wells_data = load_nz_govt_data()
     
     # Advanced option for uploading custom data (hidden in expander)
     with st.expander("Upload Custom Data (Optional)"):

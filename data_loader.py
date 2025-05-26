@@ -128,7 +128,7 @@ def load_custom_data(uploaded_file):
         st.error(f"Error loading CSV file: {e}")
         return None
 
-def load_nz_govt_data(use_full_dataset=False, search_center=None, search_radius_km=None):
+def load_nz_govt_data(search_center=None, search_radius_km=None):
     """
     Load well data from the official Canterbury Maps OpenData dataset
     

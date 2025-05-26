@@ -191,131 +191,7 @@ with main_col1:
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
 
-    # Add location search functionality
-    st.subheader("Search Location")
     
-    # Create columns for search input and button
-    search_col1, search_col2 = st.columns([4, 1])
-    
-    with search_col1:
-        location_input = st.text_input(
-            "Enter address or coordinates (lat, lng)",
-            placeholder="e.g. Christchurch, New Zealand or -43.532, 172.636",
-            help="Type an address for suggestions or enter coordinates as 'lat, lng'"
-        )
-    
-    with search_col2:
-        search_button = st.button("🔍 Search", use_container_width=True)
-
-    # Simple address search functionality
-    def search_address(query):
-        """Search for addresses using Nominatim API"""
-        try:
-            import requests
-            
-            search_url = "https://nominatim.openstreetmap.org/search"
-            params = {
-                'q': f"{query}, New Zealand",
-                'format': 'json',
-                'limit': 10,
-                'countrycodes': 'nz',
-                'addressdetails': 1
-            }
-            
-            headers = {
-                'User-Agent': 'GroundwaterFinder/1.0'
-            }
-            
-            response = requests.get(search_url, params=params, headers=headers, timeout=5)
-            
-            if response.status_code == 200:
-                results = response.json()
-                processed_results = []
-                
-                for result in results:
-                    try:
-                        lat = float(result.get('lat', 0))
-                        lon = float(result.get('lon', 0))
-                        
-                        # Validate coordinates are in New Zealand
-                        if -48 <= lat <= -34 and 166 <= lon <= 179:
-                            display_name = result.get('display_name', '')
-                            processed_results.append({
-                                'display': display_name.split(',')[0],
-                                'full_address': display_name,
-                                'lat': lat,
-                                'lon': lon
-                            })
-                    except (ValueError, KeyError):
-                        continue
-                
-                return processed_results[:5]  # Return top 5 results
-            
-        except Exception as e:
-            st.error(f"Search error: {str(e)}")
-        
-        return []
-
-    # Initialize suggestions in session state
-    if 'address_suggestions' not in st.session_state:
-        st.session_state.address_suggestions = []
-
-    # Show suggestions if we have them
-    if st.session_state.address_suggestions:
-        st.markdown("**📍 Select your address:**")
-        
-        for i, suggestion in enumerate(st.session_state.address_suggestions):
-            if st.button(
-                f"📍 {suggestion['display']}",
-                key=f"addr_{i}",
-                help=suggestion['full_address']
-            ):
-                st.session_state.selected_point = [suggestion['lat'], suggestion['lon']]
-                st.session_state.address_suggestions = []
-                st.success(f"✅ Selected: {suggestion['display']}")
-                st.rerun()
-        
-        # Clear suggestions button
-        if st.button("❌ Clear suggestions"):
-            st.session_state.address_suggestions = []
-            st.rerun()
-
-    # Handle search button click
-    if search_button and location_input:
-        try:
-            # Check if input is coordinates
-            if ',' in location_input and location_input.count(',') == 1:
-                parts = location_input.split(',')
-                if len(parts) == 2:
-                    try:
-                        lat = float(parts[0].strip())
-                        lng = float(parts[1].strip())
-                        
-                        # Validate coordinates for New Zealand
-                        if -48 <= lat <= -34 and 166 <= lng <= 179:
-                            st.session_state.selected_point = [lat, lng]
-                            st.session_state.address_suggestions = []
-                            st.success(f"✅ Location set to: {lat:.4f}, {lng:.4f}")
-                            st.rerun()
-                        else:
-                            st.error("Coordinates outside New Zealand. Please check your input.")
-                    except ValueError:
-                        st.error("Invalid coordinate format. Use: latitude, longitude")
-            else:
-                # Search for address
-                with st.spinner("🔍 Searching for address..."):
-                    suggestions = search_address(location_input)
-                
-                if suggestions:
-                    st.session_state.address_suggestions = suggestions
-                    st.success(f"Found {len(suggestions)} addresses. Please select one:")
-                    st.rerun()
-                else:
-                    st.error("No addresses found. Try a different search term or use coordinates.")
-                    
-        except Exception as e:
-            st.error(f"Search error: {str(e)}")
-            st.info("Try coordinates format: latitude, longitude (e.g. -43.532, 172.636)")
 
     # Process wells data if available
     if st.session_state.wells_data is not None:
@@ -652,7 +528,7 @@ with main_col1:
 
     # Display the map
     st.subheader("Interactive Map")
-    st.caption("Click on the map to select a location or use the search box above")
+    st.caption("Click on the map to select a location and find nearby wells")
 
     # Use st_folium instead of folium_static to capture clicks
     from streamlit_folium import st_folium

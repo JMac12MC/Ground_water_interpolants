@@ -441,7 +441,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     # Extract coordinates and yields based on method
     if method == 'depth_kriging':
         # For depth interpolation, ONLY use wells that have actual groundwater access
-        # Apply the same filtering logic as in generate_geo_json_grid
+        # First check if we have the proper dry well marking
         if 'is_dry_well' in wells_df.columns:
             # Use the explicit dry well marking - exclude any well marked as dry
             valid_depth_mask = (~wells_df['is_dry_well'])
@@ -468,15 +468,14 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             )
         
         if valid_depth_mask.any():
-            # IMPORTANT: Filter the dataframe BEFORE extracting coordinates and values
-            wells_df = wells_df[valid_depth_mask].copy()
-            lats = wells_df['latitude'].values.astype(float)
-            lons = wells_df['longitude'].values.astype(float)
+            wells_df_filtered = wells_df[valid_depth_mask].copy()
+            lats = wells_df_filtered['latitude'].values.astype(float)
+            lons = wells_df_filtered['longitude'].values.astype(float)
             # Use depth_to_groundwater if available, otherwise fall back to depth
-            if 'depth_to_groundwater' in wells_df.columns:
-                yields = wells_df['depth_to_groundwater'].values.astype(float)
+            if 'depth_to_groundwater' in wells_df_filtered.columns:
+                yields = wells_df_filtered['depth_to_groundwater'].values.astype(float)
             else:
-                yields = wells_df['depth'].values.astype(float)
+                yields = wells_df_filtered['depth'].values.astype(float)
         else:
             return []  # No valid depth data
     else:

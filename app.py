@@ -80,10 +80,9 @@ with st.sidebar:
         step=1
     )
 
-    # Show well count information
-    if st.session_state.wells_data is not None:
-        total_wells = len(st.session_state.wells_data)
-        st.info(f"📍 Using {total_wells:,} wells from Canterbury database")
+    # Informational note about wells with missing yield data
+    st.write("**NOTE:** All wells within the search radius are displayed.")
+    st.write("Wells with missing yield values are treated as having 0 yield for map interpolation.")
 
     # Visualization method selection - single dropdown for all options
     st.header("Analysis Options")

@@ -68,16 +68,87 @@ with col1:
         ).add_to(m)
         
         # Add search radius
+        search_radius_km = st.session_state.get('search_radius', 5)
         folium.Circle(
             location=st.session_state.selected_coords,
-            radius=5000,  # 5km radius
+            radius=search_radius_km * 1000,
             color="#3186cc",
             fill=True,
             fill_color="#3186cc",
             fill_opacity=0.2
         ).add_to(m)
         
-        # Add well markers if data exists
+        # Add sophisticated interpolation visualization
+        if 'filtered_wells' in st.session_state and not st.session_state.filtered_wells.empty:
+            # Get stored visualization method
+            vis_method = st.session_state.get('visualization_method', 'Standard Kriging (Yield)')
+            
+            # Get interpolation parameters
+            method = 'kriging'
+            show_variance = False
+            auto_fit_variogram = False
+            variogram_model = 'spherical'
+            
+            # Set parameters based on visualization method
+            if vis_method == "Kriging (Auto-Fitted Spherical)":
+                auto_fit_variogram = True
+                variogram_model = 'spherical'
+            elif vis_method == "Kriging (Auto-Fitted Gaussian)":
+                auto_fit_variogram = True
+                variogram_model = 'gaussian'
+            elif vis_method == "Kriging (Auto-Fitted Exponential)":
+                auto_fit_variogram = True
+                variogram_model = 'exponential'
+            elif vis_method == "Depth to Groundwater (Standard Kriging)":
+                method = 'depth_kriging'
+            elif vis_method == "Depth to Groundwater (Auto-Fitted Spherical)":
+                method = 'depth_kriging'
+                auto_fit_variogram = True
+                variogram_model = 'spherical'
+            elif "Uncertainty" in vis_method:
+                show_variance = True
+                if "Auto-Fitted" in vis_method:
+                    auto_fit_variogram = True
+                    if "Spherical" in vis_method:
+                        variogram_model = 'spherical'
+                    elif "Gaussian" in vis_method:
+                        variogram_model = 'gaussian'
+                    elif "Exponential" in vis_method:
+                        variogram_model = 'exponential'
+            
+            # Generate interpolation overlay
+            try:
+                geojson_data = generate_geo_json_grid(
+                    st.session_state.filtered_wells.copy(),
+                    st.session_state.selected_coords,
+                    search_radius_km,
+                    resolution=50,
+                    method=method,
+                    show_variance=show_variance,
+                    auto_fit_variogram=auto_fit_variogram,
+                    variogram_model=variogram_model
+                )
+                
+                if geojson_data and 'features' in geojson_data:
+                    # Add interpolation overlay to map
+                    folium.GeoJson(
+                        geojson_data,
+                        style_function=lambda feature: {
+                            'fillColor': feature['properties'].get('color', '#blue'),
+                            'color': 'transparent',
+                            'weight': 0,
+                            'fillOpacity': 0.6
+                        },
+                        tooltip=folium.GeoJsonTooltip(
+                            fields=['yield'],
+                            aliases=['Value:'],
+                            labels=True
+                        )
+                    ).add_to(m)
+            except Exception as e:
+                st.warning(f"Could not generate interpolation: {str(e)}")
+        
+        # Add well markers
         if 'filtered_wells' in st.session_state and not st.session_state.filtered_wells.empty:
             for _, well in st.session_state.filtered_wells.iterrows():
                 folium.CircleMarker(
@@ -128,6 +199,10 @@ with col1:
             st.session_state.analysis_complete = False
             st.session_state.show_processing = True
             
+            # Get current search radius from session state
+            current_search_radius = st.session_state.get('search_radius_setting', 5)
+            st.session_state.search_radius = current_search_radius
+            
             # Process wells data
             if st.session_state.wells_data is not None:
                 wells_df = st.session_state.wells_data.copy()
@@ -140,9 +215,12 @@ with col1:
                     ), axis=1
                 )
                 
-                # Filter wells within 5km
-                filtered_wells = wells_df[wells_df['distance'] <= 5].copy()
-                filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
+                # Filter wells within search radius
+                filtered_wells = wells_df[wells_df['distance'] <= current_search_radius].copy()
+                
+                # Handle missing yield values (treat as 0 for analysis)
+                if 'yield_rate' in filtered_wells.columns:
+                    filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
                 
                 # Store results
                 st.session_state.filtered_wells = filtered_wells
@@ -221,9 +299,17 @@ with st.sidebar:
     visualization_method = st.selectbox(
         "Visualization Type",
         [
-            "Standard Kriging (Yield)",
-            "Depth to Groundwater (Kriging)",
-            "Kriging Uncertainty Analysis"
+            "Standard Kriging (Yield)", 
+            "Kriging (Auto-Fitted Spherical)",
+            "Kriging (Auto-Fitted Gaussian)", 
+            "Kriging (Auto-Fitted Exponential)",
+            "Depth to Groundwater (Standard Kriging)",
+            "Depth to Groundwater (Auto-Fitted Spherical)",
+            "Random Forest + Kriging (Yield)",
+            "Kriging Uncertainty (Fixed Model)",
+            "Kriging Uncertainty (Auto-Fitted Spherical)",
+            "Kriging Uncertainty (Auto-Fitted Gaussian)",
+            "Kriging Uncertainty (Auto-Fitted Exponential)"
         ]
     )
     
@@ -234,6 +320,10 @@ with st.sidebar:
         value=5,
         help="Radius to search for wells around clicked location"
     )
+    
+    # Store settings in session state for use in map generation
+    st.session_state.visualization_method = visualization_method
+    st.session_state.search_radius_setting = search_radius
     
     st.subheader("📋 About")
     st.markdown("""

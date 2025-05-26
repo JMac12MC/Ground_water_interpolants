@@ -598,28 +598,23 @@ with main_col1:
     """))
     
     # Use st_folium with return_clicked_latlon to get click coordinates
-    # Restore saved map view after processing, or use current view state
-    current_center = st.session_state.get('saved_center', st.session_state.get('map_center', [-43.5321, 172.6362]))
-    current_zoom = st.session_state.get('saved_zoom', st.session_state.get('map_zoom', 8))
+    # Use consistent default values and avoid overriding user interactions
+    if 'map_initialized' not in st.session_state:
+        st.session_state.map_initialized = True
+        st.session_state.map_center = [-43.5321, 172.6362]
+        st.session_state.map_zoom = 8
     
     map_data = st_folium(m, width=800, 
-                       center=tuple(current_center) if current_center else None,
-                       zoom=current_zoom,
                        key="interactive_map", 
-                       returned_objects=["last_clicked", "zoom", "center"])
+                       returned_objects=["last_clicked"])
     
-    # Save map view state from user interactions and store current view before processing
-    if map_data:
-        if "zoom" in map_data and map_data["zoom"]:
-            st.session_state.map_zoom = map_data["zoom"]
-            # Store the view state when user interacts with map
-            st.session_state.saved_zoom = map_data["zoom"]
-        if "center" in map_data and map_data["center"]:
-            st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-            # Store the center state when user interacts with map
-            st.session_state.saved_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+    # Only update session state if map data is available, don't force saved states
+    if map_data and "center" in map_data and map_data["center"]:
+        st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+    if map_data and "zoom" in map_data and map_data["zoom"]:
+        st.session_state.map_zoom = map_data["zoom"]
     
-    # Process clicks from the map and handle new location processing without page reload
+    # Process clicks from the map
     new_location_clicked = False
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         # Get the coordinates from the click
@@ -629,40 +624,16 @@ with main_col1:
         # Only update if this is a new location
         current_point = st.session_state.selected_point
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
-            # Capture the current view state before processing starts
-            if "zoom" in map_data and map_data["zoom"]:
-                st.session_state.saved_zoom = map_data["zoom"]
-            if "center" in map_data and map_data["center"]:
-                st.session_state.saved_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-            
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
+            # Clear filtered wells to trigger recalculation
+            st.session_state.filtered_wells = None
             new_location_clicked = True
     
-    # If a new location was clicked, process it immediately in this cycle to avoid map reset
-    if new_location_clicked or (st.session_state.selected_point and st.session_state.filtered_wells is None):
-        if st.session_state.wells_data is not None and st.session_state.selected_point:
-            # Process wells for the selected location
-            wells_df = st.session_state.wells_data
-            selected_point = st.session_state.selected_point
-            search_radius_km = st.session_state.search_radius
-            
-            # Calculate distances and filter wells
-            wells_df['distance'] = wells_df.apply(
-                lambda row: get_distance(
-                    selected_point[0], selected_point[1], 
-                    row['latitude'], row['longitude']
-                ), axis=1
-            )
-            
-            filtered_wells = wells_df[wells_df['distance'] <= search_radius_km].copy()
-            
-            # Handle missing yield values
-            if 'yield_rate' in filtered_wells.columns:
-                filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
-            
-            # Store the filtered wells
-            st.session_state.filtered_wells = filtered_wells
+    # Process new location clicks without interfering with map state
+    if new_location_clicked:
+        # Force a rerun to process the new location
+        st.rerun()
     
     # Add comprehensive well data summary report
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:

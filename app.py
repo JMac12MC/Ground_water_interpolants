@@ -747,20 +747,16 @@ with main_col2:
     else:
         st.info("Click on the map to select a location and view nearby wells")
 
-        # Add information about water well drilling
-        st.subheader("Finding Groundwater")
-        st.write("""
-        Traditional methods like water divining lack scientific basis. Our tool uses actual well data 
-        to help you make informed decisions about where to drill based on:
+    # Add information about water well drilling - always display
+    st.subheader("Finding Groundwater")
+    st.write("""
+    Traditional methods like water divining lack scientific basis. Our tool uses actual well data 
+    to help you make informed decisions about where to drill based on:
 
-        * Proximity to existing successful wells
-        * Aquifer yield patterns in your area
-        * Depth trends for accessing groundwater
-        """)
-
-        # Additional info image
-        st.image("https://pixabay.com/get/g05c0207a49d5248437f5982142626c75f1162b7b70bae40f24f9443b8711ff5e6d01382ef3f33d395a3abb0c6ee2d19776e986dcb5bd1ea9ae5c913e2832ab7e_1280.jpg", 
-                 caption="Water well drilling equipment", use_container_width=True)
+    * Proximity to existing successful wells
+    * Aquifer yield patterns in your area
+    * Depth trends for accessing groundwater
+    """)
 
 # Add footer
 st.markdown("""

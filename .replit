@@ -9,7 +9,7 @@ deploymentTarget = "autoscale"
 run = ["streamlit", "run", "app.py", "--server.port", "5000"]
 
 [workflows]
-runButton = "Project"
+runButton = "Start Groundwater App"
 
 [[workflows.workflow]]
 name = "Project"
@@ -28,6 +28,27 @@ author = "agent"
 task = "shell.exec"
 args = "pip install folium streamlit-folium scipy && streamlit run app.py --server.port 5000"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Start Groundwater App"
+author = 42797086
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pkill -f streamlit"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "sleep 2"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pip install folium streamlit-folium scipy pyproj pykrige scikit-learn matplotlib"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "streamlit run app.py --server.port 5000 --server.address 0.0.0.0"
 
 [[ports]]
 localPort = 5000

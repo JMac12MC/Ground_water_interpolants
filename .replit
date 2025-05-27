@@ -36,11 +36,15 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pip install folium streamlit-folium scipy pyproj pykrige scikit-learn matplotlib pandas numpy requests geopandas"
+args = "pip install --upgrade pip"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "streamlit run app.py --server.port 5000 --server.address 0.0.0.0 --server.headless true"
+args = "pip install streamlit folium streamlit-folium scipy pyproj pykrige scikit-learn matplotlib pandas numpy requests geopandas --no-cache-dir"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "streamlit run app.py --server.port 5000 --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false"
 
 [[ports]]
 localPort = 5000

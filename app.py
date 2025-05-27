@@ -91,19 +91,12 @@ with st.sidebar:
         "Map Visualization Type",
         options=[
             "Standard Kriging (Yield)", 
-            "Kriging (Auto-Fitted Spherical)",
-            "Kriging (Auto-Fitted Gaussian)", 
-            "Kriging (Auto-Fitted Exponential)",
-            "Depth to Groundwater (Standard Kriging)",
-            "Depth to Groundwater (Auto-Fitted Spherical)",
             "Random Forest + Kriging (Yield)",
-            "Kriging Uncertainty (Fixed Model)",
-            "Kriging Uncertainty (Auto-Fitted Spherical)",
-            "Kriging Uncertainty (Auto-Fitted Gaussian)",
-            "Kriging Uncertainty (Auto-Fitted Exponential)"
+            "Depth to Groundwater (Standard Kriging)",
+            "Depth to Groundwater (Auto-Fitted Spherical)"
         ],
         index=0,
-        help="Choose the visualization type: yield estimation or uncertainty analysis"
+        help="Choose the visualization type: yield estimation or depth analysis"
     )
 
     # Map visualization selection to internal parameters
@@ -121,21 +114,10 @@ with st.sidebar:
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
-    elif visualization_method == "Kriging (Auto-Fitted Spherical)":
-        st.session_state.interpolation_method = 'kriging'
+    elif visualization_method == "Random Forest + Kriging (Yield)":
+        st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
-    elif visualization_method == "Kriging (Auto-Fitted Gaussian)":
-        st.session_state.interpolation_method = 'kriging'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'gaussian'
-    elif visualization_method == "Kriging (Auto-Fitted Exponential)":
-        st.session_state.interpolation_method = 'kriging'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'exponential'
+        st.session_state.auto_fit_variogram = False
     elif visualization_method == "Depth to Groundwater (Standard Kriging)":
         st.session_state.interpolation_method = 'depth_kriging'
         st.session_state.show_kriging_variance = False
@@ -145,30 +127,6 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
-    elif visualization_method == "Random Forest + Kriging (Yield)":
-        st.session_state.interpolation_method = 'rf_kriging'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = False
-    elif visualization_method == "Kriging Uncertainty (Fixed Model)":
-        st.session_state.interpolation_method = 'kriging'
-        st.session_state.show_kriging_variance = True
-        st.session_state.auto_fit_variogram = False
-        st.session_state.variogram_model = 'linear'
-    elif visualization_method == "Kriging Uncertainty (Auto-Fitted Spherical)":
-        st.session_state.interpolation_method = 'kriging'
-        st.session_state.show_kriging_variance = True
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
-    elif visualization_method == "Kriging Uncertainty (Auto-Fitted Gaussian)":
-        st.session_state.interpolation_method = 'kriging'
-        st.session_state.show_kriging_variance = True
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'gaussian'
-    elif visualization_method == "Kriging Uncertainty (Auto-Fitted Exponential)":
-        st.session_state.interpolation_method = 'kriging'
-        st.session_state.show_kriging_variance = True
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'exponential'
 
     # Display options
     st.header("Display Options")

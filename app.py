@@ -418,7 +418,7 @@ with main_col1:
                 # Only add wells within the search radius (filtered_wells)
                 radius_wells_layer = folium.FeatureGroup(name="Wells Within Radius").add_to(m)
 
-                # Create markers for ONLY wells within the radius (small markers)
+                # Create small dot markers for ONLY wells within the radius
                 for idx, row in filtered_wells.iterrows():
                     # Use a smaller CircleMarker for wells within radius
                     folium.CircleMarker(
@@ -430,33 +430,6 @@ with main_col1:
                         fill_opacity=0.7,
                         tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m{'(Dry)' if row.get('is_dry_well', False) else ''}"
                     ).add_to(radius_wells_layer)
-
-                # Add filtered wells with more details
-                if isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                    marker_cluster = MarkerCluster(name="Filtered Wells").add_to(m)
-
-                    for idx, row in filtered_wells.iterrows():
-                        # Create popup content with well information
-                        popup_content = f"""
-                        <b>Well ID:</b> {row['well_id']}<br>
-                        <b>Depth:</b> {row['depth']} m<br>
-                        <b>Yield Rate:</b> {row['yield_rate']} L/s<br>
-                        <b>Distance:</b> {row['distance']:.2f} km<br>
-                        <button onclick="
-                            parent.postMessage({{
-                                type: 'streamlit:setComponentValue', 
-                                value: '{row['well_id']}'
-                            }}, '*');
-                        ">View Details</button>
-                        """
-
-                        # Create marker with popup
-                        folium.Marker(
-                            location=(float(row['latitude']), float(row['longitude'])),
-                            popup=folium.Popup(popup_content, max_width=300),
-                            tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s",
-                            icon=folium.Icon(color='blue', icon='tint', prefix='fa')
-                        ).add_to(marker_cluster)
 
         # Add click event to capture coordinates (only need this once)
         folium.LatLngPopup().add_to(m)

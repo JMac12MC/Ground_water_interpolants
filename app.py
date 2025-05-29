@@ -412,43 +412,6 @@ with main_col1:
                         )
                     ).add_to(m)
 
-                    # Add well markers to a cluster group for better performance and cleaner display
-                    # Only add markers for wells with significant yield values to reduce clutter
-                    if 'yield_rate' in filtered_wells.columns:
-                        # Create a marker cluster group with custom settings
-                        marker_cluster = MarkerCluster(
-                            name="Well Markers",
-                            overlay=True,
-                            control=True,
-                            icon_create_function="""
-                                function(cluster) {
-                                    return L.divIcon({
-                                        html: '<div style="background-color: rgba(255, 255, 0, 0.6); border: 1px solid #888; border-radius: 50%; text-align: center; width: 20px; height: 20px; line-height: 20px;">' + cluster.getChildCount() + '</div>',
-                                        className: 'marker-cluster',
-                                        iconSize: L.point(20, 20)
-                                    });
-                                }
-                            """
-                        )
-
-                        # Add only wells with yield > 1 to reduce visual clutter
-                        # And use a more subtle style that won't interfere with the heat map
-                        for _, row in filtered_wells.iterrows():
-                            yield_value = row['yield_rate']
-                            if isinstance(yield_value, (int, float)) and yield_value > 3.0:
-                                folium.CircleMarker(
-                                    location=(float(row['latitude']), float(row['longitude'])),
-                                    radius=min(10, float(yield_value)/6 + 1),  # Limit maximum size
-                                    color=None,
-                                    weight=1,  # Thinner border
-                                    fill=True,
-                                    fill_color='yellow',
-                                    fill_opacity=0.5,  # More transparent
-                                    tooltip=f"Well yield: {yield_value} L/s"
-                                ).add_to(marker_cluster)
-
-                        # Add the cluster group to the map
-                        marker_cluster.add_to(m)
 
             # ONLY show wells within the search radius when a point is selected
             if st.session_state.well_markers_visibility:

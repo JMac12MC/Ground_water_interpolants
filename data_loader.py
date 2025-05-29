@@ -292,6 +292,10 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 # Generate yields based on depth (correlation between depth and yield)
                 wells_df['yield_rate'] = (wells_df['depth'] / 10).clip(lower=0.1, upper=40)
             
+            # Mark wells with 0.0 yield as dry wells (in addition to wells with no screen data)
+            # This ensures depth interpolation excludes these wells
+            wells_df['is_dry_well'] = wells_df['is_dry_well'] | (wells_df['yield_rate'] == 0.0)
+            
             # Add well type and status information
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
             wells_df['status'] = raw_df['WELL_STATUS_DESC'].fillna('Unknown')

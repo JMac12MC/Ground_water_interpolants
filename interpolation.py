@@ -72,13 +72,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if 'is_dry_well' in wells_df.columns:
             # Use the explicit dry well marking - exclude any well marked as dry
             valid_depth_mask = (~wells_df['is_dry_well'])
-            
+
             # Also require valid depth_to_groundwater data if available
             if 'depth_to_groundwater' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
             elif 'depth' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
-                
+
         elif 'depth_to_groundwater' in wells_df.columns:
             # If no explicit dry well column, use depth_to_groundwater data 
             # and exclude wells with missing depth data (likely dry wells)
@@ -93,7 +93,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 (~wells_df['depth'].isna()) & 
                 (wells_df['depth'] > 0)
             )
-        
+
         if valid_depth_mask.any():
             wells_df = wells_df[valid_depth_mask].copy()
             lats = wells_df['latitude'].values.astype(float)
@@ -291,8 +291,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 if show_variance and kriging_variance is not None:
                     vertex_values = kriging_variance[simplex]
                     avg_value = float(np.mean(vertex_values))
-                    # For variance, show all values (including 0)
-                    value_threshold = -1  # Show all variance values
+                    # For variance, show all values (including very small ones)
+                    value_threshold = 0.0001  # Show almost all variance values
                 else:
                     vertex_values = interpolated_z[simplex]
                     avg_value = float(np.mean(vertex_values))
@@ -445,13 +445,13 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         if 'is_dry_well' in wells_df.columns:
             # Use the explicit dry well marking - exclude any well marked as dry
             valid_depth_mask = (~wells_df['is_dry_well'])
-            
+
             # Also require valid depth_to_groundwater data if available
             if 'depth_to_groundwater' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
             elif 'depth' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
-                
+
         elif 'depth_to_groundwater' in wells_df.columns:
             # If no explicit dry well column, use depth_to_groundwater data 
             # and exclude wells with missing depth data (likely dry wells)
@@ -466,7 +466,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 (~wells_df['depth'].isna()) & 
                 (wells_df['depth'] > 0)
             )
-        
+
         if valid_depth_mask.any():
             wells_df_filtered = wells_df[valid_depth_mask].copy()
             lats = wells_df_filtered['latitude'].values.astype(float)
@@ -700,7 +700,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
             # Find min and max lat/lon
             min_lat, max_lat = np.min(lat_points), np.max(lat_points)
-            min_lon, max_lon = np.min(lon_points), np.max(lon_points)
+            min_lon, max_lon = np.min<previous_generation>(lon_points), np.max(lon_points)
 
             # Create grid
             lat_grid = np.linspace(min_lat, max_lat, grid_size)

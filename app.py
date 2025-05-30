@@ -92,11 +92,12 @@ with st.sidebar:
         options=[
             "Standard Kriging (Yield)", 
             "Random Forest + Kriging (Yield)",
+            "Kriging Uncertainty (Yield)",
             "Depth to Groundwater (Standard Kriging)",
             "Depth to Groundwater (Auto-Fitted Spherical)"
         ],
         index=0,
-        help="Choose the visualization type: yield estimation or depth analysis"
+        help="Choose the visualization type: yield estimation, uncertainty analysis, or depth analysis"
     )
 
     # Map visualization selection to internal parameters
@@ -118,6 +119,11 @@ with st.sidebar:
         st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
+    elif visualization_method == "Kriging Uncertainty (Yield)":
+        st.session_state.interpolation_method = 'kriging'
+        st.session_state.show_kriging_variance = True
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
     elif visualization_method == "Depth to Groundwater (Standard Kriging)":
         st.session_state.interpolation_method = 'depth_kriging'
         st.session_state.show_kriging_variance = False
@@ -132,6 +138,19 @@ with st.sidebar:
     st.header("Display Options")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
+    
+    # Add explanation for kriging uncertainty
+    if visualization_method == "Kriging Uncertainty (Yield)":
+        st.info("""
+        **Kriging Uncertainty Visualization**
+        
+        This shows the prediction uncertainty (standard deviation) of the kriging interpolation:
+        - 🟢 **Green areas**: High confidence in yield predictions
+        - 🟡 **Yellow areas**: Medium confidence 
+        - 🔴 **Red areas**: Low confidence, more wells needed
+        
+        Use this to identify where additional wells would most improve prediction accuracy.
+        """)
 
 # Main content area
 main_col1, main_col2 = st.columns([3, 1])

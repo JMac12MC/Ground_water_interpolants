@@ -535,12 +535,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         interpolation_mask = distances <= interpolation_radius_km
         xi_inside = xi[interpolation_mask] # Interpolate on the expanded grid
 
-        # Apply the display mask based on the display radius
-        distances = np.sqrt(xi_inside[:,0]**2 + xi_inside[:,1]**2)
-        display_mask = distances <= radius_km # Only show points within display radius
-        xi_display = xi_inside[display_mask]
-
-        # Choose interpolation method
+        # Choose interpolation method (use full expanded interpolation area)
         if method == 'rf_kriging' and len(wells_df) >= 10:
             try:
                 print("Using Random Forest + Kriging interpolation")
@@ -701,9 +696,18 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # Make sure we don't have negative values
         interpolated_z = np.maximum(0, interpolated_z)
 
-        # Convert back to lat/lon coordinates
+        # Convert back to lat/lon coordinates (using full interpolation grid)
         lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
         lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+
+        # NOW apply display radius filtering - this only affects visualization, not interpolation
+        distances = np.sqrt(xi_inside[:,0]**2 + xi_inside[:,1]**2)
+        display_mask = distances <= radius_km  # Only show points within display radius
+        
+        # Apply display mask to lat/lon and interpolated values
+        lat_points = lat_points[display_mask]
+        lon_points = lon_points[display_mask]
+        interpolated_z = interpolated_z[display_mask]
 
         # Create heat map data
         heat_data = []
@@ -711,11 +715,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # OPTIMIZATION: For large datasets, reduce the number of heat map points for better performance
         # First, detect if we need to sample points due to a large dataset
         max_heat_points = 2500  # Maximum points for smooth performance
-
-        # Apply display mask to lat/lon and interpolated values
-        lat_points = lat_points[display_mask]
-        lon_points = lon_points[display_mask]
-        interpolated_z = interpolated_z[display_mask]
 
         if len(lat_points) > max_heat_points:
             # Use a grid-based sampling approach to maintain visual accuracy with fewer points

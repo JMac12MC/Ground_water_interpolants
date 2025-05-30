@@ -686,7 +686,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         method='nearest', fill_value=0.0
                     )
             else:
-```python
                 # Standard approach for smaller datasets
                 # First try linear interpolation
                 interpolated_z = griddata(

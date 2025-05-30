@@ -308,14 +308,22 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 avg_yield = avg_value  # Keep for backwards compatibility
 
                 # Only add triangles with meaningful values and within our radius
-                # Filter triangles outside the user-specified radius
+                # Apply smooth fade-out near edges for triangles too
                 triangle_center_lon = np.mean(vertices[:, 0])
                 triangle_center_lat = np.mean(vertices[:, 1])
                 dist_km = np.sqrt(
                     ((triangle_center_lat - center_lat) * km_per_degree_lat)**2 +
                     ((triangle_center_lon - center_lon) * km_per_degree_lon)**2
                 )
-                if avg_yield > value_threshold and dist_km <= radius_km:
+                
+                # Apply smooth fade-out to eliminate edge effects
+                if dist_km <= radius_km:
+                    fade_start = radius_km * 0.85
+                    if dist_km > fade_start:
+                        fade_factor = 0.5 * (1 + np.cos(np.pi * (dist_km - fade_start) / (radius_km - fade_start)))
+                        avg_yield = avg_yield * fade_factor
+                
+                if avg_yield > value_threshold:
 
                     # Create polygon for this triangle
                     poly = {
@@ -700,11 +708,24 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
         lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
 
-        # NOW apply display radius filtering - this only affects visualization, not interpolation
+        # Apply smooth fade-out near edges instead of hard cutoff to eliminate edge effects
         distances = np.sqrt(xi_inside[:,0]**2 + xi_inside[:,1]**2)
-        display_mask = distances <= radius_km  # Only show points within display radius
         
-        # Apply display mask to lat/lon and interpolated values
+        # Create smooth fade-out zone near the edge (fade starts at 85% of radius)
+        fade_start = radius_km * 0.85
+        fade_zone_mask = distances > fade_start
+        edge_fade_factor = np.ones(len(distances))
+        
+        # Apply smooth fade-out using cosine function for natural transition
+        fade_distances = distances[fade_zone_mask]
+        fade_factor = 0.5 * (1 + np.cos(np.pi * (fade_distances - fade_start) / (radius_km - fade_start)))
+        edge_fade_factor[fade_zone_mask] = fade_factor
+        
+        # Apply fade-out to interpolated values to eliminate edge artifacts
+        interpolated_z = interpolated_z * edge_fade_factor
+        
+        # Only keep points within the display radius (but now they fade smoothly)
+        display_mask = distances <= radius_km
         lat_points = lat_points[display_mask]
         lon_points = lon_points[display_mask]
         interpolated_z = interpolated_z[display_mask]

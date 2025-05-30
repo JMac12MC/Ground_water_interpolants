@@ -315,14 +315,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     ((triangle_center_lat - center_lat) * km_per_degree_lat)**2 +
                     ((triangle_center_lon - center_lon) * km_per_degree_lon)**2
                 )
-                
+
                 # Apply smooth fade-out to eliminate edge effects
                 if dist_km <= radius_km:
                     fade_start = radius_km * 0.85
                     if dist_km > fade_start:
                         fade_factor = 0.5 * (1 + np.cos(np.pi * (dist_km - fade_start) / (radius_km - fade_start)))
                         avg_yield = avg_yield * fade_factor
-                
+
                 if avg_yield > value_threshold:
 
                     # Create polygon for this triangle
@@ -528,8 +528,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         x_coords = (lons - center_lon) * km_per_degree_lon
         y_coords = (lats - center_lat) * km_per_degree_lat
 
-        # Create grid in km space
-        interpolation_radius_km = radius_km * 1.2  # Expand the interpolation radius
+        # Create grid in km space with expanded interpolation radius
+        interpolation_radius_km = radius_km * 1.3  # Use 1.3x radius for interpolation calculation
         grid_x = np.linspace(-interpolation_radius_km, interpolation_radius_km, grid_size)
         grid_y = np.linspace(-interpolation_radius_km, interpolation_radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
@@ -538,7 +538,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         points = np.vstack([x_coords, y_coords]).T  # Well points in km
         xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
 
-        # Apply interpolation mask based on expanded radius
+        # Apply interpolation mask based on expanded radius (1.3x)
         distances = np.sqrt(xi[:,0]**2 + xi[:,1]**2)
         interpolation_mask = distances <= interpolation_radius_km
         xi_inside = xi[interpolation_mask] # Interpolate on the expanded grid
@@ -686,6 +686,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         method='nearest', fill_value=0.0
                     )
             else:
+```python
                 # Standard approach for smaller datasets
                 # First try linear interpolation
                 interpolated_z = griddata(
@@ -710,20 +711,20 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
         # Apply smooth fade-out near edges instead of hard cutoff to eliminate edge effects
         distances = np.sqrt(xi_inside[:,0]**2 + xi_inside[:,1]**2)
-        
+
         # Create smooth fade-out zone near the edge (fade starts at 85% of radius)
         fade_start = radius_km * 0.85
         fade_zone_mask = distances > fade_start
         edge_fade_factor = np.ones(len(distances))
-        
+
         # Apply smooth fade-out using cosine function for natural transition
         fade_distances = distances[fade_zone_mask]
         fade_factor = 0.5 * (1 + np.cos(np.pi * (fade_distances - fade_start) / (radius_km - fade_start)))
         edge_fade_factor[fade_zone_mask] = fade_factor
-        
+
         # Apply fade-out to interpolated values to eliminate edge artifacts
         interpolated_z = interpolated_z * edge_fade_factor
-        
+
         # Only keep points within the display radius (but now they fade smoothly)
         display_mask = distances <= radius_km
         lat_points = lat_points[display_mask]

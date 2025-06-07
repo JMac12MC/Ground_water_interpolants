@@ -700,7 +700,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
             # Find min and max lat/lon
             min_lat, max_lat = np.min(lat_points), np.max(lat_points)
-            min_lon, max_lon = np.min<previous_generation>(lon_points), np.max(lon_points)
+            min_lon, max_lon = np.min(lon_points), np.max(lon_points)
 
             # Create grid
             lat_grid = np.linspace(min_lat, max_lat, grid_size)

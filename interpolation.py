@@ -113,20 +113,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     x_coords = (lons - center_lon) * km_per_degree_lon
     y_coords = (lats - center_lat) * km_per_degree_lat
 
-    # Create grid in lat/lon space using a slightly larger interpolation radius
-    interpolation_radius_km = radius_km * 1.2  # Expand the interpolation radius
+    # Create interpolation points for the grid
     grid_x, grid_y = np.meshgrid(
-        np.linspace(-interpolation_radius_km, interpolation_radius_km, grid_size),
-        np.linspace(-interpolation_radius_km, interpolation_radius_km, grid_size)
+        np.linspace(-radius_km, radius_km, grid_size),
+        np.linspace(-radius_km, radius_km, grid_size)
     )
 
     # Calculate distance from center for each point
     distances = np.sqrt(grid_x**2 + grid_y**2)
-
-    # Create a mask for the interpolation area (larger radius)
-    interpolation_mask = distances <= interpolation_radius_km
-
-    # Original mask remains for display purposes (smaller radius)
     mask = distances <= radius_km  # Only keep points within radius
 
     # Perform interpolation
@@ -145,8 +139,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             lon_values = x_coords / km_per_degree_lon + center_lon
             lat_values = y_coords / km_per_degree_lat + center_lat
 
-            # Create grid points for kriging using expanded interpolation area
-            grid_points = np.vstack([grid_x[interpolation_mask].ravel(), grid_y[interpolation_mask].ravel()]).T
+            # Create grid points for kriging
+            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
@@ -185,8 +179,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             )
             rf.fit(points, yields)
 
-            # Create grid points for prediction using expanded interpolation area
-            grid_points = np.vstack([grid_x[interpolation_mask].ravel(), grid_y[interpolation_mask].ravel()]).T
+            # Create grid points for prediction
+            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
             interpolated_z = rf.predict(grid_points)
         elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield visualization (without variance output)
@@ -196,8 +190,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             lon_values = x_coords / km_per_degree_lon + center_lon
             lat_values = y_coords / km_per_degree_lat + center_lat
 
-            # Create grid points for kriging using expanded interpolation area
-            grid_points = np.vstack([grid_x[interpolation_mask].ravel(), grid_y[interpolation_mask].ravel()]).T
+            # Create grid points for kriging
+            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
@@ -216,7 +210,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         else:
             # Use standard griddata interpolation for other cases
             # This is much faster than kriging for large datasets
-            grid_points = np.vstack([grid_x[interpolation_mask].ravel(), grid_y[interpolation_mask].ravel()]).T
+            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
             interpolated_z = griddata(
                 points, yields, grid_points,
                 method='linear', fill_value=0.0
@@ -237,7 +231,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             try:
                 # Create full 2D grid for smoothing
                 z_grid = np.zeros_like(grid_x)
-                z_grid[interpolation_mask] = interpolated_z
+                z_grid[mask] = interpolated_z
 
                 # Apply multiple smoothing passes for ultra-smooth appearance
                 # First pass: moderate smoothing
@@ -246,7 +240,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 z_smooth = gaussian_filter(z_smooth, sigma=0.8)
 
                 # Extract smoothed values for our mask
-                interpolated_z = z_smooth[interpolation_mask]
+                interpolated_z = z_smooth[mask]
 
                 # Ensure values stay within reasonable bounds
                 interpolated_z = np.maximum(0, interpolated_z)
@@ -256,23 +250,22 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 print(f"Advanced smoothing error: {e}, using basic smoothing")
                 try:
                     z_grid = np.zeros_like(grid_x)
-                    z_grid[interpolation_mask] = interpolated_z
+                    z_grid[mask] = interpolated_z
                     z_smooth = gaussian_filter(z_grid, sigma=1.0)
-                    interpolated_z = z_smooth[interpolation_mask]
+                    interpolated_z = z_smooth[mask]
                 except:
                     print("Basic smoothing also failed, using raw interpolation")
     except Exception as e:
         # Fallback to simple IDW interpolation if the above methods fail
         print(f"Interpolation error: {e}, using fallback method")
-        grid_points = np.vstack([grid_x[interpolation_mask].ravel(), grid_y[interpolation_mask].ravel()]).T
         interpolated_z = np.zeros(grid_points.shape[0])
         for i, point in enumerate(grid_points):
             weights = 1.0 / (np.sqrt(np.sum((points - point)**2, axis=1)) + 1e-5)
             interpolated_z[i] = np.sum(weights * yields) / np.sum(weights)
 
     # Convert grid coordinates back to lat/lon
-    grid_lats = (grid_y[interpolation_mask].ravel() / km_per_degree_lat) + center_lat
-    grid_lons = (grid_x[interpolation_mask].ravel() / km_per_degree_lon) + center_lon
+    grid_lats = (grid_y[mask].ravel() / km_per_degree_lat) + center_lat
+    grid_lons = (grid_x[mask].ravel() / km_per_degree_lon) + center_lon
 
     # Build the GeoJSON structure
     features = []
@@ -308,15 +301,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 avg_yield = avg_value  # Keep for backwards compatibility
 
                 # Only add triangles with meaningful values and within our radius
-                # Filter triangles outside the user-specified radius
-                triangle_center_lon = np.mean(vertices[:, 0])
-                triangle_center_lat = np.mean(vertices[:, 1])
-                dist_km = np.sqrt(
-                    ((triangle_center_lat - center_lat) * km_per_degree_lat)**2 +
-                    ((triangle_center_lon - center_lon) * km_per_degree_lon)**2
-                )
-                if avg_yield > value_threshold and dist_km <= radius_km:
-
+                if avg_yield > value_threshold:
                     # Create polygon for this triangle
                     poly = {
                         "type": "Feature",
@@ -521,24 +506,18 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         y_coords = (lats - center_lat) * km_per_degree_lat
 
         # Create grid in km space
-        interpolation_radius_km = radius_km * 1.2  # Expand the interpolation radius
-        grid_x = np.linspace(-interpolation_radius_km, interpolation_radius_km, grid_size)
-        grid_y = np.linspace(-interpolation_radius_km, interpolation_radius_km, grid_size)
+        grid_x = np.linspace(-radius_km, radius_km, grid_size)
+        grid_y = np.linspace(-radius_km, radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
 
         # Flatten for interpolation
         points = np.vstack([x_coords, y_coords]).T  # Well points in km
         xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
 
-        # Apply interpolation mask based on expanded radius
+        # Filter points outside the radius
         distances = np.sqrt(xi[:,0]**2 + xi[:,1]**2)
-        interpolation_mask = distances <= interpolation_radius_km
-        xi_inside = xi[interpolation_mask] # Interpolate on the expanded grid
-
-        # Apply the display mask based on the display radius
-        distances = np.sqrt(xi_inside[:,0]**2 + xi_inside[:,1]**2)
-        display_mask = distances <= radius_km # Only show points within display radius
-        xi_display = xi_inside[display_mask]
+        mask = distances <= radius_km
+        xi_inside = xi[mask]
 
         # Choose interpolation method
         if method == 'rf_kriging' and len(wells_df) >= 10:
@@ -562,7 +541,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 )
                 rf.fit(features, target)
 
-                # Get RF predictions for all grid points using expanded interpolation area
+                # Get RF predictions for all grid points
                 rf_predictions = rf.predict(xi_inside)
 
                 # OPTIMIZATION: Skip kriging for very large datasets (>1000 points)
@@ -712,11 +691,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # First, detect if we need to sample points due to a large dataset
         max_heat_points = 2500  # Maximum points for smooth performance
 
-        # Apply display mask to lat/lon and interpolated values
-        lat_points = lat_points[display_mask]
-        lon_points = lon_points[display_mask]
-        interpolated_z = interpolated_z[display_mask]
-
         if len(lat_points) > max_heat_points:
             # Use a grid-based sampling approach to maintain visual accuracy with fewer points
             print(f"Optimizing heatmap visualization: sampling {max_heat_points} points from {len(lat_points)} total")
@@ -726,7 +700,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
             # Find min and max lat/lon
             min_lat, max_lat = np.min(lat_points), np.max(lat_points)
-            min_lon, max_lon = np.min(lon_points), np.max(lon_points)
+            min_lon, max_lon = np.min<previous_generation>(lon_points), np.max(lon_points)
 
             # Create grid
             lat_grid = np.linspace(min_lat, max_lat, grid_size)

@@ -281,30 +281,44 @@ with main_col1:
                     status_text.write("🪨 **Step 3/4:** Fetching geological boundaries...")
                     progress_bar.progress(65)
                     
-                    try:
-                        # Get sedimentary polygons from geological service
-                        sedimentary_polygons = st.session_state.geology_service.get_sedimentary_polygons(
-                            st.session_state.selected_point[0], 
-                            st.session_state.selected_point[1], 
-                            st.session_state.search_radius
+                    # Get sedimentary polygons from geological service
+                    sedimentary_polygons = st.session_state.geology_service.get_sedimentary_polygons(
+                        st.session_state.selected_point[0], 
+                        st.session_state.selected_point[1], 
+                        st.session_state.search_radius
+                    )
+                    
+                    status_text.write("✂️ **Step 3b/4:** Clipping interpolation by geological boundaries...")
+                    progress_bar.progress(75)
+                    
+                    if sedimentary_polygons and 'features' in sedimentary_polygons and len(sedimentary_polygons['features']) > 0:
+                        # Add geological polygons to map for visualization
+                        folium.GeoJson(
+                            data=sedimentary_polygons,
+                            name='Sedimentary Geology',
+                            style_function=lambda feature: {
+                                'fillColor': 'green',
+                                'color': 'darkgreen',
+                                'weight': 2,
+                                'fillOpacity': 0.3
+                            },
+                            tooltip=folium.GeoJsonTooltip(
+                                fields=['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION'] if 'features' in sedimentary_polygons and len(sedimentary_polygons['features']) > 0 else [],
+                                aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:'],
+                                labels=True,
+                                sticky=False
+                            )
+                        ).add_to(m)
+                        
+                        # Use polygon-based clipping for accurate geological masking
+                        geojson_data = st.session_state.geology_service.clip_interpolation_by_polygons(
+                            geojson_data, sedimentary_polygons
                         )
                         
-                        status_text.write("✂️ **Step 3b/4:** Clipping interpolation by geological boundaries...")
-                        progress_bar.progress(75)
-                        
-                        if sedimentary_polygons:
-                            # Use polygon-based clipping for accurate geological masking
-                            geojson_data = st.session_state.geology_service.clip_interpolation_by_polygons(
-                                geojson_data, sedimentary_polygons
-                            )
-                        else:
-                            # Fallback to point-based clipping if no polygons available
-                            st.info("No geological polygon data available - using point-based geological constraints")
-                            geojson_data = st.session_state.geology_service.clip_interpolation_by_geology(geojson_data)
-                            
-                    except Exception as e:
-                        st.warning(f"Geological masking failed: {e}. Showing unmasked interpolation.")
-                        print(f"Geological masking error: {e}")
+                        st.success(f"Applied geological masking using {len(sedimentary_polygons['features'])} sedimentary polygons")
+                    else:
+                        st.error("No geological polygon data available. Geological masking cannot be applied.")
+                        use_geological_masking = False  # Disable masking for this iteration
 
                 status_text.write("🎨 **Step 4/4:** Rendering visualization...")
                 progress_bar.progress(75)
@@ -509,6 +523,28 @@ with main_col1:
 
         # Add a simple click handler that manually tracks clicks
         folium.LayerControl().add_to(m)
+        
+        # Add debug info for geological data if available
+        if st.session_state.selected_point and use_geological_masking:
+            try:
+                # Test geological data fetch
+                test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
+                    st.session_state.selected_point[0], 
+                    st.session_state.selected_point[1], 
+                    st.session_state.search_radius
+                )
+                if test_polygons and 'features' in test_polygons:
+                    st.info(f"🗺️ Geological data available: {len(test_polygons['features'])} sedimentary polygons found")
+                    
+                    # Show sample geology attributes for debugging
+                    if len(test_polygons['features']) > 0:
+                        sample_attrs = test_polygons['features'][0].get('attributes', {})
+                        if sample_attrs:
+                            st.write("**Sample geological attributes:**", sample_attrs)
+                else:
+                    st.warning("🗺️ No geological polygon data found for this area")
+            except Exception as e:
+                st.error(f"🗺️ Error fetching geological data: {e}")
 
         # Create a custom click handler
         from folium.plugins import MousePosition

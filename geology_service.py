@@ -291,81 +291,88 @@ class GeologyService:
         This uses geometric intersection to properly mask the interpolated surface
         """
         if not interpolation_geojson or not geological_polygons:
-            print("No interpolation data or geological polygons available for clipping")
-            return interpolation_geojson
+            raise ValueError("Both interpolation data and geological polygons are required for clipping")
         
         if 'features' not in interpolation_geojson or len(interpolation_geojson['features']) == 0:
-            return interpolation_geojson
+            raise ValueError("No interpolation features found")
             
         if 'features' not in geological_polygons or len(geological_polygons['features']) == 0:
-            print("No sedimentary polygons found - returning unclipped interpolation")
-            return interpolation_geojson
+            raise ValueError("No geological polygon features found")
         
-        try:
-            from shapely.geometry import Polygon, MultiPolygon, Point
-            from shapely.ops import unary_union
-            import json
-            
-            print(f"Clipping {len(interpolation_geojson['features'])} interpolation features using {len(geological_polygons['features'])} sedimentary polygons...")
-            
-            # Convert geological polygons to Shapely geometries and union them
-            sedimentary_polygons = []
-            
-            for feature in geological_polygons['features']:
-                try:
-                    geom = feature['geometry']
-                    if geom['type'] == 'Polygon':
-                        coords = geom['coordinates']
-                        if len(coords) > 0 and len(coords[0]) >= 4:  # Valid polygon
-                            poly = Polygon(coords[0])
+        from shapely.geometry import Polygon, MultiPolygon, Point
+        from shapely.ops import unary_union
+        import json
+        
+        print(f"Clipping {len(interpolation_geojson['features'])} interpolation features using {len(geological_polygons['features'])} sedimentary polygons...")
+        
+        # Convert geological polygons to Shapely geometries and union them
+        sedimentary_polygons = []
+        
+        for feature in geological_polygons['features']:
+            try:
+                geom = feature['geometry']
+                if geom['type'] == 'Polygon':
+                    coords = geom['coordinates']
+                    if len(coords) > 0 and len(coords[0]) >= 4:  # Valid polygon
+                        poly = Polygon(coords[0])
+                        if poly.is_valid:
+                            sedimentary_polygons.append(poly)
+                elif geom['type'] == 'MultiPolygon':
+                    for poly_coords in geom['coordinates']:
+                        if len(poly_coords) > 0 and len(poly_coords[0]) >= 4:
+                            poly = Polygon(poly_coords[0])
                             if poly.is_valid:
                                 sedimentary_polygons.append(poly)
-                    elif geom['type'] == 'MultiPolygon':
-                        for poly_coords in geom['coordinates']:
-                            if len(poly_coords) > 0 and len(poly_coords[0]) >= 4:
-                                poly = Polygon(poly_coords[0])
-                                if poly.is_valid:
-                                    sedimentary_polygons.append(poly)
-                except Exception as e:
-                    print(f"Error processing geological polygon: {e}")
-                    continue
-            
-            if not sedimentary_polygons:
-                print("No valid sedimentary polygons found")
-                return interpolation_geojson
-            
-            # Union all sedimentary polygons into a single mask
-            print("Creating sedimentary mask...")
-            try:
-                sedimentary_mask = unary_union(sedimentary_polygons)
             except Exception as e:
-                print(f"Error creating sedimentary mask: {e}")
-                # Fallback: use individual polygons
-                sedimentary_mask = sedimentary_polygons
-            
-            # Clip interpolation features
-            clipped_features = []
-            
-            for i, feature in enumerate(interpolation_geojson['features']):
-                try:
-                    # Convert interpolation feature to Shapely geometry
-                    geom = feature['geometry']
-                    if geom['type'] == 'Polygon':
-                        coords = geom['coordinates']
-                        if len(coords) > 0 and len(coords[0]) >= 4:
-                            interp_poly = Polygon(coords[0])
-                            
-                            if interp_poly.is_valid:
-                                # Check intersection with sedimentary mask
-                                if isinstance(sedimentary_mask, (Polygon, MultiPolygon)):
-                                    if sedimentary_mask.intersects(interp_poly):
-                                        # Calculate intersection
-                                        intersection = sedimentary_mask.intersection(interp_poly)
-                                        
-                                        if not intersection.is_empty and intersection.area > 0:
-                                            # Convert back to GeoJSON feature
-                                            if intersection.geom_type == 'Polygon':
-                                                new_coords = [list(intersection.exterior.coords)]
+                print(f"Error processing geological polygon: {e}")
+                continue
+        
+        if not sedimentary_polygons:
+            raise ValueError("No valid sedimentary polygons found after processing")
+        
+        # Union all sedimentary polygons into a single mask
+        print("Creating sedimentary mask...")
+        sedimentary_mask = unary_union(sedimentary_polygons)
+        
+        if sedimentary_mask.is_empty:
+            raise ValueError("Sedimentary mask is empty after union operation")
+        
+        # Clip interpolation features
+        clipped_features = []
+        
+        for i, feature in enumerate(interpolation_geojson['features']):
+            try:
+                # Convert interpolation feature to Shapely geometry
+                geom = feature['geometry']
+                if geom['type'] == 'Polygon':
+                    coords = geom['coordinates']
+                    if len(coords) > 0 and len(coords[0]) >= 4:
+                        interp_poly = Polygon(coords[0])
+                        
+                        if interp_poly.is_valid:
+                            # Check intersection with sedimentary mask
+                            if sedimentary_mask.intersects(interp_poly):
+                                # Calculate intersection
+                                intersection = sedimentary_mask.intersection(interp_poly)
+                                
+                                if not intersection.is_empty and intersection.area > 0:
+                                    # Convert back to GeoJSON feature
+                                    if intersection.geom_type == 'Polygon':
+                                        new_coords = [list(intersection.exterior.coords)]
+                                        clipped_feature = {
+                                            "type": "Feature",
+                                            "geometry": {
+                                                "type": "Polygon",
+                                                "coordinates": new_coords
+                                            },
+                                            "properties": feature['properties'].copy()
+                                        }
+                                        clipped_features.append(clipped_feature)
+                                    elif intersection.geom_type == 'MultiPolygon':
+                                        # Handle MultiPolygon results
+                                        for poly in intersection.geoms:
+                                            if poly.area > 0:
+                                                new_coords = [list(poly.exterior.coords)]
                                                 clipped_feature = {
                                                     "type": "Feature",
                                                     "geometry": {
@@ -375,101 +382,23 @@ class GeologyService:
                                                     "properties": feature['properties'].copy()
                                                 }
                                                 clipped_features.append(clipped_feature)
-                                            elif intersection.geom_type == 'MultiPolygon':
-                                                # Handle MultiPolygon results
-                                                for poly in intersection.geoms:
-                                                    if poly.area > 0:
-                                                        new_coords = [list(poly.exterior.coords)]
-                                                        clipped_feature = {
-                                                            "type": "Feature",
-                                                            "geometry": {
-                                                                "type": "Polygon",
-                                                                "coordinates": new_coords
-                                                            },
-                                                            "properties": feature['properties'].copy()
-                                                        }
-                                                        clipped_features.append(clipped_feature)
-                                else:
-                                    # Fallback: check against individual polygons
-                                    for sed_poly in sedimentary_polygons:
-                                        if sed_poly.intersects(interp_poly):
-                                            clipped_features.append(feature)
-                                            break
-                    
-                    # Progress indication
-                    if i > 0 and i % 100 == 0:
-                        print(f"Processed {i}/{len(interpolation_geojson['features'])} interpolation features...")
-                        
-                except Exception as e:
-                    print(f"Error processing interpolation feature {i}: {e}")
-                    continue
-            
-            print(f"Geological clipping complete: {len(clipped_features)} features retained from {len(interpolation_geojson['features'])} original features")
-            
-            return {
-                "type": "FeatureCollection",
-                "features": clipped_features
-            }
-            
-        except ImportError:
-            print("Shapely not available - falling back to simple point-based clipping")
-            return self.clip_interpolation_by_geology(interpolation_geojson)
-        except Exception as e:
-            print(f"Error in polygon-based clipping: {e}")
-            print("Falling back to point-based clipping")
-            return self.clip_interpolation_by_geology(interpolation_geojson)
-
-    def clip_interpolation_by_geology(self, geojson_data):
-        """
-        Fallback method: Clip interpolation results by removing features in hard rock areas
-        This is applied AFTER interpolation is generated
-        """
-        if not geojson_data or 'features' not in geojson_data:
-            return geojson_data
-        
-        # Try polygon-based clipping first
-        center_coords = self._estimate_center_from_features(geojson_data['features'])
-        if center_coords:
-            center_lat, center_lon = center_coords
-            radius_km = self._estimate_radius_from_features(geojson_data['features'], center_lat, center_lon)
-            
-            sedimentary_polygons = self.get_sedimentary_polygons(center_lat, center_lon, radius_km)
-            if sedimentary_polygons:
-                return self.clip_interpolation_by_polygons(geojson_data, sedimentary_polygons)
-        
-        # Fallback to original point-based method
-        print("Using fallback point-based geological clipping...")
-        
-        clipped_features = []
-        features = geojson_data.get('features', [])
-        
-        # Limit features for performance
-        max_features = min(500, len(features))
-        
-        for i, feature in enumerate(features[:max_features]):
-            try:
-                coords = feature['geometry']['coordinates'][0]
-                lats = [coord[1] for coord in coords[:-1]]
-                lons = [coord[0] for coord in coords[:-1]]
-                centroid_lat = sum(lats) / len(lats)
-                centroid_lon = sum(lons) / len(lons)
                 
-                # Check geology at centroid
-                unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
-                
-                if self.is_sedimentary(unit_code):
-                    clipped_features.append(feature)
+                # Progress indication
+                if i > 0 and i % 100 == 0:
+                    print(f"Processed {i}/{len(interpolation_geojson['features'])} interpolation features...")
                     
             except Exception as e:
-                # On error, include the feature to avoid data loss
-                clipped_features.append(feature)
+                print(f"Error processing interpolation feature {i}: {e}")
+                continue
         
-        print(f"Point-based geological clipping complete: {len(clipped_features)} features retained")
+        print(f"Geological clipping complete: {len(clipped_features)} features retained from {len(interpolation_geojson['features'])} original features")
         
         return {
             "type": "FeatureCollection",
             "features": clipped_features
         }
+
+    
 
     def _estimate_center_from_features(self, features):
         """Estimate center coordinates from GeoJSON features"""

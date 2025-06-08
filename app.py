@@ -471,163 +471,15 @@ with main_col1:
     """))
 
     # Use st_folium with return_clicked_latlon to get click coordinates
-    # Initialize map state if not already done
-    if 'map_initialized' not in st.session_state:
-        st.session_state.map_initialized = True
-        st.session_state.map_center = [-43.5321, 172.6362]
-        st.session_state.map_zoom = 8
-
-    # Prepare map parameters
-    map_params = {
-        "use_container_width": True,
-        "height": 600,
-        "key": "interactive_map",
-        "returned_objects": ["last_clicked"]
-    }
-
-    # If we have saved map state and we're restoring after processing, use it
-    if (st.session_state.get('restore_map_view', False) and 
-        'saved_map_center' in st.session_state and 
-        'saved_map_zoom' in st.session_state):
-        
-        # Force the folium map to use the saved center and zoom
-        m = folium.Map(
-            location=st.session_state.saved_map_center, 
-            zoom_start=st.session_state.saved_map_zoom,
-            tiles="OpenStreetMap"
-        )
-        
-        # Re-add all the same map elements with the saved view
-        if st.session_state.wells_data is not None and st.session_state.selected_point:
-            wells_df = st.session_state.wells_data
-            filtered_wells = st.session_state.filtered_wells
-            
-            # Re-add selected point marker
-            folium.Marker(
-                location=st.session_state.selected_point,
-                popup="Selected Location",
-                icon=folium.Icon(color='red', icon='crosshairs', prefix='fa'),
-                tooltip="Your Selected Point"
-            ).add_to(m)
-
-            # Re-add search radius circle
-            folium.Circle(
-                location=st.session_state.selected_point,
-                radius=st.session_state.search_radius * 1000,
-                color="#3186cc",
-                fill=True,
-                fill_color="#3186cc",
-                fill_opacity=0.1
-            ).add_to(m)
-
-            # Re-add heat map if visible
-            if (st.session_state.heat_map_visibility and 
-                isinstance(filtered_wells, pd.DataFrame) and 
-                not filtered_wells.empty):
-                
-                # Generate the same GeoJSON data
-                geojson_data = generate_geo_json_grid(
-                    filtered_wells.copy(), 
-                    st.session_state.selected_point, 
-                    st.session_state.search_radius,
-                    resolution=100,
-                    method=st.session_state.interpolation_method,
-                    show_variance=st.session_state.show_kriging_variance,
-                    auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                    variogram_model=st.session_state.get('variogram_model', 'spherical')
-                )
-
-                if geojson_data and len(geojson_data['features']) > 0:
-                    max_value = max(feature['properties']['yield'] for feature in geojson_data['features'])
-                    max_value = max(max_value, 20.0)
-
-                    def get_color(value):
-                        step = max_value / 15.0
-                        if st.session_state.show_kriging_variance:
-                            colors = ['#0000ff', '#0033ff', '#0066ff', '#0099ff', '#00ccff', 
-                                     '#00ffff', '#33ffcc', '#66ff99', '#99ff66', '#ccff33', 
-                                     '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff0000']
-                        elif st.session_state.interpolation_method == 'depth_kriging':
-                            colors = ['#00ff00', '#33ff00', '#66ff00', '#99ff00', '#ccff00', 
-                                     '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff3300', 
-                                     '#ff0000', '#cc0000', '#990000', '#660000', '#330000']
-                        else:
-                            colors = ['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
-                                     '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
-                                     '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000']
-                        band_index = min(14, int(value / step))
-                        return colors[band_index]
-
-                    folium.GeoJson(
-                        data=geojson_data,
-                        name='Yield Interpolation',
-                        style_function=lambda feature: {
-                            'fillColor': get_color(feature['properties']['yield']),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        }
-                    ).add_to(m)
-
-                    # Add colormap legend
-                    if st.session_state.show_kriging_variance:
-                        caption = 'Kriging Uncertainty (Variance) - 15 Bands'
-                        colors = ['#0000ff', '#0033ff', '#0066ff', '#0099ff', '#00ccff', 
-                                 '#00ffff', '#33ffcc', '#66ff99', '#99ff66', '#ccff33', 
-                                 '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff0000']
-                    elif st.session_state.interpolation_method == 'depth_kriging':
-                        caption = 'Depth to Groundwater (m) - 15 Bands'
-                        colors = ['#00ff00', '#33ff00', '#66ff00', '#99ff00', '#ccff00', 
-                                 '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff3300', 
-                                 '#ff0000', '#cc0000', '#990000', '#660000', '#330000']
-                    else:
-                        caption = 'Estimated Water Yield (L/s) - 15 Bands'
-                        colors = ['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
-                                 '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
-                                 '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000']
-                    
-                    colormap = folium.LinearColormap(
-                        colors=colors,
-                        vmin=0,
-                        vmax=float(max_value),
-                        caption=caption
-                    )
-                    colormap.add_to(m)
-
-            # Re-add well markers if visible
-            if st.session_state.well_markers_visibility and filtered_wells is not None:
-                radius_wells_layer = folium.FeatureGroup(name="Wells Within Radius").add_to(m)
-                for idx, row in filtered_wells.iterrows():
-                    folium.CircleMarker(
-                        location=(float(row['latitude']), float(row['longitude'])),
-                        radius=3,
-                        color='gray',
-                        fill=True,
-                        fill_color='darkblue',
-                        fill_opacity=0.7,
-                        tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m"
-                    ).add_to(radius_wells_layer)
-
-        # Add necessary map components
-        folium.LatLngPopup().add_to(m)
-        folium.LayerControl().add_to(m)
-        from folium.plugins import MousePosition
-        MousePosition().add_to(m)
-        
-        # Clear the restore flag
-        st.session_state.restore_map_view = False
-
-    map_data = st_folium(m, **map_params)
-
-    # Capture current map view for potential restoration
-    if map_data and "center" in map_data and map_data["center"] and "zoom" in map_data and map_data["zoom"]:
-        # Only save map view if we're not currently processing
-        if not st.session_state.get('processing_new_location', False):
-            st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-            st.session_state.map_zoom = map_data["zoom"]
+    map_data = st_folium(
+        m,
+        use_container_width=True,
+        height=600,
+        key="interactive_map",
+        returned_objects=["last_clicked"]
+    )
 
     # Process clicks from the map
-    new_location_clicked = False
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         # Get the coordinates from the click
         clicked_lat = map_data["last_clicked"]["lat"]
@@ -636,30 +488,12 @@ with main_col1:
         # Only update if this is a new location
         current_point = st.session_state.selected_point
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
-            # Save current map view BEFORE starting to process
-            if map_data and "center" in map_data and map_data["center"] and "zoom" in map_data and map_data["zoom"]:
-                st.session_state.saved_map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-                st.session_state.saved_map_zoom = map_data["zoom"]
-            
-            # Mark that we're processing a new location
-            st.session_state.processing_new_location = True
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
             # Clear filtered wells to trigger recalculation
             st.session_state.filtered_wells = None
-            new_location_clicked = True
-
-    # Process new location clicks while preserving map view
-    if new_location_clicked:
-        # Force a rerun to process the new location
-        st.rerun()
-    
-    # Clear processing flag after successful processing and restore map view
-    if st.session_state.get('processing_new_location', False) and st.session_state.filtered_wells is not None:
-        st.session_state.processing_new_location = False
-        # Trigger map view restoration on next render
-        if 'saved_map_center' in st.session_state and 'saved_map_zoom' in st.session_state:
-            st.session_state.restore_map_view = True
+            # Force a rerun to process the new location
+            st.rerun()
 
     # Add comprehensive well data summary report
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:

@@ -212,7 +212,7 @@ class GeologyService:
     def get_sedimentary_polygons(self, center_lat, center_lon, radius_km):
         """
         Fetch sedimentary geological polygons from GNS Science QMAP service
-        Returns GeoJSON of sedimentary areas only
+        Returns GeoJSON of sedimentary areas converted to NZTM coordinates
         """
         print(f"Fetching geological data for center: {center_lat:.4f}, {center_lon:.4f}, radius: {radius_km}km")
         
@@ -294,9 +294,12 @@ class GeologyService:
                                 if len(sedimentary_features) > 0:
                                     print(f"Found {len(sedimentary_features)} sedimentary polygons from layer {i}")
                                     
+                                    # Convert polygons from WGS84 to NZTM coordinates
+                                    converted_features = self._convert_polygons_to_nztm(sedimentary_features)
+                                    
                                     return {
                                         "type": "FeatureCollection",
-                                        "features": sedimentary_features
+                                        "features": converted_features
                                     }
                                 else:
                                     print(f"Layer {i}: No sedimentary features found in {len(data['features'])} total features")
@@ -360,9 +363,10 @@ class GeologyService:
                     sedimentary_gdf = gdf[sedimentary_mask]
                     
                     if not sedimentary_gdf.empty:
-                        # Convert to GeoJSON
-                        geojson_data = json.loads(sedimentary_gdf.to_json())
-                        print(f"Geopandas found {len(geojson_data['features'])} sedimentary polygons")
+                        # Convert to NZTM first, then to GeoJSON
+                        sedimentary_gdf_nztm = sedimentary_gdf.to_crs("EPSG:2193")
+                        geojson_data = json.loads(sedimentary_gdf_nztm.to_json())
+                        print(f"Geopandas found {len(geojson_data['features'])} sedimentary polygons (converted to NZTM)")
                         return geojson_data
                     else:
                         print("Geopandas: No sedimentary features found after filtering")
@@ -396,10 +400,89 @@ class GeologyService:
             print(f"Full error trace: {traceback.format_exc()}")
             return None
 
+    def _convert_polygons_to_nztm(self, features):
+        """
+        Convert polygon coordinates from WGS84 to NZTM (EPSG:2193)
+        """
+        try:
+            import pyproj
+            from pyproj import Transformer
+            
+            # Create transformer from WGS84 to NZTM
+            transformer = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+            
+            converted_features = []
+            
+            for feature in features:
+                try:
+                    geometry = feature.get('geometry', {})
+                    
+                    if geometry.get('type') == 'Polygon':
+                        # Convert polygon coordinates
+                        new_coordinates = []
+                        for ring in geometry['coordinates']:
+                            new_ring = []
+                            for coord in ring:
+                                lon, lat = coord[0], coord[1]
+                                # Transform from WGS84 (lon, lat) to NZTM (x, y)
+                                x, y = transformer.transform(lon, lat)
+                                new_ring.append([x, y])
+                            new_coordinates.append(new_ring)
+                        
+                        # Create new feature with NZTM coordinates
+                        new_feature = {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": new_coordinates
+                            },
+                            "properties": feature.get('properties', {})
+                        }
+                        converted_features.append(new_feature)
+                        
+                    elif geometry.get('type') == 'MultiPolygon':
+                        # Convert multi-polygon coordinates
+                        new_coordinates = []
+                        for polygon in geometry['coordinates']:
+                            new_polygon = []
+                            for ring in polygon:
+                                new_ring = []
+                                for coord in ring:
+                                    lon, lat = coord[0], coord[1]
+                                    # Transform from WGS84 (lon, lat) to NZTM (x, y)
+                                    x, y = transformer.transform(lon, lat)
+                                    new_ring.append([x, y])
+                                new_polygon.append(new_ring)
+                            new_coordinates.append(new_polygon)
+                        
+                        # Create new feature with NZTM coordinates
+                        new_feature = {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "MultiPolygon",
+                                "coordinates": new_coordinates
+                            },
+                            "properties": feature.get('properties', {})
+                        }
+                        converted_features.append(new_feature)
+                        
+                except Exception as e:
+                    print(f"Error converting feature to NZTM: {e}")
+                    continue
+            
+            print(f"Converted {len(converted_features)} geological polygons to NZTM coordinates")
+            return converted_features
+            
+        except Exception as e:
+            print(f"Error in coordinate conversion: {e}")
+            # Return original features if conversion fails
+            return features
+
     def clip_interpolation_by_polygons(self, interpolation_geojson, geological_polygons):
         """
         Clip interpolation results using actual geological polygon boundaries
         This uses geometric intersection to properly mask the interpolated surface
+        Note: geological_polygons should be in NZTM coordinates to match interpolation data
         """
         if not interpolation_geojson or not geological_polygons:
             raise ValueError("Both interpolation data and geological polygons are required for clipping")
@@ -415,6 +498,7 @@ class GeologyService:
         import json
         
         print(f"Clipping {len(interpolation_geojson['features'])} interpolation features using {len(geological_polygons['features'])} sedimentary polygons...")
+        print("Note: Assuming geological polygons are in NZTM coordinates to match interpolation data")
         
         # Convert geological polygons to Shapely geometries and union them
         sedimentary_polygons = []
@@ -442,7 +526,7 @@ class GeologyService:
             raise ValueError("No valid sedimentary polygons found after processing")
         
         # Union all sedimentary polygons into a single mask
-        print("Creating sedimentary mask...")
+        print("Creating sedimentary mask from NZTM polygons...")
         sedimentary_mask = unary_union(sedimentary_polygons)
         
         if sedimentary_mask.is_empty:

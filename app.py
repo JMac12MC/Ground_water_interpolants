@@ -75,31 +75,54 @@ with st.sidebar:
         with st.spinner("Loading Canterbury wells data..."):
             st.session_state.wells_data = load_nz_govt_data()
     
-    # Load soil drainage polygons
-    if st.session_state.soil_polygons is None:
+    # Load soil drainage polygons from database
+    if st.session_state.soil_polygons is None and st.session_state.polygon_db is not None:
         try:
-            with st.spinner("Loading soil drainage polygons..."):
-                # Set GDAL config to restore corrupted .shx files
-                import os
-                os.environ['SHAPE_RESTORE_SHX'] = 'YES'
+            with st.spinner("Loading merged soil drainage polygons from database..."):
+                # Get stored merged polygons from database
+                stored_polygons = st.session_state.polygon_db.get_all_polygons()
                 
-                # Load the shapefile with error handling
-                soil_gdf = gpd.read_file("attached_assets/s-map-soil-drainage-aug-2024_1749379069732.shp")
-                
-                # Convert to WGS84 if needed
-                if soil_gdf.crs and soil_gdf.crs.to_string() != 'EPSG:4326':
-                    soil_gdf = soil_gdf.to_crs('EPSG:4326')
-                elif not soil_gdf.crs:
-                    # Assume it's already in WGS84 if no CRS is defined
-                    soil_gdf.crs = 'EPSG:4326'
-                
-                # Take a sample of polygons for performance (first 1100)
-                st.session_state.soil_polygons = soil_gdf.head(1100)
-                st.success(f"Loaded {len(st.session_state.soil_polygons)} soil drainage polygons")
+                if stored_polygons:
+                    # Convert stored polygons back to GeoDataFrame
+                    from shapely import wkt
+                    geometries = []
+                    properties = []
+                    
+                    for polygon in stored_polygons:
+                        # Parse WKT geometry
+                        geom = wkt.loads(polygon['geometry_wkt'])
+                        geometries.append(geom)
+                        
+                        # Combine polygon info with properties
+                        prop_dict = polygon['properties'] if polygon['properties'] else {}
+                        prop_dict.update({
+                            'polygon_name': polygon['polygon_name'],
+                            'area_km2': polygon['area_km2'],
+                            'well_count': polygon['well_count'],
+                            'avg_yield': polygon['avg_yield']
+                        })
+                        properties.append(prop_dict)
+                    
+                    # Create GeoDataFrame
+                    st.session_state.soil_polygons = gpd.GeoDataFrame(
+                        properties, 
+                        geometry=geometries, 
+                        crs='EPSG:4326'
+                    )
+                    
+                    st.success(f"Loaded {len(st.session_state.soil_polygons)} merged soil drainage polygons from database")
+                else:
+                    st.warning("No merged soil polygons found in database.")
+                    st.info("Run the polygon processing script first to merge and store soil polygons.")
+                    st.session_state.soil_polygons = None
+                    
         except Exception as e:
-            st.warning(f"Could not load soil polygons: {str(e)}")
-            st.warning("Shapefile may be corrupted. You can try re-uploading the shapefile data.")
+            st.warning(f"Could not load soil polygons from database: {str(e)}")
+            st.info("Fallback: Run the polygon processing script to merge and store soil polygons.")
             st.session_state.soil_polygons = None
+    elif st.session_state.polygon_db is None:
+        st.warning("Database connection not available. Cannot load soil polygons.")
+        st.session_state.soil_polygons = None
 
     # Advanced option for uploading custom data (hidden in expander)
     with st.expander("Upload Custom Data (Optional)"):
@@ -148,9 +171,57 @@ with st.sidebar:
     if 'variogram_model' not in st.session_state:
         st.session_state.variogram_model = 'spherical'
 
+    # Soil Polygon Processing Section
+    if st.session_state.polygon_db is not None:
+        st.header("Soil Polygon Processing")
+        
+        # Check if we have processed polygons
+        stored_polygons = st.session_state.polygon_db.get_all_polygons()
+        has_soil_polygons = any(p for p in stored_polygons if 'Soil_Drainage_' in p['polygon_name'])
+        
+        if not has_soil_polygons:
+            st.warning("No merged soil polygons found in database")
+            st.info("Click below to process and merge soil polygons from the shapefile")
+            
+            if st.button("🌱 Process & Merge Soil Polygons", use_container_width=True):
+                with st.spinner("Processing soil polygons... This may take a few minutes..."):
+                    # Import and run the processing function
+                    try:
+                        from process_soil_polygons_once import process_and_store_soil_polygons
+                        success = process_and_store_soil_polygons()
+                        
+                        if success:
+                            st.success("✅ Soil polygons processed and stored successfully!")
+                            # Clear cached soil polygons to reload from database
+                            st.session_state.soil_polygons = None
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to process soil polygons")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+        else:
+            soil_polygon_count = len([p for p in stored_polygons if 'Soil_Drainage_' in p['polygon_name']])
+            st.success(f"✅ {soil_polygon_count} merged soil polygons available")
+            
+            if st.button("🔄 Reprocess Soil Polygons", use_container_width=True):
+                if st.checkbox("Confirm reprocessing (this will replace existing soil polygons)"):
+                    with st.spinner("Reprocessing soil polygons..."):
+                        try:
+                            from process_soil_polygons_once import process_and_store_soil_polygons
+                            success = process_and_store_soil_polygons()
+                            
+                            if success:
+                                st.success("✅ Soil polygons reprocessed successfully!")
+                                st.session_state.soil_polygons = None
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to reprocess soil polygons")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+
     # Database Management Section
     if st.session_state.polygon_db is not None:
-        st.header("Polygon Database")
+        st.header("Analysis Database")
         
         # Show database statistics
         stats = st.session_state.polygon_db.get_polygon_statistics()

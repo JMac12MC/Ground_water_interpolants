@@ -13,8 +13,8 @@ class GeologyService:
     """
     
     def __init__(self):
-        # GNS Science QMAP WMS service URL
-        self.wms_base_url = "https://gis.canterburymaps.govt.nz/arcgis/rest/services/Geology/GNS_QMAP_250k/MapServer"
+        # GNS Science QMAP WMS service URL - updated to new source
+        self.wms_base_url = "https://services1.arcgisonline.co.nz/arcgis/rest/services/GNS/qmapgeology/MapServer"
         
         # Sedimentary unit codes that are suitable for groundwater (to be expanded based on actual data)
         self.sedimentary_codes = [
@@ -140,7 +140,7 @@ class GeologyService:
             if unit_code.startswith(pattern):
                 return False
         
-        # Sedimentary patterns suitable for groundwater
+        # Sedimentary patterns suitable for groundwater (expanded for nationwide NZ)
         sedimentary_patterns = [
             'Q1',   # Recent alluvium, gravels
             'Q2',   # Late Pleistocene alluvium
@@ -151,7 +151,14 @@ class GeologyService:
             'QS',   # Swamp deposits
             'QL',   # Lake deposits
             'QM',   # Marine deposits
-            'T',    # Tertiary sediments (unless specified as volcanic)
+            'QA',   # Alluvial deposits
+            'QC',   # Colluvial deposits
+            'QE',   # Estuarine deposits
+            'T',    # Tertiary sediments
+            'N',    # Neogene sediments
+            'P',    # Paleogene sediments
+            'C',    # Cretaceous sediments (some)
+            'J',    # Jurassic sediments (some)
         ]
         
         # Check if unit code starts with any sedimentary patterns
@@ -210,6 +217,38 @@ class GeologyService:
         
         return R * c
     
+    def clip_interpolation_by_geology(self, geojson_data):
+        """
+        Clip interpolation results by removing features in hard rock areas
+        This is applied AFTER interpolation is generated
+        """
+        if not geojson_data or 'features' not in geojson_data:
+            return geojson_data
+        
+        clipped_features = []
+        
+        for feature in geojson_data['features']:
+            # Get centroid of the polygon/triangle
+            coords = feature['geometry']['coordinates'][0]
+            
+            # Calculate centroid lat/lon
+            lats = [coord[1] for coord in coords[:-1]]  # Exclude last duplicate point
+            lons = [coord[0] for coord in coords[:-1]]
+            centroid_lat = sum(lats) / len(lats)
+            centroid_lon = sum(lons) / len(lons)
+            
+            # Check geology at centroid
+            unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
+            
+            # Only keep features in sedimentary areas
+            if self.is_sedimentary(unit_code):
+                clipped_features.append(feature)
+        
+        return {
+            "type": "FeatureCollection",
+            "features": clipped_features
+        }
+
     def filter_wells_by_geology(self, wells_df):
         """
         Filter wells to only include those in sedimentary areas

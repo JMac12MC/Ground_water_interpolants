@@ -269,9 +269,13 @@ with main_col1:
                     show_variance=st.session_state.show_kriging_variance,
                     auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
                     variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                    use_geological_masking=use_geological_masking,
-                    geology_service=st.session_state.geology_service if use_geological_masking else None
+                    use_geological_masking=False,  # Don't constraint interpolation
+                    geology_service=None
                 )
+
+                # Apply geological clipping AFTER interpolation generation
+                if use_geological_masking and geojson_data:
+                    geojson_data = st.session_state.geology_service.clip_interpolation_by_geology(geojson_data)
 
                 progress_bar.progress(75)
 

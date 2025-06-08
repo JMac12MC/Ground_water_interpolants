@@ -751,13 +751,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         cell_lat = lat_points[cell_mask]
                         cell_lon = lon_points[cell_mask]
 
-                        # Check geological suitability if masking is enabled
-                        is_geologically_suitable = True
-                        if use_geological_masking and geology_service:
-                            unit_code = geology_service.get_geology_at_point(cell_lat[np.argmax(cell_values)], cell_lon[np.argmax(cell_values)])
-                            is_geologically_suitable = geology_service.is_sedimentary(unit_code)
-
-                        if np.max(cell_values) > 0.01 and is_geologically_suitable:  # Only add significant values and in sedimentary areas
+                        if np.max(cell_values) > 0.01:  # Only add significant values
                             max_idx = np.argmax(cell_values)
                             heat_data.append([
                                 float(cell_lat[max_idx]),  # Latitude

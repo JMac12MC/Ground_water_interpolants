@@ -213,8 +213,20 @@ class GeologyService:
         """
         Fetch sedimentary geological polygons from GNS Science QMAP service
         Returns GeoJSON of sedimentary areas only
+        
+        Input coordinates should be in WGS84 (EPSG:4326) format
         """
-        print(f"Fetching geological data for center: {center_lat:.4f}, {center_lon:.4f}, radius: {radius_km}km")
+        print("="*60)
+        print("🌐 GEOLOGICAL POLYGON FETCH")
+        print("="*60)
+        print(f"📍 Input coordinates: {center_lat:.6f}, {center_lon:.6f} (WGS84)")
+        print(f"📏 Search radius: {radius_km}km")
+        
+        # Validate that coordinates are in reasonable WGS84 ranges for New Zealand
+        if not (-48 <= center_lat <= -34) or not (166 <= center_lon <= 179):
+            print(f"⚠️  WARNING: Coordinates appear to be outside New Zealand bounds!")
+            print(f"   Expected: Lat -48 to -34, Lon 166 to 179")
+            print(f"   Received: Lat {center_lat}, Lon {center_lon}")
         
         try:
             # Calculate bounding box for the search area
@@ -229,7 +241,8 @@ class GeologyService:
             min_lon = center_lon - lon_radius
             max_lon = center_lon + lon_radius
             
-            print(f"Search bounding box: {min_lat:.4f}, {min_lon:.4f} to {max_lat:.4f}, {max_lon:.4f}")
+            print(f"🗺️  WGS84 Bounding box: {min_lat:.6f}, {min_lon:.6f} to {max_lat:.6f}, {max_lon:.6f}")
+            print(f"📦 Bbox width: {max_lon - min_lon:.6f}°, height: {max_lat - min_lat:.6f}°")
             
             # Try multiple layer endpoints to find geological data
             layer_endpoints = [
@@ -263,10 +276,29 @@ class GeologyService:
                             data = response.json()
                             
                             if 'features' in data and len(data['features']) > 0:
-                                print(f"Found {len(data['features'])} geological features from layer {i}")
+                                print(f"📊 Found {len(data['features'])} geological features from layer {i}")
+                                
+                                # Log first few features for debugging
+                                for idx, feature in enumerate(data['features'][:3]):
+                                    props = feature.get('properties', {})
+                                    geom = feature.get('geometry', {})
+                                    print(f"   Feature {idx+1}: {geom.get('type', 'Unknown')} with {len(props)} properties")
+                                    
+                                    # Show available property keys
+                                    prop_keys = list(props.keys())[:10]  # First 10 keys
+                                    print(f"     Available properties: {prop_keys}")
+                                    
+                                    # Check coordinate bounds for first feature
+                                    if geom.get('type') == 'Polygon' and 'coordinates' in geom:
+                                        coords = geom['coordinates'][0][:5]  # First 5 coordinates
+                                        if coords:
+                                            lons = [c[0] for c in coords]
+                                            lats = [c[1] for c in coords]
+                                            print(f"     Coord sample: Lon {min(lons):.4f}-{max(lons):.4f}, Lat {min(lats):.4f}-{max(lats):.4f}")
                                 
                                 # Filter for sedimentary features only
                                 sedimentary_features = []
+                                all_unit_codes = []
                                 
                                 for feature in data['features']:
                                     try:
@@ -283,23 +315,39 @@ class GeologyService:
                                                     properties.get('MAINLITH') or
                                                     'Unknown')
                                         
+                                        all_unit_codes.append(str(unit_code))
+                                        
                                         # Only keep sedimentary polygons
                                         if self.is_sedimentary(str(unit_code)):
                                             sedimentary_features.append(feature)
                                             
                                     except Exception as e:
-                                        print(f"Error processing geological feature: {e}")
+                                        print(f"⚠️  Error processing geological feature: {e}")
                                         continue
                                 
+                                # Show what unit codes we found
+                                unique_codes = list(set(all_unit_codes))[:10]
+                                print(f"🪨 Unit codes found: {unique_codes}")
+                                
                                 if len(sedimentary_features) > 0:
-                                    print(f"Found {len(sedimentary_features)} sedimentary polygons from layer {i}")
+                                    print(f"✅ Found {len(sedimentary_features)} sedimentary polygons from layer {i}")
+                                    
+                                    # Validate polygon geometry
+                                    valid_polygons = 0
+                                    for feature in sedimentary_features:
+                                        geom = feature.get('geometry', {})
+                                        if geom.get('type') in ['Polygon', 'MultiPolygon'] and 'coordinates' in geom:
+                                            valid_polygons += 1
+                                    
+                                    print(f"📐 {valid_polygons}/{len(sedimentary_features)} polygons have valid geometry")
                                     
                                     return {
                                         "type": "FeatureCollection",
                                         "features": sedimentary_features
                                     }
                                 else:
-                                    print(f"Layer {i}: No sedimentary features found in {len(data['features'])} total features")
+                                    print(f"❌ Layer {i}: No sedimentary features found in {len(data['features'])} total features")
+                                    print(f"   Available unit codes: {unique_codes[:5]}")  # Show first 5 for debugging
                             else:
                                 print(f"Layer {i}: No features found in response")
                                 

@@ -67,38 +67,34 @@ with st.sidebar:
     if st.session_state.wells_data is None:
         with st.spinner("Loading Canterbury wells data..."):
             st.session_state.wells_data = load_nz_govt_data()
-
-    # Load soil drainage polygons from database (fast loading)
+    
+    # Load soil drainage polygons from database or process from shapefile
     if st.session_state.soil_polygons is None:
-        database_url = os.environ.get('DATABASE_URL')
-
-        if database_url:
-            # Load from database - this should be instant if polygons were pre-processed
-            try:
-                from database_setup import load_soil_polygons_from_database
-
-                with st.spinner("Loading soil drainage polygons from database..."):
-                    st.session_state.soil_polygons = load_soil_polygons_from_database()
-
-                    if st.session_state.soil_polygons is not None:
-                        st.success(f"✅ Loaded {len(st.session_state.soil_polygons)} merged soil drainage polygons from database")
-                    else:
-                        st.warning("⚠️ No soil polygons found in database.")
-                        st.info("💡 Run `python process_soil_polygons_once.py` to process and store polygons in the database")
-
-            except Exception as e:
-                st.error(f"Database connection error: {str(e)}")
-                st.info("💡 Make sure you have created a PostgreSQL database in Replit")
-                st.session_state.soil_polygons = None
-        else:
-            # No database available - show setup instructions
-            st.warning("⚠️ No database configured for soil polygon storage")
-            st.info("""
-            **To enable soil polygon features:**
-            1. Create a PostgreSQL database in Replit (Database tab)
-            2. Run `python process_soil_polygons_once.py` to process polygons
-            3. Restart your app to load polygons from database
-            """)
+        try:
+            from database_setup import load_soil_polygons_from_database, create_database_tables, load_and_merge_soil_polygons
+            
+            with st.spinner("Loading soil drainage polygons from database..."):
+                # Try to load from database first
+                st.session_state.soil_polygons = load_soil_polygons_from_database()
+                
+                if st.session_state.soil_polygons is None:
+                    st.info("No soil polygons found in database. Processing from shapefile...")
+                    
+                    # Create database tables if they don't exist
+                    if create_database_tables():
+                        # Process and store polygons
+                        if load_and_merge_soil_polygons():
+                            # Load the processed polygons
+                            st.session_state.soil_polygons = load_soil_polygons_from_database()
+                
+                if st.session_state.soil_polygons is not None:
+                    st.success(f"Loaded {len(st.session_state.soil_polygons)} merged soil drainage polygons from database")
+                else:
+                    st.warning("Could not load or process soil polygons")
+                    
+        except Exception as e:
+            st.warning(f"Could not load soil polygons: {str(e)}")
+            st.warning("Make sure you have created a PostgreSQL database in Replit")
             st.session_state.soil_polygons = None
 
     # Advanced option for uploading custom data (hidden in expander)
@@ -107,13 +103,13 @@ with st.sidebar:
         if uploaded_file is not None:
             with st.spinner("Loading custom data..."):
                 st.session_state.wells_data = load_custom_data(uploaded_file)
-
+    
     # Database management for soil polygons
     with st.expander("Soil Polygon Database Management"):
         st.write("**Manage soil polygon data in PostgreSQL database**")
-
+        
         col1, col2 = st.columns(2)
-
+        
         with col1:
             if st.button("Refresh from Database"):
                 from database_setup import load_soil_polygons_from_database
@@ -123,11 +119,11 @@ with st.sidebar:
                 else:
                     st.warning("No polygons found in database")
                 st.rerun()
-
+        
         with col2:
             if st.button("Reprocess Shapefile"):
                 from database_setup import create_database_tables, load_and_merge_soil_polygons, load_soil_polygons_from_database
-
+                
                 with st.spinner("Reprocessing all soil polygons..."):
                     if create_database_tables() and load_and_merge_soil_polygons():
                         st.session_state.soil_polygons = load_soil_polygons_from_database()
@@ -135,7 +131,7 @@ with st.sidebar:
                     else:
                         st.error("Failed to reprocess polygons")
                 st.rerun()
-
+        
         # Show database status
         if st.session_state.soil_polygons is not None:
             total_area = st.session_state.soil_polygons['area_sqkm'].sum() if 'area_sqkm' in st.session_state.soil_polygons.columns else 0
@@ -211,17 +207,17 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
-
+    
     # Add explanation for kriging uncertainty
     if visualization_method == "Kriging Uncertainty (Yield)":
         st.info("""
         **Kriging Uncertainty Visualization**
-
+        
         This shows the prediction uncertainty (standard deviation) of the kriging interpolation:
         - 🟢 **Green areas**: High confidence in yield predictions
         - 🟡 **Yellow areas**: Medium confidence 
         - 🔴 **Red areas**: Low confidence, more wells needed
-
+        
         Use this to identify where additional wells would most improve prediction accuracy.
         """)
 
@@ -609,7 +605,7 @@ with main_col1:
                 (wells_data['status'].str.contains('Active', case=False, na=False)) &
                 (~wells_data.get('is_dry_well', False))
             ]
-
+            
             # Use depth_to_groundwater if available, otherwise fall back to depth
             if 'depth_to_groundwater' in active_productive_wells.columns and not active_productive_wells['depth_to_groundwater'].isna().all():
                 depth_column = 'depth_to_groundwater'
@@ -617,12 +613,12 @@ with main_col1:
             else:
                 depth_column = 'depth'
                 active_depths = active_productive_wells[depth_column].dropna()
-
+            
             if len(active_depths) > 0:
                 avg_depth = active_depths.mean()
                 min_depth = active_depths.min()
                 max_depth = active_depths.max()
-
+                
                 st.metric(
                     "Average Depth to Groundwater", 
                     f"{avg_depth:.1f} m",
@@ -661,7 +657,7 @@ with main_col1:
                 f"{active_wells_count}",
                 help="Active wells with yield > 0 L/s"
             )
-
+            
             if len(active_depths) > 0:
                 st.metric(
                     "Groundwater Depth Range", 
@@ -722,7 +718,7 @@ with main_col2:
     st.subheader("Analysis Results")
 
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
-# Show the total wells count in radius
+        # Show the total wells count in radius
         st.write(f"**Total wells in radius:** {st.session_state.total_wells_in_radius}")
 
         # Calculate statistics using ALL wells in the radius (no yield filtering)

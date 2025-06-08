@@ -11,6 +11,7 @@ import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid
+from database import PolygonDatabase
 
 # Set page configuration
 st.set_page_config(
@@ -55,6 +56,12 @@ if 'soil_polygons' not in st.session_state:
     st.session_state.soil_polygons = None
 if 'show_soil_polygons' not in st.session_state:
     st.session_state.show_soil_polygons = True
+if 'polygon_db' not in st.session_state:
+    try:
+        st.session_state.polygon_db = PolygonDatabase()
+    except Exception as e:
+        st.error(f"Database connection failed: {e}")
+        st.session_state.polygon_db = None
 
 # Add banner
 add_banner()
@@ -140,6 +147,81 @@ with st.sidebar:
         st.session_state.auto_fit_variogram = False
     if 'variogram_model' not in st.session_state:
         st.session_state.variogram_model = 'spherical'
+
+    # Database Management Section
+    if st.session_state.polygon_db is not None:
+        st.header("Polygon Database")
+        
+        # Show database statistics
+        stats = st.session_state.polygon_db.get_polygon_statistics()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Stored Polygons", stats['total_polygons'])
+            st.metric("Total Wells", stats['total_wells'])
+        with col2:
+            st.metric("Avg Area (km²)", f"{stats['avg_area_km2']:.2f}" if stats['avg_area_km2'] else "0.00")
+            st.metric("Avg Yield", f"{stats['overall_avg_yield']:.2f}" if stats['overall_avg_yield'] else "N/A")
+        
+        # Save current analysis button
+        if st.session_state.selected_point and st.session_state.filtered_wells is not None:
+            polygon_name = st.text_input("Polygon Name", 
+                                       value=f"Analysis_{st.session_state.selected_point[0]:.4f}_{st.session_state.selected_point[1]:.4f}")
+            
+            if st.button("Save Current Analysis"):
+                if polygon_name:
+                    # Create a circular polygon around the selected point
+                    from shapely.geometry import Point
+                    center_point = Point(st.session_state.selected_point[1], st.session_state.selected_point[0])
+                    # Convert radius from km to degrees (rough approximation)
+                    radius_deg = st.session_state.search_radius / 111.0
+                    polygon = center_point.buffer(radius_deg)
+                    
+                    # Store in database
+                    properties = {
+                        'search_radius_km': st.session_state.search_radius,
+                        'visualization_method': visualization_method,
+                        'analysis_date': pd.Timestamp.now().isoformat()
+                    }
+                    
+                    polygon_id = st.session_state.polygon_db.store_merged_polygon(
+                        polygon_name=polygon_name,
+                        geometry=polygon,
+                        properties=properties,
+                        well_data=st.session_state.filtered_wells
+                    )
+                    
+                    if polygon_id:
+                        st.success(f"Analysis saved as '{polygon_name}' (ID: {polygon_id})")
+                    else:
+                        st.error("Failed to save analysis")
+                else:
+                    st.warning("Please enter a polygon name")
+        
+        # Load saved analyses
+        with st.expander("Load Saved Analyses"):
+            saved_polygons = st.session_state.polygon_db.get_all_polygons()
+            if saved_polygons:
+                for polygon in saved_polygons:
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"**{polygon['polygon_name']}**")
+                        st.write(f"Wells: {polygon['well_count']}, Area: {polygon['area_km2']:.2f} km²")
+                    with col2:
+                        if st.button(f"Load", key=f"load_{polygon['id']}"):
+                            # Load the saved analysis
+                            st.session_state.selected_point = (polygon['centroid_lat'], polygon['centroid_lng'])
+                            if 'search_radius_km' in polygon['properties']:
+                                st.session_state.search_radius = polygon['properties']['search_radius_km']
+                            st.experimental_rerun()
+                    with col3:
+                        if st.button(f"Delete", key=f"delete_{polygon['id']}"):
+                            if st.session_state.polygon_db.delete_polygon(polygon['id']):
+                                st.success("Deleted")
+                                st.experimental_rerun()
+                            else:
+                                st.error("Delete failed")
+            else:
+                st.write("No saved analyses found")
 
     # Update session state based on selection
     if visualization_method == "Standard Kriging (Yield)":

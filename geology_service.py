@@ -255,7 +255,7 @@ class GeologyService:
                         'maxRecordCount': 2000  # Increase limit
                     }
                     
-                    response = requests.get(url, params=params, timeout=30)
+                    response = requests.get(url, params=params, timeout=45)
                     print(f"Layer {i} response: {response.status_code}")
                     
                     if response.status_code == 200:
@@ -314,13 +314,24 @@ class GeologyService:
                             print(f"Response content: {response.text[:200]}")
                         
                 except requests.exceptions.Timeout:
-                    print(f"Layer {i}: Request timeout after 30 seconds")
+                    print(f"Layer {i}: Request timeout after 45 seconds - service may be slow")
+                    continue
+                except requests.exceptions.ConnectionError as e:
+                    print(f"Layer {i}: Connection error - {e}")
+                    continue
+                except requests.exceptions.HTTPError as e:
+                    print(f"Layer {i}: HTTP error - {e}")
                     continue
                 except requests.exceptions.RequestException as e:
                     print(f"Layer {i}: Network error - {e}")
                     continue
+                except json.JSONDecodeError as e:
+                    print(f"Layer {i}: Invalid JSON response - {e}")
+                    continue
                 except Exception as e:
                     print(f"Layer {i}: Unexpected error - {e}")
+                    import traceback
+                    print(f"Full traceback: {traceback.format_exc()}")
                     continue
             
             # If ArcGIS REST API failed, try using geopandas with the base service
@@ -363,9 +374,20 @@ class GeologyService:
                 import traceback
                 print(f"Full geopandas error: {traceback.format_exc()}")
             
-            print("No geological polygon data available from any source")
-            print(f"Search area: {center_lat:.4f}, {center_lon:.4f} with {radius_km}km radius")
-            print(f"Bounding box used: {min_lat:.4f}, {min_lon:.4f} to {max_lat:.4f}, {max_lon:.4f}")
+            print("="*60)
+            print("⚠️  NO GEOLOGICAL POLYGON DATA AVAILABLE")
+            print("="*60)
+            print(f"📍 Search center: {center_lat:.4f}, {center_lon:.4f}")
+            print(f"📏 Search radius: {radius_km}km")
+            print(f"📦 Bounding box: {min_lat:.4f}, {min_lon:.4f} to {max_lat:.4f}, {max_lon:.4f}")
+            print(f"🌐 Service base URL: {self.wms_base_url}")
+            print("🔍 Tried all available layer endpoints (0, 1, 2)")
+            print("🔧 Tried both ArcGIS REST API and geopandas approaches")
+            print("💡 This may indicate:")
+            print("   - No geological data coverage in this area")
+            print("   - Service connectivity issues")
+            print("   - Coordinate system mismatch")
+            print("="*60)
             return None
                 
         except Exception as e:

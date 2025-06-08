@@ -562,14 +562,6 @@ with main_col1:
             )
 
         with col3:
-            # Show active wells count and depth range for active productive wells
-            active_wells_count = len(active_productive_wells)
-            st.metric(
-                "Active Wells", 
-                f"{active_wells_count}",
-                help="Active wells with yield > 0 L/s"
-            )
-            
             if len(active_depths) > 0:
                 st.metric(
                     "Groundwater Depth Range", 

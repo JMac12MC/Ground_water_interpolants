@@ -10,6 +10,7 @@ import requests
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid
+from geology_service import GeologyService
 
 # Set page configuration
 st.set_page_config(
@@ -33,6 +34,8 @@ def add_banner():
 # Initialize session state variables
 if 'selected_point' not in st.session_state:
     st.session_state.selected_point = None
+if 'geology_service' not in st.session_state:
+    st.session_state.geology_service = GeologyService()
 if 'zoom_level' not in st.session_state:
     st.session_state.zoom_level = 10
 if 'wells_data' not in st.session_state:
@@ -266,7 +269,8 @@ with main_col1:
                     show_variance=st.session_state.show_kriging_variance,
                     auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
                     variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                    use_geological_masking=use_geological_masking
+                    use_geological_masking=use_geological_masking,
+                    geology_service=st.session_state.geology_service if use_geological_masking else None
                 )
 
                 progress_bar.progress(75)

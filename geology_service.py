@@ -45,10 +45,7 @@ class GeologyService:
             return self.geology_cache[cache_key]
         
         try:
-            # Convert lat/lon to map coordinates (this is approximate)
-            # For Canterbury, we'll use a simple approach
-            
-            # GetFeatureInfo request URL
+            # GetFeatureInfo request URL - try different layer configurations
             url = f"{self.wms_base_url}/identify"
             
             params = {
@@ -56,14 +53,14 @@ class GeologyService:
                 'geometry': f"{lon},{lat}",
                 'geometryType': 'esriGeometryPoint',
                 'sr': '4326',  # WGS84
-                'layers': 'all:0',
-                'tolerance': 1,
+                'layers': 'visible:0',  # Try visible layers
+                'tolerance': 3,  # Increase tolerance
                 'mapExtent': f"{lon-0.01},{lat-0.01},{lon+0.01},{lat+0.01}",
                 'imageDisplay': '400,400,96',
                 'returnGeometry': 'false'
             }
             
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
@@ -71,31 +68,93 @@ class GeologyService:
                 if 'results' in data and len(data['results']) > 0:
                     # Extract geological unit from the first result
                     attributes = data['results'][0].get('attributes', {})
-                    unit_code = attributes.get('UNIT_CODE', attributes.get('ROCK_UNIT', 'Unknown'))
+                    
+                    # Try multiple attribute names
+                    unit_code = (attributes.get('UNIT_CODE') or 
+                                attributes.get('ROCK_UNIT') or 
+                                attributes.get('GEOLOGY') or 
+                                attributes.get('UNIT') or
+                                attributes.get('FORMATION') or
+                                'Unknown')
+                    
+                    # Debug print for first few queries
+                    if len(self.geology_cache) < 5:
+                        print(f"Geology at {lat:.4f}, {lon:.4f}: {unit_code} (attributes: {list(attributes.keys())})")
                     
                     self.geology_cache[cache_key] = unit_code
                     return unit_code
+                else:
+                    # Try alternative layer specification
+                    params['layers'] = 'all'
+                    response2 = requests.get(url, params=params, timeout=15)
+                    if response2.status_code == 200:
+                        data2 = response2.json()
+                        if 'results' in data2 and len(data2['results']) > 0:
+                            attributes = data2['results'][0].get('attributes', {})
+                            unit_code = (attributes.get('UNIT_CODE') or 
+                                        attributes.get('ROCK_UNIT') or 
+                                        'Unknown')
+                            self.geology_cache[cache_key] = unit_code
+                            return unit_code
             
-            # If API call fails, return Unknown
-            self.geology_cache[cache_key] = 'Unknown'
-            return 'Unknown'
+            # If API call fails, assume hard rock to be conservative with masking
+            print(f"No geology data found for {lat:.4f}, {lon:.4f}, assuming hard rock")
+            self.geology_cache[cache_key] = 'HARD_ROCK'
+            return 'HARD_ROCK'
             
         except Exception as e:
             print(f"Error fetching geology data for {lat}, {lon}: {e}")
-            self.geology_cache[cache_key] = 'Unknown'
-            return 'Unknown'
+            # Assume hard rock on error to be conservative
+            self.geology_cache[cache_key] = 'HARD_ROCK'
+            return 'HARD_ROCK'
     
     def is_sedimentary(self, unit_code):
         """
         Check if a geological unit code represents sedimentary rock suitable for groundwater
         """
         if unit_code == 'Unknown':
-            # If we can't determine geology, default to allowing (conservative approach)
-            return True
+            # If we can't determine geology, default to restricting (conservative for masking)
+            return False
+        
+        # Convert to uppercase for consistent comparison
+        unit_code = str(unit_code).upper()
+        
+        # Explicitly identify hard rock formations that should be masked
+        hard_rock_patterns = [
+            'K',    # Igneous intrusions
+            'G',    # Granite
+            'A',    # Andesite
+            'B',    # Basalt
+            'R',    # Rhyolite
+            'D',    # Diorite
+            'V',    # Volcanic rocks
+            'I',    # Igneous
+            'M',    # Metamorphic
+            'S',    # Schist
+            'GN',   # Gneiss
+            'SL',   # Slate
+        ]
+        
+        # Check if it's a hard rock formation
+        for pattern in hard_rock_patterns:
+            if unit_code.startswith(pattern):
+                return False
+        
+        # Sedimentary patterns suitable for groundwater
+        sedimentary_patterns = [
+            'Q1',   # Recent alluvium, gravels
+            'Q2',   # Late Pleistocene alluvium
+            'Q3',   # Mid Pleistocene alluvium
+            'Q4',   # Early Pleistocene alluvium
+            'QF',   # Fan deposits
+            'QG',   # Glacial outwash
+            'QS',   # Swamp deposits
+            'QL',   # Lake deposits
+            'QM',   # Marine deposits
+            'T',    # Tertiary sediments (unless specified as volcanic)
+        ]
         
         # Check if unit code starts with any sedimentary patterns
-        sedimentary_patterns = ['Q', 'Ts', 'Ms', 'Pz']  # Quaternary, Tertiary sediments, etc.
-        
         for pattern in sedimentary_patterns:
             if unit_code.startswith(pattern):
                 return True

@@ -86,8 +86,8 @@ with st.sidebar:
                     # Assume it's already in WGS84 if no CRS is defined
                     soil_gdf.crs = 'EPSG:4326'
                 
-                # Take a sample of polygons for performance (first 100)
-                st.session_state.soil_polygons = soil_gdf.head(100)
+                # Take a sample of polygons for performance (first 1100)
+                st.session_state.soil_polygons = soil_gdf.head(1100)
                 st.success(f"Loaded {len(st.session_state.soil_polygons)} soil drainage polygons")
         except Exception as e:
             st.warning(f"Could not load soil polygons: {str(e)}")

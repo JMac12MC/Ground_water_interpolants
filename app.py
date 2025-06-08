@@ -212,12 +212,12 @@ with st.sidebar:
                             st.session_state.selected_point = (polygon['centroid_lat'], polygon['centroid_lng'])
                             if 'search_radius_km' in polygon['properties']:
                                 st.session_state.search_radius = polygon['properties']['search_radius_km']
-                            st.experimental_rerun()
+                            st.rerun()
                     with col3:
                         if st.button(f"Delete", key=f"delete_{polygon['id']}"):
                             if st.session_state.polygon_db.delete_polygon(polygon['id']):
                                 st.success("Deleted")
-                                st.experimental_rerun()
+                                st.rerun()
                             else:
                                 st.error("Delete failed")
             else:

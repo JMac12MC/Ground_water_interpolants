@@ -297,7 +297,8 @@ with main_col1:
                     method=st.session_state.interpolation_method,
                     show_variance=st.session_state.show_kriging_variance,
                     auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                    variogram_model=st.session_state.get('variogram_model', 'spherical')
+                    variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                    soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
                 )
 
                 progress_bar.progress(75)

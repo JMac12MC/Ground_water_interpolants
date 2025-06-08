@@ -6,8 +6,11 @@ import matplotlib.pyplot as plt
 from scipy.spatial import Voronoi, voronoi_plot_2d
 from sklearn.ensemble import RandomForestRegressor
 from pykrige.ok import OrdinaryKriging
+from shapely.geometry import Point, Polygon, MultiPolygon
+from shapely.ops import unary_union
+import geopandas as gpd
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical'):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -267,6 +270,51 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     grid_lats = (grid_y[mask].ravel() / km_per_degree_lat) + center_lat
     grid_lons = (grid_x[mask].ravel() / km_per_degree_lon) + center_lon
 
+    # Apply spatial clipping to soil polygons if provided
+    soil_mask = None
+    merged_soil_geometry = None
+    
+    if soil_polygons is not None and len(soil_polygons) > 0:
+        try:
+            # Create a unified geometry from all soil polygons
+            # First, ensure we have valid geometries
+            valid_geometries = []
+            for idx, row in soil_polygons.iterrows():
+                if row.geometry and row.geometry.is_valid:
+                    valid_geometries.append(row.geometry)
+            
+            if valid_geometries:
+                # Merge all polygons into a single multipolygon
+                merged_soil_geometry = unary_union(valid_geometries)
+                
+                # Create a mask for points that fall within soil polygons
+                soil_mask = np.zeros(len(grid_lats), dtype=bool)
+                
+                for i, (lat, lon) in enumerate(zip(grid_lats, grid_lons)):
+                    point = Point(lon, lat)
+                    soil_mask[i] = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                
+                # Apply the mask to filter interpolation points
+                if np.any(soil_mask):
+                    # Keep only points within soil polygons
+                    grid_lats = grid_lats[soil_mask]
+                    grid_lons = grid_lons[soil_mask]
+                    interpolated_z = interpolated_z[soil_mask]
+                    
+                    # Also update kriging variance if available
+                    if show_variance and kriging_variance is not None:
+                        kriging_variance = kriging_variance[soil_mask]
+                    
+                    print(f"Clipped interpolation to {len(grid_lats)} points within soil drainage areas")
+                else:
+                    print("No interpolation points fall within soil drainage areas")
+                    return {"type": "FeatureCollection", "features": []}
+            else:
+                print("No valid soil polygon geometries found for clipping")
+        except Exception as e:
+            print(f"Error during soil polygon clipping: {e}")
+            # Continue without clipping if there's an error
+
     # Build the GeoJSON structure
     features = []
 
@@ -406,7 +454,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     return geojson
 
-def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging'):
+def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging', soil_polygons=None):
     """
     Generate heat map data using various interpolation techniques
 
@@ -683,6 +731,41 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # Convert back to lat/lon coordinates
         lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
         lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+
+        # Apply spatial clipping to soil polygons if provided
+        if soil_polygons is not None and len(soil_polygons) > 0:
+            try:
+                # Create a unified geometry from all soil polygons
+                valid_geometries = []
+                for idx, row in soil_polygons.iterrows():
+                    if row.geometry and row.geometry.is_valid:
+                        valid_geometries.append(row.geometry)
+                
+                if valid_geometries:
+                    # Merge all polygons into a single multipolygon
+                    merged_soil_geometry = unary_union(valid_geometries)
+                    
+                    # Create a mask for points that fall within soil polygons
+                    soil_mask = np.zeros(len(lat_points), dtype=bool)
+                    
+                    for i, (lat, lon) in enumerate(zip(lat_points, lon_points)):
+                        point = Point(lon, lat)
+                        soil_mask[i] = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                    
+                    # Apply the mask to filter interpolation points
+                    if np.any(soil_mask):
+                        lat_points = lat_points[soil_mask]
+                        lon_points = lon_points[soil_mask]
+                        interpolated_z = interpolated_z[soil_mask]
+                        print(f"Clipped heat map to {len(lat_points)} points within soil drainage areas")
+                    else:
+                        print("No heat map points fall within soil drainage areas")
+                        return []
+                else:
+                    print("No valid soil polygon geometries found for heat map clipping")
+            except Exception as e:
+                print(f"Error during soil polygon clipping for heat map: {e}")
+                # Continue without clipping if there's an error
 
         # Create heat map data
         heat_data = []

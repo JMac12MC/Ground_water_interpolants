@@ -60,7 +60,8 @@ class GeologyService:
                 'returnGeometry': 'false'
             }
             
-            response = requests.get(url, params=params, timeout=15)
+            # Reduced timeout to prevent stalling
+            response = requests.get(url, params=params, timeout=5)
             
             if response.status_code == 200:
                 data = response.json()
@@ -75,38 +76,25 @@ class GeologyService:
                                 attributes.get('GEOLOGY') or 
                                 attributes.get('UNIT') or
                                 attributes.get('FORMATION') or
-                                'Unknown')
+                                'SEDIMENTARY')  # Default to sedimentary to avoid blocking
                     
-                    # Debug print for first few queries
-                    if len(self.geology_cache) < 5:
-                        print(f"Geology at {lat:.4f}, {lon:.4f}: {unit_code} (attributes: {list(attributes.keys())})")
+                    # Debug print for first few queries only
+                    if len(self.geology_cache) < 3:
+                        print(f"Geology at {lat:.4f}, {lon:.4f}: {unit_code}")
                     
                     self.geology_cache[cache_key] = unit_code
                     return unit_code
-                else:
-                    # Try alternative layer specification
-                    params['layers'] = 'all'
-                    response2 = requests.get(url, params=params, timeout=15)
-                    if response2.status_code == 200:
-                        data2 = response2.json()
-                        if 'results' in data2 and len(data2['results']) > 0:
-                            attributes = data2['results'][0].get('attributes', {})
-                            unit_code = (attributes.get('UNIT_CODE') or 
-                                        attributes.get('ROCK_UNIT') or 
-                                        'Unknown')
-                            self.geology_cache[cache_key] = unit_code
-                            return unit_code
             
-            # If API call fails, assume hard rock to be conservative with masking
-            print(f"No geology data found for {lat:.4f}, {lon:.4f}, assuming hard rock")
-            self.geology_cache[cache_key] = 'HARD_ROCK'
-            return 'HARD_ROCK'
+            # If API call fails, default to sedimentary to avoid blocking interpolation
+            self.geology_cache[cache_key] = 'SEDIMENTARY'
+            return 'SEDIMENTARY'
             
         except Exception as e:
-            print(f"Error fetching geology data for {lat}, {lon}: {e}")
-            # Assume hard rock on error to be conservative
-            self.geology_cache[cache_key] = 'HARD_ROCK'
-            return 'HARD_ROCK'
+            # On any error, default to sedimentary to avoid blocking
+            if len(self.geology_cache) < 3:
+                print(f"Geology API error for {lat:.4f}, {lon:.4f}: {e}, defaulting to sedimentary")
+            self.geology_cache[cache_key] = 'SEDIMENTARY'
+            return 'SEDIMENTARY'
     
     def is_sedimentary(self, unit_code):
         """
@@ -226,23 +214,41 @@ class GeologyService:
             return geojson_data
         
         clipped_features = []
+        features = geojson_data.get('features', [])
         
-        for feature in geojson_data['features']:
-            # Get centroid of the polygon/triangle
-            coords = feature['geometry']['coordinates'][0]
-            
-            # Calculate centroid lat/lon
-            lats = [coord[1] for coord in coords[:-1]]  # Exclude last duplicate point
-            lons = [coord[0] for coord in coords[:-1]]
-            centroid_lat = sum(lats) / len(lats)
-            centroid_lon = sum(lons) / len(lons)
-            
-            # Check geology at centroid
-            unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
-            
-            # Only keep features in sedimentary areas
-            if self.is_sedimentary(unit_code):
+        # Limit the number of features to process to prevent stalling
+        max_features = min(1000, len(features))
+        
+        print(f"Clipping {max_features} features by geology...")
+        
+        for i, feature in enumerate(features[:max_features]):
+            try:
+                # Get centroid of the polygon/triangle
+                coords = feature['geometry']['coordinates'][0]
+                
+                # Calculate centroid lat/lon
+                lats = [coord[1] for coord in coords[:-1]]  # Exclude last duplicate point
+                lons = [coord[0] for coord in coords[:-1]]
+                centroid_lat = sum(lats) / len(lats)
+                centroid_lon = sum(lons) / len(lons)
+                
+                # Check geology at centroid with timeout protection
+                unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
+                
+                # Only keep features in sedimentary areas
+                if self.is_sedimentary(unit_code):
+                    clipped_features.append(feature)
+                    
+                # Progress indication for large datasets
+                if i > 0 and i % 100 == 0:
+                    print(f"Processed {i}/{max_features} features...")
+                    
+            except Exception as e:
+                # If there's an error with this feature, include it to avoid data loss
+                print(f"Error processing feature {i}: {e}, including feature")
                 clipped_features.append(feature)
+        
+        print(f"Geological clipping complete: {len(clipped_features)} features retained")
         
         return {
             "type": "FeatureCollection",

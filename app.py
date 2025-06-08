@@ -273,10 +273,21 @@ with main_col1:
                     geology_service=None
                 )
 
+                status_text.write("🗺️ **Step 2/4:** Generating interpolation grid...")
+                progress_bar.progress(50)
+                
                 # Apply geological clipping AFTER interpolation generation
                 if use_geological_masking and geojson_data:
-                    geojson_data = st.session_state.geology_service.clip_interpolation_by_geology(geojson_data)
+                    status_text.write("🪨 **Step 3/4:** Applying geological constraints...")
+                    progress_bar.progress(65)
+                    
+                    try:
+                        geojson_data = st.session_state.geology_service.clip_interpolation_by_geology(geojson_data)
+                    except Exception as e:
+                        st.warning(f"Geological masking failed: {e}. Showing unmasked interpolation.")
+                        print(f"Geological masking error: {e}")
 
+                status_text.write("🎨 **Step 4/4:** Rendering visualization...")
                 progress_bar.progress(75)
 
                 if geojson_data and len(geojson_data['features']) > 0:

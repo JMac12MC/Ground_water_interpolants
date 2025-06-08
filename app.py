@@ -196,47 +196,44 @@ with main_col1:
         test_center_lat, test_center_lon = center_location
         test_radius = 25  # 25km radius for testing
         
-        with st.spinner("Loading geological data for verification..."):
-            try:
-                test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
-                    test_center_lat, test_center_lon, test_radius
-                )
+        try:
+            test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
+                test_center_lat, test_center_lon, test_radius
+            )
+            
+            if test_polygons and 'features' in test_polygons and len(test_polygons['features']) > 0:
+                # Add geological polygons to map for visualization
+                folium.GeoJson(
+                    data=test_polygons,
+                    name='Sedimentary Geology (Preview)',
+                    style_function=lambda feature: {
+                        'fillColor': 'lightgreen',
+                        'color': 'darkgreen',
+                        'weight': 2,
+                        'fillOpacity': 0.4,
+                        'dashArray': '5, 5'  # Dashed lines to show it's preview
+                    },
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION', 'ROCKTYPE', 'MAINLITH'],
+                        aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:', 'Rock Type:', 'Main Lithology:'],
+                        labels=True,
+                        sticky=False
+                    )
+                ).add_to(m)
                 
-                if test_polygons and 'features' in test_polygons and len(test_polygons['features']) > 0:
-                    # Add geological polygons to map for visualization
-                    folium.GeoJson(
-                        data=test_polygons,
-                        name='Sedimentary Geology (Preview)',
-                        style_function=lambda feature: {
-                            'fillColor': 'lightgreen',
-                            'color': 'darkgreen',
-                            'weight': 2,
-                            'fillOpacity': 0.4,
-                            'dashArray': '5, 5'  # Dashed lines to show it's preview
-                        },
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=[field for field in ['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION', 'ROCKTYPE', 'MAINLITH'] 
-                                   if any(field in feature.get('properties', {}) for feature in test_polygons['features'])],
-                            aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:', 'Rock Type:', 'Main Lithology:'],
-                            labels=True,
-                            sticky=False
-                        )
-                    ).add_to(m)
-                    
-                    st.success(f"✅ Geological data loaded: {len(test_polygons['features'])} sedimentary polygons found")
-                    
-                    # Show sample geological attributes for debugging
-                    if len(test_polygons['features']) > 0:
-                        sample_props = test_polygons['features'][0].get('properties', {})
-                        if sample_props:
-                            st.info(f"**Sample geological attributes:** {dict(list(sample_props.items())[:5])}")
-                else:
-                    st.warning(f"⚠️ No geological polygon data found for area around {test_center_lat:.4f}, {test_center_lon:.4f}")
-                    
-            except Exception as e:
-                st.error(f"❌ Error fetching geological data: {e}")
-                import traceback
-                st.error(f"**Debug trace:** {traceback.format_exc()}")
+                st.success(f"✅ Geological preview loaded: {len(test_polygons['features'])} sedimentary polygons found")
+                
+                # Show sample geological attributes for debugging
+                if len(test_polygons['features']) > 0:
+                    sample_props = test_polygons['features'][0].get('properties', {})
+                    if sample_props:
+                        st.info(f"**Sample geological attributes:** {dict(list(sample_props.items())[:5])}")
+            else:
+                st.warning(f"⚠️ No geological polygon data found for preview area around {test_center_lat:.4f}, {test_center_lon:.4f}")
+                
+        except Exception as e:
+            st.error(f"❌ Error fetching geological preview data: {e}")
+            st.error(f"**Error details:** {str(e)}")
     
     # Add a note about the geological preview
     if use_geological_masking:

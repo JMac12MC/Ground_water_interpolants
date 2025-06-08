@@ -101,61 +101,65 @@ class GeologyService:
         Check if a geological unit code represents sedimentary rock suitable for groundwater
         """
         if unit_code == 'Unknown':
-            # If we can't determine geology, default to restricting (conservative for masking)
-            return False
+            # If we can't determine geology, be more permissive for Canterbury region
+            return True  # Changed to True to be less restrictive
         
         # Convert to uppercase for consistent comparison
         unit_code = str(unit_code).upper()
         
         # Explicitly identify hard rock formations that should be masked
         hard_rock_patterns = [
-            'K',    # Igneous intrusions
-            'G',    # Granite
-            'A',    # Andesite
-            'B',    # Basalt
-            'R',    # Rhyolite
-            'D',    # Diorite
-            'V',    # Volcanic rocks
-            'I',    # Igneous
-            'M',    # Metamorphic
-            'S',    # Schist
-            'GN',   # Gneiss
-            'SL',   # Slate
+            'GRANITE',
+            'ANDESITE', 
+            'BASALT',
+            'RHYOLITE',
+            'DIORITE',
+            'VOLCANIC',
+            'IGNEOUS',
+            'METAMORPHIC',
+            'SCHIST',
+            'GNEISS',
+            'SLATE',
+            'GREYWACKE',  # Common hard rock in Canterbury
         ]
         
-        # Check if it's a hard rock formation
+        # Check if it contains hard rock terms
         for pattern in hard_rock_patterns:
-            if unit_code.startswith(pattern):
+            if pattern in unit_code:
                 return False
         
-        # Sedimentary patterns suitable for groundwater (expanded for nationwide NZ)
+        # Canterbury-specific sedimentary patterns (more inclusive)
         sedimentary_patterns = [
-            'Q1',   # Recent alluvium, gravels
-            'Q2',   # Late Pleistocene alluvium
-            'Q3',   # Mid Pleistocene alluvium
-            'Q4',   # Early Pleistocene alluvium
-            'QF',   # Fan deposits
-            'QG',   # Glacial outwash
-            'QS',   # Swamp deposits
-            'QL',   # Lake deposits
-            'QM',   # Marine deposits
-            'QA',   # Alluvial deposits
-            'QC',   # Colluvial deposits
-            'QE',   # Estuarine deposits
-            'T',    # Tertiary sediments
-            'N',    # Neogene sediments
-            'P',    # Paleogene sediments
-            'C',    # Cretaceous sediments (some)
-            'J',    # Jurassic sediments (some)
+            'Q',     # All Quaternary deposits
+            'ALLUVIUM',
+            'GRAVEL',
+            'SAND',
+            'SILT',
+            'CLAY',
+            'LOESS',
+            'OUTWASH',
+            'FLUVIAL',
+            'MARINE',
+            'LACUSTRINE',
+            'SWAMP',
+            'TERRACE',
+            'FAN',
+            'DELTA',
+            'COASTAL',
+            'ESTUARINE',
+            'SEDIMENT',
+            'DEPOSIT',
+            'FORMATION',
         ]
         
-        # Check if unit code starts with any sedimentary patterns
+        # Check if unit code contains any sedimentary terms
         for pattern in sedimentary_patterns:
-            if unit_code.startswith(pattern):
+            if pattern in unit_code:
                 return True
         
-        # Also check explicit sedimentary codes
-        return unit_code in self.sedimentary_codes
+        # Be more permissive - if it doesn't match hard rock patterns, assume sedimentary
+        # This is better for groundwater assessment in Canterbury
+        return True
     
     def get_sedimentary_mask(self, center_lat, center_lon, radius_km, resolution=50):
         """
@@ -210,6 +214,8 @@ class GeologyService:
         Fetch sedimentary geological polygons from GNS Science QMAP service
         Returns GeoJSON of sedimentary areas only
         """
+        print(f"Fetching geological data for center: {center_lat:.4f}, {center_lon:.4f}, radius: {radius_km}km")
+        
         try:
             # Calculate bounding box for the search area
             km_per_degree_lat = 111.0
@@ -223,18 +229,18 @@ class GeologyService:
             min_lon = center_lon - lon_radius
             max_lon = center_lon + lon_radius
             
+            print(f"Search bounding box: {min_lat:.4f}, {min_lon:.4f} to {max_lat:.4f}, {max_lon:.4f}")
+            
             # Try multiple layer endpoints to find geological data
             layer_endpoints = [
                 f"{self.wms_base_url}/0/query",  # Layer 0
                 f"{self.wms_base_url}/1/query",  # Layer 1
                 f"{self.wms_base_url}/2/query",  # Layer 2
-                f"{self.wms_base_url}/query"     # Generic query endpoint
             ]
             
             for i, url in enumerate(layer_endpoints):
                 try:
-                    print(f"Trying geological data from layer {i} at URL: {url}")
-                    print(f"Bounding box: {min_lat:.4f}, {min_lon:.4f} to {max_lat:.4f}, {max_lon:.4f}")
+                    print(f"Trying geological data from layer {i}...")
                     
                     params = {
                         'f': 'geojson',  # Request GeoJSON format directly
@@ -249,77 +255,79 @@ class GeologyService:
                         'maxRecordCount': 2000  # Increase limit
                     }
                     
-                    response = requests.get(url, params=params, timeout=30)
-                    
-                    print(f"Layer {i} response status: {response.status_code}")
+                    response = requests.get(url, params=params, timeout=15)
+                    print(f"Layer {i} response: {response.status_code}")
                     
                     if response.status_code == 200:
                         try:
                             data = response.json()
-                            print(f"Layer {i} JSON parsed successfully")
-                        except Exception as json_error:
-                            print(f"Layer {i} JSON parse error: {json_error}")
-                            # Print first 500 chars of response for debugging
-                            print(f"Response preview: {response.text[:500]}")
-                            continue
-                        
-                        if 'features' in data and len(data['features']) > 0:
-                            print(f"Found {len(data['features'])} geological features from layer {i}")
                             
-                            # Filter for sedimentary features only
-                            sedimentary_features = []
-                            
-                            for feature in data['features']:
-                                try:
-                                    # Get properties from GeoJSON format
-                                    properties = feature.get('properties', {})
-                                    
-                                    # Get unit code from various possible field names
-                                    unit_code = (properties.get('UNIT_CODE') or 
-                                                properties.get('ROCK_UNIT') or 
-                                                properties.get('GEOLOGY') or 
-                                                properties.get('UNIT') or
-                                                properties.get('FORMATION') or
-                                                properties.get('ROCKTYPE') or
-                                                properties.get('MAINLITH') or
-                                                'Unknown')
-                                    
-                                    # Only keep sedimentary polygons
-                                    if self.is_sedimentary(str(unit_code)):
-                                        sedimentary_features.append(feature)
-                                        
-                                except Exception as e:
-                                    print(f"Error processing geological feature: {e}")
-                                    continue
-                            
-                            if len(sedimentary_features) > 0:
-                                print(f"Found {len(sedimentary_features)} sedimentary polygons out of {len(data['features'])} total geological features")
+                            if 'features' in data and len(data['features']) > 0:
+                                print(f"Found {len(data['features'])} geological features from layer {i}")
                                 
-                                return {
-                                    "type": "FeatureCollection",
-                                    "features": sedimentary_features
-                                }
+                                # Filter for sedimentary features only
+                                sedimentary_features = []
+                                
+                                for feature in data['features']:
+                                    try:
+                                        # Get properties from GeoJSON format
+                                        properties = feature.get('properties', {})
+                                        
+                                        # Get unit code from various possible field names
+                                        unit_code = (properties.get('UNIT_CODE') or 
+                                                    properties.get('ROCK_UNIT') or 
+                                                    properties.get('GEOLOGY') or 
+                                                    properties.get('UNIT') or
+                                                    properties.get('FORMATION') or
+                                                    properties.get('ROCKTYPE') or
+                                                    properties.get('MAINLITH') or
+                                                    'Unknown')
+                                        
+                                        # Only keep sedimentary polygons
+                                        if self.is_sedimentary(str(unit_code)):
+                                            sedimentary_features.append(feature)
+                                            
+                                    except Exception as e:
+                                        print(f"Error processing geological feature: {e}")
+                                        continue
+                                
+                                if len(sedimentary_features) > 0:
+                                    print(f"Found {len(sedimentary_features)} sedimentary polygons from layer {i}")
+                                    
+                                    return {
+                                        "type": "FeatureCollection",
+                                        "features": sedimentary_features
+                                    }
+                                else:
+                                    print(f"Layer {i}: No sedimentary features found in {len(data['features'])} total features")
                             else:
-                                print(f"Layer {i}: No sedimentary features found, trying next layer...")
-                        else:
-                            print(f"Layer {i}: No features found, trying next layer...")
+                                print(f"Layer {i}: No features found in response")
+                                
+                        except json.JSONDecodeError as json_error:
+                            print(f"Layer {i} JSON parse error: {json_error}")
+                            print(f"Response preview: {response.text[:200]}")
+                            continue
+                            
                     else:
-                        print(f"Layer {i}: HTTP {response.status_code}, trying next layer...")
+                        print(f"Layer {i}: HTTP {response.status_code}")
+                        if response.status_code != 200:
+                            print(f"Response content: {response.text[:200]}")
                         
+                except requests.exceptions.Timeout:
+                    print(f"Layer {i}: Request timeout")
+                    continue
                 except Exception as e:
-                    print(f"Error with layer {i}: {e}, trying next layer...")
+                    print(f"Error with layer {i}: {e}")
                     continue
             
-            # If no layers worked, try using geopandas directly
-            print("Trying direct geopandas approach...")
+            # If ArcGIS REST API failed, try using geopandas with the base service
+            print("Trying geopandas approach as fallback...")
             try:
                 import geopandas as gpd
                 
-                # Use the ArcGIS FeatureServer endpoint with geopandas
+                # Try reading from the base service URL
                 gdf_url = f"{self.wms_base_url}/0"
-                
-                # Create a bounding box geometry for spatial filter
-                bbox_geom = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+                print(f"Attempting geopandas read from: {gdf_url}")
                 
                 gdf = gpd.read_file(
                     gdf_url,
@@ -328,27 +336,37 @@ class GeologyService:
                 
                 if not gdf.empty:
                     print(f"Geopandas found {len(gdf)} geological features")
+                    print(f"Available columns: {list(gdf.columns)}")
                     
                     # Filter for sedimentary features
-                    sedimentary_gdf = gdf[gdf.apply(
-                        lambda row: self.is_sedimentary(str(row.get('UNIT_CODE', row.get('GEOLOGY', 'Unknown')))), 
+                    sedimentary_mask = gdf.apply(
+                        lambda row: self.is_sedimentary(str(row.get('UNIT_CODE', row.get('GEOLOGY', row.get('UNIT', 'Unknown'))))), 
                         axis=1
-                    )]
+                    )
+                    sedimentary_gdf = gdf[sedimentary_mask]
                     
                     if not sedimentary_gdf.empty:
                         # Convert to GeoJSON
                         geojson_data = json.loads(sedimentary_gdf.to_json())
                         print(f"Geopandas found {len(geojson_data['features'])} sedimentary polygons")
                         return geojson_data
+                    else:
+                        print("Geopandas: No sedimentary features found after filtering")
+                else:
+                    print("Geopandas: No features found in bounding box")
                     
             except Exception as e:
                 print(f"Geopandas approach failed: {e}")
+                import traceback
+                print(f"Full geopandas error: {traceback.format_exc()}")
             
             print("No geological polygon data available from any source")
             return None
                 
         except Exception as e:
             print(f"Error fetching geological polygons: {e}")
+            import traceback
+            print(f"Full error trace: {traceback.format_exc()}")
             return None
 
     def clip_interpolation_by_polygons(self, interpolation_geojson, geological_polygons):

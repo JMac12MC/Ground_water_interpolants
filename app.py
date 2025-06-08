@@ -321,12 +321,9 @@ with main_col1:
                     progress_bar.progress(65)
                     
                     # Get sedimentary polygons from geological service
-                    selected_lat, selected_lon = st.session_state.selected_point
-                    print(f"🎯 Fetching geology for selected point: {selected_lat:.6f}, {selected_lon:.6f}")
-                    
                     sedimentary_polygons = st.session_state.geology_service.get_sedimentary_polygons(
-                        selected_lat, 
-                        selected_lon, 
+                        st.session_state.selected_point[0], 
+                        st.session_state.selected_point[1], 
                         st.session_state.search_radius
                     )
                     

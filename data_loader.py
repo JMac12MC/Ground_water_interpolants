@@ -169,17 +169,9 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             
             # First try to use NZTM coordinates - these should be more accurate 
             if 'NZTMX' in raw_df.columns and 'NZTMY' in raw_df.columns:
-                print("🗺️  Converting NZTM coordinates to WGS84...")
-                
                 # Convert to numeric, handling any non-numeric values
                 nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
                 nztmy = pd.to_numeric(raw_df['NZTMY'], errors='coerce')
-                
-                # Show coordinate ranges for debugging
-                valid_nztm = ~nztmx.isna() & ~nztmy.isna()
-                if valid_nztm.any():
-                    print(f"📊 NZTM X range: {nztmx[valid_nztm].min():.0f} to {nztmx[valid_nztm].max():.0f}")
-                    print(f"📊 NZTM Y range: {nztmy[valid_nztm].min():.0f} to {nztmy[valid_nztm].max():.0f}")
                 
                 # Use pyproj to perform proper coordinate transformation
                 # NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326)
@@ -204,17 +196,6 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                     
                     # Transform coordinates using pyproj
                     transformed_lon, transformed_lat = transformer.transform(valid_x, valid_y)
-                    
-                    # Validate transformation results
-                    valid_wgs84 = (
-                        (transformed_lat >= -48) & (transformed_lat <= -34) &
-                        (transformed_lon >= 166) & (transformed_lon <= 179)
-                    )
-                    
-                    print(f"✅ Transformed {len(transformed_lat)} coordinates")
-                    print(f"📍 WGS84 Lat range: {transformed_lat.min():.4f} to {transformed_lat.max():.4f}")
-                    print(f"📍 WGS84 Lon range: {transformed_lon.min():.4f} to {transformed_lon.max():.4f}")
-                    print(f"✓ {valid_wgs84.sum()}/{len(valid_wgs84)} coordinates within NZ bounds")
                     
                     # Assign transformed coordinates back to arrays
                     lon[valid_coords] = transformed_lon

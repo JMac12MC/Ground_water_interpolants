@@ -226,10 +226,6 @@ with main_col1:
 
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Preserve current map view during processing
-                preserved_center = st.session_state.get('map_center', center_location)
-                preserved_zoom = st.session_state.get('map_zoom', st.session_state.zoom_level)
-
                 # Show progress overlay during processing with better visibility
                 progress_container = st.container()
                 with progress_container:
@@ -398,10 +394,6 @@ with main_col1:
                     progress_bar.progress(100)
                     status_text.text('Heatmap generation complete!')
 
-                    # Restore map view after processing
-                    st.session_state.map_center = preserved_center
-                    st.session_state.map_zoom = preserved_zoom
-
                     # Clear progress indicators after a moment
                     import time
                     time.sleep(0.5)
@@ -485,30 +477,29 @@ with main_col1:
         st.session_state.map_center = [-43.5321, 172.6362]
         st.session_state.map_zoom = 8
 
-    # Store current map state before rendering
-    current_center = st.session_state.get('map_center', [-43.5321, 172.6362])
-    current_zoom = st.session_state.get('map_zoom', 8)
+    # Don't force center/zoom if we're processing - let st_folium maintain its state naturally
+    map_params = {
+        "use_container_width": True,
+        "height": 600,
+        "key": "interactive_map",
+        "returned_objects": ["last_clicked"]
+    }
 
-    map_data = st_folium(m, use_container_width=True, height=600,
-                       key="interactive_map", 
-                       returned_objects=["last_clicked"],
-                       center=current_center,
-                       zoom=current_zoom)
+    # Only set center/zoom if we're restoring after processing
+    if st.session_state.get('restore_map_view', False):
+        map_params["center"] = st.session_state.get('saved_map_center')
+        map_params["zoom"] = st.session_state.get('saved_map_zoom')
+        # Clear the restore flag
+        st.session_state.restore_map_view = False
 
-    # Only update session state if the user explicitly moved/zoomed the map
-    # and we're not in the middle of processing a new location
-    if not st.session_state.get('processing_new_location', False):
-        if map_data and "center" in map_data and map_data["center"]:
-            # Only update if significantly different (user intentionally moved map)
-            new_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-            if (abs(new_center[0] - current_center[0]) > 0.001 or 
-                abs(new_center[1] - current_center[1]) > 0.001):
-                st.session_state.map_center = new_center
-        
-        if map_data and "zoom" in map_data and map_data["zoom"]:
-            # Only update if zoom changed significantly
-            if abs(map_data["zoom"] - current_zoom) > 0.5:
-                st.session_state.map_zoom = map_data["zoom"]
+    map_data = st_folium(m, **map_params)
+
+    # Capture current map view for potential restoration
+    if map_data and "center" in map_data and map_data["center"] and "zoom" in map_data and map_data["zoom"]:
+        # Only save map view if we're not currently processing
+        if not st.session_state.get('processing_new_location', False):
+            st.session_state.map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+            st.session_state.map_zoom = map_data["zoom"]
 
     # Process clicks from the map
     new_location_clicked = False
@@ -520,6 +511,11 @@ with main_col1:
         # Only update if this is a new location
         current_point = st.session_state.selected_point
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
+            # Save current map view BEFORE starting to process
+            if map_data and "center" in map_data and map_data["center"] and "zoom" in map_data and map_data["zoom"]:
+                st.session_state.saved_map_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+                st.session_state.saved_map_zoom = map_data["zoom"]
+            
             # Mark that we're processing a new location
             st.session_state.processing_new_location = True
             # Update session state with the new coordinates
@@ -533,9 +529,12 @@ with main_col1:
         # Force a rerun to process the new location
         st.rerun()
     
-    # Clear processing flag after successful processing
+    # Clear processing flag after successful processing and restore map view
     if st.session_state.get('processing_new_location', False) and st.session_state.filtered_wells is not None:
         st.session_state.processing_new_location = False
+        # Trigger map view restoration on next render
+        if 'saved_map_center' in st.session_state and 'saved_map_zoom' in st.session_state:
+            st.session_state.restore_map_view = True
 
     # Add comprehensive well data summary report
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:

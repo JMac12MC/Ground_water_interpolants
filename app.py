@@ -13,7 +13,7 @@ from interpolation import generate_heat_map_data, generate_geo_json_grid
 
 # Set page configuration
 st.set_page_config(
-    page_title="Groundwater Finder",
+    page_title="Groundwater Mapper",
     page_icon="💧",
     layout="wide",
 )
@@ -24,7 +24,7 @@ def add_banner():
         """
         <div style="text-align: center; margin-bottom: 30px; padding: 40px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white;">
             <h1 style="font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Groundwater Finder</h1>
-            <p style="font-size: 1.2rem; margin-bottom: 0; opacity: 0.9;">Helping farmers locate water resources using scientific data</p>
+            <p style="font-size: 1.2rem; margin-bottom: 0; opacity: 0.9;">Helping you understand water resources using scientific data</p>
         </div>
         """, 
         unsafe_allow_html=True

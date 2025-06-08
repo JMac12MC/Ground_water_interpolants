@@ -7,7 +7,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 from sklearn.ensemble import RandomForestRegressor
 from pykrige.ok import OrdinaryKriging
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical'):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', use_geological_masking=False, geology_service=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -26,6 +26,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         Grid resolution (number of cells per dimension)
     method : str
         Interpolation method to use
+    use_geological_masking : bool
+        Whether to use geological masking to constrain the interpolation
+    geology_service : GeologyService
+        A GeologyService object that provides geological data
 
     Returns:
     --------
@@ -300,8 +304,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                 avg_yield = avg_value  # Keep for backwards compatibility
 
-                # Only add triangles with meaningful values and within our radius
-                if avg_yield > value_threshold:
+                # Check geological suitability if masking is enabled
+                is_geologically_suitable = True
+                if use_geological_masking and geology_service:
+                    # Check the centroid of the triangle
+                    centroid_lat = float(np.mean(vertices[:, 1]))
+                    centroid_lon = float(np.mean(vertices[:, 0]))
+
+                    # Get geology at centroid
+                    unit_code = geology_service.get_geology_at_point(centroid_lat, centroid_lon)
+                    is_geologically_suitable = geology_service.is_sedimentary(unit_code)
+
+                # Only add triangles with meaningful values, within radius, and in sedimentary areas
+                if avg_yield > value_threshold and is_geologically_suitable:
                     # Create polygon for this triangle
                     poly = {
                         "type": "Feature",
@@ -333,6 +348,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         ((cell_lon - center_lon) * km_per_degree_lon)**2
                     )
                     if dist_km > radius_km:
+                        continue
+
+                    # Check geological suitability if masking is enabled
+                    is_geologically_suitable = True
+                    if use_geological_masking and geology_service:
+                        unit_code = geology_service.get_geology_at_point(cell_lat, cell_lon)
+                        is_geologically_suitable = geology_service.is_sedimentary(unit_code)
+
+                    # Skip if not in sedimentary area
+                    if not is_geologically_suitable:
                         continue
 
                     # Find interpolated value for this cell
@@ -406,7 +431,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     return geojson
 
-def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging'):
+def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging', use_geological_masking=False, geology_service=None):
     """
     Generate heat map data using various interpolation techniques
 
@@ -422,6 +447,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         Number of points to generate in each dimension
     method : str
         Interpolation method to use ('kriging', 'idw', 'rf_kriging')
+    use_geological_masking : bool
+        Whether to use geological masking to constrain the interpolation
+    geology_service : GeologyService
+        A GeologyService object that provides geological data
 
     Returns:
     --------
@@ -734,8 +763,14 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             heat_data = []
             # Add interpolated points
             for i in range(len(lat_points)):
-                # Only add points with meaningful values
-                if interpolated_z[i] > 0.01:
+                # Check geological suitability if masking is enabled
+                is_geologically_suitable = True
+                if use_geological_masking and geology_service:
+                    unit_code = geology_service.get_geology_at_point(lat_points[i], lon_points[i])
+                    is_geologically_suitable = geology_service.is_sedimentary(unit_code)
+
+                # Only add points with meaningful values and in sedimentary areas
+                if interpolated_z[i] > 0.01 and is_geologically_suitable:
                     heat_data.append([
                         float(lat_points[i]),  # Latitude
                         float(lon_points[i]),  # Longitude
@@ -764,9 +799,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
     except Exception as e:
         print(f"Interpolation error: {e}")
-        return fallback_interpolation(wells_df, center_point, radius_km)
+        return fallback_interpolation(wells_df, center_point, radius_km, resolution, use_geological_masking, geology_service)
 
-def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
+def fallback_interpolation(wells_df, center_point, radius_km, resolution=50, use_geological_masking=False, geology_service=None):
     """
     Simplified IDW (Inverse Distance Weighting) interpolation as fallback method
     Creates a continuous interpolated surface based on actual well yield values
@@ -823,6 +858,16 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
         )
 
         if dist_from_center_km > radius_km:
+            continue
+
+        # Check geological suitability if masking is enabled
+        is_geologically_suitable = True
+        if use_geological_masking and geology_service:
+            unit_code = geology_service.get_geology_at_point(grid_point_lat, grid_point_lon)
+            is_geologically_suitable = geology_service.is_sedimentary(unit_code)
+
+        # Skip if not in sedimentary area
+        if not is_geologically_suitable:
             continue
 
         # Convert grid point to projected space

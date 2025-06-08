@@ -1,0 +1,65 @@
+To convert your geological polygon data to NZTM (New Zealand Transverse Mercator) coordinate system, you need to reproject the geometries from their current coordinate system (likely WGS84, EPSG:4326) to NZTM (EPSG:2193).
+
+
+Here's a general approach you can integrate into your get_sedimentary_polygons method:
+
+
+
+After fetching the GeoJSON polygons, parse the geometries.
+
+Use a library like pyproj to define the coordinate transformation from EPSG:4326 to EPSG:2193.
+
+Reproject each geometry accordingly.
+
+Return the reprojected geometries as GeoJSON.
+
+
+Below is how you can modify your code snippet to include this reprojection process:
+
+
+python
+ Copy code
+
+import pyproj
+from shapely.geometry import shape, mapping
+from shapely.ops import transform
+
+# Define coordinate systems
+wgs84 = pyproj.CRS('EPSG:4326')
+nztm = pyproj.CRS('EPSG:2193')
+project = pyproj.Transformer.from_crs(wgs84, nztm, always_xy=True).transform
+
+def reproject_geojson(geojson_data):
+    """
+    Reproject GeoJSON features from WGS84 to NZTM
+    """
+    reprojected_features = []
+
+    for feature in geojson_data['features']:
+        geom = shape(feature['geometry'])
+        geom_nztm = transform(project, geom)
+        feature['geometry'] = mapping(geom_nztm)
+        reprojected_features.append(feature)
+    return {'type': 'FeatureCollection', 'features': reprojected_features}
+Usage in your get_sedimentary_polygons method:
+
+
+After fetching the GeoJSON data (e.g., from the requests.get() response), apply the reprojection:
+
+
+python
+ Copy code
+
+response = requests.get(url, params=params, timeout=10)
+if response.status_code == 200:
+    geojson_data = response.json()
+    # Reproject geometries to NZTM
+    geojson_nztm = reproject_geojson(geojson_data)
+    return geojson_nztm
+
+**Summary:**
+- Install `pyproj` if you haven't already (`pip install pyproj`).
+- Reproject the geometries from EPSG:4326 to EPSG:2193.
+- Use the reprojected GeoJSON for your heatmap and subsequent analysis.
+
+**Note:** Make sure the fetched GeoJSON actually contains geometries in WGS84; if it’s in a different coordinate system, adjust accordingly.

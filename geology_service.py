@@ -223,63 +223,119 @@ class GeologyService:
             min_lon = center_lon - lon_radius
             max_lon = center_lon + lon_radius
             
-            # Query QMAP for geological polygons in the area
-            url = f"{self.wms_base_url}/query"
+            # Try multiple layer endpoints to find geological data
+            layer_endpoints = [
+                f"{self.wms_base_url}/0/query",  # Layer 0
+                f"{self.wms_base_url}/1/query",  # Layer 1
+                f"{self.wms_base_url}/2/query",  # Layer 2
+                f"{self.wms_base_url}/query"     # Generic query endpoint
+            ]
             
-            params = {
-                'f': 'json',
-                'where': '1=1',  # Get all features
-                'outFields': '*',
-                'returnGeometry': 'true',
-                'spatialRel': 'esriSpatialRelIntersects',
-                'geometryType': 'esriGeometryEnvelope',
-                'geometry': f"{min_lon},{min_lat},{max_lon},{max_lat}",
-                'inSR': '4326',
-                'outSR': '4326'
-            }
-            
-            print(f"Fetching geological polygons for area...")
-            response = requests.get(url, params=params, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                if 'features' in data and len(data['features']) > 0:
-                    # Filter for sedimentary features only
-                    sedimentary_features = []
+            for i, url in enumerate(layer_endpoints):
+                try:
+                    print(f"Trying geological data from layer {i}...")
                     
-                    for feature in data['features']:
-                        try:
-                            attributes = feature.get('attributes', {})
-                            
-                            # Get unit code from various possible field names
-                            unit_code = (attributes.get('UNIT_CODE') or 
-                                        attributes.get('ROCK_UNIT') or 
-                                        attributes.get('GEOLOGY') or 
-                                        attributes.get('UNIT') or
-                                        attributes.get('FORMATION') or
-                                        'Unknown')
-                            
-                            # Only keep sedimentary polygons
-                            if self.is_sedimentary(unit_code):
-                                sedimentary_features.append(feature)
-                                
-                        except Exception as e:
-                            print(f"Error processing geological feature: {e}")
-                            continue
-                    
-                    print(f"Found {len(sedimentary_features)} sedimentary polygons out of {len(data['features'])} total geological features")
-                    
-                    return {
-                        "type": "FeatureCollection",
-                        "features": sedimentary_features
+                    params = {
+                        'f': 'geojson',  # Request GeoJSON format directly
+                        'where': '1=1',  # Get all features
+                        'outFields': '*',
+                        'returnGeometry': 'true',
+                        'spatialRel': 'esriSpatialRelIntersects',
+                        'geometryType': 'esriGeometryEnvelope',
+                        'geometry': f"{min_lon},{min_lat},{max_lon},{max_lat}",
+                        'inSR': '4326',
+                        'outSR': '4326',
+                        'maxRecordCount': 2000  # Increase limit
                     }
-                else:
-                    print("No geological features found in the area")
-                    return None
-            else:
-                print(f"Failed to fetch geological data: HTTP {response.status_code}")
-                return None
+                    
+                    response = requests.get(url, params=params, timeout=30)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        if 'features' in data and len(data['features']) > 0:
+                            print(f"Found {len(data['features'])} geological features from layer {i}")
+                            
+                            # Filter for sedimentary features only
+                            sedimentary_features = []
+                            
+                            for feature in data['features']:
+                                try:
+                                    # Get properties from GeoJSON format
+                                    properties = feature.get('properties', {})
+                                    
+                                    # Get unit code from various possible field names
+                                    unit_code = (properties.get('UNIT_CODE') or 
+                                                properties.get('ROCK_UNIT') or 
+                                                properties.get('GEOLOGY') or 
+                                                properties.get('UNIT') or
+                                                properties.get('FORMATION') or
+                                                properties.get('ROCKTYPE') or
+                                                properties.get('MAINLITH') or
+                                                'Unknown')
+                                    
+                                    # Only keep sedimentary polygons
+                                    if self.is_sedimentary(str(unit_code)):
+                                        sedimentary_features.append(feature)
+                                        
+                                except Exception as e:
+                                    print(f"Error processing geological feature: {e}")
+                                    continue
+                            
+                            if len(sedimentary_features) > 0:
+                                print(f"Found {len(sedimentary_features)} sedimentary polygons out of {len(data['features'])} total geological features")
+                                
+                                return {
+                                    "type": "FeatureCollection",
+                                    "features": sedimentary_features
+                                }
+                            else:
+                                print(f"Layer {i}: No sedimentary features found, trying next layer...")
+                        else:
+                            print(f"Layer {i}: No features found, trying next layer...")
+                    else:
+                        print(f"Layer {i}: HTTP {response.status_code}, trying next layer...")
+                        
+                except Exception as e:
+                    print(f"Error with layer {i}: {e}, trying next layer...")
+                    continue
+            
+            # If no layers worked, try using geopandas directly
+            print("Trying direct geopandas approach...")
+            try:
+                import geopandas as gpd
+                
+                # Use the ArcGIS FeatureServer endpoint with geopandas
+                gdf_url = f"{self.wms_base_url}/0"
+                
+                # Create a bounding box geometry for spatial filter
+                bbox_geom = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+                
+                gdf = gpd.read_file(
+                    gdf_url,
+                    bbox=(min_lon, min_lat, max_lon, max_lat)
+                )
+                
+                if not gdf.empty:
+                    print(f"Geopandas found {len(gdf)} geological features")
+                    
+                    # Filter for sedimentary features
+                    sedimentary_gdf = gdf[gdf.apply(
+                        lambda row: self.is_sedimentary(str(row.get('UNIT_CODE', row.get('GEOLOGY', 'Unknown')))), 
+                        axis=1
+                    )]
+                    
+                    if not sedimentary_gdf.empty:
+                        # Convert to GeoJSON
+                        geojson_data = json.loads(sedimentary_gdf.to_json())
+                        print(f"Geopandas found {len(geojson_data['features'])} sedimentary polygons")
+                        return geojson_data
+                    
+            except Exception as e:
+                print(f"Geopandas approach failed: {e}")
+            
+            print("No geological polygon data available from any source")
+            return None
                 
         except Exception as e:
             print(f"Error fetching geological polygons: {e}")

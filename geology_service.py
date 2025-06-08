@@ -205,98 +205,304 @@ class GeologyService:
         
         return R * c
     
+    def get_sedimentary_polygons(self, center_lat, center_lon, radius_km):
+        """
+        Fetch sedimentary geological polygons from GNS Science QMAP service
+        Returns GeoJSON of sedimentary areas only
+        """
+        try:
+            # Calculate bounding box for the search area
+            km_per_degree_lat = 111.0
+            km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+            
+            lat_radius = radius_km / km_per_degree_lat
+            lon_radius = radius_km / km_per_degree_lon
+            
+            min_lat = center_lat - lat_radius
+            max_lat = center_lat + lat_radius
+            min_lon = center_lon - lon_radius
+            max_lon = center_lon + lon_radius
+            
+            # Query QMAP for geological polygons in the area
+            url = f"{self.wms_base_url}/query"
+            
+            params = {
+                'f': 'json',
+                'where': '1=1',  # Get all features
+                'outFields': '*',
+                'returnGeometry': 'true',
+                'spatialRel': 'esriSpatialRelIntersects',
+                'geometryType': 'esriGeometryEnvelope',
+                'geometry': f"{min_lon},{min_lat},{max_lon},{max_lat}",
+                'inSR': '4326',
+                'outSR': '4326'
+            }
+            
+            print(f"Fetching geological polygons for area...")
+            response = requests.get(url, params=params, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if 'features' in data and len(data['features']) > 0:
+                    # Filter for sedimentary features only
+                    sedimentary_features = []
+                    
+                    for feature in data['features']:
+                        try:
+                            attributes = feature.get('attributes', {})
+                            
+                            # Get unit code from various possible field names
+                            unit_code = (attributes.get('UNIT_CODE') or 
+                                        attributes.get('ROCK_UNIT') or 
+                                        attributes.get('GEOLOGY') or 
+                                        attributes.get('UNIT') or
+                                        attributes.get('FORMATION') or
+                                        'Unknown')
+                            
+                            # Only keep sedimentary polygons
+                            if self.is_sedimentary(unit_code):
+                                sedimentary_features.append(feature)
+                                
+                        except Exception as e:
+                            print(f"Error processing geological feature: {e}")
+                            continue
+                    
+                    print(f"Found {len(sedimentary_features)} sedimentary polygons out of {len(data['features'])} total geological features")
+                    
+                    return {
+                        "type": "FeatureCollection",
+                        "features": sedimentary_features
+                    }
+                else:
+                    print("No geological features found in the area")
+                    return None
+            else:
+                print(f"Failed to fetch geological data: HTTP {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error fetching geological polygons: {e}")
+            return None
+
+    def clip_interpolation_by_polygons(self, interpolation_geojson, geological_polygons):
+        """
+        Clip interpolation results using actual geological polygon boundaries
+        This uses geometric intersection to properly mask the interpolated surface
+        """
+        if not interpolation_geojson or not geological_polygons:
+            print("No interpolation data or geological polygons available for clipping")
+            return interpolation_geojson
+        
+        if 'features' not in interpolation_geojson or len(interpolation_geojson['features']) == 0:
+            return interpolation_geojson
+            
+        if 'features' not in geological_polygons or len(geological_polygons['features']) == 0:
+            print("No sedimentary polygons found - returning unclipped interpolation")
+            return interpolation_geojson
+        
+        try:
+            from shapely.geometry import Polygon, MultiPolygon, Point
+            from shapely.ops import unary_union
+            import json
+            
+            print(f"Clipping {len(interpolation_geojson['features'])} interpolation features using {len(geological_polygons['features'])} sedimentary polygons...")
+            
+            # Convert geological polygons to Shapely geometries and union them
+            sedimentary_polygons = []
+            
+            for feature in geological_polygons['features']:
+                try:
+                    geom = feature['geometry']
+                    if geom['type'] == 'Polygon':
+                        coords = geom['coordinates']
+                        if len(coords) > 0 and len(coords[0]) >= 4:  # Valid polygon
+                            poly = Polygon(coords[0])
+                            if poly.is_valid:
+                                sedimentary_polygons.append(poly)
+                    elif geom['type'] == 'MultiPolygon':
+                        for poly_coords in geom['coordinates']:
+                            if len(poly_coords) > 0 and len(poly_coords[0]) >= 4:
+                                poly = Polygon(poly_coords[0])
+                                if poly.is_valid:
+                                    sedimentary_polygons.append(poly)
+                except Exception as e:
+                    print(f"Error processing geological polygon: {e}")
+                    continue
+            
+            if not sedimentary_polygons:
+                print("No valid sedimentary polygons found")
+                return interpolation_geojson
+            
+            # Union all sedimentary polygons into a single mask
+            print("Creating sedimentary mask...")
+            try:
+                sedimentary_mask = unary_union(sedimentary_polygons)
+            except Exception as e:
+                print(f"Error creating sedimentary mask: {e}")
+                # Fallback: use individual polygons
+                sedimentary_mask = sedimentary_polygons
+            
+            # Clip interpolation features
+            clipped_features = []
+            
+            for i, feature in enumerate(interpolation_geojson['features']):
+                try:
+                    # Convert interpolation feature to Shapely geometry
+                    geom = feature['geometry']
+                    if geom['type'] == 'Polygon':
+                        coords = geom['coordinates']
+                        if len(coords) > 0 and len(coords[0]) >= 4:
+                            interp_poly = Polygon(coords[0])
+                            
+                            if interp_poly.is_valid:
+                                # Check intersection with sedimentary mask
+                                if isinstance(sedimentary_mask, (Polygon, MultiPolygon)):
+                                    if sedimentary_mask.intersects(interp_poly):
+                                        # Calculate intersection
+                                        intersection = sedimentary_mask.intersection(interp_poly)
+                                        
+                                        if not intersection.is_empty and intersection.area > 0:
+                                            # Convert back to GeoJSON feature
+                                            if intersection.geom_type == 'Polygon':
+                                                new_coords = [list(intersection.exterior.coords)]
+                                                clipped_feature = {
+                                                    "type": "Feature",
+                                                    "geometry": {
+                                                        "type": "Polygon",
+                                                        "coordinates": new_coords
+                                                    },
+                                                    "properties": feature['properties'].copy()
+                                                }
+                                                clipped_features.append(clipped_feature)
+                                            elif intersection.geom_type == 'MultiPolygon':
+                                                # Handle MultiPolygon results
+                                                for poly in intersection.geoms:
+                                                    if poly.area > 0:
+                                                        new_coords = [list(poly.exterior.coords)]
+                                                        clipped_feature = {
+                                                            "type": "Feature",
+                                                            "geometry": {
+                                                                "type": "Polygon",
+                                                                "coordinates": new_coords
+                                                            },
+                                                            "properties": feature['properties'].copy()
+                                                        }
+                                                        clipped_features.append(clipped_feature)
+                                else:
+                                    # Fallback: check against individual polygons
+                                    for sed_poly in sedimentary_polygons:
+                                        if sed_poly.intersects(interp_poly):
+                                            clipped_features.append(feature)
+                                            break
+                    
+                    # Progress indication
+                    if i > 0 and i % 100 == 0:
+                        print(f"Processed {i}/{len(interpolation_geojson['features'])} interpolation features...")
+                        
+                except Exception as e:
+                    print(f"Error processing interpolation feature {i}: {e}")
+                    continue
+            
+            print(f"Geological clipping complete: {len(clipped_features)} features retained from {len(interpolation_geojson['features'])} original features")
+            
+            return {
+                "type": "FeatureCollection",
+                "features": clipped_features
+            }
+            
+        except ImportError:
+            print("Shapely not available - falling back to simple point-based clipping")
+            return self.clip_interpolation_by_geology(interpolation_geojson)
+        except Exception as e:
+            print(f"Error in polygon-based clipping: {e}")
+            print("Falling back to point-based clipping")
+            return self.clip_interpolation_by_geology(interpolation_geojson)
+
     def clip_interpolation_by_geology(self, geojson_data):
         """
-        Clip interpolation results by removing features in hard rock areas
+        Fallback method: Clip interpolation results by removing features in hard rock areas
         This is applied AFTER interpolation is generated
         """
         if not geojson_data or 'features' not in geojson_data:
             return geojson_data
         
+        # Try polygon-based clipping first
+        center_coords = self._estimate_center_from_features(geojson_data['features'])
+        if center_coords:
+            center_lat, center_lon = center_coords
+            radius_km = self._estimate_radius_from_features(geojson_data['features'], center_lat, center_lon)
+            
+            sedimentary_polygons = self.get_sedimentary_polygons(center_lat, center_lon, radius_km)
+            if sedimentary_polygons:
+                return self.clip_interpolation_by_polygons(geojson_data, sedimentary_polygons)
+        
+        # Fallback to original point-based method
+        print("Using fallback point-based geological clipping...")
+        
         clipped_features = []
         features = geojson_data.get('features', [])
         
-        # Drastically limit features and use grid sampling to prevent stalling
-        max_features = min(200, len(features))  # Much smaller limit
+        # Limit features for performance
+        max_features = min(500, len(features))
         
-        print(f"Clipping {max_features} features by geology (optimized)...")
-        
-        # Sample features using grid-based approach instead of processing all
-        if len(features) > max_features:
-            # Sample evenly distributed features across the dataset
-            step = len(features) // max_features
-            sampled_features = [features[i] for i in range(0, len(features), step)][:max_features]
-        else:
-            sampled_features = features
-        
-        # Pre-cache geological data for the area to reduce API calls
-        area_centroids = []
-        for feature in sampled_features[:10]:  # Only check first 10 for area bounds
+        for i, feature in enumerate(features[:max_features]):
             try:
                 coords = feature['geometry']['coordinates'][0]
                 lats = [coord[1] for coord in coords[:-1]]
                 lons = [coord[0] for coord in coords[:-1]]
-                area_centroids.append((sum(lats) / len(lats), sum(lons) / len(lons)))
-            except:
-                continue
-        
-        # If we have area info, check a few sample points to determine geology pattern
-        if area_centroids:
-            sample_geology = []
-            for i, (lat, lon) in enumerate(area_centroids[:3]):  # Only check 3 sample points
-                try:
-                    unit_code = self.get_geology_at_point(lat, lon)
-                    sample_geology.append(self.is_sedimentary(unit_code))
-                except:
-                    sample_geology.append(True)  # Default to sedimentary on error
-            
-            # If most sample points are sedimentary, keep most features
-            if sum(sample_geology) >= len(sample_geology) * 0.6:  # 60% sedimentary threshold
-                print("Area appears mostly sedimentary - keeping most features")
-                return geojson_data  # Return original data
-            
-            # If most are hard rock, remove most features
-            elif sum(sample_geology) < len(sample_geology) * 0.3:  # Less than 30% sedimentary
-                print("Area appears mostly hard rock - removing most features")
-                return {
-                    "type": "FeatureCollection", 
-                    "features": sampled_features[:max_features//4]  # Keep only 25%
-                }
-        
-        # For mixed geology areas, do selective processing
-        for i, feature in enumerate(sampled_features):
-            try:
-                # Only check every 3rd feature to reduce API calls
-                if i % 3 == 0:
-                    coords = feature['geometry']['coordinates'][0]
-                    lats = [coord[1] for coord in coords[:-1]]
-                    lons = [coord[0] for coord in coords[:-1]]
-                    centroid_lat = sum(lats) / len(lats)
-                    centroid_lon = sum(lons) / len(lons)
-                    
-                    # Quick geology check with short timeout
-                    unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
-                    
-                    if self.is_sedimentary(unit_code):
-                        clipped_features.append(feature)
-                        # Include nearby features without checking (assume similar geology)
-                        for j in range(1, 3):
-                            if i + j < len(sampled_features):
-                                clipped_features.append(sampled_features[i + j])
-                else:
-                    # Skip individual checks for performance
-                    continue
+                centroid_lat = sum(lats) / len(lats)
+                centroid_lon = sum(lons) / len(lons)
+                
+                # Check geology at centroid
+                unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
+                
+                if self.is_sedimentary(unit_code):
+                    clipped_features.append(feature)
                     
             except Exception as e:
-                # On any error, include the feature to avoid data loss
+                # On error, include the feature to avoid data loss
                 clipped_features.append(feature)
         
-        print(f"Geological clipping complete: {len(clipped_features)} features retained")
+        print(f"Point-based geological clipping complete: {len(clipped_features)} features retained")
         
         return {
             "type": "FeatureCollection",
             "features": clipped_features
         }
+
+    def _estimate_center_from_features(self, features):
+        """Estimate center coordinates from GeoJSON features"""
+        try:
+            all_lats = []
+            all_lons = []
+            
+            for feature in features[:10]:  # Sample first 10 features
+                coords = feature['geometry']['coordinates'][0]
+                lats = [coord[1] for coord in coords[:-1]]
+                lons = [coord[0] for coord in coords[:-1]]
+                all_lats.extend(lats)
+                all_lons.extend(lons)
+            
+            if all_lats and all_lons:
+                return sum(all_lats) / len(all_lats), sum(all_lons) / len(all_lons)
+        except:
+            pass
+        return None
+
+    def _estimate_radius_from_features(self, features, center_lat, center_lon):
+        """Estimate radius from GeoJSON features"""
+        try:
+            max_dist = 0
+            for feature in features[:10]:
+                coords = feature['geometry']['coordinates'][0]
+                for coord in coords[:-1]:
+                    lon, lat = coord
+                    dist = self._haversine_distance(center_lat, center_lon, lat, lon)
+                    max_dist = max(max_dist, dist)
+            return max_dist + 5  # Add 5km buffer
+        except:
+            return 25  # Default 25km radius
 
     def filter_wells_by_geology(self, wells_df):
         """

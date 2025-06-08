@@ -276,13 +276,32 @@ with main_col1:
                 status_text.write("🗺️ **Step 2/4:** Generating interpolation grid...")
                 progress_bar.progress(50)
                 
-                # Apply geological clipping AFTER interpolation generation
+                # Apply geological clipping AFTER interpolation generation using polygon boundaries
                 if use_geological_masking and geojson_data:
-                    status_text.write("🪨 **Step 3/4:** Applying geological constraints...")
+                    status_text.write("🪨 **Step 3/4:** Fetching geological boundaries...")
                     progress_bar.progress(65)
                     
                     try:
-                        geojson_data = st.session_state.geology_service.clip_interpolation_by_geology(geojson_data)
+                        # Get sedimentary polygons from geological service
+                        sedimentary_polygons = st.session_state.geology_service.get_sedimentary_polygons(
+                            st.session_state.selected_point[0], 
+                            st.session_state.selected_point[1], 
+                            st.session_state.search_radius
+                        )
+                        
+                        status_text.write("✂️ **Step 3b/4:** Clipping interpolation by geological boundaries...")
+                        progress_bar.progress(75)
+                        
+                        if sedimentary_polygons:
+                            # Use polygon-based clipping for accurate geological masking
+                            geojson_data = st.session_state.geology_service.clip_interpolation_by_polygons(
+                                geojson_data, sedimentary_polygons
+                            )
+                        else:
+                            # Fallback to point-based clipping if no polygons available
+                            st.info("No geological polygon data available - using point-based geological constraints")
+                            geojson_data = st.session_state.geology_service.clip_interpolation_by_geology(geojson_data)
+                            
                     except Exception as e:
                         st.warning(f"Geological masking failed: {e}. Showing unmasked interpolation.")
                         print(f"Geological masking error: {e}")

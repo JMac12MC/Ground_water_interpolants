@@ -190,6 +190,64 @@ with main_col1:
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
 
+    # Display geological polygons on map load for verification
+    if use_geological_masking:
+        # Test geological data fetch for the default/current center location
+        test_center_lat, test_center_lon = center_location
+        test_radius = 25  # 25km radius for testing
+        
+        with st.spinner("Loading geological data for verification..."):
+            try:
+                test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
+                    test_center_lat, test_center_lon, test_radius
+                )
+                
+                if test_polygons and 'features' in test_polygons and len(test_polygons['features']) > 0:
+                    # Add geological polygons to map for visualization
+                    folium.GeoJson(
+                        data=test_polygons,
+                        name='Sedimentary Geology (Preview)',
+                        style_function=lambda feature: {
+                            'fillColor': 'lightgreen',
+                            'color': 'darkgreen',
+                            'weight': 2,
+                            'fillOpacity': 0.4,
+                            'dashArray': '5, 5'  # Dashed lines to show it's preview
+                        },
+                        tooltip=folium.GeoJsonTooltip(
+                            fields=[field for field in ['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION', 'ROCKTYPE', 'MAINLITH'] 
+                                   if any(field in feature.get('properties', {}) for feature in test_polygons['features'])],
+                            aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:', 'Rock Type:', 'Main Lithology:'],
+                            labels=True,
+                            sticky=False
+                        )
+                    ).add_to(m)
+                    
+                    st.success(f"✅ Geological data loaded: {len(test_polygons['features'])} sedimentary polygons found")
+                    
+                    # Show sample geological attributes for debugging
+                    if len(test_polygons['features']) > 0:
+                        sample_props = test_polygons['features'][0].get('properties', {})
+                        if sample_props:
+                            st.info(f"**Sample geological attributes:** {dict(list(sample_props.items())[:5])}")
+                else:
+                    st.warning(f"⚠️ No geological polygon data found for area around {test_center_lat:.4f}, {test_center_lon:.4f}")
+                    
+            except Exception as e:
+                st.error(f"❌ Error fetching geological data: {e}")
+                import traceback
+                st.error(f"**Debug trace:** {traceback.format_exc()}")
+    
+    # Add a note about the geological preview
+    if use_geological_masking:
+        st.info("""
+        **Geological Preview Enabled**
+        
+        🟢 Light green dashed areas show sedimentary geology suitable for groundwater
+        📍 Click anywhere on the map to start analysis with geological masking
+        🔄 The preview shows a 25km radius around the map center
+        """)
+
 
 
     # Process wells data if available
@@ -524,27 +582,43 @@ with main_col1:
         # Add a simple click handler that manually tracks clicks
         folium.LayerControl().add_to(m)
         
-        # Add debug info for geological data if available
+        # Add detailed debug info for geological data when a point is selected
         if st.session_state.selected_point and use_geological_masking:
             try:
-                # Test geological data fetch
-                test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
+                # Test geological data fetch for selected point
+                selected_polygons = st.session_state.geology_service.get_sedimentary_polygons(
                     st.session_state.selected_point[0], 
                     st.session_state.selected_point[1], 
                     st.session_state.search_radius
                 )
-                if test_polygons and 'features' in test_polygons:
-                    st.info(f"🗺️ Geological data available: {len(test_polygons['features'])} sedimentary polygons found")
+                if selected_polygons and 'features' in selected_polygons:
+                    st.success(f"🗺️ Selected area geological data: {len(selected_polygons['features'])} sedimentary polygons found")
                     
                     # Show sample geology attributes for debugging
-                    if len(test_polygons['features']) > 0:
-                        sample_attrs = test_polygons['features'][0].get('attributes', {})
-                        if sample_attrs:
-                            st.write("**Sample geological attributes:**", sample_attrs)
+                    if len(selected_polygons['features']) > 0:
+                        sample_props = selected_polygons['features'][0].get('properties', {})
+                        if sample_props:
+                            st.write("**Sample geological properties:**", dict(list(sample_props.items())[:8]))
+                        
+                        # Show geometry type info
+                        sample_geom = selected_polygons['features'][0].get('geometry', {})
+                        st.write(f"**Geometry type:** {sample_geom.get('type', 'Unknown')}")
+                        
+                        # Show coordinate range
+                        try:
+                            coords = sample_geom.get('coordinates', [])
+                            if coords and len(coords) > 0 and len(coords[0]) > 0:
+                                lons = [c[0] for c in coords[0]]
+                                lats = [c[1] for c in coords[0]]
+                                st.write(f"**Coordinate range:** Lat: {min(lats):.4f} to {max(lats):.4f}, Lon: {min(lons):.4f} to {max(lons):.4f}")
+                        except:
+                            pass
                 else:
-                    st.warning("🗺️ No geological polygon data found for this area")
+                    st.warning("🗺️ No geological polygon data found for selected area")
             except Exception as e:
-                st.error(f"🗺️ Error fetching geological data: {e}")
+                st.error(f"🗺️ Error fetching geological data for selected point: {e}")
+                import traceback
+                st.error(f"**Full trace:** {traceback.format_exc()}")
 
         # Create a custom click handler
         from folium.plugins import MousePosition

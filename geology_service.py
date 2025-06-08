@@ -233,7 +233,8 @@ class GeologyService:
             
             for i, url in enumerate(layer_endpoints):
                 try:
-                    print(f"Trying geological data from layer {i}...")
+                    print(f"Trying geological data from layer {i} at URL: {url}")
+                    print(f"Bounding box: {min_lat:.4f}, {min_lon:.4f} to {max_lat:.4f}, {max_lon:.4f}")
                     
                     params = {
                         'f': 'geojson',  # Request GeoJSON format directly
@@ -250,8 +251,17 @@ class GeologyService:
                     
                     response = requests.get(url, params=params, timeout=30)
                     
+                    print(f"Layer {i} response status: {response.status_code}")
+                    
                     if response.status_code == 200:
-                        data = response.json()
+                        try:
+                            data = response.json()
+                            print(f"Layer {i} JSON parsed successfully")
+                        except Exception as json_error:
+                            print(f"Layer {i} JSON parse error: {json_error}")
+                            # Print first 500 chars of response for debugging
+                            print(f"Response preview: {response.text[:500]}")
+                            continue
                         
                         if 'features' in data and len(data['features']) > 0:
                             print(f"Found {len(data['features'])} geological features from layer {i}")

@@ -7,6 +7,7 @@ import numpy as np
 import os
 import base64
 import requests
+import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid
@@ -50,6 +51,10 @@ if 'search_radius' not in st.session_state:
     st.session_state.search_radius = 10
 if 'selected_well' not in st.session_state:
     st.session_state.selected_well = None
+if 'soil_polygons' not in st.session_state:
+    st.session_state.soil_polygons = None
+if 'show_soil_polygons' not in st.session_state:
+    st.session_state.show_soil_polygons = True
 
 # Add banner
 add_banner()
@@ -62,6 +67,22 @@ with st.sidebar:
     if st.session_state.wells_data is None:
         with st.spinner("Loading Canterbury wells data..."):
             st.session_state.wells_data = load_nz_govt_data()
+    
+    # Load soil drainage polygons
+    if st.session_state.soil_polygons is None:
+        try:
+            with st.spinner("Loading soil drainage polygons..."):
+                # Load the shapefile
+                soil_gdf = gpd.read_file("attached_assets/s-map-soil-drainage-aug-2024_1749379069732.shp")
+                # Convert to WGS84 if needed
+                if soil_gdf.crs.to_string() != 'EPSG:4326':
+                    soil_gdf = soil_gdf.to_crs('EPSG:4326')
+                # Take a sample of polygons for performance (first 100)
+                st.session_state.soil_polygons = soil_gdf.head(100)
+                st.success(f"Loaded {len(st.session_state.soil_polygons)} soil drainage polygons")
+        except Exception as e:
+            st.warning(f"Could not load soil polygons: {str(e)}")
+            st.session_state.soil_polygons = None
 
     # Advanced option for uploading custom data (hidden in expander)
     with st.expander("Upload Custom Data (Optional)"):
@@ -138,6 +159,8 @@ with st.sidebar:
     st.header("Display Options")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
+    if st.session_state.soil_polygons is not None:
+        st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
     # Add explanation for kriging uncertainty
     if visualization_method == "Kriging Uncertainty (Yield)":
@@ -168,7 +191,25 @@ with main_col1:
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
 
-
+    # Add soil drainage polygons if available and enabled
+    if st.session_state.soil_polygons is not None and st.session_state.show_soil_polygons:
+        # Convert to GeoJSON and add to map
+        folium.GeoJson(
+            st.session_state.soil_polygons.__geo_interface__,
+            name="Soil Drainage Areas",
+            style_function=lambda feature: {
+                'fillColor': 'transparent',
+                'color': 'blue',
+                'weight': 1,
+                'fillOpacity': 0.1
+            },
+            tooltip=folium.GeoJsonTooltip(
+                fields=['DRAINAGE'] if 'DRAINAGE' in st.session_state.soil_polygons.columns else [],
+                aliases=['Drainage:'] if 'DRAINAGE' in st.session_state.soil_polygons.columns else [],
+                labels=True,
+                sticky=False
+            )
+        ).add_to(m)
 
     # Process wells data if available
     if st.session_state.wells_data is not None:

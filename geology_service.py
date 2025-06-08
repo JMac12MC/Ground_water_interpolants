@@ -1,0 +1,171 @@
+
+import requests
+import numpy as np
+import pandas as pd
+from shapely.geometry import Point, Polygon
+from shapely.ops import unary_union
+import json
+import streamlit as st
+
+class GeologyService:
+    """
+    Service to fetch geological data and determine if areas are suitable for groundwater
+    """
+    
+    def __init__(self):
+        # GNS Science QMAP WMS service URL
+        self.wms_base_url = "https://gis.canterburymaps.govt.nz/arcgis/rest/services/Geology/GNS_QMAP_250k/MapServer"
+        
+        # Sedimentary unit codes that are suitable for groundwater (to be expanded based on actual data)
+        self.sedimentary_codes = [
+            'Q1a',  # Recent alluvium
+            'Q1f',  # Recent flood deposits  
+            'Q1s',  # Recent swamp deposits
+            'Q2a',  # Late Pleistocene alluvium
+            'Q2f',  # Late Pleistocene fan deposits
+            'Q2g',  # Late Pleistocene glacial outwash
+            'Q3a',  # Mid Pleistocene alluvium
+            'Q3g',  # Mid Pleistocene glacial deposits
+            'Q4a',  # Early Pleistocene alluvium
+            'Ts',   # Tertiary sediments
+            'Ms',   # Mesozoic sediments
+            'Pz',   # Paleozoic sediments
+            # Add more codes as needed based on actual QMAP data
+        ]
+        
+        # Cache for geological queries
+        self.geology_cache = {}
+    
+    def get_geology_at_point(self, lat, lon):
+        """
+        Get geological unit at a specific point using WMS GetFeatureInfo
+        """
+        cache_key = f"{lat:.6f},{lon:.6f}"
+        if cache_key in self.geology_cache:
+            return self.geology_cache[cache_key]
+        
+        try:
+            # Convert lat/lon to map coordinates (this is approximate)
+            # For Canterbury, we'll use a simple approach
+            
+            # GetFeatureInfo request URL
+            url = f"{self.wms_base_url}/identify"
+            
+            params = {
+                'f': 'json',
+                'geometry': f"{lon},{lat}",
+                'geometryType': 'esriGeometryPoint',
+                'sr': '4326',  # WGS84
+                'layers': 'all:0',
+                'tolerance': 1,
+                'mapExtent': f"{lon-0.01},{lat-0.01},{lon+0.01},{lat+0.01}",
+                'imageDisplay': '400,400,96',
+                'returnGeometry': 'false'
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if 'results' in data and len(data['results']) > 0:
+                    # Extract geological unit from the first result
+                    attributes = data['results'][0].get('attributes', {})
+                    unit_code = attributes.get('UNIT_CODE', attributes.get('ROCK_UNIT', 'Unknown'))
+                    
+                    self.geology_cache[cache_key] = unit_code
+                    return unit_code
+            
+            # If API call fails, return Unknown
+            self.geology_cache[cache_key] = 'Unknown'
+            return 'Unknown'
+            
+        except Exception as e:
+            print(f"Error fetching geology data for {lat}, {lon}: {e}")
+            self.geology_cache[cache_key] = 'Unknown'
+            return 'Unknown'
+    
+    def is_sedimentary(self, unit_code):
+        """
+        Check if a geological unit code represents sedimentary rock suitable for groundwater
+        """
+        if unit_code == 'Unknown':
+            # If we can't determine geology, default to allowing (conservative approach)
+            return True
+        
+        # Check if unit code starts with any sedimentary patterns
+        sedimentary_patterns = ['Q', 'Ts', 'Ms', 'Pz']  # Quaternary, Tertiary sediments, etc.
+        
+        for pattern in sedimentary_patterns:
+            if unit_code.startswith(pattern):
+                return True
+        
+        # Also check explicit sedimentary codes
+        return unit_code in self.sedimentary_codes
+    
+    def get_sedimentary_mask(self, center_lat, center_lon, radius_km, resolution=50):
+        """
+        Create a boolean mask for sedimentary areas within a given radius
+        """
+        # Create a grid of points to check
+        km_per_degree_lat = 111.0
+        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        
+        lat_radius = radius_km / km_per_degree_lat
+        lon_radius = radius_km / km_per_degree_lon
+        
+        # Create grid
+        lats = np.linspace(center_lat - lat_radius, center_lat + lat_radius, resolution)
+        lons = np.linspace(center_lon - lon_radius, center_lon + lon_radius, resolution)
+        
+        # Create mask array
+        mask = np.zeros((resolution, resolution), dtype=bool)
+        
+        for i, lat in enumerate(lats):
+            for j, lon in enumerate(lons):
+                # Check if point is within radius
+                dist_km = self._haversine_distance(center_lat, center_lon, lat, lon)
+                if dist_km <= radius_km:
+                    # Get geology at this point
+                    unit_code = self.get_geology_at_point(lat, lon)
+                    mask[i, j] = self.is_sedimentary(unit_code)
+        
+        return mask, lats, lons
+    
+    def _haversine_distance(self, lat1, lon1, lat2, lon2):
+        """
+        Calculate haversine distance between two points in km
+        """
+        R = 6371  # Earth radius in km
+        
+        lat1_rad = np.radians(lat1)
+        lon1_rad = np.radians(lon1)
+        lat2_rad = np.radians(lat2)
+        lon2_rad = np.radians(lon2)
+        
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+        
+        a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
+        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+        
+        return R * c
+    
+    def filter_wells_by_geology(self, wells_df):
+        """
+        Filter wells to only include those in sedimentary areas
+        """
+        if wells_df.empty:
+            return wells_df
+        
+        # Add geology information to wells
+        wells_df = wells_df.copy()
+        wells_df['geology_unit'] = wells_df.apply(
+            lambda row: self.get_geology_at_point(row['latitude'], row['longitude']),
+            axis=1
+        )
+        
+        # Filter to sedimentary areas only
+        wells_df['is_sedimentary'] = wells_df['geology_unit'].apply(self.is_sedimentary)
+        
+        return wells_df[wells_df['is_sedimentary']].copy()

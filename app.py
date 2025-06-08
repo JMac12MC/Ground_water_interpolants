@@ -139,6 +139,25 @@ with st.sidebar:
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     
+    # Geological masking option
+    st.header("Geological Constraints")
+    use_geological_masking = st.checkbox(
+        "Apply Geological Masking", 
+        value=True,
+        help="Hide interpolation in hard rock areas - only show in sedimentary zones suitable for groundwater"
+    )
+    
+    if use_geological_masking:
+        st.info("""
+        **Geological Masking Enabled**
+        
+        🪨 Hard rock areas (igneous, metamorphic) will be hidden
+        🏔️ Only sedimentary areas (alluvium, gravels, etc.) will show interpolation
+        📊 Based on GNS Science QMAP 1:250k geological data
+        """)
+    else:
+        st.warning("Geological masking disabled - interpolation will show in all areas")
+    
     # Add explanation for kriging uncertainty
     if visualization_method == "Kriging Uncertainty (Yield)":
         st.info("""
@@ -246,7 +265,8 @@ with main_col1:
                     method=st.session_state.interpolation_method,
                     show_variance=st.session_state.show_kriging_variance,
                     auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                    variogram_model=st.session_state.get('variogram_model', 'spherical')
+                    variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                    use_geological_masking=use_geological_masking
                 )
 
                 progress_bar.progress(75)

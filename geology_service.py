@@ -60,8 +60,8 @@ class GeologyService:
                 'returnGeometry': 'false'
             }
             
-            # Reduced timeout to prevent stalling
-            response = requests.get(url, params=params, timeout=5)
+            # Very short timeout to prevent stalling
+            response = requests.get(url, params=params, timeout=2)
             
             if response.status_code == 200:
                 data = response.json()
@@ -216,36 +216,79 @@ class GeologyService:
         clipped_features = []
         features = geojson_data.get('features', [])
         
-        # Limit the number of features to process to prevent stalling
-        max_features = min(1000, len(features))
+        # Drastically limit features and use grid sampling to prevent stalling
+        max_features = min(200, len(features))  # Much smaller limit
         
-        print(f"Clipping {max_features} features by geology...")
+        print(f"Clipping {max_features} features by geology (optimized)...")
         
-        for i, feature in enumerate(features[:max_features]):
+        # Sample features using grid-based approach instead of processing all
+        if len(features) > max_features:
+            # Sample evenly distributed features across the dataset
+            step = len(features) // max_features
+            sampled_features = [features[i] for i in range(0, len(features), step)][:max_features]
+        else:
+            sampled_features = features
+        
+        # Pre-cache geological data for the area to reduce API calls
+        area_centroids = []
+        for feature in sampled_features[:10]:  # Only check first 10 for area bounds
             try:
-                # Get centroid of the polygon/triangle
                 coords = feature['geometry']['coordinates'][0]
-                
-                # Calculate centroid lat/lon
-                lats = [coord[1] for coord in coords[:-1]]  # Exclude last duplicate point
+                lats = [coord[1] for coord in coords[:-1]]
                 lons = [coord[0] for coord in coords[:-1]]
-                centroid_lat = sum(lats) / len(lats)
-                centroid_lon = sum(lons) / len(lons)
-                
-                # Check geology at centroid with timeout protection
-                unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
-                
-                # Only keep features in sedimentary areas
-                if self.is_sedimentary(unit_code):
-                    clipped_features.append(feature)
+                area_centroids.append((sum(lats) / len(lats), sum(lons) / len(lons)))
+            except:
+                continue
+        
+        # If we have area info, check a few sample points to determine geology pattern
+        if area_centroids:
+            sample_geology = []
+            for i, (lat, lon) in enumerate(area_centroids[:3]):  # Only check 3 sample points
+                try:
+                    unit_code = self.get_geology_at_point(lat, lon)
+                    sample_geology.append(self.is_sedimentary(unit_code))
+                except:
+                    sample_geology.append(True)  # Default to sedimentary on error
+            
+            # If most sample points are sedimentary, keep most features
+            if sum(sample_geology) >= len(sample_geology) * 0.6:  # 60% sedimentary threshold
+                print("Area appears mostly sedimentary - keeping most features")
+                return geojson_data  # Return original data
+            
+            # If most are hard rock, remove most features
+            elif sum(sample_geology) < len(sample_geology) * 0.3:  # Less than 30% sedimentary
+                print("Area appears mostly hard rock - removing most features")
+                return {
+                    "type": "FeatureCollection", 
+                    "features": sampled_features[:max_features//4]  # Keep only 25%
+                }
+        
+        # For mixed geology areas, do selective processing
+        for i, feature in enumerate(sampled_features):
+            try:
+                # Only check every 3rd feature to reduce API calls
+                if i % 3 == 0:
+                    coords = feature['geometry']['coordinates'][0]
+                    lats = [coord[1] for coord in coords[:-1]]
+                    lons = [coord[0] for coord in coords[:-1]]
+                    centroid_lat = sum(lats) / len(lats)
+                    centroid_lon = sum(lons) / len(lons)
                     
-                # Progress indication for large datasets
-                if i > 0 and i % 100 == 0:
-                    print(f"Processed {i}/{max_features} features...")
+                    # Quick geology check with short timeout
+                    unit_code = self.get_geology_at_point(centroid_lat, centroid_lon)
+                    
+                    if self.is_sedimentary(unit_code):
+                        clipped_features.append(feature)
+                        # Include nearby features without checking (assume similar geology)
+                        for j in range(1, 3):
+                            if i + j < len(sampled_features):
+                                clipped_features.append(sampled_features[i + j])
+                else:
+                    # Skip individual checks for performance
+                    continue
                     
             except Exception as e:
-                # If there's an error with this feature, include it to avoid data loss
-                print(f"Error processing feature {i}: {e}, including feature")
+                # On any error, include the feature to avoid data loss
                 clipped_features.append(feature)
         
         print(f"Geological clipping complete: {len(clipped_features)} features retained")

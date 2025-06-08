@@ -511,16 +511,37 @@ with main_col1:
                 help="Number of wells within the selected radius"
             )
 
-            # Depth statistics
-            avg_depth = wells_data['depth'].mean()
-            min_depth = wells_data['depth'].min()
-            max_depth = wells_data['depth'].max()
-
-            st.metric(
-                "Average Depth to Groundwater", 
-                f"{avg_depth:.1f} m",
-                help="Mean depth to shallowest water screen (actual groundwater depth)"
-            )
+            # Filter for active productive wells only (exclude dry wells)
+            active_productive_wells = wells_data[
+                (wells_data['yield_rate'] > 0) & 
+                (wells_data['status'].str.contains('Active', case=False, na=False)) &
+                (~wells_data.get('is_dry_well', False))
+            ]
+            
+            # Use depth_to_groundwater if available, otherwise fall back to depth
+            if 'depth_to_groundwater' in active_productive_wells.columns and not active_productive_wells['depth_to_groundwater'].isna().all():
+                depth_column = 'depth_to_groundwater'
+                active_depths = active_productive_wells[depth_column].dropna()
+            else:
+                depth_column = 'depth'
+                active_depths = active_productive_wells[depth_column].dropna()
+            
+            if len(active_depths) > 0:
+                avg_depth = active_depths.mean()
+                min_depth = active_depths.min()
+                max_depth = active_depths.max()
+                
+                st.metric(
+                    "Average Depth to Groundwater", 
+                    f"{avg_depth:.1f} m",
+                    help="Mean depth to groundwater for active productive wells only"
+                )
+            else:
+                st.metric(
+                    "Average Depth to Groundwater", 
+                    "No data",
+                    help="No active productive wells with depth data found"
+                )
 
         with col2:
             # Yield statistics  
@@ -541,27 +562,34 @@ with main_col1:
             )
 
         with col3:
+            # Show active wells count and depth range for active productive wells
+            active_wells_count = len(active_productive_wells)
             st.metric(
-                "Depth Range", 
-                f"{min_depth:.1f} - {max_depth:.1f} m",
-                help="Minimum to maximum depth range"
+                "Active Wells", 
+                f"{active_wells_count}",
+                help="Active wells with yield > 0 L/s"
             )
+            
+            if len(active_depths) > 0:
+                st.metric(
+                    "Groundwater Depth Range", 
+                    f"{min_depth:.1f} - {max_depth:.1f} m",
+                    help="Depth to groundwater range for active productive wells"
+                )
+            else:
+                st.metric(
+                    "Groundwater Depth Range", 
+                    "No data",
+                    help="No active productive wells with depth data"
+                )
 
             high_yield_wells = len(wells_data[wells_data['yield_rate'] > 5])
-            dry_wells = len(wells_data[wells_data.get('is_dry_well', False) == True]) if 'is_dry_well' in wells_data.columns else 0
 
             st.metric(
                 "High-Yield Wells", 
                 f"{high_yield_wells}",
                 help="Wells with yield > 5 L/s"
             )
-
-            if dry_wells > 0:
-                st.metric(
-                    "Dry Wells", 
-                    f"{dry_wells}",
-                    help="Wells with no water screen (likely dry)"
-                )
 
         # Detailed data table
         st.subheader("📋 Detailed Well Information")

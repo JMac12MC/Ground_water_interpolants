@@ -10,7 +10,6 @@ import requests
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid
-from geology_service import GeologyService
 
 # Set page configuration
 st.set_page_config(
@@ -34,8 +33,6 @@ def add_banner():
 # Initialize session state variables
 if 'selected_point' not in st.session_state:
     st.session_state.selected_point = None
-if 'geology_service' not in st.session_state:
-    st.session_state.geology_service = GeologyService()
 if 'zoom_level' not in st.session_state:
     st.session_state.zoom_level = 10
 if 'wells_data' not in st.session_state:
@@ -142,25 +139,6 @@ with st.sidebar:
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     
-    # Geological masking option
-    st.header("Geological Constraints")
-    use_geological_masking = st.checkbox(
-        "Apply Geological Masking", 
-        value=True,
-        help="Hide interpolation in hard rock areas - only show in sedimentary zones suitable for groundwater"
-    )
-    
-    if use_geological_masking:
-        st.info("""
-        **Geological Masking Enabled**
-        
-        🪨 Hard rock areas (igneous, metamorphic) will be hidden
-        🏔️ Only sedimentary areas (alluvium, gravels, etc.) will show interpolation
-        📊 Based on GNS Science QMAP 1:250k geological data
-        """)
-    else:
-        st.warning("Geological masking disabled - interpolation will show in all areas")
-    
     # Add explanation for kriging uncertainty
     if visualization_method == "Kriging Uncertainty (Yield)":
         st.info("""
@@ -189,49 +167,6 @@ with main_col1:
 
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
-
-    # Display geological polygons on map load for verification  
-    if use_geological_masking:
-        test_center_lat, test_center_lon = center_location
-        test_radius = 25  # 25km radius for testing
-        
-        test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
-            test_center_lat, test_center_lon, test_radius
-        )
-        
-        if test_polygons and 'features' in test_polygons and len(test_polygons['features']) > 0:
-            # Add geological polygons to map for visualization
-            folium.GeoJson(
-                data=test_polygons,
-                name='Sedimentary Geology (Preview)',
-                style_function=lambda feature: {
-                    'fillColor': 'lightgreen',
-                    'color': 'darkgreen',
-                    'weight': 2,
-                    'fillOpacity': 0.4,
-                    'dashArray': '5, 5'  # Dashed lines to show it's preview
-                },
-                tooltip=folium.GeoJsonTooltip(
-                    fields=['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION', 'ROCKTYPE', 'MAINLITH'],
-                    aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:', 'Rock Type:', 'Main Lithology:'],
-                    labels=True,
-                    sticky=False
-                )
-            ).add_to(m)
-            
-            st.success(f"✅ Geological preview loaded: {len(test_polygons['features'])} sedimentary polygons found")
-        else:
-            st.warning(f"⚠️ No geological polygon data found for preview area around {test_center_lat:.4f}, {test_center_lon:.4f}")
-    
-    # Add a note about the geological preview
-    if use_geological_masking:
-        st.info("""
-        **Geological Preview Enabled**
-        
-        🟢 Light green dashed areas show sedimentary geology suitable for groundwater
-        📍 Click anywhere on the map to start analysis with geological masking
-        🔄 The preview shows a 25km radius around the map center
-        """)
 
 
 
@@ -291,12 +226,16 @@ with main_col1:
 
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Show simple progress indicator
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+                # Show progress overlay during processing with better visibility
+                progress_container = st.container()
+                with progress_container:
+                    st.info("🔄 **Analysis in Progress** - Please wait while we process the data...")
 
-                status_text.write("📍 **Step 1/4:** Processing well locations...")
-                progress_bar.progress(25)
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+
+                    status_text.write("📍 **Step 1/4:** Processing well locations...")
+                    progress_bar.progress(25)
 
                 # Generate proper GeoJSON grid with interpolated yield values
                 geojson_data = generate_geo_json_grid(
@@ -307,59 +246,9 @@ with main_col1:
                     method=st.session_state.interpolation_method,
                     show_variance=st.session_state.show_kriging_variance,
                     auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                    variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                    use_geological_masking=False,  # Don't constraint interpolation
-                    geology_service=None
+                    variogram_model=st.session_state.get('variogram_model', 'spherical')
                 )
 
-                status_text.write("🗺️ **Step 2/4:** Generating interpolation grid...")
-                progress_bar.progress(50)
-                
-                # Apply geological clipping AFTER interpolation generation using polygon boundaries
-                if use_geological_masking and geojson_data:
-                    status_text.write("🪨 **Step 3/4:** Fetching geological boundaries...")
-                    progress_bar.progress(65)
-                    
-                    # Get sedimentary polygons from geological service
-                    sedimentary_polygons = st.session_state.geology_service.get_sedimentary_polygons(
-                        st.session_state.selected_point[0], 
-                        st.session_state.selected_point[1], 
-                        st.session_state.search_radius
-                    )
-                    
-                    status_text.write("✂️ **Step 3b/4:** Clipping interpolation by geological boundaries...")
-                    progress_bar.progress(75)
-                    
-                    if sedimentary_polygons and 'features' in sedimentary_polygons and len(sedimentary_polygons['features']) > 0:
-                        # Add geological polygons to map for visualization
-                        folium.GeoJson(
-                            data=sedimentary_polygons,
-                            name='Sedimentary Geology',
-                            style_function=lambda feature: {
-                                'fillColor': 'green',
-                                'color': 'darkgreen',
-                                'weight': 2,
-                                'fillOpacity': 0.3
-                            },
-                            tooltip=folium.GeoJsonTooltip(
-                                fields=['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION'] if 'features' in sedimentary_polygons and len(sedimentary_polygons['features']) > 0 else [],
-                                aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:'],
-                                labels=True,
-                                sticky=False
-                            )
-                        ).add_to(m)
-                        
-                        # Use polygon-based clipping for accurate geological masking
-                        geojson_data = st.session_state.geology_service.clip_interpolation_by_polygons(
-                            geojson_data, sedimentary_polygons
-                        )
-                        
-                        st.success(f"Applied geological masking using {len(sedimentary_polygons['features'])} sedimentary polygons")
-                    else:
-                        st.error("No geological polygon data available. Geological masking cannot be applied.")
-                        use_geological_masking = False  # Disable masking for this iteration
-
-                status_text.write("🎨 **Step 4/4:** Rendering visualization...")
                 progress_bar.progress(75)
 
                 if geojson_data and len(geojson_data['features']) > 0:
@@ -562,44 +451,6 @@ with main_col1:
 
         # Add a simple click handler that manually tracks clicks
         folium.LayerControl().add_to(m)
-        
-        # Add detailed debug info for geological data when a point is selected
-        if st.session_state.selected_point and use_geological_masking:
-            try:
-                # Test geological data fetch for selected point
-                selected_polygons = st.session_state.geology_service.get_sedimentary_polygons(
-                    st.session_state.selected_point[0], 
-                    st.session_state.selected_point[1], 
-                    st.session_state.search_radius
-                )
-                if selected_polygons and 'features' in selected_polygons:
-                    st.success(f"🗺️ Selected area geological data: {len(selected_polygons['features'])} sedimentary polygons found")
-                    
-                    # Show sample geology attributes for debugging
-                    if len(selected_polygons['features']) > 0:
-                        sample_props = selected_polygons['features'][0].get('properties', {})
-                        if sample_props:
-                            st.write("**Sample geological properties:**", dict(list(sample_props.items())[:8]))
-                        
-                        # Show geometry type info
-                        sample_geom = selected_polygons['features'][0].get('geometry', {})
-                        st.write(f"**Geometry type:** {sample_geom.get('type', 'Unknown')}")
-                        
-                        # Show coordinate range
-                        try:
-                            coords = sample_geom.get('coordinates', [])
-                            if coords and len(coords) > 0 and len(coords[0]) > 0:
-                                lons = [c[0] for c in coords[0]]
-                                lats = [c[1] for c in coords[0]]
-                                st.write(f"**Coordinate range:** Lat: {min(lats):.4f} to {max(lats):.4f}, Lon: {min(lons):.4f} to {max(lons):.4f}")
-                        except:
-                            pass
-                else:
-                    st.warning("🗺️ No geological polygon data found for selected area")
-            except Exception as e:
-                st.error(f"🗺️ Error fetching geological data for selected point: {e}")
-                import traceback
-                st.error(f"**Full trace:** {traceback.format_exc()}")
 
         # Create a custom click handler
         from folium.plugins import MousePosition

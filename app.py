@@ -72,16 +72,26 @@ with st.sidebar:
     if st.session_state.soil_polygons is None:
         try:
             with st.spinner("Loading soil drainage polygons..."):
-                # Load the shapefile
+                # Set GDAL config to restore corrupted .shx files
+                import os
+                os.environ['SHAPE_RESTORE_SHX'] = 'YES'
+                
+                # Load the shapefile with error handling
                 soil_gdf = gpd.read_file("attached_assets/s-map-soil-drainage-aug-2024_1749379069732.shp")
+                
                 # Convert to WGS84 if needed
-                if soil_gdf.crs.to_string() != 'EPSG:4326':
+                if soil_gdf.crs and soil_gdf.crs.to_string() != 'EPSG:4326':
                     soil_gdf = soil_gdf.to_crs('EPSG:4326')
+                elif not soil_gdf.crs:
+                    # Assume it's already in WGS84 if no CRS is defined
+                    soil_gdf.crs = 'EPSG:4326'
+                
                 # Take a sample of polygons for performance (first 100)
                 st.session_state.soil_polygons = soil_gdf.head(100)
                 st.success(f"Loaded {len(st.session_state.soil_polygons)} soil drainage polygons")
         except Exception as e:
             st.warning(f"Could not load soil polygons: {str(e)}")
+            st.warning("Shapefile may be corrupted. You can try re-uploading the shapefile data.")
             st.session_state.soil_polygons = None
 
     # Advanced option for uploading custom data (hidden in expander)

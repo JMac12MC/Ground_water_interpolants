@@ -68,30 +68,33 @@ with st.sidebar:
         with st.spinner("Loading Canterbury wells data..."):
             st.session_state.wells_data = load_nz_govt_data()
     
-    # Load soil drainage polygons
+    # Load soil drainage polygons from database or process from shapefile
     if st.session_state.soil_polygons is None:
         try:
-            with st.spinner("Loading soil drainage polygons..."):
-                # Set GDAL config to restore corrupted .shx files
-                import os
-                os.environ['SHAPE_RESTORE_SHX'] = 'YES'
+            from database_setup import load_soil_polygons_from_database, create_database_tables, load_and_merge_soil_polygons
+            
+            with st.spinner("Loading soil drainage polygons from database..."):
+                # Try to load from database first
+                st.session_state.soil_polygons = load_soil_polygons_from_database()
                 
-                # Load the shapefile with error handling
-                soil_gdf = gpd.read_file("attached_assets/s-map-soil-drainage-aug-2024_1749379069732.shp")
+                if st.session_state.soil_polygons is None:
+                    st.info("No soil polygons found in database. Processing from shapefile...")
+                    
+                    # Create database tables if they don't exist
+                    if create_database_tables():
+                        # Process and store polygons
+                        if load_and_merge_soil_polygons():
+                            # Load the processed polygons
+                            st.session_state.soil_polygons = load_soil_polygons_from_database()
                 
-                # Convert to WGS84 if needed
-                if soil_gdf.crs and soil_gdf.crs.to_string() != 'EPSG:4326':
-                    soil_gdf = soil_gdf.to_crs('EPSG:4326')
-                elif not soil_gdf.crs:
-                    # Assume it's already in WGS84 if no CRS is defined
-                    soil_gdf.crs = 'EPSG:4326'
-                
-                # Take a sample of polygons for performance (first 1100)
-                st.session_state.soil_polygons = soil_gdf.head(1100)
-                st.success(f"Loaded {len(st.session_state.soil_polygons)} soil drainage polygons")
+                if st.session_state.soil_polygons is not None:
+                    st.success(f"Loaded {len(st.session_state.soil_polygons)} merged soil drainage polygons from database")
+                else:
+                    st.warning("Could not load or process soil polygons")
+                    
         except Exception as e:
             st.warning(f"Could not load soil polygons: {str(e)}")
-            st.warning("Shapefile may be corrupted. You can try re-uploading the shapefile data.")
+            st.warning("Make sure you have created a PostgreSQL database in Replit")
             st.session_state.soil_polygons = None
 
     # Advanced option for uploading custom data (hidden in expander)
@@ -100,6 +103,39 @@ with st.sidebar:
         if uploaded_file is not None:
             with st.spinner("Loading custom data..."):
                 st.session_state.wells_data = load_custom_data(uploaded_file)
+    
+    # Database management for soil polygons
+    with st.expander("Soil Polygon Database Management"):
+        st.write("**Manage soil polygon data in PostgreSQL database**")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Refresh from Database"):
+                from database_setup import load_soil_polygons_from_database
+                st.session_state.soil_polygons = load_soil_polygons_from_database()
+                if st.session_state.soil_polygons is not None:
+                    st.success(f"Refreshed {len(st.session_state.soil_polygons)} polygons from database")
+                else:
+                    st.warning("No polygons found in database")
+                st.rerun()
+        
+        with col2:
+            if st.button("Reprocess Shapefile"):
+                from database_setup import create_database_tables, load_and_merge_soil_polygons, load_soil_polygons_from_database
+                
+                with st.spinner("Reprocessing all soil polygons..."):
+                    if create_database_tables() and load_and_merge_soil_polygons():
+                        st.session_state.soil_polygons = load_soil_polygons_from_database()
+                        st.success("Successfully reprocessed and stored polygons")
+                    else:
+                        st.error("Failed to reprocess polygons")
+                st.rerun()
+        
+        # Show database status
+        if st.session_state.soil_polygons is not None:
+            total_area = st.session_state.soil_polygons['area_sqkm'].sum() if 'area_sqkm' in st.session_state.soil_polygons.columns else 0
+            st.info(f"Database contains {len(st.session_state.soil_polygons)} merged polygon groups covering {total_area:.1f} km²")
 
     st.header("Filters")
 

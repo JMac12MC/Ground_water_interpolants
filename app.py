@@ -190,50 +190,38 @@ with main_col1:
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
 
-    # Display geological polygons on map load for verification
+    # Display geological polygons on map load for verification  
     if use_geological_masking:
-        # Test geological data fetch for the default/current center location
         test_center_lat, test_center_lon = center_location
         test_radius = 25  # 25km radius for testing
         
-        try:
-            test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
-                test_center_lat, test_center_lon, test_radius
-            )
+        test_polygons = st.session_state.geology_service.get_sedimentary_polygons(
+            test_center_lat, test_center_lon, test_radius
+        )
+        
+        if test_polygons and 'features' in test_polygons and len(test_polygons['features']) > 0:
+            # Add geological polygons to map for visualization
+            folium.GeoJson(
+                data=test_polygons,
+                name='Sedimentary Geology (Preview)',
+                style_function=lambda feature: {
+                    'fillColor': 'lightgreen',
+                    'color': 'darkgreen',
+                    'weight': 2,
+                    'fillOpacity': 0.4,
+                    'dashArray': '5, 5'  # Dashed lines to show it's preview
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION', 'ROCKTYPE', 'MAINLITH'],
+                    aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:', 'Rock Type:', 'Main Lithology:'],
+                    labels=True,
+                    sticky=False
+                )
+            ).add_to(m)
             
-            if test_polygons and 'features' in test_polygons and len(test_polygons['features']) > 0:
-                # Add geological polygons to map for visualization
-                folium.GeoJson(
-                    data=test_polygons,
-                    name='Sedimentary Geology (Preview)',
-                    style_function=lambda feature: {
-                        'fillColor': 'lightgreen',
-                        'color': 'darkgreen',
-                        'weight': 2,
-                        'fillOpacity': 0.4,
-                        'dashArray': '5, 5'  # Dashed lines to show it's preview
-                    },
-                    tooltip=folium.GeoJsonTooltip(
-                        fields=['UNIT_CODE', 'ROCK_UNIT', 'GEOLOGY', 'UNIT', 'FORMATION', 'ROCKTYPE', 'MAINLITH'],
-                        aliases=['Unit Code:', 'Rock Unit:', 'Geology:', 'Unit:', 'Formation:', 'Rock Type:', 'Main Lithology:'],
-                        labels=True,
-                        sticky=False
-                    )
-                ).add_to(m)
-                
-                st.success(f"✅ Geological preview loaded: {len(test_polygons['features'])} sedimentary polygons found")
-                
-                # Show sample geological attributes for debugging
-                if len(test_polygons['features']) > 0:
-                    sample_props = test_polygons['features'][0].get('properties', {})
-                    if sample_props:
-                        st.info(f"**Sample geological attributes:** {dict(list(sample_props.items())[:5])}")
-            else:
-                st.warning(f"⚠️ No geological polygon data found for preview area around {test_center_lat:.4f}, {test_center_lon:.4f}")
-                
-        except Exception as e:
-            st.error(f"❌ Error fetching geological preview data: {e}")
-            st.error(f"**Error details:** {str(e)}")
+            st.success(f"✅ Geological preview loaded: {len(test_polygons['features'])} sedimentary polygons found")
+        else:
+            st.warning(f"⚠️ No geological polygon data found for preview area around {test_center_lat:.4f}, {test_center_lon:.4f}")
     
     # Add a note about the geological preview
     if use_geological_masking:
@@ -303,16 +291,12 @@ with main_col1:
 
             # Add heat map based on yield
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Show progress overlay during processing with better visibility
-                progress_container = st.container()
-                with progress_container:
-                    st.info("🔄 **Analysis in Progress** - Please wait while we process the data...")
+                # Show simple progress indicator
+                progress_bar = st.progress(0)
+                status_text = st.empty()
 
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-
-                    status_text.write("📍 **Step 1/4:** Processing well locations...")
-                    progress_bar.progress(25)
+                status_text.write("📍 **Step 1/4:** Processing well locations...")
+                progress_bar.progress(25)
 
                 # Generate proper GeoJSON grid with interpolated yield values
                 geojson_data = generate_geo_json_grid(

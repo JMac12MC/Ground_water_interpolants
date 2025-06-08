@@ -157,8 +157,8 @@ class GeologyService:
             if pattern in unit_code:
                 return True
         
-        # Be more permissive - if it doesn't match hard rock patterns, assume sedimentary
-        # This is better for groundwater assessment in Canterbury
+        # Be more permissive for Canterbury region - if it doesn't match hard rock patterns, assume sedimentary
+        # Canterbury has extensive alluvial and sedimentary deposits suitable for groundwater
         return True
     
     def get_sedimentary_mask(self, center_lat, center_lon, radius_km, resolution=50):
@@ -255,7 +255,7 @@ class GeologyService:
                         'maxRecordCount': 2000  # Increase limit
                     }
                     
-                    response = requests.get(url, params=params, timeout=15)
+                    response = requests.get(url, params=params, timeout=30)
                     print(f"Layer {i} response: {response.status_code}")
                     
                     if response.status_code == 200:
@@ -314,10 +314,13 @@ class GeologyService:
                             print(f"Response content: {response.text[:200]}")
                         
                 except requests.exceptions.Timeout:
-                    print(f"Layer {i}: Request timeout")
+                    print(f"Layer {i}: Request timeout after 30 seconds")
+                    continue
+                except requests.exceptions.RequestException as e:
+                    print(f"Layer {i}: Network error - {e}")
                     continue
                 except Exception as e:
-                    print(f"Error with layer {i}: {e}")
+                    print(f"Layer {i}: Unexpected error - {e}")
                     continue
             
             # If ArcGIS REST API failed, try using geopandas with the base service
@@ -361,6 +364,8 @@ class GeologyService:
                 print(f"Full geopandas error: {traceback.format_exc()}")
             
             print("No geological polygon data available from any source")
+            print(f"Search area: {center_lat:.4f}, {center_lon:.4f} with {radius_km}km radius")
+            print(f"Bounding box used: {min_lat:.4f}, {min_lon:.4f} to {max_lat:.4f}, {max_lon:.4f}")
             return None
                 
         except Exception as e:

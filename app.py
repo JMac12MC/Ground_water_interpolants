@@ -465,15 +465,70 @@ with main_col1:
                     variance_method = 'depth_kriging' if st.session_state.get('variance_type', 'yield') == 'depth' else 'kriging'
                     
                     # Generate kriging variance visualization
-                    geojson_data = calculate_kriging_variance(
-                        filtered_wells.copy(),
-                        st.session_state.selected_point,
-                        st.session_state.search_radius,
-                        resolution=100,
-                        method=variance_method,
-                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
-                    )
+                    if st.session_state.get('variance_type', 'yield') == 'depth':
+                        # For depth variance, filter wells and use depth data
+                        depth_wells = filtered_wells.copy()
+                        if 'is_dry_well' in depth_wells.columns:
+                            depth_wells = depth_wells[~depth_wells['is_dry_well']]
+                        if 'depth_to_groundwater' in depth_wells.columns:
+                            depth_wells = depth_wells[depth_wells['depth_to_groundwater'].notna() & (depth_wells['depth_to_groundwater'] > 0)]
+                        else:
+                            depth_wells = depth_wells[depth_wells['depth'].notna() & (depth_wells['depth'] > 0)]
+                        
+                        variance_data = calculate_kriging_variance(
+                            depth_wells,
+                            st.session_state.selected_point,
+                            st.session_state.search_radius,
+                            resolution=100,
+                            variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                            use_depth=True
+                        )
+                    else:
+                        # For yield variance
+                        variance_data = calculate_kriging_variance(
+                            filtered_wells.copy(),
+                            st.session_state.selected_point,
+                            st.session_state.search_radius,
+                            resolution=100,
+                            variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                            use_depth=False
+                        )
+                    
+                    # Convert variance data to GeoJSON format
+                    geojson_data = {"type": "FeatureCollection", "features": []}
+                    if variance_data:
+                        from scipy.spatial import Delaunay
+                        import numpy as np
+                        
+                        points_2d = np.array([[point[1], point[0]] for point in variance_data])  # lon, lat
+                        variances = np.array([point[2] for point in variance_data])
+                        
+                        if len(points_2d) > 3:
+                            tri = Delaunay(points_2d)
+                            
+                            for simplex in tri.simplices:
+                                vertices = points_2d[simplex]
+                                vertex_variances = variances[simplex]
+                                avg_variance = float(np.mean(vertex_variances))
+                                
+                                if avg_variance > 0.0001:  # Only show meaningful variance values
+                                    poly = {
+                                        "type": "Feature",
+                                        "geometry": {
+                                            "type": "Polygon",
+                                            "coordinates": [[
+                                                [float(vertices[0,0]), float(vertices[0,1])],
+                                                [float(vertices[1,0]), float(vertices[1,1])],
+                                                [float(vertices[2,0]), float(vertices[2,1])],
+                                                [float(vertices[0,0]), float(vertices[0,1])]
+                                            ]]
+                                        },
+                                        "properties": {
+                                            "variance": avg_variance,
+                                            "yield": avg_variance  # For compatibility with existing code
+                                        }
+                                    }
+                                    geojson_data["features"].append(poly)
                 else:
                     # Generate regular interpolation visualization
                     geojson_data = generate_geo_json_grid(

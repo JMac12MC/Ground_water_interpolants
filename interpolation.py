@@ -1181,7 +1181,7 @@ def basic_idw_prediction(wells_df, point_lat, point_lon):
     weighted_yield = sum(w * float(row['yield_rate']) for w, (idx, row) in zip(weights, wells_df.iterrows())) / total_weight
     return float(max(0, weighted_yield))  # Ensure non-negative yield
 
-def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50, variogram_model='spherical'):
+def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50, variogram_model='spherical', use_depth=False):
     """
     Calculate kriging variance for yield or depth to groundwater interpolations.
 
@@ -1225,19 +1225,26 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
 
-        # Determine whether to use yield or depth data
-        if 'yield_rate' in wells_df.columns:
-            values = wells_df['yield_rate'].values.astype(float)
-            interpolation_type = 'yield'
-        elif 'depth_to_groundwater' in wells_df.columns:
-            values = wells_df['depth_to_groundwater'].values.astype(float)
-            interpolation_type = 'depth_to_groundwater'
-        elif 'depth' in wells_df.columns:
-            values = wells_df['depth'].values.astype(float)
-            interpolation_type = 'depth'
+        # Determine whether to use yield or depth data based on use_depth parameter
+        if use_depth:
+            # Use depth data
+            if 'depth_to_groundwater' in wells_df.columns and not wells_df['depth_to_groundwater'].isna().all():
+                values = wells_df['depth_to_groundwater'].values.astype(float)
+                interpolation_type = 'depth_to_groundwater'
+            elif 'depth' in wells_df.columns:
+                values = wells_df['depth'].values.astype(float)
+                interpolation_type = 'depth'
+            else:
+                print("Error: No depth data found in wells_df.")
+                return []
         else:
-            print("Error: No yield or depth data found in wells_df.")
-            return []  # No data to interpolate
+            # Use yield data
+            if 'yield_rate' in wells_df.columns:
+                values = wells_df['yield_rate'].fillna(0).values.astype(float)
+                interpolation_type = 'yield'
+            else:
+                print("Error: No yield data found in wells_df.")
+                return []
 
         # Ensure there's enough data for kriging
         if len(wells_df) < 5:

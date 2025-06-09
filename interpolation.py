@@ -270,14 +270,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     grid_lats = (grid_y[mask].ravel() / km_per_degree_lat) + center_lat
     grid_lons = (grid_x[mask].ravel() / km_per_degree_lon) + center_lon
 
-    # Apply spatial clipping to soil polygons if provided
-    soil_mask = None
+    # Prepare soil polygon geometry for later filtering (do not apply to interpolation)
     merged_soil_geometry = None
     
     if soil_polygons is not None and len(soil_polygons) > 0:
         try:
-            # Create a unified geometry from all soil polygons
-            # First, ensure we have valid geometries
+            # Create a unified geometry from all soil polygons for later filtering
             valid_geometries = []
             for idx, row in soil_polygons.iterrows():
                 if row.geometry and row.geometry.is_valid:
@@ -286,34 +284,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if valid_geometries:
                 # Merge all polygons into a single multipolygon
                 merged_soil_geometry = unary_union(valid_geometries)
-                
-                # Create a mask for points that fall within soil polygons
-                soil_mask = np.zeros(len(grid_lats), dtype=bool)
-                
-                for i, (lat, lon) in enumerate(zip(grid_lats, grid_lons)):
-                    point = Point(lon, lat)
-                    soil_mask[i] = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
-                
-                # Apply the mask to filter interpolation points
-                if np.any(soil_mask):
-                    # Keep only points within soil polygons
-                    grid_lats = grid_lats[soil_mask]
-                    grid_lons = grid_lons[soil_mask]
-                    interpolated_z = interpolated_z[soil_mask]
-                    
-                    # Also update kriging variance if available
-                    if show_variance and kriging_variance is not None:
-                        kriging_variance = kriging_variance[soil_mask]
-                    
-                    print(f"Clipped interpolation to {len(grid_lats)} points within soil drainage areas")
-                else:
-                    print("No interpolation points fall within soil drainage areas")
-                    return {"type": "FeatureCollection", "features": []}
+                print(f"Prepared soil drainage geometry for display filtering")
             else:
-                print("No valid soil polygon geometries found for clipping")
+                print("No valid soil polygon geometries found")
         except Exception as e:
-            print(f"Error during soil polygon clipping: {e}")
-            # Continue without clipping if there's an error
+            print(f"Error preparing soil polygon geometry: {e}")
+            merged_soil_geometry = None
 
     # Build the GeoJSON structure
     features = []
@@ -350,23 +326,36 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                 # Only add triangles with meaningful values and within our radius
                 if avg_yield > value_threshold:
-                    # Create polygon for this triangle
-                    poly = {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [[
-                                [float(vertices[0,0]), float(vertices[0,1])],
-                                [float(vertices[1,0]), float(vertices[1,1])],
-                                [float(vertices[2,0]), float(vertices[2,1])],
-                                [float(vertices[0,0]), float(vertices[0,1])]
-                            ]]
-                        },
-                        "properties": {
-                            "yield": avg_yield
+                    # Check if triangle should be included based on soil polygons
+                    include_triangle = True
+                    
+                    if merged_soil_geometry is not None:
+                        # Calculate triangle centroid
+                        centroid_lon = float(np.mean(vertices[:, 0]))
+                        centroid_lat = float(np.mean(vertices[:, 1]))
+                        centroid_point = Point(centroid_lon, centroid_lat)
+                        
+                        # Only include if centroid is within soil drainage areas
+                        include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
+                    
+                    if include_triangle:
+                        # Create polygon for this triangle
+                        poly = {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [[
+                                    [float(vertices[0,0]), float(vertices[0,1])],
+                                    [float(vertices[1,0]), float(vertices[1,1])],
+                                    [float(vertices[2,0]), float(vertices[2,1])],
+                                    [float(vertices[0,0]), float(vertices[0,1])]
+                                ]]
+                            },
+                            "properties": {
+                                "yield": avg_yield
+                            }
                         }
-                    }
-                    features.append(poly)
+                        features.append(poly)
         else:
             # Fallback to rectangular grid if triangulation is not possible
             for i in range(len(lat_vals)-1):
@@ -398,54 +387,75 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                     # Only add cells with meaningful values
                     if cell_value > 0.01:
-                        # Create polygon for this grid cell
-                        poly = {
-                            "type": "Feature",
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [[
-                                    [float(lon_vals[j]), float(lat_vals[i])],
-                                    [float(lon_vals[j+1]), float(lat_vals[i])],
-                                    [float(lon_vals[j+1]), float(lat_vals[i+1])],
-                                    [float(lon_vals[j]), float(lat_vals[i+1])],
-                                    [float(lon_vals[j]), float(lat_vals[i])]
-                                ]]
-                            },
-                            "properties": {
-                                "yield": float(cell_value)
+                        # Check if cell should be included based on soil polygons
+                        include_cell = True
+                        
+                        if merged_soil_geometry is not None:
+                            # Check if cell center is within soil drainage areas
+                            cell_center_point = Point(cell_lon, cell_lat)
+                            include_cell = merged_soil_geometry.contains(cell_center_point) or merged_soil_geometry.intersects(cell_center_point)
+                        
+                        if include_cell:
+                            # Create polygon for this grid cell
+                            poly = {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "Polygon",
+                                    "coordinates": [[
+                                        [float(lon_vals[j]), float(lat_vals[i])],
+                                        [float(lon_vals[j+1]), float(lat_vals[i])],
+                                        [float(lon_vals[j+1]), float(lat_vals[i+1])],
+                                        [float(lon_vals[j]), float(lat_vals[i+1])],
+                                        [float(lon_vals[j]), float(lat_vals[i])]
+                                    ]]
+                                },
+                                "properties": {
+                                    "yield": float(cell_value)
+                                }
                             }
-                        }
-                        features.append(poly)
+                            features.append(poly)
     except Exception as e:
         # If triangulation fails, fall back to the simpler grid method
         print(f"Triangulation error: {e}, using grid method")
         for i in range(len(grid_lats)):
             # Only process points with meaningful values
             if interpolated_z[i] > 0.01:
-                # Create a small circle as a polygon (approximated with 8 points)
-                radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])
-                radius_deg_lon = 0.5 * (lon_vals[1] - lon_vals[0])
+                # Check if point should be included based on soil polygons
+                include_point = True
+                
+                if merged_soil_geometry is not None:
+                    point = Point(grid_lons[i], grid_lats[i])
+                    include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                
+                if include_point:
+                    # Create a small circle as a polygon (approximated with 8 points)
+                    radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])
+                    radius_deg_lon = 0.5 * (lon_vals[1] - lon_vals[0])
 
-                # Create the polygon coordinates
-                coords = []
-                for angle in np.linspace(0, 2*np.pi, 9):
-                    x = grid_lons[i] + radius_deg_lon * np.cos(angle)
-                    y = grid_lats[i] + radius_deg_lat * np.sin(angle)
-                    coords.append([float(x), float(y)])
+                    # Create the polygon coordinates
+                    coords = []
+                    for angle in np.linspace(0, 2*np.pi, 9):
+                        x = grid_lons[i] + radius_deg_lon * np.cos(angle)
+                        y = grid_lats[i] + radius_deg_lat * np.sin(angle)
+                        coords.append([float(x), float(y)])
 
-                # Create the polygon feature
-                poly = {
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [coords]
-                    },
-                    "properties": {
-                        "yield": float(interpolated_z[i])
+                    # Create the polygon feature
+                    poly = {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [coords]
+                        },
+                        "properties": {
+                            "yield": float(interpolated_z[i])
+                        }
                     }
-                }
-                features.append(poly)
+                    features.append(poly)
 
+    # Log filtering results
+    if merged_soil_geometry is not None:
+        print(f"GeoJSON features filtered by soil drainage areas: {len(features)} polygons displayed")
+    
     # Create the full GeoJSON object
     geojson = {
         "type": "FeatureCollection",
@@ -732,7 +742,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
         lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
 
-        # Apply spatial clipping to soil polygons if provided
+        # Prepare soil polygon geometry for filtering heat map display
+        merged_soil_geometry = None
         if soil_polygons is not None and len(soil_polygons) > 0:
             try:
                 # Create a unified geometry from all soil polygons
@@ -744,28 +755,12 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 if valid_geometries:
                     # Merge all polygons into a single multipolygon
                     merged_soil_geometry = unary_union(valid_geometries)
-                    
-                    # Create a mask for points that fall within soil polygons
-                    soil_mask = np.zeros(len(lat_points), dtype=bool)
-                    
-                    for i, (lat, lon) in enumerate(zip(lat_points, lon_points)):
-                        point = Point(lon, lat)
-                        soil_mask[i] = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
-                    
-                    # Apply the mask to filter interpolation points
-                    if np.any(soil_mask):
-                        lat_points = lat_points[soil_mask]
-                        lon_points = lon_points[soil_mask]
-                        interpolated_z = interpolated_z[soil_mask]
-                        print(f"Clipped heat map to {len(lat_points)} points within soil drainage areas")
-                    else:
-                        print("No heat map points fall within soil drainage areas")
-                        return []
+                    print(f"Prepared soil drainage geometry for heat map filtering")
                 else:
-                    print("No valid soil polygon geometries found for heat map clipping")
+                    print("No valid soil polygon geometries found for heat map")
             except Exception as e:
-                print(f"Error during soil polygon clipping for heat map: {e}")
-                # Continue without clipping if there's an error
+                print(f"Error preparing soil polygon geometry for heat map: {e}")
+                merged_soil_geometry = None
 
         # Create heat map data
         heat_data = []
@@ -807,11 +802,21 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
                         if np.max(cell_values) > 0.01:  # Only add significant values
                             max_idx = np.argmax(cell_values)
-                            heat_data.append([
-                                float(cell_lat[max_idx]),  # Latitude
-                                float(cell_lon[max_idx]),  # Longitude
-                                float(cell_values[max_idx])  # Yield value (actual value)
-                            ])
+                            point_lat = float(cell_lat[max_idx])
+                            point_lon = float(cell_lon[max_idx])
+                            
+                            # Check if point should be included based on soil polygons
+                            include_point = True
+                            if merged_soil_geometry is not None:
+                                point = Point(point_lon, point_lat)
+                                include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                            
+                            if include_point:
+                                heat_data.append([
+                                    point_lat,  # Latitude
+                                    point_lon,  # Longitude
+                                    float(cell_values[max_idx])  # Yield value (actual value)
+                                ])
         else:
             # Standard approach for smaller datasets
             heat_data = []
@@ -819,11 +824,18 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             for i in range(len(lat_points)):
                 # Only add points with meaningful values
                 if interpolated_z[i] > 0.01:
-                    heat_data.append([
-                        float(lat_points[i]),  # Latitude
-                        float(lon_points[i]),  # Longitude
-                        float(interpolated_z[i])  # Yield value (actual value, not normalized)
-                    ])
+                    # Check if point should be included based on soil polygons
+                    include_point = True
+                    if merged_soil_geometry is not None:
+                        point = Point(lon_points[i], lat_points[i])
+                        include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                    
+                    if include_point:
+                        heat_data.append([
+                            float(lat_points[i]),  # Latitude
+                            float(lon_points[i]),  # Longitude
+                            float(interpolated_z[i])  # Yield value (actual value, not normalized)
+                        ])
 
         # Always make sure well points themselves are included for accuracy
         # These are the actual data points we have, so they should be shown
@@ -836,13 +848,24 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             )
 
             if well_dist_km <= radius_km:
-                heat_data.append([
-                    float(lats[j]),
-                    float(lons[j]),
-                    float(yields[j])
-                ])
-                well_points_added += 1
+                # Check if well should be included based on soil polygons
+                include_well = True
+                if merged_soil_geometry is not None:
+                    well_point = Point(lons[j], lats[j])
+                    include_well = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
+                
+                if include_well:
+                    heat_data.append([
+                        float(lats[j]),
+                        float(lons[j]),
+                        float(yields[j])
+                    ])
+                    well_points_added += 1
 
+        # Log filtering results
+        if merged_soil_geometry is not None:
+            print(f"Heat map filtered by soil drainage areas: {len(heat_data)} points displayed")
+        
         return heat_data
 
     except Exception as e:

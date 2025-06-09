@@ -700,7 +700,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     remaining_indices = np.setdiff1d(all_indices, sample_indices)
                     if len(remaining_indices) > 0:
                         additional_samples = np.random.choice(
-```python
                             remaining_indices, 
                             min(remaining, len(remaining_indices)), 
                             replace=False

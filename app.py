@@ -118,8 +118,16 @@ with st.sidebar:
                     
         except Exception as e:
             st.warning(f"Could not load soil polygons from database: {str(e)}")
-            st.info("Fallback: Run the polygon processing script to merge and store soil polygons.")
-            st.session_state.soil_polygons = None
+            # Try to reconnect to database
+            try:
+                st.session_state.polygon_db = PolygonDatabase()
+                stored_polygons = st.session_state.polygon_db.get_all_polygons()
+                if stored_polygons:
+                    st.success("Database reconnected successfully")
+                    st.rerun()
+            except:
+                st.info("Fallback: Run the polygon processing script to merge and store soil polygons.")
+                st.session_state.soil_polygons = None
     elif st.session_state.polygon_db is None:
         st.warning("Database connection not available. Cannot load soil polygons.")
         st.session_state.soil_polygons = None

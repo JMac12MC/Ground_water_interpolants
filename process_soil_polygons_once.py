@@ -136,8 +136,17 @@ def process_and_store_soil_polygons():
         # Set GDAL config to restore corrupted .shx files
         os.environ['SHAPE_RESTORE_SHX'] = 'YES'
         
-        # Load the shapefile
-        soil_gdf = gpd.read_file("attached_assets/s-map-soil-drainage-aug-2024_1749379069732.shp")
+        # Try to load the newer shapefile first, fall back to older one
+        try:
+            soil_gdf = gpd.read_file("attached_assets/s-map-soil-drainage-aug-2024_1749427998471.shp")
+            print("Loaded newer shapefile")
+        except:
+            try:
+                soil_gdf = gpd.read_file("attached_assets/s-map-soil-drainage-aug-2024_1749379069732.shp")
+                print("Loaded older shapefile")
+            except Exception as e:
+                print(f"Failed to load shapefile: {e}")
+                return False
         print(f"Loaded {len(soil_gdf)} soil polygons from shapefile")
         
         # Convert to WGS84 if needed
@@ -188,6 +197,10 @@ def process_and_store_soil_polygons():
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
+                        # Reconnect to database if needed
+                        if attempt > 0:
+                            polygon_db = PolygonDatabase()
+                            
                         polygon_id = polygon_db.store_merged_polygon(
                             polygon_name=polygon_name,
                             geometry=geometry,
@@ -205,7 +218,7 @@ def process_and_store_soil_polygons():
                         if attempt < max_retries - 1:
                             print(f"Attempt {attempt + 1} failed for {polygon_name}, retrying...")
                             import time
-                            time.sleep(1)  # Wait 1 second before retry
+                            time.sleep(2)  # Wait 2 seconds before retry
                         else:
                             print(f"Failed to store polygon after {max_retries} attempts: {polygon_name} - {e}")
                             

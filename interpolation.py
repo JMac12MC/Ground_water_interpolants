@@ -583,9 +583,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         xi_inside = xi[mask]
 
         # Choose interpolation method
-        else:
-            # OPTIMIZATION: For standard kriging method
-            # Basic 2D interpolation - import statement at top of file
+        # Basic 2D interpolation using scipy.interpolate.griddata
             from scipy.interpolate import griddata
 
             # OPTIMIZATION: For large datasets, use fewer points and faster method

@@ -24,13 +24,20 @@ def merge_adjacent_polygons(soil_gdf, buffer_distance=0.0001):
     """
     print(f"Starting with {len(soil_gdf)} individual polygons")
     
+    # Convert to a projected CRS to avoid buffer warnings
+    if soil_gdf.crs and soil_gdf.crs.to_string() == 'EPSG:4326':
+        # Use New Zealand Transverse Mercator 2000 for accurate area calculations
+        soil_gdf = soil_gdf.to_crs('EPSG:2193')
+        print("Converted to NZTM2000 projected coordinate system")
+    
     # Ensure valid geometries
     soil_gdf = soil_gdf[soil_gdf.geometry.is_valid].copy()
     print(f"After removing invalid geometries: {len(soil_gdf)} polygons")
     
-    # Apply small buffer to help merge touching polygons
+    # Apply small buffer to help merge touching polygons (in meters now)
     if buffer_distance > 0:
-        soil_gdf['geometry'] = soil_gdf.geometry.buffer(buffer_distance)
+        # Use 10 meters instead of degrees
+        soil_gdf['geometry'] = soil_gdf.geometry.buffer(10)
     
     # Group by drainage type if available
     if 'DRAINAGE' in soil_gdf.columns:
@@ -55,7 +62,7 @@ def merge_adjacent_polygons(soil_gdf, buffer_distance=0.0001):
                         'geometry': merged_geometry,
                         'DRAINAGE': drainage_type,
                         'merged_count': len(group_polygons),
-                        'total_area_km2': merged_geometry.area * 111000 * 111000 / 1000000
+                        'total_area_km2': merged_geometry.area / 1000000  # Convert m² to km²
                     }
                     grouped_polygons.append(merged_row)
                     print(f"  Merged {len(group_polygons)} polygons into 1 for {drainage_type}")
@@ -66,22 +73,37 @@ def merge_adjacent_polygons(soil_gdf, buffer_distance=0.0001):
         else:
             merged_gdf = gpd.GeoDataFrame(columns=['geometry', 'DRAINAGE', 'merged_count', 'total_area_km2'], crs=soil_gdf.crs)
     else:
-        # If no drainage column, merge all polygons together
-        print("No DRAINAGE column found, merging all polygons together")
-        merged_geometry = unary_union(soil_gdf.geometry.tolist())
+        # If no drainage column, create smaller chunks to avoid memory issues
+        print("No DRAINAGE column found, processing in chunks")
+        chunk_size = 1000
+        chunks = []
+        
+        for i in range(0, len(soil_gdf), chunk_size):
+            chunk = soil_gdf.iloc[i:i+chunk_size]
+            chunk_geometry = unary_union(chunk.geometry.tolist())
+            chunks.append(chunk_geometry)
+            print(f"  Processed chunk {i//chunk_size + 1}/{(len(soil_gdf)-1)//chunk_size + 1}")
+        
+        # Merge all chunks
+        print("Merging all chunks...")
+        merged_geometry = unary_union(chunks)
         
         merged_gdf = gpd.GeoDataFrame([{
             'geometry': merged_geometry,
             'DRAINAGE': 'All_Merged',
             'merged_count': len(soil_gdf),
-            'total_area_km2': merged_geometry.area * 111000 * 111000 / 1000000
+            'total_area_km2': merged_geometry.area / 1000000  # Convert m² to km²
         }], crs=soil_gdf.crs)
     
     # Remove buffer if it was applied
     if buffer_distance > 0:
-        merged_gdf['geometry'] = merged_gdf.geometry.buffer(-buffer_distance)
+        merged_gdf['geometry'] = merged_gdf.geometry.buffer(-10)  # Remove 10m buffer
         # Ensure geometries are still valid after removing buffer
         merged_gdf = merged_gdf[merged_gdf.geometry.is_valid]
+    
+    # Convert back to WGS84 for storage
+    merged_gdf = merged_gdf.to_crs('EPSG:4326')
+    print("Converted back to WGS84 for storage")
     
     print(f"Final result: {len(merged_gdf)} merged polygons")
     return merged_gdf
@@ -141,41 +163,71 @@ def process_and_store_soil_polygons():
         stored_count = 0
         
         for idx, row in merged_gdf.iterrows():
-            # Create polygon name
-            drainage_name = row.get('DRAINAGE', 'Unknown')
-            polygon_name = f"Soil_Drainage_{drainage_name}_{idx}"
-            
-            # Create properties dictionary
-            properties = {
-                'drainage_type': drainage_name,
-                'merged_count': int(row.get('merged_count', 1)),
-                'total_area_km2': float(row.get('total_area_km2', 0)),
-                'processing_date': pd.Timestamp.now().isoformat(),
-                'source': 'S-Map Soil Drainage Shapefile'
-            }
-            
-            # Store in database
-            polygon_id = polygon_db.store_merged_polygon(
-                polygon_name=polygon_name,
-                geometry=row.geometry,
-                properties=properties
-            )
-            
-            if polygon_id:
-                stored_count += 1
-                print(f"Stored polygon {stored_count}: {polygon_name} (ID: {polygon_id})")
-            else:
-                print(f"Failed to store polygon: {polygon_name}")
+            try:
+                # Create polygon name
+                drainage_name = row.get('DRAINAGE', 'Unknown')
+                polygon_name = f"Soil_Drainage_{drainage_name}_{idx}"
+                
+                # Create properties dictionary
+                properties = {
+                    'drainage_type': drainage_name,
+                    'merged_count': int(row.get('merged_count', 1)),
+                    'total_area_km2': float(row.get('total_area_km2', 0)),
+                    'processing_date': pd.Timestamp.now().isoformat(),
+                    'source': 'S-Map Soil Drainage Shapefile'
+                }
+                
+                # Check geometry size and simplify if needed
+                geometry = row.geometry
+                if hasattr(geometry, 'wkt') and len(geometry.wkt) > 1000000:  # If WKT is too large
+                    print(f"Simplifying large geometry for {polygon_name}")
+                    # Simplify geometry to reduce size
+                    geometry = geometry.simplify(0.001, preserve_topology=True)
+                
+                # Store in database with retry logic
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        polygon_id = polygon_db.store_merged_polygon(
+                            polygon_name=polygon_name,
+                            geometry=geometry,
+                            properties=properties
+                        )
+                        
+                        if polygon_id:
+                            stored_count += 1
+                            print(f"Stored polygon {stored_count}: {polygon_name} (ID: {polygon_id})")
+                            break
+                        else:
+                            print(f"Failed to store polygon: {polygon_name}")
+                            
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"Attempt {attempt + 1} failed for {polygon_name}, retrying...")
+                            import time
+                            time.sleep(1)  # Wait 1 second before retry
+                        else:
+                            print(f"Failed to store polygon after {max_retries} attempts: {polygon_name} - {e}")
+                            
+            except Exception as e:
+                print(f"Error processing polygon {idx}: {e}")
+                continue
         
         print(f"\n✅ Successfully processed and stored {stored_count} merged soil polygons in database!")
         
         # Display summary statistics
-        stats = polygon_db.get_polygon_statistics()
-        print(f"\nDatabase Summary:")
-        print(f"- Total polygons: {stats['total_polygons']}")
-        print(f"- Average area: {stats['avg_area_km2']:.2f} km²")
+        try:
+            stats = polygon_db.get_polygon_statistics()
+            print(f"\nDatabase Summary:")
+            print(f"- Total polygons: {stats.get('total_polygons', 0)}")
+            if stats.get('avg_area_km2') is not None:
+                print(f"- Average area: {stats['avg_area_km2']:.2f} km²")
+            else:
+                print("- Average area: No data available")
+        except Exception as e:
+            print(f"Error getting database statistics: {e}")
         
-        return True
+        return stored_count > 0
         
     except Exception as e:
         print(f"❌ Error processing soil polygons: {e}")

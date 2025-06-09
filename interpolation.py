@@ -584,9 +584,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
         # Choose interpolation method
         # Basic 2D interpolation using scipy.interpolate.griddata
-            from scipy.interpolate import griddata
+        from scipy.interpolate import griddata
 
-            # OPTIMIZATION: For large datasets, use fewer points and faster method
+        # OPTIMIZATION: For large datasets, use fewer points and faster method
             if len(points) > 2000:
                 print(f"Large dataset optimization: Sampling from {len(points)} points")
                 # For very large datasets, we'll use a random sample to improve performance

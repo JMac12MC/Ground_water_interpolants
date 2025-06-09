@@ -170,21 +170,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Execute kriging to get both predictions and variance
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
 
-        elif method == 'rf_kriging' and len(wells_df) >= 10 and len(wells_df) < 3000:
-            # Use the Random Forest model for interpolation
-            # But use simpler/faster settings for better performance
-            rf = RandomForestRegressor(
-                n_estimators=30,  # Fewer trees for speed
-                max_depth=10,     # Limited depth
-                min_samples_split=5,
-                n_jobs=-1,
-                random_state=42
-            )
-            rf.fit(points, yields)
-
-            # Create grid points for prediction
-            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
-            interpolated_z = rf.predict(grid_points)
         elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield visualization (without variance output)
             print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
@@ -669,8 +654,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
                     )
         else:
-            # OPTIMIZATION: For standard kriging method
-            # Basic 2D interpolation - import statement at top of file
+            # Choose interpolation method
+            # Basic 2D interpolation using scipy.interpolate.griddata
             from scipy.interpolate import griddata
 
             # OPTIMIZATION: For large datasets, use fewer points and faster method
@@ -715,6 +700,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     remaining_indices = np.setdiff1d(all_indices, sample_indices)
                     if len(remaining_indices) > 0:
                         additional_samples = np.random.choice(
+```python
                             remaining_indices, 
                             min(remaining, len(remaining_indices)), 
                             replace=False

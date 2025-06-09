@@ -160,7 +160,6 @@ with st.sidebar:
         "Map Visualization Type",
         options=[
             "Standard Kriging (Yield)", 
-            "Random Forest + Kriging (Yield)",
             "Kriging Variance (Yield Uncertainty)",
             "Kriging Variance (Depth Uncertainty)",
             "Depth to Groundwater (Standard Kriging)",
@@ -306,10 +305,6 @@ with st.sidebar:
     # Update session state based on selection
     if visualization_method == "Standard Kriging (Yield)":
         st.session_state.interpolation_method = 'kriging'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = False
-    elif visualization_method == "Random Forest + Kriging (Yield)":
-        st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
     elif visualization_method == "Kriging Variance (Yield Uncertainty)":

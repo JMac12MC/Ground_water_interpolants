@@ -1,0 +1,60 @@
+ kriging variance is returning a flat value across the map: your current setup is likely not computing the true kriging variance (also known as kriging standard deviation or estimation variance) from the interpolator but instead assigning a placeholder or reusing yield values.
+
+✅ How to Fix Kriging Variance Calculation
+You’re using a function called generate_geo_json_grid() from your interpolation.py module. The fix will likely need to happen in that function, not in the UI code.
+
+Here’s how to properly compute kriging variance using pykrige:
+
+✅ Step 1: Use UniversalKriging.execute() with return_var=True
+In interpolation.py (or wherever your kriging model is defined), modify the part where the interpolator runs like this:
+
+python
+Copy
+Edit
+from pykrige.ok import OrdinaryKriging
+
+# X, Y, and Z are your well coordinates and yield data
+OK = OrdinaryKriging(X, Y, Z, variogram_model='spherical', verbose=False, enable_plotting=False)
+
+# Grid definition
+gridx = np.linspace(min_x, max_x, resolution)
+gridy = np.linspace(min_y, max_y, resolution)
+
+# IMPORTANT: get kriging variance
+z_interp, ss_interp = OK.execute('grid', gridx, gridy, backend='vectorized')  # ss_interp is the variance
+z_interp: interpolated values (your predicted yields)
+
+ss_interp: kriging variance at each point
+
+You can convert variance to standard deviation if you prefer, via np.sqrt(ss_interp).
+
+✅ Step 2: Add variance to GeoJSON features
+In your generate_geo_json_grid() function, ensure each GeoJSON polygon includes a variance property:
+
+python
+Copy
+Edit
+feature['properties']['yield'] = float(z_value)
+feature['properties']['variance'] = float(ss_value)
+Then update your Streamlit/Folium renderer to use feature['properties']['variance'] when displaying the kriging uncertainty view.
+
+✅ Step 3: Update your visualization logic
+You're already using show_kriging_variance to control which map is being shown. Replace:
+
+python
+Copy
+Edit
+feature['properties']['yield']
+with:
+
+python
+Copy
+Edit
+feature['properties']['variance']
+…when st.session_state.show_kriging_variance is True.
+
+🛠️ Summary of Changes
+File	What to Update
+interpolation.py	Return both interpolated values and variance using execute(..., return_var=True)
+generate_geo_json_grid()	Add variance to feature['properties']
+Streamlit display code	Use variance in get_color() when show_kriging_variance is True

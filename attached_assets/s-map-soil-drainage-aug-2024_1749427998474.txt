@@ -1,0 +1,42 @@
+========================================================================
+ S-map Soil Drainage Aug 2024
+------------------------------------------------------------------------
+ https://lris.scinfo.org.nz/layer/119599-s-map-soil-drainage-aug-2024/
+========================================================================
+From: Landcare Research
+
+Description:
+  Soil drainage is a relatively simple classification of the soil profile that
+  describes the likelihood of seasonal wetness (Webb & Lilburne 2011). It is based
+  on the occurrence within specific depths of redox segregation and low chroma
+  colours indicative of waterlogging and reduction (Milne et al. 1995). This layer
+  is a "dissolved" representation of the soil drainage attribute for S-map soils,
+  where neighbouring S-map polygons have been combined if they have the same value
+  of the attribute. Please refer to document Smap Data Dictionary Dissolved
+  Layers.pdf at
+  https://lris.scinfo.org.nz/document/22129-smap-data-dictionary-dissolved-layers/
+
+Region: New Zealand
+
+Category: Soil
+
+CRS: WGS 84
+
+------------------------------------------------------------------------
+ Processing steps applied by LRIS Portal
+------------------------------------------------------------------------
+
+- imported to LRIS Portal in Shapefile format on 20 Aug 2024
+- 1236 invalid geometries fixed at import time 
+    (see https://lris.scinfo.org.nz/layer/119599-s-map-soil-drainage-aug-2024/history/)
+- reprojected from NZGD2000 / New Zealand Transverse Mercator 2000 to WGS 84
+- clipped to (40.384°S 166.569°E)-(45.642°S 174.716°E)
+- converted by LRIS Portal to Shapefile on 08 Jun 2025 (reference #4155386)
+
+------------------------------------------------------------------------
+ LICENSE: Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International
+ Link: https://lris.scinfo.org.nz/license/attribution-noncommercial-noderivatives-4-0-international/
+------------------------------------------------------------------------
+
+   http://creativecommons.org/.
+

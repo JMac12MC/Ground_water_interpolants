@@ -1217,13 +1217,13 @@ def basic_idw_prediction(wells_df, point_lat, point_lon):
     weighted_yield = sum(w * float(row['yield_rate']) for w, (idx, row) in zip(weights, wells_df.iterrows())) / total_weight
     return float(max(0, weighted_yield))  # Ensure non-negative yield
 
-def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50, variogram_model='spherical', use_depth=False):
+def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50, variogram_model='spherical', use_depth=False, soil_polygons=None):
     """
     Calculate kriging variance for yield or depth to groundwater interpolations.
 
     This function performs ordinary kriging to estimate the variance (uncertainty)
     of the interpolated values. It's designed to work with both yield and
-    depth-to-groundwater data.
+    depth-to-groundwater data, and applies soil polygon filtering like other interpolants.
 
     Parameters:
     -----------
@@ -1240,6 +1240,10 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     variogram_model : str, optional
         Variogram model to use for kriging (e.g., 'linear', 'spherical', 'gaussian').
         Defaults to 'spherical'.
+    use_depth : bool
+        Whether to use depth data instead of yield data.
+    soil_polygons : GeoDataFrame, optional
+        Soil polygon data for clipping the variance output.
 
     Returns:
     --------
@@ -1255,36 +1259,49 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
       back to using the 'depth' column if it exists.
     - It returns an empty list if there is insufficient data (less than 5 wells)
       to perform kriging.
+    - Applies the same soil polygon clipping as other interpolants.
     """
     try:
-        # Prepare data: Extract coordinates and values
-        lats = wells_df['latitude'].values.astype(float)
-        lons = wells_df['longitude'].values.astype(float)
-
+        # Filter wells data similar to yield kriging for consistency
+        wells_df_filtered = wells_df.copy()
+        
         # Determine whether to use yield or depth data based on use_depth parameter
         if use_depth:
-            # Use depth data
-            if 'depth_to_groundwater' in wells_df.columns and not wells_df['depth_to_groundwater'].isna().all():
-                values = wells_df['depth_to_groundwater'].values.astype(float)
+            # For depth variance, filter wells similar to depth kriging
+            if 'is_dry_well' in wells_df.columns:
+                wells_df_filtered = wells_df_filtered[~wells_df_filtered['is_dry_well']]
+            
+            if 'depth_to_groundwater' in wells_df_filtered.columns and not wells_df_filtered['depth_to_groundwater'].isna().all():
+                wells_df_filtered = wells_df_filtered[wells_df_filtered['depth_to_groundwater'].notna() & (wells_df_filtered['depth_to_groundwater'] > 0)]
+                values = wells_df_filtered['depth_to_groundwater'].values.astype(float)
                 interpolation_type = 'depth_to_groundwater'
-            elif 'depth' in wells_df.columns:
-                values = wells_df['depth'].values.astype(float)
+            elif 'depth' in wells_df_filtered.columns:
+                wells_df_filtered = wells_df_filtered[wells_df_filtered['depth'].notna() & (wells_df_filtered['depth'] > 0)]
+                values = wells_df_filtered['depth'].values.astype(float)
                 interpolation_type = 'depth'
             else:
                 print("Error: No depth data found in wells_df.")
                 return []
         else:
-            # Use yield data
-            if 'yield_rate' in wells_df.columns:
-                values = wells_df['yield_rate'].fillna(0).values.astype(float)
+            # For yield variance, filter to meaningful yield data like yield kriging
+            meaningful_yield_mask = wells_df_filtered['yield_rate'].fillna(0) > 0.1
+            
+            if meaningful_yield_mask.any() and np.sum(meaningful_yield_mask) >= 5:
+                wells_df_filtered = wells_df_filtered[meaningful_yield_mask]
+                values = wells_df_filtered['yield_rate'].values.astype(float)
                 interpolation_type = 'yield'
             else:
-                print("Error: No yield data found in wells_df.")
-                return []
+                # If insufficient meaningful yield data, use all available yield data
+                values = wells_df_filtered['yield_rate'].fillna(0).values.astype(float)
+                interpolation_type = 'yield'
+
+        # Prepare data: Extract coordinates and values from filtered data
+        lats = wells_df_filtered['latitude'].values.astype(float)
+        lons = wells_df_filtered['longitude'].values.astype(float)
 
         # Ensure there's enough data for kriging
-        if len(wells_df) < 5:
-            print("Warning: Insufficient data points for kriging variance calculation.")
+        if len(wells_df_filtered) < 5:
+            print("Warning: Insufficient data points for kriging variance calculation after filtering.")
             return []
 
         # Create grid for interpolation
@@ -1333,14 +1350,66 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
         lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
 
+        # Prepare soil polygon geometry for filtering variance display (same as other interpolants)
+        merged_soil_geometry = None
+        if soil_polygons is not None and len(soil_polygons) > 0:
+            try:
+                # Create a unified geometry from all soil polygons
+                valid_geometries = []
+                for idx, row in soil_polygons.iterrows():
+                    if row.geometry and row.geometry.is_valid:
+                        valid_geometries.append(row.geometry)
+
+                if valid_geometries:
+                    # Merge all polygons into a single multipolygon
+                    merged_soil_geometry = unary_union(valid_geometries)
+                    print(f"Prepared soil drainage geometry for kriging variance filtering")
+                else:
+                    print("No valid soil polygon geometries found for kriging variance")
+            except Exception as e:
+                print(f"Error preparing soil polygon geometry for kriging variance: {e}")
+                merged_soil_geometry = None
+
         variance_data = []
         for i in range(len(lat_points)):
-            # Add data point with latitude, longitude, and variance
-            variance_data.append([
-                float(lat_points[i]),
-                float(lon_points[i]),
-                float(kriging_variance[i])
-            ])
+            # Only add points with meaningful variance values
+            if kriging_variance[i] > 0.0001:
+                # Check if point should be included based on soil polygons (same logic as other interpolants)
+                include_point = True
+                if merged_soil_geometry is not None:
+                    point = Point(lon_points[i], lat_points[i])
+                    include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+
+                if include_point:
+                    # Double-check: ensure point is actually within soil polygons (same as other interpolants)
+                    if merged_soil_geometry is not None:
+                        point = Point(lon_points[i], lat_points[i])
+                        # Use strict containment for variance points
+                        strictly_contained = merged_soil_geometry.contains(point)
+
+                        # If not strictly contained, check if very close to boundary
+                        if not strictly_contained:
+                            buffer_distance = 0.0001  # roughly 10 meters
+                            buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                            strictly_contained = buffered_geometry.contains(point)
+
+                        if strictly_contained:
+                            variance_data.append([
+                                float(lat_points[i]),
+                                float(lon_points[i]),
+                                float(kriging_variance[i])
+                            ])
+                    else:
+                        # Add data point with latitude, longitude, and variance
+                        variance_data.append([
+                            float(lat_points[i]),
+                            float(lon_points[i]),
+                            float(kriging_variance[i])
+                        ])
+
+        # Log filtering results
+        if merged_soil_geometry is not None:
+            print(f"Kriging variance filtered by soil drainage areas: {len(variance_data)} points displayed")
 
         return variance_data
 

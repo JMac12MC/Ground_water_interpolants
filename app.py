@@ -482,7 +482,8 @@ with main_col1:
                             st.session_state.search_radius,
                             resolution=100,
                             variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                            use_depth=True
+                            use_depth=True,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
                         )
                     else:
                         # For yield variance
@@ -492,7 +493,8 @@ with main_col1:
                             st.session_state.search_radius,
                             resolution=100,
                             variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                            use_depth=False
+                            use_depth=False,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
                         )
                     
                     # Convert variance data to GeoJSON format

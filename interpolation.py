@@ -272,7 +272,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     # Prepare soil polygon geometry for later filtering (do not apply to interpolation)
     merged_soil_geometry = None
-    
+
     if soil_polygons is not None and len(soil_polygons) > 0:
         try:
             # Create a unified geometry from all soil polygons for later filtering
@@ -280,7 +280,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             for idx, row in soil_polygons.iterrows():
                 if row.geometry and row.geometry.is_valid:
                     valid_geometries.append(row.geometry)
-            
+
             if valid_geometries:
                 # Merge all polygons into a single multipolygon
                 merged_soil_geometry = unary_union(valid_geometries)
@@ -328,35 +328,35 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 if avg_yield > value_threshold:
                     # Check if triangle should be included based on soil polygons
                     include_triangle = True
-                    
+
                     if merged_soil_geometry is not None:
                         # Calculate triangle centroid
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         centroid_point = Point(centroid_lon, centroid_lat)
-                        
+
                         # Only include if centroid is within soil drainage areas
                         include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
-                    
+
                     if include_triangle:
                         # Double-check: ensure triangle centroid is actually within soil polygons
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
-                        
+
                         # Final validation: check if centroid is within any soil polygon
                         final_include = True
                         if merged_soil_geometry is not None:
                             centroid_point = Point(centroid_lon, centroid_lat)
                             # Use strict containment - triangle must be clearly within soil areas
                             final_include = merged_soil_geometry.contains(centroid_point)
-                            
+
                             # If not strictly contained, check if it's very close to the boundary
                             if not final_include:
                                 # Allow triangles very close to boundary (within 10 meters)
                                 buffer_distance = 0.0001  # roughly 10 meters in degrees
                                 buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
                                 final_include = buffered_geometry.contains(centroid_point)
-                        
+
                         if final_include:
                             # Create polygon for this triangle
                             poly = {
@@ -408,12 +408,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     if cell_value > 0.01:
                         # Check if cell should be included based on soil polygons
                         include_cell = True
-                        
+
                         if merged_soil_geometry is not None:
                             # Check if cell center is within soil drainage areas
                             cell_center_point = Point(cell_lon, cell_lat)
                             include_cell = merged_soil_geometry.contains(cell_center_point) or merged_soil_geometry.intersects(cell_center_point)
-                        
+
                         if include_cell:
                             # Create polygon for this grid cell
                             poly = {
@@ -441,11 +441,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if interpolated_z[i] > 0.01:
                 # Check if point should be included based on soil polygons
                 include_point = True
-                
+
                 if merged_soil_geometry is not None:
                     point = Point(grid_lons[i], grid_lats[i])
                     include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
-                
+
                 if include_point:
                     # Create a small circle as a polygon (approximated with 8 points)
                     radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])
@@ -474,7 +474,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Log filtering results
     if merged_soil_geometry is not None:
         print(f"GeoJSON features filtered by soil drainage areas: {len(features)} polygons displayed")
-    
+
     # Create the full GeoJSON object
     geojson = {
         "type": "FeatureCollection",
@@ -770,7 +770,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 for idx, row in soil_polygons.iterrows():
                     if row.geometry and row.geometry.is_valid:
                         valid_geometries.append(row.geometry)
-                
+
                 if valid_geometries:
                     # Merge all polygons into a single multipolygon
                     merged_soil_geometry = unary_union(valid_geometries)
@@ -823,26 +823,26 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                             max_idx = np.argmax(cell_values)
                             point_lat = float(cell_lat[max_idx])
                             point_lon = float(cell_lon[max_idx])
-                            
+
                             # Check if point should be included based on soil polygons
                             include_point = True
                             if merged_soil_geometry is not None:
                                 point = Point(point_lon, point_lat)
                                 include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
-                            
+
                             if include_point:
                                 # Double-check: ensure point is actually within soil polygons
                                 if merged_soil_geometry is not None:
                                     point = Point(point_lon, point_lat)
                                     # Use strict containment for heat map points
                                     strictly_contained = merged_soil_geometry.contains(point)
-                                    
+
                                     # If not strictly contained, check if very close to boundary
                                     if not strictly_contained:
                                         buffer_distance = 0.0001  # roughly 10 meters
                                         buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
                                         strictly_contained = buffered_geometry.contains(point)
-                                    
+
                                     if strictly_contained:
                                         heat_data.append([
                                             point_lat,  # Latitude
@@ -867,20 +867,20 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     if merged_soil_geometry is not None:
                         point = Point(lon_points[i], lat_points[i])
                         include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
-                    
+
                     if include_point:
                         # Double-check: ensure point is actually within soil polygons
                         if merged_soil_geometry is not None:
                             point = Point(lon_points[i], lat_points[i])
                             # Use strict containment
                             strictly_contained = merged_soil_geometry.contains(point)
-                            
+
                             # If not strictly contained, check if very close to boundary
                             if not strictly_contained:
                                 buffer_distance = 0.0001  # roughly 10 meters
                                 buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
                                 strictly_contained = buffered_geometry.contains(point)
-                            
+
                             if strictly_contained:
                                 heat_data.append([
                                     float(lat_points[i]),  # Latitude
@@ -910,20 +910,20 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 if merged_soil_geometry is not None:
                     well_point = Point(lons[j], lats[j])
                     include_well = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
-                
+
                 if include_well:
                     # Double-check: ensure well point is actually within soil polygons
                     if merged_soil_geometry is not None:
                         well_point = Point(lons[j], lats[j])
                         # Use strict containment for wells
                         strictly_contained = merged_soil_geometry.contains(well_point)
-                        
+
                         # If not strictly contained, check if very close to boundary
                         if not strictly_contained:
                             buffer_distance = 0.0001  # roughly 10 meters
                             buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
                             strictly_contained = buffered_geometry.contains(well_point)
-                        
+
                         if strictly_contained:
                             heat_data.append([
                                 float(lats[j]),
@@ -942,7 +942,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # Log filtering results
         if merged_soil_geometry is not None:
             print(f"Heat map filtered by soil drainage areas: {len(heat_data)} points displayed")
-        
+
         return heat_data
 
     except Exception as e:
@@ -1180,3 +1180,127 @@ def basic_idw_prediction(wells_df, point_lat, point_lon):
     # Calculate weighted average of yields
     weighted_yield = sum(w * float(row['yield_rate']) for w, (idx, row) in zip(weights, wells_df.iterrows())) / total_weight
     return float(max(0, weighted_yield))  # Ensure non-negative yield
+
+def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50, variogram_model='spherical'):
+    """
+    Calculate kriging variance for yield or depth to groundwater interpolations.
+
+    This function performs ordinary kriging to estimate the variance (uncertainty)
+    of the interpolated values. It's designed to work with both yield and
+    depth-to-groundwater data.
+
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        DataFrame containing well data, including latitude, longitude, and
+        either yield_rate (for yield interpolation) or depth_to_groundwater/depth
+        (for depth interpolation).
+    center_point : tuple
+        Tuple containing (latitude, longitude) of the center point.
+    radius_km : float
+        Radius in kilometers to generate the variance data for.
+    resolution : int
+        Number of points to generate in each dimension.
+    variogram_model : str, optional
+        Variogram model to use for kriging (e.g., 'linear', 'spherical', 'gaussian').
+        Defaults to 'spherical'.
+
+    Returns:
+    --------
+    list
+        List of [lat, lng, variance] points for the variance heat map.
+        Returns an empty list if there is not enough data or if an error occurs.
+
+    Notes:
+    ------
+    - The function automatically detects whether to interpolate yield or depth
+      based on the columns available in `wells_df`.
+    - It handles cases where depth_to_groundwater is not available and falls
+      back to using the 'depth' column if it exists.
+    - It returns an empty list if there is insufficient data (less than 5 wells)
+      to perform kriging.
+    """
+    try:
+        # Prepare data: Extract coordinates and values
+        lats = wells_df['latitude'].values.astype(float)
+        lons = wells_df['longitude'].values.astype(float)
+
+        # Determine whether to use yield or depth data
+        if 'yield_rate' in wells_df.columns:
+            values = wells_df['yield_rate'].values.astype(float)
+            interpolation_type = 'yield'
+        elif 'depth_to_groundwater' in wells_df.columns:
+            values = wells_df['depth_to_groundwater'].values.astype(float)
+            interpolation_type = 'depth_to_groundwater'
+        elif 'depth' in wells_df.columns:
+            values = wells_df['depth'].values.astype(float)
+            interpolation_type = 'depth'
+        else:
+            print("Error: No yield or depth data found in wells_df.")
+            return []  # No data to interpolate
+
+        # Ensure there's enough data for kriging
+        if len(wells_df) < 5:
+            print("Warning: Insufficient data points for kriging variance calculation.")
+            return []
+
+        # Create grid for interpolation
+        center_lat, center_lon = center_point
+        grid_size = min(50, max(30, resolution))  # Adjust grid size if necessary
+
+        # Convert to km-based coordinates
+        km_per_degree_lat = 111.0
+        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+
+        # Convert coordinates to km from center
+        x_coords = (lons - center_lon) * km_per_degree_lon
+        y_coords = (lats - center_lat) * km_per_degree_lat
+
+        # Create grid in km space
+        grid_x = np.linspace(-radius_km, radius_km, grid_size)
+        grid_y = np.linspace(-radius_km, radius_km, grid_size)
+        grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
+
+        # Flatten grid for interpolation
+        xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T
+
+        # Filter points outside the radius
+        distances = np.sqrt(xi[:, 0]**2 + xi[:, 1]**2)
+        mask = distances <= radius_km
+        xi_inside = xi[mask]
+
+        # Convert back to lat/lon for kriging
+        lon_values = x_coords / km_per_degree_lon + center_lon
+        lat_values = y_coords / km_per_degree_lat + center_lat
+        xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
+        xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
+
+        # Perform Ordinary Kriging
+        OK = OrdinaryKriging(
+            lon_values, lat_values, values,
+            variogram_model=variogram_model,
+            verbose=False,
+            enable_plotting=False
+        )
+
+        # Execute kriging to get both predictions and variance
+        _, kriging_variance = OK.execute('points', xi_lon, xi_lat)
+
+        # Prepare variance data for heat map
+        lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
+        lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+
+        variance_data = []
+        for i in range(len(lat_points)):
+            # Add data point with latitude, longitude, and variance
+            variance_data.append([
+                float(lat_points[i]),
+                float(lon_points[i]),
+                float(kriging_variance[i])
+            ])
+
+        return variance_data
+
+    except Exception as e:
+        print(f"Error calculating kriging variance: {e}")
+        return []  # Return empty list in case of error

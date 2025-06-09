@@ -10,7 +10,7 @@ import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid
+from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance
 from database import PolygonDatabase
 
 # Set page configuration
@@ -161,7 +161,8 @@ with st.sidebar:
         options=[
             "Standard Kriging (Yield)", 
             "Random Forest + Kriging (Yield)",
-            "Kriging Uncertainty (Yield)",
+            "Kriging Variance (Yield Uncertainty)",
+            "Kriging Variance (Depth Uncertainty)",
             "Depth to Groundwater (Standard Kriging)",
             "Depth to Groundwater (Auto-Fitted Spherical)"
         ],
@@ -311,11 +312,18 @@ with st.sidebar:
         st.session_state.interpolation_method = 'rf_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
-    elif visualization_method == "Kriging Uncertainty (Yield)":
-        st.session_state.interpolation_method = 'kriging'
+    elif visualization_method == "Kriging Variance (Yield Uncertainty)":
+        st.session_state.interpolation_method = 'kriging_variance'
         st.session_state.show_kriging_variance = True
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
+        st.session_state.variance_type = 'yield'
+    elif visualization_method == "Kriging Variance (Depth Uncertainty)":
+        st.session_state.interpolation_method = 'kriging_variance'
+        st.session_state.show_kriging_variance = True
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
+        st.session_state.variance_type = 'depth'
     elif visualization_method == "Depth to Groundwater (Standard Kriging)":
         st.session_state.interpolation_method = 'depth_kriging'
         st.session_state.show_kriging_variance = False
@@ -333,17 +341,18 @@ with st.sidebar:
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
-    # Add explanation for kriging uncertainty
-    if visualization_method == "Kriging Uncertainty (Yield)":
-        st.info("""
-        **Kriging Uncertainty Visualization**
+    # Add explanation for kriging variance
+    if visualization_method in ["Kriging Variance (Yield Uncertainty)", "Kriging Variance (Depth Uncertainty)"]:
+        variance_type = "yield" if "Yield" in visualization_method else "depth to groundwater"
+        st.info(f"""
+        **Kriging Variance Visualization ({variance_type.title()})**
         
-        This shows the prediction uncertainty (standard deviation) of the kriging interpolation:
-        - 🟢 **Green areas**: High confidence in yield predictions
-        - 🟡 **Yellow areas**: Medium confidence 
-        - 🔴 **Red areas**: Low confidence, more wells needed
+        This shows the prediction uncertainty (variance) of the kriging interpolation for {variance_type}:
+        - 🟢 **Green areas**: Low uncertainty - high confidence in predictions
+        - 🟡 **Yellow areas**: Medium uncertainty - moderate confidence
+        - 🔴 **Red areas**: High uncertainty - low confidence, more wells needed
         
-        Use this to identify where additional wells would most improve prediction accuracy.
+        Use this to identify where additional wells would most improve prediction accuracy for {variance_type} estimates.
         """)
 
 # Main content area
@@ -436,7 +445,7 @@ with main_col1:
                 fill_opacity=0.1
             ).add_to(m)
 
-            # Add heat map based on yield
+            # Add heat map based on yield or kriging variance
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
                 # Show progress overlay during processing with better visibility
                 progress_container = st.container()
@@ -449,29 +458,52 @@ with main_col1:
                     status_text.write("📍 **Step 1/4:** Processing well locations...")
                     progress_bar.progress(25)
 
-                # Generate proper GeoJSON grid with interpolated yield values
-                geojson_data = generate_geo_json_grid(
-                    filtered_wells.copy(), 
-                    st.session_state.selected_point, 
-                    st.session_state.search_radius,
-                    resolution=100,  # Higher resolution for smoother appearance
-                    method=st.session_state.interpolation_method,
-                    show_variance=st.session_state.show_kriging_variance,
-                    auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                    variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                    soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
-                )
+                # Check if we're showing kriging variance
+                if st.session_state.interpolation_method == 'kriging_variance':
+                    
+                    # Determine method based on variance type
+                    variance_method = 'depth_kriging' if st.session_state.get('variance_type', 'yield') == 'depth' else 'kriging'
+                    
+                    # Generate kriging variance visualization
+                    geojson_data = calculate_kriging_variance(
+                        filtered_wells.copy(),
+                        st.session_state.selected_point,
+                        st.session_state.search_radius,
+                        resolution=100,
+                        method=variance_method,
+                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                    )
+                else:
+                    # Generate regular interpolation visualization
+                    geojson_data = generate_geo_json_grid(
+                        filtered_wells.copy(), 
+                        st.session_state.selected_point, 
+                        st.session_state.search_radius,
+                        resolution=100,  # Higher resolution for smoother appearance
+                        method=st.session_state.interpolation_method,
+                        show_variance=False,  # Always False for regular interpolation
+                        auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
+                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                    )
 
                 progress_bar.progress(75)
 
                 if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
                     max_value = 0
+                    value_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
+                    
                     for feature in geojson_data['features']:
-                        max_value = max(max_value, feature['properties']['yield'])
+                        if value_field in feature['properties']:
+                            max_value = max(max_value, feature['properties'][value_field])
 
                     # Ensure reasonable minimum for visualization
-                    max_value = max(max_value, 20.0)
+                    if st.session_state.interpolation_method == 'kriging_variance':
+                        max_value = max(max_value, 1.0)  # Minimum variance value
+                    else:
+                        max_value = max(max_value, 20.0)  # Minimum yield value
 
                     # Instead of choropleth, use direct GeoJSON styling for more control
                     # This allows us to precisely map values to colors
@@ -481,24 +513,24 @@ with main_col1:
                         # Create 15-band color scale
                         step = max_value / 15.0
 
-                        if st.session_state.show_kriging_variance:
-                            # Variance colors: blue (low uncertainty) to red (high uncertainty)
+                        if st.session_state.interpolation_method == 'kriging_variance':
+                            # Variance colors: green (low uncertainty) to red (high uncertainty)
                             colors = [
-                                '#0000ff',  # Blue (low uncertainty)
-                                '#0033ff',
-                                '#0066ff',
-                                '#0099ff',
-                                '#00ccff',
-                                '#00ffff',  # Cyan
-                                '#33ffcc',
-                                '#66ff99',
-                                '#99ff66',
-                                '#ccff33',
+                                '#00ff00',  # Green (low uncertainty)
+                                '#33ff00',
+                                '#66ff00',
+                                '#99ff00',
+                                '#ccff00',
                                 '#ffff00',  # Yellow
                                 '#ffcc00',
                                 '#ff9900',
                                 '#ff6600',
+                                '#ff3300',
                                 '#ff0000',  # Red (high uncertainty)
+                                '#cc0000',
+                                '#990000',
+                                '#660000',
+                                '#330000'   # Dark red (very high uncertainty)
                             ]
                         elif st.session_state.interpolation_method == 'depth_kriging':
                             # Depth colors: green (shallow) to red (deep)
@@ -554,33 +586,36 @@ with main_col1:
                         }
 
                     # Add the GeoJSON with our custom styling
+                    display_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
+                    
                     folium.GeoJson(
                         data=geojson_data,
-                        name='Yield Interpolation',
+                        name='Interpolation Visualization',
                         style_function=lambda feature: {
-                            'fillColor': get_color(feature['properties']['yield']),
+                            'fillColor': get_color(feature['properties'][display_field]),
                             'color': 'none',
                             'weight': 0,
                             'fillOpacity': 0.7
                         },
                         tooltip=folium.GeoJsonTooltip(
-                            fields=['yield'],
-                            aliases=['Yield (L/s):'],
+                            fields=[display_field],
+                            aliases=[f'{display_field.title()}:'],
                             labels=True,
                             sticky=False
                         )
                     ).add_to(m)
 
                     # Add 15-band colormap legend to match the visualization
-                    if st.session_state.show_kriging_variance:
-                        # Variance legend with different colors
+                    if st.session_state.interpolation_method == 'kriging_variance':
+                        # Kriging variance legend
+                        variance_type_label = "Depth" if st.session_state.get('variance_type', 'yield') == 'depth' else "Yield"
                         colormap = folium.LinearColormap(
-                            colors=['#0000ff', '#0033ff', '#0066ff', '#0099ff', '#00ccff', 
-                                    '#00ffff', '#33ffcc', '#66ff99', '#99ff66', '#ccff33', 
-                                    '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff0000'],
+                            colors=['#00ff00', '#33ff00', '#66ff00', '#99ff00', '#ccff00', 
+                                    '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff3300', 
+                                    '#ff0000', '#cc0000', '#990000', '#660000', '#330000'],
                             vmin=0,
                             vmax=float(max_value),
-                            caption='Kriging Uncertainty (Variance) - 15 Bands'
+                            caption=f'Kriging Uncertainty ({variance_type_label}) - 15 Bands'
                         )
                     elif st.session_state.interpolation_method == 'depth_kriging':
                         # Depth legend with depth-appropriate colors
@@ -618,9 +653,10 @@ with main_col1:
                     highlight_function = lambda x: {'fillOpacity': 0.8}
 
                     # Determine tooltip label based on visualization type
-                    if st.session_state.show_kriging_variance:
-                        tooltip_field = 'yield'
-                        tooltip_label = 'Variance:'
+                    if st.session_state.interpolation_method == 'kriging_variance':
+                        tooltip_field = 'variance'
+                        variance_type_label = "Depth" if st.session_state.get('variance_type', 'yield') == 'depth' else "Yield"
+                        tooltip_label = f'{variance_type_label} Variance:'
                     elif st.session_state.interpolation_method == 'depth_kriging':
                         tooltip_field = 'yield'
                         tooltip_label = 'Depth (m):'

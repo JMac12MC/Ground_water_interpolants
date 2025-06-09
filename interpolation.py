@@ -581,8 +581,59 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         mask = distances <= radius_km
         xi_inside = xi[mask]
 
-        # Choose interpolation method
-        if method == 'rf_kriging' and len(wells_df) >= 10:
+        # Choose interpolation method based on parameter and dataset size
+        if method == 'yield_kriging' and len(wells_df) >= 5:
+            try:
+                print("Using yield kriging interpolation for heat map")
+
+                # Filter to meaningful yield data for better kriging
+                meaningful_yield_mask = yields > 0.1
+
+                if meaningful_yield_mask.any() and np.sum(meaningful_yield_mask) >= 5:
+                    # Use filtered data
+                    filtered_x_coords = x_coords[meaningful_yield_mask]
+                    filtered_y_coords = y_coords[meaningful_yield_mask] 
+                    filtered_yields = yields[meaningful_yield_mask]
+
+                    # Convert to lat/lon for kriging
+                    filtered_lons = filtered_x_coords / km_per_degree_lon + center_lon
+                    filtered_lats = filtered_y_coords / km_per_degree_lat + center_lat
+
+                    # Set up kriging
+                    OK = OrdinaryKriging(
+                        filtered_lons, filtered_lats, filtered_yields,
+                        variogram_model='spherical',
+                        verbose=False,
+                        enable_plotting=False,
+                        variogram_parameters=None
+                    )
+
+                    # Execute kriging
+                    xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
+                    xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
+                    interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+
+                    # Ensure non-negative yields
+                    interpolated_z = np.maximum(0, interpolated_z)
+                else:
+                    # Fallback to griddata if insufficient data
+                    interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
+                    nan_mask = np.isnan(interpolated_z)
+                    if np.any(nan_mask):
+                        interpolated_z[nan_mask] = griddata(
+                            points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
+                        )
+
+            except Exception as e:
+                print(f"Yield kriging error: {e}, falling back to standard interpolation")
+                interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
+                nan_mask = np.isnan(interpolated_z)
+                if np.any(nan_mask):
+                    interpolated_z[nan_mask] = griddata(
+                        points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
+                    )
+
+        elif method == 'rf_kriging' and len(wells_df) >= 10:
             try:
                 print("Using Random Forest + Kriging interpolation")
                 # OPTIMIZATION: Reduce number of trees for faster performance

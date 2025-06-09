@@ -160,6 +160,7 @@ with st.sidebar:
         "Map Visualization Type",
         options=[
             "Standard Kriging (Yield)", 
+            "Yield Kriging (Spherical)",
             "Kriging Variance (Yield Uncertainty)",
             "Kriging Variance (Depth Uncertainty)",
             "Depth to Groundwater (Standard Kriging)",
@@ -307,6 +308,11 @@ with st.sidebar:
         st.session_state.interpolation_method = 'kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
+    elif visualization_method == "Yield Kriging (Spherical)":
+        st.session_state.interpolation_method = 'yield_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
     elif visualization_method == "Kriging Variance (Yield Uncertainty)":
         st.session_state.interpolation_method = 'kriging_variance'
         st.session_state.show_kriging_variance = True

@@ -339,23 +339,42 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
                     
                     if include_triangle:
-                        # Create polygon for this triangle
-                        poly = {
-                            "type": "Feature",
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [[
-                                    [float(vertices[0,0]), float(vertices[0,1])],
-                                    [float(vertices[1,0]), float(vertices[1,1])],
-                                    [float(vertices[2,0]), float(vertices[2,1])],
-                                    [float(vertices[0,0]), float(vertices[0,1])]
-                                ]]
-                            },
-                            "properties": {
-                                "yield": avg_yield
+                        # Double-check: ensure triangle centroid is actually within soil polygons
+                        centroid_lon = float(np.mean(vertices[:, 0]))
+                        centroid_lat = float(np.mean(vertices[:, 1]))
+                        
+                        # Final validation: check if centroid is within any soil polygon
+                        final_include = True
+                        if merged_soil_geometry is not None:
+                            centroid_point = Point(centroid_lon, centroid_lat)
+                            # Use strict containment - triangle must be clearly within soil areas
+                            final_include = merged_soil_geometry.contains(centroid_point)
+                            
+                            # If not strictly contained, check if it's very close to the boundary
+                            if not final_include:
+                                # Allow triangles very close to boundary (within 10 meters)
+                                buffer_distance = 0.0001  # roughly 10 meters in degrees
+                                buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                                final_include = buffered_geometry.contains(centroid_point)
+                        
+                        if final_include:
+                            # Create polygon for this triangle
+                            poly = {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "Polygon",
+                                    "coordinates": [[
+                                        [float(vertices[0,0]), float(vertices[0,1])],
+                                        [float(vertices[1,0]), float(vertices[1,1])],
+                                        [float(vertices[2,0]), float(vertices[2,1])],
+                                        [float(vertices[0,0]), float(vertices[0,1])]
+                                    ]]
+                                },
+                                "properties": {
+                                    "yield": avg_yield
+                                }
                             }
-                        }
-                        features.append(poly)
+                            features.append(poly)
         else:
             # Fallback to rectangular grid if triangulation is not possible
             for i in range(len(lat_vals)-1):
@@ -812,11 +831,30 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                                 include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
                             
                             if include_point:
-                                heat_data.append([
-                                    point_lat,  # Latitude
-                                    point_lon,  # Longitude
-                                    float(cell_values[max_idx])  # Yield value (actual value)
-                                ])
+                                # Double-check: ensure point is actually within soil polygons
+                                if merged_soil_geometry is not None:
+                                    point = Point(point_lon, point_lat)
+                                    # Use strict containment for heat map points
+                                    strictly_contained = merged_soil_geometry.contains(point)
+                                    
+                                    # If not strictly contained, check if very close to boundary
+                                    if not strictly_contained:
+                                        buffer_distance = 0.0001  # roughly 10 meters
+                                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                                        strictly_contained = buffered_geometry.contains(point)
+                                    
+                                    if strictly_contained:
+                                        heat_data.append([
+                                            point_lat,  # Latitude
+                                            point_lon,  # Longitude
+                                            float(cell_values[max_idx])  # Yield value (actual value)
+                                        ])
+                                else:
+                                    heat_data.append([
+                                        point_lat,  # Latitude
+                                        point_lon,  # Longitude
+                                        float(cell_values[max_idx])  # Yield value (actual value)
+                                    ])
         else:
             # Standard approach for smaller datasets
             heat_data = []
@@ -831,11 +869,30 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
                     
                     if include_point:
-                        heat_data.append([
-                            float(lat_points[i]),  # Latitude
-                            float(lon_points[i]),  # Longitude
-                            float(interpolated_z[i])  # Yield value (actual value, not normalized)
-                        ])
+                        # Double-check: ensure point is actually within soil polygons
+                        if merged_soil_geometry is not None:
+                            point = Point(lon_points[i], lat_points[i])
+                            # Use strict containment
+                            strictly_contained = merged_soil_geometry.contains(point)
+                            
+                            # If not strictly contained, check if very close to boundary
+                            if not strictly_contained:
+                                buffer_distance = 0.0001  # roughly 10 meters
+                                buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                                strictly_contained = buffered_geometry.contains(point)
+                            
+                            if strictly_contained:
+                                heat_data.append([
+                                    float(lat_points[i]),  # Latitude
+                                    float(lon_points[i]),  # Longitude
+                                    float(interpolated_z[i])  # Yield value (actual value, not normalized)
+                                ])
+                        else:
+                            heat_data.append([
+                                float(lat_points[i]),  # Latitude
+                                float(lon_points[i]),  # Longitude
+                                float(interpolated_z[i])  # Yield value (actual value, not normalized)
+                            ])
 
         # Always make sure well points themselves are included for accuracy
         # These are the actual data points we have, so they should be shown
@@ -855,12 +912,32 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     include_well = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
                 
                 if include_well:
-                    heat_data.append([
-                        float(lats[j]),
-                        float(lons[j]),
-                        float(yields[j])
-                    ])
-                    well_points_added += 1
+                    # Double-check: ensure well point is actually within soil polygons
+                    if merged_soil_geometry is not None:
+                        well_point = Point(lons[j], lats[j])
+                        # Use strict containment for wells
+                        strictly_contained = merged_soil_geometry.contains(well_point)
+                        
+                        # If not strictly contained, check if very close to boundary
+                        if not strictly_contained:
+                            buffer_distance = 0.0001  # roughly 10 meters
+                            buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                            strictly_contained = buffered_geometry.contains(well_point)
+                        
+                        if strictly_contained:
+                            heat_data.append([
+                                float(lats[j]),
+                                float(lons[j]),
+                                float(yields[j])
+                            ])
+                            well_points_added += 1
+                    else:
+                        heat_data.append([
+                            float(lats[j]),
+                            float(lons[j]),
+                            float(yields[j])
+                        ])
+                        well_points_added += 1
 
         # Log filtering results
         if merged_soil_geometry is not None:

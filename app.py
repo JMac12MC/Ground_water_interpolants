@@ -775,8 +775,7 @@ with main_col1:
         use_container_width=True,
         height=600,
         key="main_map",
-        returned_objects=["last_clicked"],
-        debounce_time=500  # Add debounce to prevent excessive updates
+        returned_objects=["last_clicked"]
     )
 
     # Process clicks from the map with better stability

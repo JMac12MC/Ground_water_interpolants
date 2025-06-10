@@ -171,8 +171,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
 
         elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
-            # Perform kriging with auto-fitted variogram for yield visualization (without variance output)
-            print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
+            # Perform kriging with auto-fitted variogram for yield/depth visualization (without variance output)
+            if method == 'depth_kriging':
+                print(f"Auto-fitting {variogram_model} variogram model for depth estimation...")
+            else:
+                print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
 
             # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
             lon_values = x_coords / km_per_degree_lon + center_lon
@@ -183,17 +186,38 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
-            # Set up kriging with auto-fitted variogram
-            OK = OrdinaryKriging(
-                lon_values, lat_values, yields,
-                variogram_model=variogram_model,
-                verbose=False,
-                enable_plotting=False,
-                variogram_parameters=None  # Let PyKrige auto-fit parameters
-            )
+            # Set up kriging with auto-fitted variogram - ensure proper parameters for depth data
+            if method == 'depth_kriging':
+                # For depth data, use more appropriate variogram parameters
+                OK = OrdinaryKriging(
+                    lon_values, lat_values, yields,
+                    variogram_model=variogram_model,
+                    verbose=True,  # Enable verbose for debugging depth issues
+                    enable_plotting=False,
+                    variogram_parameters=None,  # Let PyKrige auto-fit parameters
+                    weight=True,  # Enable nugget effect for depth data
+                    anisotropy_scaling=1.0,  # No anisotropy scaling
+                    anisotropy_angle=0.0
+                )
+            else:
+                # Standard yield kriging
+                OK = OrdinaryKriging(
+                    lon_values, lat_values, yields,
+                    variogram_model=variogram_model,
+                    verbose=False,
+                    enable_plotting=False,
+                    variogram_parameters=None  # Let PyKrige auto-fit parameters
+                )
 
-            # Execute kriging to get yield predictions (ignore variance)
+            # Execute kriging to get predictions (ignore variance)
             interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+            
+            # Additional validation for depth interpolation
+            if method == 'depth_kriging':
+                print(f"Depth interpolation stats: min={np.min(interpolated_z):.2f}, max={np.max(interpolated_z):.2f}, mean={np.mean(interpolated_z):.2f}")
+                # Ensure reasonable depth values (depths should be positive and reasonable)
+                interpolated_z = np.maximum(0.1, interpolated_z)  # Minimum depth of 0.1m
+                interpolated_z = np.minimum(200.0, interpolated_z)  # Maximum reasonable depth of 200m
 
         else:
             # Use standard griddata interpolation for other cases

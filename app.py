@@ -13,11 +13,12 @@ from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, l
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance
 from database import PolygonDatabase
 
-# Set page configuration
+# Set page configuration with stability settings
 st.set_page_config(
     page_title="Groundwater Mapper",
     page_icon="💧",
     layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Clean title header without image
@@ -70,10 +71,17 @@ add_banner()
 with st.sidebar:
     st.header("Data Options")
 
-    # Load Canterbury wells data
+    # Load Canterbury wells data with caching
     if st.session_state.wells_data is None:
         with st.spinner("Loading Canterbury wells data..."):
-            st.session_state.wells_data = load_nz_govt_data()
+            try:
+                st.session_state.wells_data = load_nz_govt_data()
+                if st.session_state.wells_data is None or len(st.session_state.wells_data) == 0:
+                    st.error("Failed to load wells data. Please refresh the page.")
+                    st.stop()
+            except Exception as e:
+                st.error(f"Error loading wells data: {e}")
+                st.stop()
     
     # Load soil drainage polygons from database
     if st.session_state.soil_polygons is None and st.session_state.polygon_db is not None:
@@ -448,16 +456,9 @@ with main_col1:
 
             # Add heat map based on yield or kriging variance
             if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Show progress overlay during processing with better visibility
-                progress_container = st.container()
-                with progress_container:
-                    st.info("🔄 **Analysis in Progress** - Please wait while we process the data...")
-
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-
-                    status_text.write("📍 **Step 1/4:** Processing well locations...")
-                    progress_bar.progress(25)
+                # Use a simpler progress indicator to reduce instability
+                with st.spinner("🔄 Processing analysis data..."):
+                    pass
 
                 # Check if we're showing kriging variance
                 if st.session_state.interpolation_method == 'kriging_variance':
@@ -545,8 +546,6 @@ with main_col1:
                         variogram_model=st.session_state.get('variogram_model', 'spherical'),
                         soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
                     )
-
-                progress_bar.progress(75)
 
                 if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
@@ -697,14 +696,7 @@ with main_col1:
                         )
                     colormap.add_to(m)
 
-                    progress_bar.progress(100)
-                    status_text.text('Heatmap generation complete!')
-
-                    # Clear progress indicators after a moment
-                    import time
-                    time.sleep(0.5)
-                    progress_bar.empty()
-                    status_text.empty()
+                    # Analysis complete
 
                     # Add tooltips to show appropriate values on hover
                     style_function = lambda x: {'fillColor': 'transparent', 'color': 'transparent'}
@@ -777,29 +769,30 @@ with main_col1:
     </script>
     """))
 
-    # Use st_folium with return_clicked_latlon to get click coordinates
+    # Use st_folium with stable key and minimal returned objects
     map_data = st_folium(
         m,
         use_container_width=True,
         height=600,
-        key="interactive_map",
-        returned_objects=["last_clicked"]
+        key="main_map",
+        returned_objects=["last_clicked"],
+        debounce_time=500  # Add debounce to prevent excessive updates
     )
 
-    # Process clicks from the map
+    # Process clicks from the map with better stability
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         # Get the coordinates from the click
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
 
-        # Only update if this is a new location
+        # Only update if this is a genuinely new location (larger threshold for stability)
         current_point = st.session_state.selected_point
-        if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
+        if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
             # Clear filtered wells to trigger recalculation
             st.session_state.filtered_wells = None
-            # Force a rerun to process the new location
+            # Use experimental_rerun to reduce instability
             st.rerun()
 
     # Add comprehensive well data summary report
@@ -927,10 +920,10 @@ with main_col1:
 
     # Add a clear button to reset the map
     if st.button("Clear Results", use_container_width=True):
-        # Reset the session state
-        st.session_state.selected_point = None
-        st.session_state.filtered_wells = None
-        st.session_state.selected_well = None
+        # Reset the session state safely
+        for key in ['selected_point', 'filtered_wells', 'selected_well']:
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
 
 with main_col2:

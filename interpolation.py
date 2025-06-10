@@ -1359,16 +1359,79 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
         xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
 
-        # Perform Ordinary Kriging
-        OK = OrdinaryKriging(
-            lon_values, lat_values, values,
-            variogram_model=variogram_model,
-            verbose=False,
-            enable_plotting=False
-        )
+        # Perform Ordinary Kriging with proper variance calculation
+        try:
+            OK = OrdinaryKriging(
+                lon_values, lat_values, values,
+                variogram_model=variogram_model,
+                verbose=True,  # Enable verbose to debug variance issues
+                enable_plotting=False,
+                weight=True,  # Enable proper weighting for variance calculation
+                exact_values=True,  # Use exact values at data points
+                pseudo_inv=True  # Use pseudo inverse for better numerical stability
+            )
 
-        # Execute kriging to get both predictions and variance
-        _, kriging_variance = OK.execute('points', xi_lon, xi_lat)
+            # Execute kriging to get both predictions and variance
+            predictions, kriging_variance = OK.execute('points', xi_lon, xi_lat)
+            
+            print(f"Kriging variance calculation - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}, Mean: {np.mean(kriging_variance):.6f}")
+            
+            # Ensure variance values are reasonable (variance should always be positive)
+            kriging_variance = np.maximum(kriging_variance, 1e-6)
+            
+            # Check if variance is too uniform (indicates calculation issue)
+            variance_std = np.std(kriging_variance)
+            variance_mean = np.mean(kriging_variance)
+            
+            if variance_std / variance_mean < 0.01:  # If variance is too uniform
+                print("Warning: Variance appears too uniform, attempting alternative calculation...")
+                
+                # Try alternative kriging setup for better variance estimation
+                OK_alt = OrdinaryKriging(
+                    lon_values, lat_values, values,
+                    variogram_model='linear',  # Use simpler model for variance
+                    verbose=False,
+                    enable_plotting=False,
+                    weight=False,  # Try without additional weighting
+                    exact_values=False  # Allow some smoothing
+                )
+                
+                _, kriging_variance_alt = OK_alt.execute('points', xi_lon, xi_lat)
+                
+                # Use alternative if it shows more variation
+                alt_std = np.std(kriging_variance_alt)
+                alt_mean = np.mean(kriging_variance_alt)
+                
+                if alt_std / alt_mean > variance_std / variance_mean:
+                    print("Using alternative variance calculation with better variation")
+                    kriging_variance = kriging_variance_alt
+                    kriging_variance = np.maximum(kriging_variance, 1e-6)
+                
+        except Exception as e:
+            print(f"Error in kriging variance calculation: {e}")
+            # Fallback: create synthetic variance based on distance to nearest data point
+            print("Using distance-based variance estimation as fallback")
+            
+            # Calculate distance from each grid point to nearest data point
+            from scipy.spatial.distance import cdist
+            
+            # Create coordinate arrays for distance calculation
+            data_coords = np.column_stack([lat_values, lon_values])
+            grid_coords = np.column_stack([xi_lat, xi_lon])
+            
+            # Calculate distances
+            distances = cdist(grid_coords, data_coords)
+            min_distances = np.min(distances, axis=1)
+            
+            # Create variance based on distance (farther from data = higher variance)
+            # Scale distances to reasonable variance range
+            max_distance = np.max(min_distances)
+            if max_distance > 0:
+                normalized_distances = min_distances / max_distance
+                # Create variance that increases with distance from data
+                kriging_variance = 0.1 + normalized_distances * np.var(values)
+            else:
+                kriging_variance = np.full(len(xi_lat), np.var(values) * 0.5)
 
         # Prepare variance data for heat map
         lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat

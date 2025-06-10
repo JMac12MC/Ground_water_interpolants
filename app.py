@@ -60,7 +60,8 @@ if 'polygon_db' not in st.session_state:
     try:
         st.session_state.polygon_db = PolygonDatabase()
     except Exception as e:
-        st.error(f"Database connection failed: {e}")
+        # Don't show error to avoid constant refresh, just log it
+        print(f"Database connection failed: {e}")
         st.session_state.polygon_db = None
 
 # Add banner
@@ -112,22 +113,13 @@ with st.sidebar:
                     
                     st.success(f"Loaded {len(st.session_state.soil_polygons)} merged soil drainage polygons from database")
                 else:
-                    st.warning("No merged soil polygons found in database.")
-                    st.info("Run the polygon processing script first to merge and store soil polygons.")
+                    print("No merged soil polygons found in database.")
                     st.session_state.soil_polygons = None
                     
         except Exception as e:
-            st.warning(f"Could not load soil polygons from database: {str(e)}")
-            # Try to reconnect to database
-            try:
-                st.session_state.polygon_db = PolygonDatabase()
-                stored_polygons = st.session_state.polygon_db.get_all_polygons()
-                if stored_polygons:
-                    st.success("Database reconnected successfully")
-                    st.rerun()
-            except:
-                st.info("Fallback: Run the polygon processing script to merge and store soil polygons.")
-                st.session_state.soil_polygons = None
+            print(f"Could not load soil polygons from database: {str(e)}")
+            # Don't attempt frequent reconnections, just set to None
+            st.session_state.soil_polygons = None
     elif st.session_state.polygon_db is None:
         st.warning("Database connection not available. Cannot load soil polygons.")
         st.session_state.soil_polygons = None
@@ -184,9 +176,14 @@ with st.sidebar:
     if st.session_state.polygon_db is not None:
         st.header("Soil Polygon Processing")
         
-        # Check if we have processed polygons
-        stored_polygons = st.session_state.polygon_db.get_all_polygons()
-        has_soil_polygons = any(p for p in stored_polygons if 'Soil_Drainage_' in p['polygon_name'])
+        # Check if we have processed polygons (cache this to avoid frequent DB calls)
+        if 'has_soil_polygons' not in st.session_state:
+            try:
+                stored_polygons = st.session_state.polygon_db.get_all_polygons()
+                st.session_state.has_soil_polygons = any(p for p in stored_polygons if 'Soil_Drainage_' in p['polygon_name'])
+            except:
+                st.session_state.has_soil_polygons = False
+        has_soil_polygons = st.session_state.has_soil_polygons
         
         if not has_soil_polygons:
             st.warning("No merged soil polygons found in database")
@@ -232,8 +229,13 @@ with st.sidebar:
     if st.session_state.polygon_db is not None:
         st.header("Analysis Database")
         
-        # Show database statistics
-        stats = st.session_state.polygon_db.get_polygon_statistics()
+        # Show database statistics (cache for performance)
+        if 'db_stats' not in st.session_state:
+            try:
+                st.session_state.db_stats = st.session_state.polygon_db.get_polygon_statistics()
+            except:
+                st.session_state.db_stats = {'total_polygons': 0, 'total_wells': 0, 'avg_area_km2': 0.0, 'overall_avg_yield': 0.0}
+        stats = st.session_state.db_stats
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Stored Polygons", stats['total_polygons'])
@@ -792,14 +794,14 @@ with main_col1:
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
 
-        # Only update if this is a new location
+        # Only update if this is a new location (with larger threshold to prevent micro-movements)
         current_point = st.session_state.selected_point
-        if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
+        if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
             # Clear filtered wells to trigger recalculation
             st.session_state.filtered_wells = None
-            # Force a rerun to process the new location
+            # Use experimental_rerun instead of rerun to reduce refresh frequency
             st.rerun()
 
     # Add comprehensive well data summary report

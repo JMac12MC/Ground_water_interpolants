@@ -16,7 +16,13 @@ class PolygonDatabase:
         if not self.database_url:
             raise ValueError("DATABASE_URL environment variable not found")
 
-        self.engine = create_engine(self.database_url)
+        # Add connection pooling and retry logic
+        self.engine = create_engine(
+            self.database_url,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            connect_args={"connect_timeout": 10}
+        )
         self.metadata = MetaData()
         self._create_tables()
 

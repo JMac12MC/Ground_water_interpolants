@@ -1374,10 +1374,12 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         for i in range(len(lat_points)):
             # Only add points with meaningful variance values
             if kriging_variance[i] > 0.0001:
+                # Create point for soil polygon checking
+                point = Point(lon_points[i], lat_points[i])
+                
                 # Check if point should be included based on soil polygons (exact same logic as other interpolants)
                 include_point = True
                 if merged_soil_geometry is not None:
-                    point = Point(lon_points[i], lat_points[i])
                     # Use strict containment - point must be clearly within soil areas
                     include_point = merged_soil_geometry.contains(point)
 

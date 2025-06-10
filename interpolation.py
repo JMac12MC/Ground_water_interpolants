@@ -1374,38 +1374,25 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         for i in range(len(lat_points)):
             # Only add points with meaningful variance values
             if kriging_variance[i] > 0.0001:
-                # Check if point should be included based on soil polygons (same logic as other interpolants)
+                # Check if point should be included based on soil polygons (exact same logic as other interpolants)
                 include_point = True
                 if merged_soil_geometry is not None:
                     point = Point(lon_points[i], lat_points[i])
-                    include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                    # Use strict containment - point must be clearly within soil areas
+                    include_point = merged_soil_geometry.contains(point)
+
+                    # If not strictly contained, check if very close to boundary (within 10 meters)
+                    if not include_point:
+                        buffer_distance = 0.0001  # roughly 10 meters in degrees
+                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                        include_point = buffered_geometry.contains(point)
 
                 if include_point:
-                    # Double-check: ensure point is actually within soil polygons (same as other interpolants)
-                    if merged_soil_geometry is not None:
-                        point = Point(lon_points[i], lat_points[i])
-                        # Use strict containment for variance points
-                        strictly_contained = merged_soil_geometry.contains(point)
-
-                        # If not strictly contained, check if very close to boundary
-                        if not strictly_contained:
-                            buffer_distance = 0.0001  # roughly 10 meters
-                            buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                            strictly_contained = buffered_geometry.contains(point)
-
-                        if strictly_contained:
-                            variance_data.append([
-                                float(lat_points[i]),
-                                float(lon_points[i]),
-                                float(kriging_variance[i])
-                            ])
-                    else:
-                        # Add data point with latitude, longitude, and variance
-                        variance_data.append([
-                            float(lat_points[i]),
-                            float(lon_points[i]),
-                            float(kriging_variance[i])
-                        ])
+                    variance_data.append([
+                        float(lat_points[i]),
+                        float(lon_points[i]),
+                        float(kriging_variance[i])
+                    ])
 
         # Log filtering results
         if merged_soil_geometry is not None:

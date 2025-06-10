@@ -1246,8 +1246,8 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     Calculate kriging variance for yield or depth to groundwater interpolations.
 
     This function performs ordinary kriging to estimate the variance (uncertainty)
-    of the interpolated values. It's designed to work with both yield and
-    depth-to-groundwater data, and applies soil polygon filtering like other interpolants.
+    of the interpolated values, using Delaunay triangulation for consistent polygon clipping
+    that matches the strictness of yield and depth interpolations.
 
     Parameters:
     -----------
@@ -1277,13 +1277,9 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
 
     Notes:
     ------
-    - The function automatically detects whether to interpolate yield or depth
-      based on the columns available in `wells_df`.
-    - It handles cases where depth_to_groundwater is not available and falls
-      back to using the 'depth' column if it exists.
-    - It returns an empty list if there is insufficient data (less than 5 wells)
-      to perform kriging.
-    - Applies the same soil polygon clipping as other interpolants.
+    - Uses Delaunay triangulation for consistent clipping with yield/depth interpolations
+    - Applies the same strict containment logic as other interpolants
+    - Returns triangulated variance data points with strict polygon filtering
     """
     try:
         # Filter wells data similar to yield kriging for consistency
@@ -1370,11 +1366,11 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         # Execute kriging to get both predictions and variance
         _, kriging_variance = OK.execute('points', xi_lon, xi_lat)
 
-        # Prepare variance data for heat map
-        lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
-        lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+        # Convert grid coordinates back to lat/lon
+        grid_lats = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
+        grid_lons = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
 
-        # Prepare soil polygon geometry for filtering variance display (same as other interpolants)
+        # Prepare soil polygon geometry for filtering (same as other interpolants)
         merged_soil_geometry = None
         if soil_polygons is not None and len(soil_polygons) > 0:
             try:
@@ -1394,40 +1390,79 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                 print(f"Error preparing soil polygon geometry for kriging variance: {e}")
                 merged_soil_geometry = None
 
+        # Use Delaunay triangulation for consistent clipping with yield/depth interpolations
         variance_data = []
-        for i in range(len(lat_points)):
-            # Only add points with meaningful variance values
-            if kriging_variance[i] > 0.0001:
-                # Check if point should be included based on soil polygons (same logic as other interpolants)
-                include_point = True
-                if merged_soil_geometry is not None:
-                    point = Point(lon_points[i], lat_points[i])
-                    include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+        
+        # Create triangulation points
+        points_2d = np.vstack([grid_lons, grid_lats]).T
 
-                if include_point:
-                    # Double-check: ensure point is actually within soil polygons (same as other interpolants)
+        if len(points_2d) > 3:
+            # Use Delaunay triangulation (same as yield/depth interpolations)
+            from scipy.spatial import Delaunay
+            tri = Delaunay(points_2d)
+            
+            # Process each triangle
+            for simplex in tri.simplices:
+                # Get the three points of this triangle
+                vertices = points_2d[simplex]
+                
+                # Get the variance values for these points
+                vertex_variances = kriging_variance[simplex]
+                avg_variance = float(np.mean(vertex_variances))
+                
+                # Only add triangles with meaningful variance values
+                if avg_variance > 0.0001:
+                    # Check if triangle should be included based on soil polygons (strict containment)
+                    include_triangle = True
+                    
                     if merged_soil_geometry is not None:
-                        point = Point(lon_points[i], lat_points[i])
-                        # Use strict containment for variance points
-                        strictly_contained = merged_soil_geometry.contains(point)
-
+                        # Calculate triangle centroid
+                        centroid_lon = float(np.mean(vertices[:, 0]))
+                        centroid_lat = float(np.mean(vertices[:, 1]))
+                        centroid_point = Point(centroid_lon, centroid_lat)
+                        
+                        # Use strict containment - triangle must be clearly within soil areas
+                        include_triangle = merged_soil_geometry.contains(centroid_point)
+                        
+                        # If not strictly contained, check if it's very close to the boundary
+                        if not include_triangle:
+                            # Allow triangles very close to boundary (within 10 meters)
+                            buffer_distance = 0.0001  # roughly 10 meters in degrees
+                            buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                            include_triangle = buffered_geometry.contains(centroid_point)
+                    
+                    if include_triangle:
+                        # Use centroid for variance data point (consistent with triangle approach)
+                        centroid_lon = float(np.mean(vertices[:, 0]))
+                        centroid_lat = float(np.mean(vertices[:, 1]))
+                        variance_data.append([
+                            centroid_lat,
+                            centroid_lon,
+                            avg_variance
+                        ])
+        else:
+            # Fallback to point-based approach if insufficient points for triangulation
+            print("Warning: Insufficient points for Delaunay triangulation, using raw points")
+            for i in range(len(grid_lats)):
+                # Only add points with meaningful variance values
+                if kriging_variance[i] > 0.0001:
+                    # Check if point should be included based on soil polygons (strict containment)
+                    include_point = True
+                    if merged_soil_geometry is not None:
+                        point = Point(grid_lons[i], grid_lats[i])
+                        # Use strict containment
+                        include_point = merged_soil_geometry.contains(point)
+                        
                         # If not strictly contained, check if very close to boundary
-                        if not strictly_contained:
+                        if not include_point:
                             buffer_distance = 0.0001  # roughly 10 meters
                             buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                            strictly_contained = buffered_geometry.contains(point)
-
-                        if strictly_contained:
-                            variance_data.append([
-                                float(lat_points[i]),
-                                float(lon_points[i]),
-                                float(kriging_variance[i])
-                            ])
-                    else:
-                        # Add data point with latitude, longitude, and variance
+                            include_point = buffered_geometry.contains(point)
+                    
+                    if include_point:
                         variance_data.append([
-                            float(lat_points[i]),
-                            float(lon_points[i]),
+                            float(grid_lats[i]),
+                            float(grid_lons[i]),
                             float(kriging_variance[i])
                         ])
 

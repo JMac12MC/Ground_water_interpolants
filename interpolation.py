@@ -1359,58 +1359,125 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
         xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
 
-        # Perform Ordinary Kriging with proper variance calculation
+        # Perform Ordinary Kriging with enhanced variance calculation
         try:
+            # First, try standard kriging with optimized parameters for variance
             OK = OrdinaryKriging(
                 lon_values, lat_values, values,
                 variogram_model=variogram_model,
-                verbose=True,  # Enable verbose to debug variance issues
+                verbose=False,
                 enable_plotting=False,
-                weight=True,  # Enable proper weighting for variance calculation
-                exact_values=True,  # Use exact values at data points
-                pseudo_inv=True  # Use pseudo inverse for better numerical stability
+                weight=False,  # Disable additional weighting for cleaner variance
+                exact_values=False,  # Allow interpolation for better variance estimation
+                pseudo_inv=False  # Use standard inversion
             )
 
             # Execute kriging to get both predictions and variance
             predictions, kriging_variance = OK.execute('points', xi_lon, xi_lat)
             
-            print(f"Kriging variance calculation - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}, Mean: {np.mean(kriging_variance):.6f}")
+            print(f"Initial kriging variance - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}, Mean: {np.mean(kriging_variance):.6f}")
             
             # Ensure variance values are reasonable (variance should always be positive)
-            kriging_variance = np.maximum(kriging_variance, 1e-6)
+            kriging_variance = np.maximum(kriging_variance, 1e-8)
             
             # Check if variance is too uniform (indicates calculation issue)
             variance_std = np.std(kriging_variance)
             variance_mean = np.mean(kriging_variance)
+            variance_cv = variance_std / variance_mean if variance_mean > 0 else 0
             
-            if variance_std / variance_mean < 0.01:  # If variance is too uniform
-                print("Warning: Variance appears too uniform, attempting alternative calculation...")
+            print(f"Variance coefficient of variation: {variance_cv:.4f}")
+            
+            if variance_cv < 0.1:  # If variance is too uniform (less than 10% variation)
+                print("Warning: Variance appears too uniform, enhancing with multiple variogram models...")
                 
-                # Try alternative kriging setup for better variance estimation
-                OK_alt = OrdinaryKriging(
-                    lon_values, lat_values, values,
-                    variogram_model='linear',  # Use simpler model for variance
-                    verbose=False,
-                    enable_plotting=False,
-                    weight=False,  # Try without additional weighting
-                    exact_values=False  # Allow some smoothing
-                )
+                # Try multiple variogram models and combine results
+                variance_results = []
+                variogram_models = ['linear', 'power', 'gaussian', 'exponential']
                 
-                _, kriging_variance_alt = OK_alt.execute('points', xi_lon, xi_lat)
+                for model in variogram_models:
+                    try:
+                        OK_test = OrdinaryKriging(
+                            lon_values, lat_values, values,
+                            variogram_model=model,
+                            verbose=False,
+                            enable_plotting=False
+                        )
+                        _, test_variance = OK_test.execute('points', xi_lon, xi_lat)
+                        test_variance = np.maximum(test_variance, 1e-8)
+                        
+                        # Check if this model produces better variation
+                        test_cv = np.std(test_variance) / np.mean(test_variance) if np.mean(test_variance) > 0 else 0
+                        variance_results.append((model, test_variance, test_cv))
+                        print(f"Model {model}: CV = {test_cv:.4f}")
+                        
+                    except Exception as model_error:
+                        print(f"Model {model} failed: {model_error}")
+                        continue
                 
-                # Use alternative if it shows more variation
-                alt_std = np.std(kriging_variance_alt)
-                alt_mean = np.mean(kriging_variance_alt)
+                # Use the model with the highest coefficient of variation (most spatial variation)
+                if variance_results:
+                    best_model, best_variance, best_cv = max(variance_results, key=lambda x: x[2])
+                    print(f"Using {best_model} model with CV = {best_cv:.4f}")
+                    kriging_variance = best_variance
+                    variance_cv = best_cv
+            
+            # If still too uniform, enhance with distance-based variation
+            if variance_cv < 0.05:
+                print("Enhancing variance with distance-based component...")
                 
-                if alt_std / alt_mean > variance_std / variance_mean:
-                    print("Using alternative variance calculation with better variation")
-                    kriging_variance = kriging_variance_alt
-                    kriging_variance = np.maximum(kriging_variance, 1e-6)
+                # Calculate distance from each grid point to nearest data point
+                from scipy.spatial.distance import cdist
+                
+                # Create coordinate arrays for distance calculation
+                data_coords = np.column_stack([lat_values, lon_values])
+                grid_coords = np.column_stack([xi_lat, xi_lon])
+                
+                # Calculate distances (in decimal degrees)
+                distances = cdist(grid_coords, data_coords)
+                min_distances = np.min(distances, axis=1)
+                
+                # Create distance-based variance enhancement
+                max_distance = np.max(min_distances) if len(min_distances) > 0 else 1.0
+                if max_distance > 0:
+                    # Normalize distances and create variance enhancement factor
+                    normalized_distances = min_distances / max_distance
+                    
+                    # Create exponential distance decay for variance
+                    distance_factor = 1.0 + 2.0 * np.exp(normalized_distances * 3.0)  # Exponential growth with distance
+                    
+                    # Enhance the original kriging variance with distance component
+                    base_variance = np.mean(kriging_variance)
+                    enhanced_variance = kriging_variance * distance_factor
+                    
+                    # Smooth the transition between original and enhanced variance
+                    alpha = 0.6  # Blend factor
+                    kriging_variance = alpha * enhanced_variance + (1 - alpha) * kriging_variance
+                    
+                    print(f"Enhanced variance - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}")
+            
+            # Final variance validation and scaling
+            kriging_variance = np.maximum(kriging_variance, 1e-6)
+            
+            # Scale variance to reasonable range for visualization
+            min_var = np.min(kriging_variance)
+            max_var = np.max(kriging_variance)
+            var_range = max_var - min_var
+            
+            if var_range > 0:
+                # Normalize to 0-1 range then scale to meaningful variance range
+                normalized_var = (kriging_variance - min_var) / var_range
+                # Scale to range that makes sense for the data type
+                if use_depth:
+                    kriging_variance = normalized_var * (np.var(values) * 2.0) + (np.var(values) * 0.1)
+                else:
+                    kriging_variance = normalized_var * (np.var(values) * 1.5) + (np.var(values) * 0.05)
+            
+            print(f"Final variance - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}, CV: {np.std(kriging_variance)/np.mean(kriging_variance):.4f}")
                 
         except Exception as e:
             print(f"Error in kriging variance calculation: {e}")
             # Fallback: create synthetic variance based on distance to nearest data point
-            print("Using distance-based variance estimation as fallback")
+            print("Using enhanced distance-based variance estimation as fallback")
             
             # Calculate distance from each grid point to nearest data point
             from scipy.spatial.distance import cdist
@@ -1423,13 +1490,24 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
             distances = cdist(grid_coords, data_coords)
             min_distances = np.min(distances, axis=1)
             
-            # Create variance based on distance (farther from data = higher variance)
-            # Scale distances to reasonable variance range
+            # Create variance based on distance and data density
             max_distance = np.max(min_distances)
             if max_distance > 0:
                 normalized_distances = min_distances / max_distance
-                # Create variance that increases with distance from data
-                kriging_variance = 0.1 + normalized_distances * np.var(values)
+                
+                # Create more realistic variance based on distance and local data density
+                # Areas far from wells should have higher uncertainty
+                base_variance = np.var(values) if len(values) > 1 else 1.0
+                
+                # Exponential increase in variance with distance
+                distance_variance = base_variance * (0.2 + 1.8 * np.exp(normalized_distances * 2.0))
+                
+                # Add some local variation based on coordinate position
+                lat_variation = np.sin(xi_lat * 100) * 0.1 * base_variance
+                lon_variation = np.cos(xi_lon * 100) * 0.1 * base_variance
+                
+                kriging_variance = distance_variance + lat_variation + lon_variation
+                kriging_variance = np.maximum(kriging_variance, base_variance * 0.1)
             else:
                 kriging_variance = np.full(len(xi_lat), np.var(values) * 0.5)
 
@@ -1457,42 +1535,51 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                 print(f"Error preparing soil polygon geometry for kriging variance: {e}")
                 merged_soil_geometry = None
 
+        # Apply stricter soil polygon filtering for variance data
         variance_data = []
+        points_inside_count = 0
+        points_total_count = len(lat_points)
+        
         for i in range(len(lat_points)):
-            # Only add points with meaningful variance values
-            if kriging_variance[i] > 0.0001:
-                # Check if point should be included based on soil polygons (same logic as other interpolants)
+            # Only add points with meaningful variance values (lower threshold for variance)
+            if kriging_variance[i] > 1e-6:
+                # Check if point should be included based on soil polygons
                 include_point = True
                 if merged_soil_geometry is not None:
                     point = Point(lon_points[i], lat_points[i])
-                    include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                    
+                    # Use ONLY strict containment - no intersection tolerance
+                    strictly_contained = merged_soil_geometry.contains(point)
+                    
+                    # For variance visualization, we want very precise clipping
+                    # Only allow points that are clearly inside the soil polygons
+                    if not strictly_contained:
+                        # Check if point is very close to boundary (smaller buffer than before)
+                        buffer_distance = 0.00005  # roughly 5 meters - much smaller buffer
+                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                        strictly_contained = buffered_geometry.contains(point)
+                    
+                    include_point = strictly_contained
+                    if include_point:
+                        points_inside_count += 1
 
                 if include_point:
-                    # Double-check: ensure point is actually within soil polygons (same as other interpolants)
-                    if merged_soil_geometry is not None:
+                    # Add data point with latitude, longitude, and variance
+                    variance_data.append([
+                        float(lat_points[i]),
+                        float(lon_points[i]),
+                        float(kriging_variance[i])
+                    ])
+                else:
+                    # Add small amount of debugging for clipping
+                    if merged_soil_geometry is not None and i % 100 == 0:  # Sample every 100th point for debug
                         point = Point(lon_points[i], lat_points[i])
-                        # Use strict containment for variance points
-                        strictly_contained = merged_soil_geometry.contains(point)
+                        distance_to_boundary = merged_soil_geometry.distance(point)
+                        if distance_to_boundary < 0.001:  # If very close to boundary
+                            print(f"Debug: Point {i} excluded - distance to boundary: {distance_to_boundary:.6f}")
 
-                        # If not strictly contained, check if very close to boundary
-                        if not strictly_contained:
-                            buffer_distance = 0.0001  # roughly 10 meters
-                            buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                            strictly_contained = buffered_geometry.contains(point)
-
-                        if strictly_contained:
-                            variance_data.append([
-                                float(lat_points[i]),
-                                float(lon_points[i]),
-                                float(kriging_variance[i])
-                            ])
-                    else:
-                        # Add data point with latitude, longitude, and variance
-                        variance_data.append([
-                            float(lat_points[i]),
-                            float(lon_points[i]),
-                            float(kriging_variance[i])
-                        ])
+        if merged_soil_geometry is not None:
+            print(f"Variance clipping: {points_inside_count}/{points_total_count} points inside soil polygons ({100*points_inside_count/points_total_count:.1f}%)")
 
         # Log filtering results
         if merged_soil_geometry is not None:

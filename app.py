@@ -75,25 +75,25 @@ with st.sidebar:
     if st.session_state.wells_data is None:
         with st.spinner("Loading Canterbury wells data..."):
             st.session_state.wells_data = load_nz_govt_data()
-    
+
     # Load soil drainage polygons from database
     if st.session_state.soil_polygons is None and st.session_state.polygon_db is not None:
         try:
             with st.spinner("Loading merged soil drainage polygons from database..."):
                 # Get stored merged polygons from database
                 stored_polygons = st.session_state.polygon_db.get_all_polygons()
-                
+
                 if stored_polygons:
                     # Convert stored polygons back to GeoDataFrame
                     from shapely import wkt
                     geometries = []
                     properties = []
-                    
+
                     for polygon in stored_polygons:
                         # Parse WKT geometry
                         geom = wkt.loads(polygon['geometry_wkt'])
                         geometries.append(geom)
-                        
+
                         # Combine polygon info with properties
                         prop_dict = polygon['properties'] if polygon['properties'] else {}
                         prop_dict.update({
@@ -103,19 +103,19 @@ with st.sidebar:
                             'avg_yield': polygon['avg_yield']
                         })
                         properties.append(prop_dict)
-                    
+
                     # Create GeoDataFrame
                     st.session_state.soil_polygons = gpd.GeoDataFrame(
                         properties, 
                         geometry=geometries, 
                         crs='EPSG:4326'
                     )
-                    
+
                     st.success(f"Loaded {len(st.session_state.soil_polygons)} merged soil drainage polygons from database")
                 else:
                     print("No merged soil polygons found in database.")
                     st.session_state.soil_polygons = None
-                    
+
         except Exception as e:
             print(f"Could not load soil polygons from database: {str(e)}")
             # Don't attempt frequent reconnections, just set to None
@@ -175,7 +175,7 @@ with st.sidebar:
     # Soil Polygon Processing Section
     if st.session_state.polygon_db is not None:
         st.header("Soil Polygon Processing")
-        
+
         # Check if we have processed polygons (cache this to avoid frequent DB calls)
         if 'has_soil_polygons' not in st.session_state:
             try:
@@ -184,18 +184,18 @@ with st.sidebar:
             except:
                 st.session_state.has_soil_polygons = False
         has_soil_polygons = st.session_state.has_soil_polygons
-        
+
         if not has_soil_polygons:
             st.warning("No merged soil polygons found in database")
             st.info("Click below to process and merge soil polygons from the shapefile")
-            
+
             if st.button("🌱 Process & Merge Soil Polygons", use_container_width=True):
                 with st.spinner("Processing soil polygons... This may take a few minutes..."):
                     # Import and run the processing function
                     try:
                         from process_soil_polygons_once import process_and_store_soil_polygons
                         success = process_and_store_soil_polygons()
-                        
+
                         if success:
                             st.success("✅ Soil polygons processed and stored successfully!")
                             # Clear cached soil polygons to reload from database
@@ -208,14 +208,14 @@ with st.sidebar:
         else:
             soil_polygon_count = len([p for p in stored_polygons if 'Soil_Drainage_' in p['polygon_name']])
             st.success(f"✅ {soil_polygon_count} merged soil polygons available")
-            
+
             if st.button("🔄 Reprocess Soil Polygons", use_container_width=True):
                 if st.checkbox("Confirm reprocessing (this will replace existing soil polygons)"):
                     with st.spinner("Reprocessing soil polygons..."):
                         try:
                             from process_soil_polygons_once import process_and_store_soil_polygons
                             success = process_and_store_soil_polygons()
-                            
+
                             if success:
                                 st.success("✅ Soil polygons reprocessed successfully!")
                                 st.session_state.soil_polygons = None
@@ -228,7 +228,7 @@ with st.sidebar:
     # Database Management Section
     if st.session_state.polygon_db is not None:
         st.header("Analysis Database")
-        
+
         # Show database statistics (cache for performance)
         if 'db_stats' not in st.session_state:
             try:
@@ -243,12 +243,12 @@ with st.sidebar:
         with col2:
             st.metric("Avg Area (km²)", f"{stats['avg_area_km2']:.2f}" if stats['avg_area_km2'] else "0.00")
             st.metric("Avg Yield", f"{stats['overall_avg_yield']:.2f}" if stats['overall_avg_yield'] else "N/A")
-        
+
         # Save current analysis button
         if st.session_state.selected_point and st.session_state.filtered_wells is not None:
             polygon_name = st.text_input("Polygon Name", 
                                        value=f"Analysis_{st.session_state.selected_point[0]:.4f}_{st.session_state.selected_point[1]:.4f}")
-            
+
             if st.button("Save Current Analysis"):
                 if polygon_name:
                     # Create a circular polygon around the selected point
@@ -257,28 +257,28 @@ with st.sidebar:
                     # Convert radius from km to degrees (rough approximation)
                     radius_deg = st.session_state.search_radius / 111.0
                     polygon = center_point.buffer(radius_deg)
-                    
+
                     # Store in database
                     properties = {
                         'search_radius_km': st.session_state.search_radius,
                         'visualization_method': visualization_method,
                         'analysis_date': pd.Timestamp.now().isoformat()
                     }
-                    
+
                     polygon_id = st.session_state.polygon_db.store_merged_polygon(
                         polygon_name=polygon_name,
                         geometry=polygon,
                         properties=properties,
                         well_data=st.session_state.filtered_wells
                     )
-                    
+
                     if polygon_id:
                         st.success(f"Analysis saved as '{polygon_name}' (ID: {polygon_id})")
                     else:
                         st.error("Failed to save analysis")
                 else:
                     st.warning("Please enter a polygon name")
-        
+
         # Load saved analyses
         with st.expander("Load Saved Analyses"):
             saved_polygons = st.session_state.polygon_db.get_all_polygons()
@@ -294,7 +294,7 @@ with st.sidebar:
                             st.session_state.selected_point = (polygon['centroid_lat'], polygon['centroid_lng'])
                             if 'search_radius_km' in polygon['properties']:
                                 st.session_state.search_radius = polygon['properties']['search_radius_km']
-                            st.rerun()
+                                st.success("Analysis loaded - map will update shortly")
                     with col3:
                         if st.button(f"Delete", key=f"delete_{polygon['id']}"):
                             if st.session_state.polygon_db.delete_polygon(polygon['id']):
@@ -343,18 +343,18 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
-    
+
     # Add explanation for kriging variance
     if visualization_method in ["Kriging Variance (Yield Uncertainty)", "Kriging Variance (Depth Uncertainty)"]:
         variance_type = "yield" if "Yield" in visualization_method else "depth to groundwater"
         st.info(f"""
         **Kriging Variance Visualization ({variance_type.title()})**
-        
+
         This shows the prediction uncertainty (variance) of the kriging interpolation for {variance_type}:
         - 🟢 **Green areas**: Low uncertainty - high confidence in predictions
         - 🟡 **Yellow areas**: Medium uncertainty - moderate confidence
         - 🔴 **Red areas**: High uncertainty - low confidence, more wells needed
-        
+
         Use this to identify where additional wells would most improve prediction accuracy for {variance_type} estimates.
         """)
 
@@ -463,10 +463,10 @@ with main_col1:
 
                 # Check if we're showing kriging variance
                 if st.session_state.interpolation_method == 'kriging_variance':
-                    
+
                     # Determine method based on variance type
                     variance_method = 'depth_kriging' if st.session_state.get('variance_type', 'yield') == 'depth' else 'kriging'
-                    
+
                     # Generate kriging variance visualization
                     if st.session_state.get('variance_type', 'yield') == 'depth':
                         # For depth variance, filter wells and use depth data
@@ -477,7 +477,7 @@ with main_col1:
                             depth_wells = depth_wells[depth_wells['depth_to_groundwater'].notna() & (depth_wells['depth_to_groundwater'] > 0)]
                         else:
                             depth_wells = depth_wells[depth_wells['depth'].notna() & (depth_wells['depth'] > 0)]
-                        
+
                         variance_data = calculate_kriging_variance(
                             depth_wells,
                             st.session_state.selected_point,
@@ -498,24 +498,24 @@ with main_col1:
                             use_depth=False,
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
                         )
-                    
+
                     # Convert variance data to GeoJSON format
                     geojson_data = {"type": "FeatureCollection", "features": []}
                     if variance_data:
                         from scipy.spatial import Delaunay
                         import numpy as np
-                        
+
                         points_2d = np.array([[point[1], point[0]] for point in variance_data])  # lon, lat
                         variances = np.array([point[2] for point in variance_data])
-                        
+
                         if len(points_2d) > 3:
                             tri = Delaunay(points_2d)
-                            
+
                             for simplex in tri.simplices:
                                 vertices = points_2d[simplex]
                                 vertex_variances = variances[simplex]
                                 avg_variance = float(np.mean(vertex_variances))
-                                
+
                                 if avg_variance > 0.0001:  # Only show meaningful variance values
                                     poly = {
                                         "type": "Feature",
@@ -554,7 +554,7 @@ with main_col1:
                     # Calculate max value for setting the color scale
                     max_value = 0
                     value_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
-                    
+
                     for feature in geojson_data['features']:
                         if value_field in feature['properties']:
                             max_value = max(max_value, feature['properties'][value_field])
@@ -647,7 +647,7 @@ with main_col1:
 
                     # Add the GeoJSON with our custom styling
                     display_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
-                    
+
                     folium.GeoJson(
                         data=geojson_data,
                         name='Interpolation Visualization',
@@ -826,7 +826,7 @@ with main_col1:
                 (wells_data['status'].str.contains('Active', case=False, na=False)) &
                 (~wells_data.get('is_dry_well', False))
             ]
-            
+
             # Use depth_to_groundwater if available, otherwise fall back to depth
             if 'depth_to_groundwater' in active_productive_wells.columns and not active_productive_wells['depth_to_groundwater'].isna().all():
                 depth_column = 'depth_to_groundwater'
@@ -834,12 +834,12 @@ with main_col1:
             else:
                 depth_column = 'depth'
                 active_depths = active_productive_wells[depth_column].dropna()
-            
+
             if len(active_depths) > 0:
                 avg_depth = active_depths.mean()
                 min_depth = active_depths.min()
                 max_depth = active_depths.max()
-                
+
                 st.metric(
                     "Average Depth to Groundwater", 
                     f"{avg_depth:.1f} m",
@@ -878,7 +878,7 @@ with main_col1:
                 f"{active_wells_count}",
                 help="Active wells with yield > 0 L/s"
             )
-            
+
             if len(active_depths) > 0:
                 st.metric(
                     "Groundwater Depth Range", 

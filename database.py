@@ -20,6 +20,79 @@ class PolygonDatabase:
         self.metadata = MetaData()
         self._create_tables()
 
+        # PostgreSQL connection for heatmap data
+        self.pg_engine = None
+        try:
+            from sqlalchemy import create_engine
+            self.pg_engine = create_engine(os.environ.get('HEATMAP_DATABASE_URL'))
+        except:
+            print("PostgreSQL connection not available")
+
+    def get_heatmap_data(self, heatmap_type='yield', bounds=None):
+        """Retrieve pre-computed heatmap data from database
+
+        Args:
+            heatmap_type: 'yield' or 'depth'
+            bounds: dict with 'north', 'south', 'east', 'west' to filter by map bounds
+        """
+        if not self.pg_engine:
+            return None
+
+        table_name = f"{heatmap_type}_heatmap"
+        value_field = f"{heatmap_type}_value"
+
+        try:
+            query = f"SELECT latitude, longitude, {value_field} as value FROM {table_name}"
+
+            # Add spatial filtering if bounds provided
+            if bounds:
+                where_clauses = [
+                    f"latitude >= {bounds['south']}",
+                    f"latitude <= {bounds['north']}",
+                    f"longitude >= {bounds['west']}",
+                    f"longitude <= {bounds['east']}"
+                ]
+                query += " WHERE " + " AND ".join(where_clauses)
+
+            # Limit results for performance
+            query += " LIMIT 10000"
+
+            df = pd.read_sql(query, self.pg_engine)
+            return df.to_dict('records')
+
+        except Exception as e:
+            print(f"Error retrieving {heatmap_type} heatmap: {e}")
+            return None
+
+    def get_heatmap_bounds(self, heatmap_type='yield'):
+        """Get the spatial bounds of the heatmap data"""
+        if not self.pg_engine:
+            return None
+
+        table_name = f"{heatmap_type}_heatmap"
+
+        try:
+            query = f"""
+                SELECT 
+                    MIN(latitude) as min_lat,
+                    MAX(latitude) as max_lat,
+                    MIN(longitude) as min_lon,
+                    MAX(longitude) as max_lon
+                FROM {table_name}
+            """
+
+            result = pd.read_sql(query, self.pg_engine)
+            if len(result) > 0:
+                return {
+                    'south': result.iloc[0]['min_lat'],
+                    'north': result.iloc[0]['max_lat'],
+                    'west': result.iloc[0]['min_lon'],
+                    'east': result.iloc[0]['max_lon']
+                }
+        except Exception as e:
+            print(f"Error getting heatmap bounds: {e}")
+            return None
+
     def _create_tables(self):
         """Create the merged_polygons table if it doesn't exist"""
         try:

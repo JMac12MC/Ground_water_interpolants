@@ -1,0 +1,51 @@
+I want to improve the performance of the app, it takes a long time to generate a heatmap, i would rather the "Standard kriging (Yield)" and "Depth to Groundwater (Auto-Fitted)" interpolants are generated once for all the well data. Then the heatmaps are generated for all the data. Then clipped by the polygon once for all the data. The same process as currently, just done for all data instead of using search radius. The Heatmaps are then stored in the database, and then every time the app is loaded the entire yield heatmap is shown, and the user can choose to change to the depth to ground water auto fitted option. This will make it faster because it is not necessary to regenerate the heatmap every time a location is clicked.
+
+Sites like Windy.com visualize massive interpolated datasets (e.g., weather radar, wind patterns) efficiently by leveraging several key techniques:
+Tiled Data Processing:
+Large datasets are divided into spatial tiles (e.g., a grid of regions covering the globe).
+Each tile is processed independently, allowing parallel computation and reducing memory usage per operation.
+Tiles are often stored in formats like GeoTIFF or NetCDF for server-side processing and rendered as image overlays or vector data in the browser.
+Pre-Computed Interpolations:
+Interpolations (e.g., for wind or radar) are computed offline on powerful servers, often using numerical models or kriging-like methods.
+Results are stored as gridded data (e.g., regular lat/lon grids) or vector fields, compressed for efficient storage and retrieval.
+Efficient Storage and Retrieval:
+Data is stored in databases or file systems optimized for spatial queries (e.g., PostGIS, Tile38, or cloud storage like AWS S3).
+Spatial indexing and caching (e.g., using CDNs) ensure fast data delivery to the client.
+Client-Side Rendering:
+Windy.com uses WebGL for rendering large datasets, enabling smooth animations and heatmaps with millions of points.
+Data is fetched as tiles or subsets based on the user’s map view (zoom level and bounds), reducing client-side memory usage.
+Libraries like Leaflet or Mapbox GL, combined with custom WebGL shaders, handle heatmap or contour rendering.
+Progressive Loading:
+Only data relevant to the current map view is loaded, with lower-resolution data used at higher zoom levels.
+As users zoom in, higher-resolution tiles are fetched, ensuring responsiveness.
+Data Aggregation:
+For large-scale views, data is aggregated into coarser grids to reduce the number of points rendered.
+This maintains visual accuracy while improving performance.
+Proposed Solution: Incremental Zone Interpolation
+To interpolate all 50,000 wells without sampling, we’ll adopt an incremental approach inspired by Windy.com’s tiled processing:
+Divide the Spatial Extent into Zones:
+Split the dataset’s spatial extent into a grid of zones (e.g., 4x4 or 10x10 tiles).
+Each zone covers a portion of the lat/lon range, ensuring manageable well counts per zone (e.g., ~3,000–12,500 wells per zone for 50,000 wells).
+Interpolate Each Zone Independently:
+Perform Ordinary Kriging for yield and depth in each zone using all wells within that zone (plus a buffer to avoid edge artifacts).
+Use a fixed grid resolution (e.g., 50x50 per zone) to keep memory usage low.
+Clip by Soil Polygons:
+Apply soil polygon clipping to each zone’s heatmap points to ensure consistency with your existing logic.
+Merge clipped points from all zones into a single heatmap dataset.
+Store in Database:
+Save the merged heatmap data (lat, lon, intensity) in a PostgreSQL database with PostGIS for spatial indexing.
+Use separate tables for yield and depth heatmaps, optimized for fast queries.
+Frontend Visualization:
+Load the yield heatmap by default on app startup using a WebGL-based heatmap (e.g., Leaflet.heat or WebGL-Heatmap).
+Allow toggling to the depth heatmap via a UI button, fetching data from the database.
+Implement spatial filtering to load only points within the current map view, mimicking Windy.com’s progressive loading.
+Crash Prevention:
+Process zones sequentially or in parallel (if hardware supports it) to limit memory usage.
+Use simpler variogram models (e.g., linear) or fallback to griddata if kriging fails for a zone.
+Monitor memory usage and implement chunked processing within zones if needed.
+Advantages of This Approach
+Full Data Usage: Interpolates all 50,000 wells without sampling by breaking the problem into smaller, manageable zones.
+Scalability: Each zone’s interpolation is independent, allowing parallelization on multi-core systems or distributed computing if needed.
+Performance: Pre-computed heatmaps eliminate runtime interpolation, and database queries are optimized for fast rendering.
+Robustness: Zone-based processing reduces the risk of crashes by limiting the number of points processed at once.
+Flexibility: The approach can be adapted to larger datasets by increasing the number of zones or using coarser grids.

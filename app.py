@@ -140,6 +140,37 @@ with st.sidebar:
         st.warning("Database connection not available. Cannot load soil polygons.")
         st.session_state.soil_polygons = None
 
+    # Check for pre-computed heatmaps
+    st.header("Performance Status")
+    if st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
+        try:
+            yield_data = st.session_state.polygon_db.get_heatmap_data('yield', bounds={'north': -40, 'south': -50, 'east': 175, 'west': 165})
+            depth_data = st.session_state.polygon_db.get_heatmap_data('depth', bounds={'north': -40, 'south': -50, 'east': 175, 'west': 165})
+            
+            if yield_data and depth_data:
+                st.success(f"🚀 Pre-computed heatmaps ready! ({len(yield_data):,} yield + {len(depth_data):,} depth points)")
+                st.info("✨ App is running in high-performance mode with instant heatmap loading")
+            else:
+                st.warning("⚡ Pre-computed heatmaps not found")
+                if st.button("🔄 Generate High-Performance Heatmaps", use_container_width=True):
+                    st.info("Starting heatmap preprocessing... This will take several minutes but only needs to be done once.")
+                    with st.spinner("Generating pre-computed heatmaps for instant loading..."):
+                        try:
+                            # Run preprocessing
+                            from run_preprocessing import main as run_preprocessing
+                            success = run_preprocessing()
+                            if success:
+                                st.success("✅ Heatmaps generated! Refresh the page to use high-performance mode.")
+                                st.balloons()
+                            else:
+                                st.error("❌ Failed to generate heatmaps")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+        except Exception as e:
+            st.warning("Database connection required for high-performance mode")
+    else:
+        st.warning("Database connection not available")
+
     # Advanced option for uploading custom data (hidden in expander)
     with st.expander("Upload Custom Data (Optional)"):
         uploaded_file = st.file_uploader("Upload a CSV file with well data", type=["csv"])
@@ -149,18 +180,28 @@ with st.sidebar:
 
     st.header("Filters")
 
-    # Radius filter
+    # Radius filter (now used for local context when pre-computed heatmaps are available)
     st.session_state.search_radius = st.slider(
-        "Search Radius (km)",
+        "Local Context Radius (km)",
         min_value=1,
         max_value=50,
         value=st.session_state.search_radius,
-        step=1
+        step=1,
+        help="Radius for showing nearby wells and local analysis when you click on the map"
     )
 
-    # Informational note about wells with missing yield data
-    st.write("**NOTE:** All wells within the search radius are displayed.")
-    st.write("Wells with missing yield values are treated as dry wells.")
+    # Informational note
+    if st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
+        try:
+            yield_data = st.session_state.polygon_db.get_heatmap_data('yield', bounds={'north': -40, 'south': -50, 'east': 175, 'west': 165})
+            if yield_data:
+                st.info("📍 **High-Performance Mode**: Full regional heatmap displayed. Click anywhere to see local well details.")
+            else:
+                st.write("**Standard Mode**: Click on map to generate local interpolation within search radius.")
+        except:
+            st.write("**Standard Mode**: Click on map to generate local interpolation within search radius.")
+    else:
+        st.write("**Standard Mode**: Click on map to generate local interpolation within search radius.")
 
     # Visualization method selection - single dropdown for all options
     st.header("Analysis Options")
@@ -400,13 +441,29 @@ with main_col1:
             )
         ).add_to(m)
 
+    # Load and display pre-computed heatmaps if available
+    heatmap_data = None
+    if st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
+        try:
+            # Try to load pre-computed heatmap data
+            if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
+                heatmap_data = st.session_state.polygon_db.get_heatmap_data('yield')
+            elif "Depth" in visualization_method:
+                heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
+                
+            if heatmap_data:
+                st.info(f"🚀 Using pre-computed heatmap with {len(heatmap_data):,} data points")
+        except Exception as e:
+            st.warning(f"Pre-computed heatmaps not available: {e}")
+            heatmap_data = None
+
     # Process wells data if available
     if st.session_state.wells_data is not None:
         wells_df = st.session_state.wells_data
 
-        # Filter based on yield if selected point exists
+        # If we have a selected point, show local context
         if st.session_state.selected_point:
-            # Calculate distances from selected point
+            # Calculate distances from selected point for local well display
             wells_df['distance'] = wells_df.apply(
                 lambda row: get_distance(
                     st.session_state.selected_point[0], 
@@ -417,23 +474,17 @@ with main_col1:
                 axis=1
             )
 
-            # ONLY filter by distance - show ALL wells in the search radius regardless of yield
+            # Filter wells for local display (still show nearby wells for context)
             filtered_wells = wells_df[
                 (wells_df['distance'] <= st.session_state.search_radius)
             ]
 
             # Ensure all missing yield values are replaced with 0
-            # This treats missing yield data as 0 instead of filtering them out
             if 'yield_rate' in filtered_wells.columns:
-                # Need to replace NaN yield values with 0 - using proper pandas approach
-                filtered_wells = filtered_wells.copy()  # Make a copy to avoid SettingWithCopyWarning
+                filtered_wells = filtered_wells.copy()
                 filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
 
-            # Store all wells in radius - NO yield filtering whatsoever
-            # Clear the previous filtered_wells to force complete recalculation
-            st.session_state.filtered_wells = filtered_wells.copy()  # Make a copy to ensure clean data
-
-            # Store total count
+            st.session_state.filtered_wells = filtered_wells.copy()
             st.session_state.total_wells_in_radius = len(filtered_wells)
 
             # Create marker for selected point
@@ -444,108 +495,158 @@ with main_col1:
                 tooltip="Your Selected Point"
             ).add_to(m)
 
-            # Draw circle for search radius
+            # Draw circle for search radius (now just for local context)
             folium.Circle(
                 location=st.session_state.selected_point,
-                radius=st.session_state.search_radius * 1000,  # Convert km to meters
+                radius=st.session_state.search_radius * 1000,
                 color="#3186cc",
                 fill=True,
                 fill_color="#3186cc",
                 fill_opacity=0.1
             ).add_to(m)
 
-            # Add heat map based on yield or kriging variance
-            if st.session_state.heat_map_visibility and isinstance(filtered_wells, pd.DataFrame) and not filtered_wells.empty:
-                # Use a simpler progress indicator to reduce instability
-                with st.spinner("🔄 Processing analysis data..."):
-                    pass
-
-                # Check if we're showing kriging variance
-                if st.session_state.interpolation_method == 'kriging_variance':
-
-                    # Determine method based on variance type
-                    variance_method = 'depth_kriging' if st.session_state.get('variance_type', 'yield') == 'depth' else 'kriging'
-
-                    # Generate kriging variance visualization
-                    if st.session_state.get('variance_type', 'yield') == 'depth':
-                        # For depth variance, filter wells and use depth data
-                        depth_wells = filtered_wells.copy()
-                        if 'is_dry_well' in depth_wells.columns:
-                            depth_wells = depth_wells[~depth_wells['is_dry_well']]
-                        if 'depth_to_groundwater' in depth_wells.columns:
-                            depth_wells = depth_wells[depth_wells['depth_to_groundwater'].notna() & (depth_wells['depth_to_groundwater'] > 0)]
-                        else:
-                            depth_wells = depth_wells[depth_wells['depth'].notna() & (depth_wells['depth'] > 0)]
-
-                        variance_data = calculate_kriging_variance(
-                            depth_wells,
-                            st.session_state.selected_point,
-                            st.session_state.search_radius,
-                            resolution=100,
-                            variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                            use_depth=True,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
-                        )
-                    else:
-                        # For yield variance
-                        variance_data = calculate_kriging_variance(
-                            filtered_wells.copy(),
-                            st.session_state.selected_point,
-                            st.session_state.search_radius,
-                            resolution=100,
-                            variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                            use_depth=False,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
-                        )
-
-                    # Convert variance data to GeoJSON format
-                    geojson_data = {"type": "FeatureCollection", "features": []}
-                    if variance_data:
-                        from scipy.spatial import Delaunay
-                        import numpy as np
-
-                        points_2d = np.array([[point[1], point[0]] for point in variance_data])  # lon, lat
-                        variances = np.array([point[2] for point in variance_data])
-
-                        if len(points_2d) > 3:
-                            tri = Delaunay(points_2d)
-
-                            for simplex in tri.simplices:
-                                vertices = points_2d[simplex]
-                                vertex_variances = variances[simplex]
-                                avg_variance = float(np.mean(vertex_variances))
-
-                                if avg_variance > 0.0001:  # Only show meaningful variance values
-                                    poly = {
-                                        "type": "Feature",
-                                        "geometry": {
-                                            "type": "Polygon",
-                                            "coordinates": [[
-                                                [float(vertices[0,0]), float(vertices[0,1])],
-                                                [float(vertices[1,0]), float(vertices[1,1])],
-                                                [float(vertices[2,0]), float(vertices[2,1])],
-                                                [float(vertices[0,0]), float(vertices[0,1])]
-                                            ]]
-                                        },
-                                        "properties": {
-                                            "variance": avg_variance,
-                                            "yield": avg_variance  # For compatibility with existing code
-                                        }
-                                    }
-                                    geojson_data["features"].append(poly)
+        # Display heatmap - use pre-computed if available, otherwise generate on-demand
+        if st.session_state.heat_map_visibility:
+            if heatmap_data:
+                # Display pre-computed heatmap
+                st.success("⚡ Displaying pre-computed heatmap - instant loading!")
+                
+                # Convert pre-computed data to GeoJSON for display
+                geojson_data = {"type": "FeatureCollection", "features": []}
+                
+                # Determine the value field based on heatmap type
+                if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
+                    value_field = 'yield_value'
+                    display_name = 'yield'
                 else:
-                    # Generate regular interpolation visualization
-                    geojson_data = generate_geo_json_grid(
-                        filtered_wells.copy(), 
-                        st.session_state.selected_point, 
-                        st.session_state.search_radius,
-                        resolution=100,  # Higher resolution for smoother appearance
-                        method=st.session_state.interpolation_method,
-                        show_variance=False,  # Always False for regular interpolation
-                        auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
-                    )
+                    value_field = 'depth_value'
+                    display_name = 'yield'  # Keep for compatibility
+                
+                # Create triangulated surface from pre-computed points
+                if len(heatmap_data) > 3:
+                    from scipy.spatial import Delaunay
+                    import numpy as np
+                    
+                    # Extract coordinates and values
+                    points_2d = np.array([[point['longitude'], point['latitude']] for point in heatmap_data])
+                    values = np.array([point[value_field] for point in heatmap_data])
+                    
+                    # Create Delaunay triangulation
+                    tri = Delaunay(points_2d)
+                    
+                    # Create triangular polygons
+                    for simplex in tri.simplices:
+                        vertices = points_2d[simplex]
+                        vertex_values = values[simplex]
+                        avg_value = float(np.mean(vertex_values))
+                        
+                        if avg_value > 0.01:  # Only show meaningful values
+                            poly = {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "Polygon",
+                                    "coordinates": [[
+                                        [float(vertices[0,0]), float(vertices[0,1])],
+                                        [float(vertices[1,0]), float(vertices[1,1])],
+                                        [float(vertices[2,0]), float(vertices[2,1])],
+                                        [float(vertices[0,0]), float(vertices[0,1])]
+                                    ]]
+                                },
+                                "properties": {
+                                    display_name: avg_value
+                                }
+                            }
+                            geojson_data["features"].append(poly)
+            else:
+                # Fallback to on-demand generation if no pre-computed data
+                if st.session_state.selected_point and st.session_state.filtered_wells is not None:
+                    with st.spinner("🔄 Generating interpolation (consider running preprocessing for faster performance)..."):
+                        pass
+
+                    # Check if we're showing kriging variance
+                    if st.session_state.interpolation_method == 'kriging_variance':
+                        # Variance calculations (unchanged)
+                        variance_method = 'depth_kriging' if st.session_state.get('variance_type', 'yield') == 'depth' else 'kriging'
+
+                        if st.session_state.get('variance_type', 'yield') == 'depth':
+                            depth_wells = st.session_state.filtered_wells.copy()
+                            if 'is_dry_well' in depth_wells.columns:
+                                depth_wells = depth_wells[~depth_wells['is_dry_well']]
+                            if 'depth_to_groundwater' in depth_wells.columns:
+                                depth_wells = depth_wells[depth_wells['depth_to_groundwater'].notna() & (depth_wells['depth_to_groundwater'] > 0)]
+                            else:
+                                depth_wells = depth_wells[depth_wells['depth'].notna() & (depth_wells['depth'] > 0)]
+
+                            variance_data = calculate_kriging_variance(
+                                depth_wells,
+                                st.session_state.selected_point,
+                                st.session_state.search_radius,
+                                resolution=100,
+                                variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                                use_depth=True,
+                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                            )
+                        else:
+                            variance_data = calculate_kriging_variance(
+                                st.session_state.filtered_wells.copy(),
+                                st.session_state.selected_point,
+                                st.session_state.search_radius,
+                                resolution=100,
+                                variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                                use_depth=False,
+                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                            )
+
+                        # Convert variance data to GeoJSON format
+                        geojson_data = {"type": "FeatureCollection", "features": []}
+                        if variance_data:
+                            from scipy.spatial import Delaunay
+                            import numpy as np
+
+                            points_2d = np.array([[point[1], point[0]] for point in variance_data])
+                            variances = np.array([point[2] for point in variance_data])
+
+                            if len(points_2d) > 3:
+                                tri = Delaunay(points_2d)
+
+                                for simplex in tri.simplices:
+                                    vertices = points_2d[simplex]
+                                    vertex_variances = variances[simplex]
+                                    avg_variance = float(np.mean(vertex_variances))
+
+                                    if avg_variance > 0.0001:
+                                        poly = {
+                                            "type": "Feature",
+                                            "geometry": {
+                                                "type": "Polygon",
+                                                "coordinates": [[
+                                                    [float(vertices[0,0]), float(vertices[0,1])],
+                                                    [float(vertices[1,0]), float(vertices[1,1])],
+                                                    [float(vertices[2,0]), float(vertices[2,1])],
+                                                    [float(vertices[0,0]), float(vertices[0,1])]
+                                                ]]
+                                            },
+                                            "properties": {
+                                                "variance": avg_variance,
+                                                "yield": avg_variance
+                                            }
+                                        }
+                                        geojson_data["features"].append(poly)
+                    else:
+                        # Generate regular interpolation visualization
+                        geojson_data = generate_geo_json_grid(
+                            st.session_state.filtered_wells.copy(), 
+                            st.session_state.selected_point, 
+                            st.session_state.search_radius,
+                            resolution=100,
+                            method=st.session_state.interpolation_method,
+                            show_variance=False,
+                            auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
+                            variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                        )
+                else:
+                    geojson_data = {"type": "FeatureCollection", "features": []}
 
                 if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
@@ -727,23 +828,22 @@ with main_col1:
                     ).add_to(m)
 
 
-            # ONLY show wells within the search radius when a point is selected
-            if st.session_state.well_markers_visibility:
-                # Only add wells within the search radius (filtered_wells)
-                radius_wells_layer = folium.FeatureGroup(name="Wells Within Radius").add_to(m)
+            # Show wells within the radius when a point is selected (for local context)
+            if st.session_state.well_markers_visibility and st.session_state.selected_point:
+                if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
+                    radius_wells_layer = folium.FeatureGroup(name="Local Wells").add_to(m)
 
-                # Create small dot markers for ONLY wells within the radius
-                for idx, row in filtered_wells.iterrows():
-                    # Use a smaller CircleMarker for wells within radius
-                    folium.CircleMarker(
-                        location=(float(row['latitude']), float(row['longitude'])),
-                        radius=3,  # Small dot
-                        color='gray',
-                        fill=True,
-                        fill_color='darkblue',
-                        fill_opacity=0.7,
-                        tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m{'(Dry)' if row.get('is_dry_well', False) else ''}"
-                    ).add_to(radius_wells_layer)
+                    # Create small dot markers for wells within the radius
+                    for idx, row in st.session_state.filtered_wells.iterrows():
+                        folium.CircleMarker(
+                            location=(float(row['latitude']), float(row['longitude'])),
+                            radius=3,
+                            color='gray',
+                            fill=True,
+                            fill_color='darkblue',
+                            fill_opacity=0.7,
+                            tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m{'(Dry)' if row.get('is_dry_well', False) else ''}"
+                        ).add_to(radius_wells_layer)
 
         # Add click event to capture coordinates (only need this once)
         folium.LatLngPopup().add_to(m)

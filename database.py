@@ -23,10 +23,11 @@ class PolygonDatabase:
         # PostgreSQL connection for heatmap data
         self.pg_engine = None
         try:
-            from sqlalchemy import create_engine
-            self.pg_engine = create_engine(os.environ.get('HEATMAP_DATABASE_URL'))
-        except:
-            print("PostgreSQL connection not available")
+            heatmap_db_url = os.environ.get('HEATMAP_DATABASE_URL')
+            if heatmap_db_url:
+                self.pg_engine = create_engine(heatmap_db_url)
+        except Exception as e:
+            print(f"PostgreSQL connection not available: {e}")
 
     def get_heatmap_data(self, heatmap_type='yield', bounds=None):
         """Retrieve pre-computed heatmap data from database

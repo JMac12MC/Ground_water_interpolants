@@ -847,16 +847,6 @@ with main_col1:
                     # Filter out wells with no depth value (NaN or empty depth)
                     if 'depth' in display_wells.columns:
                         display_wells = display_wells[display_wells['depth'].notna() & (display_wells['depth'] > 0)]
-                    
-                    # Only filter out active wells that have NO depth data AND NO yield data
-                    if 'status' in display_wells.columns:
-                        active_wells_mask = display_wells['status'].str.contains('Active', case=False, na=False)
-                        has_yield_data = display_wells['yield_rate'].notna() & (display_wells['yield_rate'] >= 0)
-                        has_depth_data = display_wells['depth'].notna() & (display_wells['depth'] > 0)
-                        
-                        # For active wells, only remove those with neither depth nor yield data
-                        invalid_active_wells = active_wells_mask & (~has_depth_data) & (~has_yield_data)
-                        display_wells = display_wells[~invalid_active_wells]
 
                     # Create small dot markers for wells within the radius (excluding geotechnical wells)
                     for idx, row in display_wells.iterrows():

@@ -146,7 +146,7 @@ with st.sidebar:
         try:
             yield_data = st.session_state.polygon_db.get_heatmap_data('yield', bounds={'north': -40, 'south': -50, 'east': 175, 'west': 165})
             depth_data = st.session_state.polygon_db.get_heatmap_data('depth', bounds={'north': -40, 'south': -50, 'east': 175, 'west': 165})
-            
+
             if yield_data and depth_data:
                 st.success(f"🚀 Pre-computed heatmaps ready! ({len(yield_data):,} yield + {len(depth_data):,} depth points)")
                 st.info("✨ App is running in high-performance mode with instant heatmap loading")
@@ -450,7 +450,7 @@ with main_col1:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('yield')
             elif "Depth" in visualization_method:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
-                
+
             if heatmap_data:
                 st.info(f"🚀 Using pre-computed heatmap with {len(heatmap_data):,} data points")
         except Exception as e:
@@ -510,10 +510,10 @@ with main_col1:
             if heatmap_data:
                 # Display pre-computed heatmap
                 st.success("⚡ Displaying pre-computed heatmap - instant loading!")
-                
+
                 # Convert pre-computed data to GeoJSON for display
                 geojson_data = {"type": "FeatureCollection", "features": []}
-                
+
                 # Determine the value field based on heatmap type
                 if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
                     value_field = 'yield_value'
@@ -521,25 +521,25 @@ with main_col1:
                 else:
                     value_field = 'depth_value'
                     display_name = 'yield'  # Keep for compatibility
-                
+
                 # Create triangulated surface from pre-computed points
                 if len(heatmap_data) > 3:
                     from scipy.spatial import Delaunay
                     import numpy as np
-                    
+
                     # Extract coordinates and values
                     points_2d = np.array([[point['longitude'], point['latitude']] for point in heatmap_data])
                     values = np.array([point[value_field] for point in heatmap_data])
-                    
+
                     # Create Delaunay triangulation
                     tri = Delaunay(points_2d)
-                    
+
                     # Create triangular polygons
                     for simplex in tri.simplices:
                         vertices = points_2d[simplex]
                         vertex_values = values[simplex]
                         avg_value = float(np.mean(vertex_values))
-                        
+
                         if avg_value > 0.01:  # Only show meaningful values
                             poly = {
                                 "type": "Feature",
@@ -678,8 +678,7 @@ with main_col1:
                                 '#33ff00',
                                 '#66ff00',
                                 '#99ff00',
-                                '#ccff00',
-                                '#ffff00',  # Yellow
+                                '#ccff00',                                '#ffff00',  # Yellow
                                 '#ffcc00',
                                 '#ff9900',
                                 '#ff6600',
@@ -843,10 +842,13 @@ with main_col1:
                             regex=True
                         )
                         display_wells = display_wells[~geotechnical_mask]
-                    
+
                     # Filter out wells with no depth value (NaN or empty depth)
                     if 'depth' in display_wells.columns:
                         display_wells = display_wells[display_wells['depth'].notna() & (display_wells['depth'] > 0)]
+
+                    # Note: Active well status filtering removed to show all wells with depth data
+                    # This ensures wells with valid depth and yield data are displayed
 
                     # Create small dot markers for wells within the radius (excluding geotechnical wells)
                     for idx, row in display_wells.iterrows():

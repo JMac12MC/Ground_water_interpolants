@@ -38,7 +38,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return {"type": "FeatureCollection", "features": []}
-    
+
     # Filter out geotechnical/geological investigation wells using well_use
     if 'well_use' in wells_df.columns:
         geotechnical_mask = wells_df['well_use'].str.contains(
@@ -48,7 +48,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             regex=True
         )
         wells_df = wells_df[~geotechnical_mask].copy()
-        
+
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
 
@@ -84,27 +84,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Choose which values to interpolate based on method
     if method == 'depth_kriging':
         # For depth interpolation, ONLY use wells that have actual groundwater access
-        # First check if we have the proper dry well marking
+        # Wells without depth data should already be filtered out in data loading
         if 'is_dry_well' in wells_df.columns:
             # Use the explicit dry well marking - exclude any well marked as dry
             valid_depth_mask = (~wells_df['is_dry_well'])
 
-            # Also require valid depth_to_groundwater data if available
+            # Require valid depth_to_groundwater data if available
             if 'depth_to_groundwater' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
             elif 'depth' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
 
         elif 'depth_to_groundwater' in wells_df.columns:
-            # If no explicit dry well column, use depth_to_groundwater data 
-            # and exclude wells with missing depth data (likely dry wells)
+            # Use depth_to_groundwater data and exclude wells with missing depth data
             valid_depth_mask = (
                 (~wells_df['depth_to_groundwater'].isna()) & 
                 (wells_df['depth_to_groundwater'] > 0)
             )
         else:
-            # Final fallback: use regular depth column and exclude wells with missing depth
-            # Do NOT use yield for depth interpolation filtering
+            # Use regular depth column and exclude wells with missing depth data
             valid_depth_mask = (
                 (~wells_df['depth'].isna()) & 
                 (wells_df['depth'] > 0)
@@ -224,7 +222,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
             # Execute kriging to get predictions (ignore variance)
             interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
-            
+
             # Additional validation for depth interpolation
             if method == 'depth_kriging':
                 print(f"Depth interpolation stats: min={np.min(interpolated_z):.2f}, max={np.max(interpolated_z):.2f}, mean={np.mean(interpolated_z):.2f}")
@@ -536,7 +534,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return []
-    
+
     # Filter out geotechnical/geological investigation wells using well_use
     if 'well_use' in wells_df.columns:
         geotechnical_mask = wells_df['well_use'].str.contains(
@@ -546,34 +544,32 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             regex=True
         )
         wells_df = wells_df[~geotechnical_mask].copy()
-        
+
         if wells_df.empty:
             return []
 
     # Extract coordinates and yields based on method
     if method == 'depth_kriging':
         # For depth interpolation, ONLY use wells that have actual groundwater access
-        # First check if we have the proper dry well marking
+        # Wells without depth data should already be filtered out in data loading
         if 'is_dry_well' in wells_df.columns:
             # Use the explicit dry well marking - exclude any well marked as dry
             valid_depth_mask = (~wells_df['is_dry_well'])
 
-            # Also require valid depth_to_groundwater data if available
+            # Require valid depth_to_groundwater data if available
             if 'depth_to_groundwater' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
             elif 'depth' in wells_df.columns:
                 valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
 
         elif 'depth_to_groundwater' in wells_df.columns:
-            # If no explicit dry well column, use depth_to_groundwater data 
-            # and exclude wells with missing depth data (likely dry wells)
+            # Use depth_to_groundwater data and exclude wells with missing depth data
             valid_depth_mask = (
                 (~wells_df['depth_to_groundwater'].isna()) & 
                 (wells_df['depth_to_groundwater'] > 0)
             )
         else:
-            # Final fallback: use regular depth column and exclude wells with missing depth
-            # Do NOT use yield for depth interpolation filtering
+            # Use regular depth column and exclude wells with missing depth data
             valid_depth_mask = (
                 (~wells_df['depth'].isna()) & 
                 (wells_df['depth'] > 0)
@@ -757,7 +753,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         else:
             # Choose interpolation method
             # Basic 2D interpolation using scipy.interpolate.griddata
-            from scipy.interpolate import griddata
 
             # OPTIMIZATION: For large datasets, use fewer points and faster method
             if len(points) > 2000:
@@ -1314,7 +1309,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     try:
         # Filter wells data similar to yield kriging for consistency
         wells_df_filtered = wells_df.copy()
-        
+
         # Filter out geotechnical/geological investigation wells using well_use
         if 'well_use' in wells_df_filtered.columns:
             geotechnical_mask = wells_df_filtered['well_use'].str.contains(
@@ -1324,16 +1319,16 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                 regex=True
             )
             wells_df_filtered = wells_df_filtered[~geotechnical_mask].copy()
-            
+
             if wells_df_filtered.empty:
                 return []
-        
+
         # Determine whether to use yield or depth data based on use_depth parameter
         if use_depth:
             # For depth variance, filter wells similar to depth kriging
             if 'is_dry_well' in wells_df.columns:
                 wells_df_filtered = wells_df_filtered[~wells_df_filtered['is_dry_well']]
-            
+
             if 'depth_to_groundwater' in wells_df_filtered.columns and not wells_df_filtered['depth_to_groundwater'].isna().all():
                 wells_df_filtered = wells_df_filtered[wells_df_filtered['depth_to_groundwater'].notna() & (wells_df_filtered['depth_to_groundwater'] > 0)]
                 values = wells_df_filtered['depth_to_groundwater'].values.astype(float)
@@ -1348,7 +1343,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         else:
             # For yield variance, filter to meaningful yield data like yield kriging
             meaningful_yield_mask = wells_df_filtered['yield_rate'].fillna(0) > 0.1
-            
+
             if meaningful_yield_mask.any() and np.sum(meaningful_yield_mask) >= 5:
                 wells_df_filtered = wells_df_filtered[meaningful_yield_mask]
                 values = wells_df_filtered['yield_rate'].values.astype(float)
@@ -1413,26 +1408,26 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
 
             # Execute kriging to get both predictions and variance
             predictions, kriging_variance = OK.execute('points', xi_lon, xi_lat)
-            
+
             print(f"Initial kriging variance - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}, Mean: {np.mean(kriging_variance):.6f}")
-            
+
             # Ensure variance values are reasonable (variance should always be positive)
             kriging_variance = np.maximum(kriging_variance, 1e-8)
-            
+
             # Check if variance is too uniform (indicates calculation issue)
             variance_std = np.std(kriging_variance)
             variance_mean = np.mean(kriging_variance)
             variance_cv = variance_std / variance_mean if variance_mean > 0 else 0
-            
+
             print(f"Variance coefficient of variation: {variance_cv:.4f}")
-            
+
             if variance_cv < 0.1:  # If variance is too uniform (less than 10% variation)
                 print("Warning: Variance appears too uniform, enhancing with multiple variogram models...")
-                
+
                 # Try multiple variogram models and combine results
                 variance_results = []
                 variogram_models = ['linear', 'power', 'gaussian', 'exponential']
-                
+
                 for model in variogram_models:
                     try:
                         OK_test = OrdinaryKriging(
@@ -1443,65 +1438,65 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                         )
                         _, test_variance = OK_test.execute('points', xi_lon, xi_lat)
                         test_variance = np.maximum(test_variance, 1e-8)
-                        
+
                         # Check if this model produces better variation
                         test_cv = np.std(test_variance) / np.mean(test_variance) if np.mean(test_variance) > 0 else 0
                         variance_results.append((model, test_variance, test_cv))
                         print(f"Model {model}: CV = {test_cv:.4f}")
-                        
+
                     except Exception as model_error:
                         print(f"Model {model} failed: {model_error}")
                         continue
-                
+
                 # Use the model with the highest coefficient of variation (most spatial variation)
                 if variance_results:
                     best_model, best_variance, best_cv = max(variance_results, key=lambda x: x[2])
                     print(f"Using {best_model} model with CV = {best_cv:.4f}")
                     kriging_variance = best_variance
                     variance_cv = best_cv
-            
+
             # If still too uniform, enhance with distance-based variation
             if variance_cv < 0.05:
                 print("Enhancing variance with distance-based component...")
-                
+
                 # Calculate distance from each grid point to nearest data point
                 from scipy.spatial.distance import cdist
-                
+
                 # Create coordinate arrays for distance calculation
                 data_coords = np.column_stack([lat_values, lon_values])
                 grid_coords = np.column_stack([xi_lat, xi_lon])
-                
+
                 # Calculate distances (in decimal degrees)
                 distances = cdist(grid_coords, data_coords)
                 min_distances = np.min(distances, axis=1)
-                
+
                 # Create distance-based variance enhancement
                 max_distance = np.max(min_distances) if len(min_distances) > 0 else 1.0
                 if max_distance > 0:
                     # Normalize distances and create variance enhancement factor
                     normalized_distances = min_distances / max_distance
-                    
+
                     # Create exponential distance decay for variance
                     distance_factor = 1.0 + 2.0 * np.exp(normalized_distances * 3.0)  # Exponential growth with distance
-                    
+
                     # Enhance the original kriging variance with distance component
                     base_variance = np.mean(kriging_variance)
                     enhanced_variance = kriging_variance * distance_factor
-                    
+
                     # Smooth the transition between original and enhanced variance
                     alpha = 0.6  # Blend factor
                     kriging_variance = alpha * enhanced_variance + (1 - alpha) * kriging_variance
-                    
+
                     print(f"Enhanced variance - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}")
-            
+
             # Final variance validation and scaling
             kriging_variance = np.maximum(kriging_variance, 1e-6)
-            
+
             # Scale variance to reasonable range for visualization
             min_var = np.min(kriging_variance)
             max_var = np.max(kriging_variance)
             var_range = max_var - min_var
-            
+
             if var_range > 0:
                 # Normalize to 0-1 range then scale to meaningful variance range
                 normalized_var = (kriging_variance - min_var) / var_range
@@ -1510,41 +1505,41 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                     kriging_variance = normalized_var * (np.var(values) * 2.0) + (np.var(values) * 0.1)
                 else:
                     kriging_variance = normalized_var * (np.var(values) * 1.5) + (np.var(values) * 0.05)
-            
+
             print(f"Final variance - Min: {np.min(kriging_variance):.6f}, Max: {np.max(kriging_variance):.6f}, CV: {np.std(kriging_variance)/np.mean(kriging_variance):.4f}")
-                
+
         except Exception as e:
             print(f"Error in kriging variance calculation: {e}")
             # Fallback: create synthetic variance based on distance to nearest data point
             print("Using enhanced distance-based variance estimation as fallback")
-            
+
             # Calculate distance from each grid point to nearest data point
             from scipy.spatial.distance import cdist
-            
+
             # Create coordinate arrays for distance calculation
             data_coords = np.column_stack([lat_values, lon_values])
             grid_coords = np.column_stack([xi_lat, xi_lon])
-            
+
             # Calculate distances
             distances = cdist(grid_coords, data_coords)
             min_distances = np.min(distances, axis=1)
-            
+
             # Create variance based on distance and data density
             max_distance = np.max(min_distances)
             if max_distance > 0:
                 normalized_distances = min_distances / max_distance
-                
+
                 # Create more realistic variance based on distance and local data density
                 # Areas far from wells should have higher uncertainty
                 base_variance = np.var(values) if len(values) > 1 else 1.0
-                
+
                 # Exponential increase in variance with distance
                 distance_variance = base_variance * (0.2 + 1.8 * np.exp(normalized_distances * 2.0))
-                
+
                 # Add some local variation based on coordinate position
                 lat_variation = np.sin(xi_lat * 100) * 0.1 * base_variance
                 lon_variation = np.cos(xi_lon * 100) * 0.1 * base_variance
-                
+
                 kriging_variance = distance_variance + lat_variation + lon_variation
                 kriging_variance = np.maximum(kriging_variance, base_variance * 0.1)
             else:
@@ -1578,7 +1573,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         variance_data = []
         points_inside_count = 0
         points_total_count = len(lat_points)
-        
+
         for i in range(len(lat_points)):
             # Only add points with meaningful variance values (lower threshold for variance)
             if kriging_variance[i] > 1e-6:
@@ -1586,10 +1581,10 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                 include_point = True
                 if merged_soil_geometry is not None:
                     point = Point(lon_points[i], lat_points[i])
-                    
+
                     # Use ONLY strict containment - no intersection tolerance
                     strictly_contained = merged_soil_geometry.contains(point)
-                    
+
                     # For variance visualization, we want very precise clipping
                     # Only allow points that are clearly inside the soil polygons
                     if not strictly_contained:
@@ -1597,7 +1592,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                         buffer_distance = 0.00005  # roughly 5 meters - much smaller buffer
                         buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
                         strictly_contained = buffered_geometry.contains(point)
-                    
+
                     include_point = strictly_contained
                     if include_point:
                         points_inside_count += 1

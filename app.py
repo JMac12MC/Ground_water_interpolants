@@ -835,8 +835,8 @@ with main_col1:
 
                     # Filter out geotechnical/geological investigation wells from well markers
                     display_wells = st.session_state.filtered_wells.copy()
-                    if 'well_type' in display_wells.columns:
-                        geotechnical_mask = display_wells['well_type'].str.contains(
+                    if 'well_use' in display_wells.columns:
+                        geotechnical_mask = display_wells['well_use'].str.contains(
                             'Geotechnical.*Investigation|Geological.*Investigation', 
                             case=False, 
                             na=False, 

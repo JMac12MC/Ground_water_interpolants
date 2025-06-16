@@ -39,9 +39,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return {"type": "FeatureCollection", "features": []}
     
-    # Filter out geotechnical/geological investigation wells
-    if 'well_type' in wells_df.columns:
-        geotechnical_mask = wells_df['well_type'].str.contains(
+    # Filter out geotechnical/geological investigation wells using well_use
+    if 'well_use' in wells_df.columns:
+        geotechnical_mask = wells_df['well_use'].str.contains(
             'Geotechnical.*Investigation|Geological.*Investigation', 
             case=False, 
             na=False, 
@@ -537,9 +537,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return []
     
-    # Filter out geotechnical/geological investigation wells
-    if 'well_type' in wells_df.columns:
-        geotechnical_mask = wells_df['well_type'].str.contains(
+    # Filter out geotechnical/geological investigation wells using well_use
+    if 'well_use' in wells_df.columns:
+        geotechnical_mask = wells_df['well_use'].str.contains(
             'Geotechnical.*Investigation|Geological.*Investigation', 
             case=False, 
             na=False, 
@@ -1315,9 +1315,9 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         # Filter wells data similar to yield kriging for consistency
         wells_df_filtered = wells_df.copy()
         
-        # Filter out geotechnical/geological investigation wells
-        if 'well_type' in wells_df_filtered.columns:
-            geotechnical_mask = wells_df_filtered['well_type'].str.contains(
+        # Filter out geotechnical/geological investigation wells using well_use
+        if 'well_use' in wells_df_filtered.columns:
+            geotechnical_mask = wells_df_filtered['well_use'].str.contains(
                 'Geotechnical.*Investigation|Geological.*Investigation', 
                 case=False, 
                 na=False, 

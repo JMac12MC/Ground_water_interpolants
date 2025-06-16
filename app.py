@@ -833,7 +833,7 @@ with main_col1:
                 if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
                     radius_wells_layer = folium.FeatureGroup(name="Local Wells").add_to(m)
 
-                    # Filter out geotechnical/geological investigation wells from well markers
+                    # Filter out geotechnical/geological investigation wells and wells with no depth value from well markers
                     display_wells = st.session_state.filtered_wells.copy()
                     if 'well_use' in display_wells.columns:
                         geotechnical_mask = display_wells['well_use'].str.contains(
@@ -843,6 +843,10 @@ with main_col1:
                             regex=True
                         )
                         display_wells = display_wells[~geotechnical_mask]
+                    
+                    # Filter out wells with no depth value (NaN or empty depth)
+                    if 'depth' in display_wells.columns:
+                        display_wells = display_wells[display_wells['depth'].notna() & (display_wells['depth'] > 0)]
 
                     # Create small dot markers for wells within the radius (excluding geotechnical wells)
                     for idx, row in display_wells.iterrows():

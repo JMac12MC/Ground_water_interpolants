@@ -297,6 +297,17 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             has_depth_data = wells_df['depth_to_groundwater'].notna() | wells_df['drill_hole_depth'].notna()
             wells_df['is_dry_well'] = wells_df['is_dry_well'] | (has_depth_data & (wells_df['yield_rate'] == 0.0))
             
+            # Filter out active wells that have missing depth and/or yield data
+            # Check if well status is "Active" and has missing critical data
+            active_wells_mask = wells_df['status'].str.contains('Active', case=False, na=False)
+            has_yield_data = wells_df['yield_rate'].notna() & (wells_df['yield_rate'] >= 0)
+            
+            # For active wells, require both depth and yield data
+            valid_active_wells = ~active_wells_mask | (active_wells_mask & has_depth_data & has_yield_data)
+            
+            # Apply the filter to remove invalid active wells
+            wells_df = wells_df[valid_active_wells].copy()
+            
             # Remove wells with no depth information from the dataset
             # These wells cannot contribute to either yield or depth interpolation
             wells_df = wells_df[has_depth_data].copy()

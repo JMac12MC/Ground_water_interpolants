@@ -833,8 +833,19 @@ with main_col1:
                 if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
                     radius_wells_layer = folium.FeatureGroup(name="Local Wells").add_to(m)
 
-                    # Create small dot markers for wells within the radius
-                    for idx, row in st.session_state.filtered_wells.iterrows():
+                    # Filter out geotechnical/geological investigation wells from well markers
+                    display_wells = st.session_state.filtered_wells.copy()
+                    if 'well_type' in display_wells.columns:
+                        geotechnical_mask = display_wells['well_type'].str.contains(
+                            'Geotechnical.*Investigation|Geological.*Investigation', 
+                            case=False, 
+                            na=False, 
+                            regex=True
+                        )
+                        display_wells = display_wells[~geotechnical_mask]
+
+                    # Create small dot markers for wells within the radius (excluding geotechnical wells)
+                    for idx, row in display_wells.iterrows():
                         folium.CircleMarker(
                             location=(float(row['latitude']), float(row['longitude'])),
                             radius=3,

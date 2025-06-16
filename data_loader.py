@@ -300,6 +300,15 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
             wells_df['status'] = raw_df['WELL_STATUS_DESC'].fillna('Unknown')
             
+            # Filter out geotechnical/geological investigation wells
+            geotechnical_mask = wells_df['well_type'].str.contains(
+                'Geotechnical.*Investigation|Geological.*Investigation', 
+                case=False, 
+                na=False, 
+                regex=True
+            )
+            wells_df = wells_df[~geotechnical_mask].copy()
+            
             # Add locality if available
             if 'LOCALITY' in raw_df.columns:
                 wells_df['locality'] = raw_df['LOCALITY'].fillna('Unknown')

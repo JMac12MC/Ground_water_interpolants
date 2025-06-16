@@ -38,6 +38,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return {"type": "FeatureCollection", "features": []}
+    
+    # Filter out geotechnical/geological investigation wells
+    if 'well_type' in wells_df.columns:
+        geotechnical_mask = wells_df['well_type'].str.contains(
+            'Geotechnical.*Investigation|Geological.*Investigation', 
+            case=False, 
+            na=False, 
+            regex=True
+        )
+        wells_df = wells_df[~geotechnical_mask].copy()
+        
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
 
     # Extract the original grid information
     center_lat, center_lon = center_point
@@ -523,6 +536,19 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return []
+    
+    # Filter out geotechnical/geological investigation wells
+    if 'well_type' in wells_df.columns:
+        geotechnical_mask = wells_df['well_type'].str.contains(
+            'Geotechnical.*Investigation|Geological.*Investigation', 
+            case=False, 
+            na=False, 
+            regex=True
+        )
+        wells_df = wells_df[~geotechnical_mask].copy()
+        
+        if wells_df.empty:
+            return []
 
     # Extract coordinates and yields based on method
     if method == 'depth_kriging':
@@ -1288,6 +1314,19 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     try:
         # Filter wells data similar to yield kriging for consistency
         wells_df_filtered = wells_df.copy()
+        
+        # Filter out geotechnical/geological investigation wells
+        if 'well_type' in wells_df_filtered.columns:
+            geotechnical_mask = wells_df_filtered['well_type'].str.contains(
+                'Geotechnical.*Investigation|Geological.*Investigation', 
+                case=False, 
+                na=False, 
+                regex=True
+            )
+            wells_df_filtered = wells_df_filtered[~geotechnical_mask].copy()
+            
+            if wells_df_filtered.empty:
+                return []
         
         # Determine whether to use yield or depth data based on use_depth parameter
         if use_depth:

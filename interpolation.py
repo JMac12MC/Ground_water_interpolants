@@ -53,10 +53,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             return {"type": "FeatureCollection", "features": []}
 
     # For yield interpolation methods, exclude active wells with no yield data
+    # BUT include wells with yield_rate = 0 (measured dry wells) and wells with actual yield measurements
     if method not in ['depth_kriging']:
         if 'exclude_from_yield_interpolation' in wells_df.columns:
-            wells_df = wells_df[~wells_df['exclude_from_yield_interpolation']].copy()
-            
+            # Wells with measured yield data (including 0 = dry wells) should NEVER be excluded
+            has_measured_yield = wells_df['yield_rate'].notna()
+            # Only apply exclusion to wells that don't have any yield measurements
+            exclude_mask = wells_df['exclude_from_yield_interpolation'] & (~has_measured_yield)
+            wells_df = wells_df[~exclude_mask].copy()
+
             if wells_df.empty:
                 return {"type": "FeatureCollection", "features": []}
 
@@ -557,10 +562,15 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             return []
 
     # For yield interpolation methods, exclude active wells with no yield data
+    # BUT include wells with yield_rate = 0 (measured dry wells) and wells with actual yield measurements
     if method not in ['depth_kriging']:
         if 'exclude_from_yield_interpolation' in wells_df.columns:
-            wells_df = wells_df[~wells_df['exclude_from_yield_interpolation']].copy()
-            
+            # Wells with measured yield data (including 0 = dry wells) should NEVER be excluded
+            has_measured_yield = wells_df['yield_rate'].notna()
+            # Only apply exclusion to wells that don't have any yield measurements
+            exclude_mask = wells_df['exclude_from_yield_interpolation'] & (~has_measured_yield)
+            wells_df = wells_df[~exclude_mask].copy()
+
             if wells_df.empty:
                 return []
 
@@ -1147,20 +1157,20 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
                 float(interpolated_value)  # Use actual yield value
             ])
 
-    # Always add the actual well points with their values
-    for j in range(len(lats)):
-        # Check if within search radius
-        dist_from_center_km = np.sqrt(
-            ((lats[j] - center_lat) * 111.0)**2 + 
-            ((lons[j] - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
-        )
+        # Always add the actual well points with their values
+        for j in range(len(lats)):
+            # Check if within search radius
+            dist_from_center_km = np.sqrt(
+                ((lats[j] - center_lat) * 111.0)**2 + 
+                ((lons[j] - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
+            )
 
-        if dist_from_center_km <= radius_km:
-            heat_data.append([
-                float(lats[j]),
-                float(lons[j]),
-                float(yields[j])  # Use actual yield value
-            ])
+            if dist_from_center_km <= radius_km:
+                heat_data.append([
+                    float(lats[j]),
+                    float(lons[j]),
+                    float(yields[j])  # Use actual yield value
+                ])
 
     return heat_data
 
@@ -1340,9 +1350,14 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                 return []
 
         # For yield variance, exclude active wells with no yield data
+        # BUT include wells with yield_rate = 0 (measured dry wells) and wells with actual yield measurements
         if not use_depth and 'exclude_from_yield_interpolation' in wells_df_filtered.columns:
-            wells_df_filtered = wells_df_filtered[~wells_df_filtered['exclude_from_yield_interpolation']].copy()
-            
+            # Wells with measured yield data (including 0 = dry wells) should NEVER be excluded
+            has_measured_yield = wells_df_filtered['yield_rate'].notna()
+            # Only apply exclusion to wells that don't have any yield measurements
+            exclude_mask = wells_df_filtered['exclude_from_yield_interpolation'] & (~has_measured_yield)
+            wells_df_filtered = wells_df_filtered[~exclude_mask].copy()
+
             if wells_df_filtered.empty:
                 return []
 

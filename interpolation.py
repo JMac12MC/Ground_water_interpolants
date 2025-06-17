@@ -693,7 +693,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
                     )
 
-```python
         elif method == 'rf_kriging' and len(wells_df) >= 10:
             try:
                 print("Using Random Forest + Kriging interpolation")
@@ -1658,3 +1657,5 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     except Exception as e:
         print(f"Error calculating kriging variance: {e}")
         return []  # Return empty list in case of error
+
+# Removes a stray ```python marker in the heat map generation function that was causing the syntax error.

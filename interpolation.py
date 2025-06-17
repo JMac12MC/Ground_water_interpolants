@@ -53,14 +53,21 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             return {"type": "FeatureCollection", "features": []}
 
     # For yield interpolation methods, exclude active wells with no yield data
-    # BUT NEVER exclude wells that have any yield_rate value (including 0 for dry wells)
+    # CRITICAL: Wells with ANY yield_rate value (including 0, negative, or positive) should NEVER be excluded
     if method not in ['depth_kriging']:
         if 'exclude_from_yield_interpolation' in wells_df.columns:
-            # SAFETY CHECK: Wells with any yield_rate value should NEVER be excluded
-            has_any_yield_value = wells_df['yield_rate'].notna()
-            # Only exclude wells that are marked for exclusion AND have no yield data at all
-            safe_exclusion_mask = wells_df['exclude_from_yield_interpolation'] & (~has_any_yield_value)
-            wells_df = wells_df[~safe_exclusion_mask].copy()
+            # Only exclude wells that have completely missing yield data (NaN/None) AND are marked for exclusion
+            completely_missing_yield = wells_df['yield_rate'].isna()
+            exclude_mask = wells_df['exclude_from_yield_interpolation'] & completely_missing_yield
+
+            # Double safety check: ensure no wells with actual yield values are excluded
+            wells_with_data = wells_df['yield_rate'].notna()
+            if (wells_df['exclude_from_yield_interpolation'] & wells_with_data).any():
+                print("ERROR: Attempting to exclude wells with yield data - this should never happen!")
+                wells_df.loc[wells_with_data, 'exclude_from_yield_interpolation'] = False
+                exclude_mask = wells_df['exclude_from_yield_interpolation'] & completely_missing_yield
+
+            wells_df = wells_df[~exclude_mask].copy()
 
             if wells_df.empty:
                 return {"type": "FeatureCollection", "features": []}
@@ -98,7 +105,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     if method == 'depth_kriging':
         # For depth interpolation, use wells that have valid depth to groundwater measurements
         # Do NOT exclude dry wells if they have depth measurements - depth to groundwater is still valid data
-        
+
         # First, try to use depth_to_groundwater if available
         if 'depth_to_groundwater' in wells_df.columns:
             valid_depth_mask = wells_df['depth_to_groundwater'].notna() & (wells_df['depth_to_groundwater'] > 0)
@@ -549,14 +556,21 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             return []
 
     # For yield interpolation methods, exclude active wells with no yield data
-    # BUT NEVER exclude wells that have any yield_rate value (including 0 for dry wells)
+    # CRITICAL: Wells with ANY yield_rate value (including 0, negative, or positive) should NEVER be excluded
     if method not in ['depth_kriging']:
         if 'exclude_from_yield_interpolation' in wells_df.columns:
-            # SAFETY CHECK: Wells with any yield_rate value should NEVER be excluded
-            has_any_yield_value = wells_df['yield_rate'].notna()
-            # Only exclude wells that are marked for exclusion AND have no yield data at all
-            safe_exclusion_mask = wells_df['exclude_from_yield_interpolation'] & (~has_any_yield_value)
-            wells_df = wells_df[~safe_exclusion_mask].copy()
+            # Only exclude wells that have completely missing yield data (NaN/None) AND are marked for exclusion
+            completely_missing_yield = wells_df['yield_rate'].isna()
+            exclude_mask = wells_df['exclude_from_yield_interpolation'] & completely_missing_yield
+
+            # Double safety check: ensure no wells with actual yield values are excluded
+            wells_with_data = wells_df['yield_rate'].notna()
+            if (wells_df['exclude_from_yield_interpolation'] & wells_with_data).any():
+                print("ERROR: Attempting to exclude wells with yield data - this should never happen!")
+                wells_df.loc[wells_with_data, 'exclude_from_yield_interpolation'] = False
+                exclude_mask = wells_df['exclude_from_yield_interpolation'] & completely_missing_yield
+
+            wells_df = wells_df[~exclude_mask].copy()
 
             if wells_df.empty:
                 return []
@@ -565,7 +579,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     if method == 'depth_kriging':
         # For depth interpolation, use wells that have valid depth to groundwater measurements
         # Do NOT exclude dry wells if they have depth measurements - depth to groundwater is still valid data
-        
+
         # First, try to use depth_to_groundwater if available
         if 'depth_to_groundwater' in wells_df.columns:
             valid_depth_mask = wells_df['depth_to_groundwater'].notna() & (wells_df['depth_to_groundwater'] > 0)
@@ -679,6 +693,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
                     )
 
+```python
         elif method == 'rf_kriging' and len(wells_df) >= 10:
             try:
                 print("Using Random Forest + Kriging interpolation")
@@ -1324,13 +1339,20 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
                 return []
 
         # For yield variance, exclude active wells with no yield data
-        # BUT NEVER exclude wells that have any yield_rate value (including 0 for dry wells)
+        # CRITICAL: Wells with ANY yield_rate value (including 0, negative, or positive) should NEVER be excluded
         if not use_depth and 'exclude_from_yield_interpolation' in wells_df_filtered.columns:
-            # SAFETY CHECK: Wells with any yield_rate value should NEVER be excluded
-            has_any_yield_value = wells_df_filtered['yield_rate'].notna()
-            # Only exclude wells that are marked for exclusion AND have no yield data at all
-            safe_exclusion_mask = wells_df_filtered['exclude_from_yield_interpolation'] & (~has_any_yield_value)
-            wells_df_filtered = wells_df_filtered[~safe_exclusion_mask].copy()
+            # Only exclude wells that have completely missing yield data (NaN/None) AND are marked for exclusion
+            completely_missing_yield = wells_df_filtered['yield_rate'].isna()
+            exclude_mask = wells_df_filtered['exclude_from_yield_interpolation'] & completely_missing_yield
+
+            # Double safety check: ensure no wells with actual yield values are excluded
+            wells_with_data = wells_df_filtered['yield_rate'].notna()
+            if (wells_df_filtered['exclude_from_yield_interpolation'] & wells_with_data).any():
+                print("ERROR: Attempting to exclude wells with yield data - this should never happen!")
+                wells_df_filtered.loc[wells_with_data, 'exclude_from_yield_interpolation'] = False
+                exclude_mask = wells_df_filtered['exclude_from_yield_interpolation'] & completely_missing_yield
+
+            wells_df_filtered = wells_df_filtered[~exclude_mask].copy()
 
             if wells_df_filtered.empty:
                 return []
@@ -1339,7 +1361,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         if use_depth:
             # For depth variance, use wells with valid depth to groundwater measurements
             # Do NOT exclude dry wells if they have depth measurements
-            
+
             # First, try to use depth_to_groundwater if available
             if 'depth_to_groundwater' in wells_df_filtered.columns and not wells_df_filtered['depth_to_groundwater'].isna().all():
                 wells_df_filtered = wells_df_filtered[wells_df_filtered['depth_to_groundwater'].notna() & (wells_df_filtered['depth_to_groundwater'] > 0)]
@@ -1386,7 +1408,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         x_coords = (lons - center_lon) * km_per_degree_lon
         y_coords = (lats - center_lat) * km_per_degree_lat
 
-        # Create grid in km space
+        # Create grid in km space```python
         grid_x = np.linspace(-radius_km, radius_km, grid_size)
         grid_y = np.linspace(-radius_km, radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)

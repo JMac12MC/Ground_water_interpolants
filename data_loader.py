@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
-import streamlit as st
 import os
 import random
 import pyproj
+import streamlit as st
 
 def load_sample_data():
     """
@@ -736,7 +736,7 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
 
     except Exception as e:
         st.error(f"Error in fetch_nz_wells_api: {e}")
-        return generate_synthetic_nz_wells()
+return generate_synthetic_nz_wells()
 
 
 def generate_synthetic_nz_wells():

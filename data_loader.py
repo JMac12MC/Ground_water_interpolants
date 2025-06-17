@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
+import streamlit as st
 import os
 import random
 import pyproj
-import streamlit as st
 
 def load_sample_data():
     """
@@ -297,20 +297,6 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             has_depth_data = wells_df['depth_to_groundwater'].notna() | wells_df['drill_hole_depth'].notna()
             wells_df['is_dry_well'] = wells_df['is_dry_well'] | (has_depth_data & (wells_df['yield_rate'] == 0.0))
 
-            # CRITICAL: Wells with ANY yield_rate value should NEVER be excluded from yield interpolation
-            # This includes wells with 0 yield (dry wells), positive yields, and even negative values
-            # Only exclude wells that are Active AND have completely missing yield data (NaN/None/null)
-            active_wells_mask = wells_df['status'].str.contains('Active', case=False, na=False)
-            has_completely_missing_yield = wells_df['yield_rate'].isna()  # Only truly missing data (NaN/None)
-            wells_df['exclude_from_yield_interpolation'] = active_wells_mask & has_completely_missing_yield
-            
-            # Safety check: Verify no wells with actual yield values are marked for exclusion
-            wells_with_yield_data = wells_df['yield_rate'].notna()
-            incorrectly_excluded = wells_df['exclude_from_yield_interpolation'] & wells_with_yield_data
-            if incorrectly_excluded.any():
-                print(f"WARNING: {incorrectly_excluded.sum()} wells with yield data were incorrectly marked for exclusion - fixing this")
-                wells_df.loc[incorrectly_excluded, 'exclude_from_yield_interpolation'] = False
-
             # Remove wells with no depth information from the dataset
             # These wells cannot contribute to either yield or depth interpolation
             wells_df = wells_df[has_depth_data].copy()
@@ -478,7 +464,7 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
     import requests
 
     try:
-        # Try to fetch New Zealand well data from the mostreliable sources
+        # Try to fetch New Zealand well data from the most reliable sources
         # We'll try multiple endpoints to get comprehensive coverage
         nz_api_endpoints = [
             {
@@ -736,7 +722,7 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
 
     except Exception as e:
         st.error(f"Error in fetch_nz_wells_api: {e}")
-return generate_synthetic_nz_wells()
+        return generate_synthetic_nz_wells()
 
 
 def generate_synthetic_nz_wells():

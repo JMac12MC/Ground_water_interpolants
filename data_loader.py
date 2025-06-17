@@ -297,6 +297,14 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             has_depth_data = wells_df['depth_to_groundwater'].notna() | wells_df['drill_hole_depth'].notna()
             wells_df['is_dry_well'] = wells_df['is_dry_well'] | (has_depth_data & (wells_df['yield_rate'] == 0.0))
 
+            # Mark active wells with no yield data as unsuitable for yield interpolation
+            # but keep them for depth interpolation if they have screen data
+            # IMPORTANT: Wells with any yield_rate value (including 0) should NEVER be excluded from yield interpolation
+            # Only exclude wells that are Active but have completely missing yield data (NaN/None)
+            active_wells_mask = wells_df['status'].str.contains('Active', case=False, na=False)
+            has_no_yield_data = wells_df['yield_rate'].isna()  # Only wells with completely missing yield data
+            wells_df['exclude_from_yield_interpolation'] = active_wells_mask & has_no_yield_data
+
             # Remove wells with no depth information from the dataset
             # These wells cannot contribute to either yield or depth interpolation
             wells_df = wells_df[has_depth_data].copy()
@@ -464,7 +472,7 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
     import requests
 
     try:
-        # Try to fetch New Zealand well data from the most reliable sources
+        # Try to fetch New Zealand well data from the mostreliable sources
         # We'll try multiple endpoints to get comprehensive coverage
         nz_api_endpoints = [
             {

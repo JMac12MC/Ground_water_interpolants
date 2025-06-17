@@ -1408,7 +1408,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         x_coords = (lons - center_lon) * km_per_degree_lon
         y_coords = (lats - center_lat) * km_per_degree_lat
 
-        # Create grid in km space```python
+        # Create grid in km space
         grid_x = np.linspace(-radius_km, radius_km, grid_size)
         grid_y = np.linspace(-radius_km, radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)

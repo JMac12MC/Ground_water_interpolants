@@ -52,6 +52,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
 
+    # For yield interpolation methods, exclude active wells with no yield data
+    if method not in ['depth_kriging']:
+        if 'exclude_from_yield_interpolation' in wells_df.columns:
+            wells_df = wells_df[~wells_df['exclude_from_yield_interpolation']].copy()
+            
+            if wells_df.empty:
+                return {"type": "FeatureCollection", "features": []}
+
     # Extract the original grid information
     center_lat, center_lon = center_point
     km_per_degree_lat = 111.0  # ~111km per degree of latitude
@@ -547,6 +555,14 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
         if wells_df.empty:
             return []
+
+    # For yield interpolation methods, exclude active wells with no yield data
+    if method not in ['depth_kriging']:
+        if 'exclude_from_yield_interpolation' in wells_df.columns:
+            wells_df = wells_df[~wells_df['exclude_from_yield_interpolation']].copy()
+            
+            if wells_df.empty:
+                return []
 
     # Extract coordinates and yields based on method
     if method == 'depth_kriging':
@@ -1320,6 +1336,13 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
             )
             wells_df_filtered = wells_df_filtered[~geotechnical_mask].copy()
 
+            if wells_df_filtered.empty:
+                return []
+
+        # For yield variance, exclude active wells with no yield data
+        if not use_depth and 'exclude_from_yield_interpolation' in wells_df_filtered.columns:
+            wells_df_filtered = wells_df_filtered[~wells_df_filtered['exclude_from_yield_interpolation']].copy()
+            
             if wells_df_filtered.empty:
                 return []
 

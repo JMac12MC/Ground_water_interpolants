@@ -150,7 +150,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
     os.makedirs("sample_data", exist_ok=True)
 
     # Path for the original well data CSV file
-    canterbury_wells_file = "sample_data/canterbury_wells.csv"
+    canterbury_wells_file = "attached_assets/Wells_30k_1751103625950.csv"
 
     if os.path.exists(canterbury_wells_file):
         with st.spinner("Loading well database..."):
@@ -172,6 +172,10 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 # Convert to numeric, handling any non-numeric values
                 nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
                 nztmy = pd.to_numeric(raw_df['NZTMY'], errors='coerce')
+            elif 'X' in raw_df.columns and 'Y' in raw_df.columns:
+                # Use X,Y coordinates from the new dataset (these are NZTM coordinates)
+                nztmx = pd.to_numeric(raw_df['X'], errors='coerce')
+                nztmy = pd.to_numeric(raw_df['Y'], errors='coerce')</old_str>
 
                 # Use pyproj to perform proper coordinate transformation
                 # NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326)
@@ -338,7 +342,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
 
             # Simple message showing well count without technical jargon
             if len(valid_wells) > 0:
-                st.info(f"Using {len(valid_wells):,} wells from Canterbury region database")
+                st.info(f"Using {len(valid_wells):,} wells from updated Canterbury database")</old_str>
 
             # If we have a specific search area, filter by distance
             if search_center and search_radius_km:
@@ -365,13 +369,13 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             return valid_wells
 
         except Exception as e:
-            st.error(f"Error processing Canterbury wells data: {e}")
+            st.error(f"Error processing wells data: {e}")
             # Generate fallback wells
             return generate_wells_for_area((-43.5, 172.5), 100)
     else:
-        st.error(f"Canterbury wells data file not found at {canterbury_wells_file}")
+        st.error(f"Wells data file not found at {canterbury_wells_file}")
         # Generate fallback wells
-        return generate_wells_for_area((-43.5, 172.5), 100)
+        return generate_wells_for_area((-43.5, 172.5), 100)</old_str>
 
 def generate_wells_for_area(center, radius_km):
     """

@@ -71,9 +71,9 @@ add_banner()
 with st.sidebar:
     st.header("Data Options")
 
-    # Load wells data with caching
+    # Load Canterbury wells data with caching
     if st.session_state.wells_data is None:
-        with st.spinner("Loading wells database..."):
+        with st.spinner("Loading Canterbury wells data..."):
             try:
                 st.session_state.wells_data = load_nz_govt_data()
                 if st.session_state.wells_data is None or len(st.session_state.wells_data) == 0:

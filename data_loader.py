@@ -755,8 +755,7 @@ def generate_synthetic_nz_wells():
         # Christchurch and surroundings
         (base_lat, base_lon, 0.2),  # Christchurch
         (base_lat - 0.3, base_lon - 0.2, 0.15),  # West of Christchurch
-        (base_lat + 0.2, base_lon<previous_generation>```
- + 0.3, 0.1),  # East of Christchurch
+        (base_lat + 0.2, base_lon + 0.3, 0.1),  # East of Christchurch
         # North Canterbury
         (-43.0, 172.7, 0.25),  # North Canterbury region
         # South Canterbury

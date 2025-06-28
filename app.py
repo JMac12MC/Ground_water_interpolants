@@ -140,36 +140,7 @@ with st.sidebar:
         st.warning("Database connection not available. Cannot load soil polygons.")
         st.session_state.soil_polygons = None
 
-    # Check for pre-computed heatmaps
-    st.header("Performance Status")
-    if st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
-        try:
-            yield_data = st.session_state.polygon_db.get_heatmap_data('yield', bounds={'north': -40, 'south': -50, 'east': 175, 'west': 165})
-            depth_data = st.session_state.polygon_db.get_heatmap_data('depth', bounds={'north': -40, 'south': -50, 'east': 175, 'west': 165})
-
-            if yield_data and depth_data:
-                st.success(f"🚀 Pre-computed heatmaps ready! ({len(yield_data):,} yield + {len(depth_data):,} depth points)")
-                st.info("✨ App is running in high-performance mode with instant heatmap loading")
-            else:
-                st.warning("⚡ Pre-computed heatmaps not found")
-                if st.button("🔄 Generate High-Performance Heatmaps", use_container_width=True):
-                    st.info("Starting heatmap preprocessing... This will take several minutes but only needs to be done once.")
-                    with st.spinner("Generating pre-computed heatmaps for instant loading..."):
-                        try:
-                            # Run preprocessing
-                            from run_preprocessing import main as run_preprocessing
-                            success = run_preprocessing()
-                            if success:
-                                st.success("✅ Heatmaps generated! Refresh the page to use high-performance mode.")
-                                st.balloons()
-                            else:
-                                st.error("❌ Failed to generate heatmaps")
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-        except Exception as e:
-            st.warning("Database connection required for high-performance mode")
-    else:
-        st.warning("Database connection not available")
+    
 
     # Advanced option for uploading custom data (hidden in expander)
     with st.expander("Upload Custom Data (Optional)"):

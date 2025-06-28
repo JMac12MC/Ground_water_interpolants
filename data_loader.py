@@ -175,9 +175,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             elif 'X' in raw_df.columns and 'Y' in raw_df.columns:
                 # Use X,Y coordinates from the new dataset (these are NZTM coordinates)
                 nztmx = pd.to_numeric(raw_df['X'], errors='coerce')
-                nztmy = pd.to_numeric(raw_df['Y'], errors='coerce')
-
-            # Use pyproj to perform proper coordinate transformation</old_str>
+                nztmy = pd.to_numeric(raw_df['Y'], errors='coerce')</old_str>
 
                 # Use pyproj to perform proper coordinate transformation
                 # NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326)

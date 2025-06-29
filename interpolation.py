@@ -98,15 +98,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             yields = wells_df['depth_to_groundwater'].values.astype(float)
         else:
             yields = wells_df['depth'].values.astype(float)
-    elif method == 'specific_capacity_kriging':
-        # Get wells appropriate for specific capacity interpolation
-        wells_df = get_wells_for_interpolation(wells_df, 'specific_capacity')
-        if wells_df.empty:
-            return {"type": "FeatureCollection", "features": []}
-        
-        lats = wells_df['latitude'].values.astype(float)
-        lons = wells_df['longitude'].values.astype(float)
-        yields = wells_df['specific_capacity_rate'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -175,12 +166,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Execute kriging to get both predictions and variance
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
 
-        elif (method == 'kriging' or method == 'depth_kriging' or method == 'specific_capacity_kriging') and auto_fit_variogram and len(wells_df) >= 5:
-            # Perform kriging with auto-fitted variogram for yield/depth/specific capacity visualization (without variance output)
+        elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
+            # Perform kriging with auto-fitted variogram for yield/depth visualization (without variance output)
             if method == 'depth_kriging':
                 print(f"Auto-fitting {variogram_model} variogram model for depth estimation...")
-            elif method == 'specific_capacity_kriging':
-                print(f"Auto-fitting {variogram_model} variogram model for specific capacity estimation...")
             else:
                 print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
 
@@ -193,7 +182,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
-            # Set up kriging with auto-fitted variogram - ensure proper parameters for different data types
+            # Set up kriging with auto-fitted variogram - ensure proper parameters for depth data
             if method == 'depth_kriging':
                 # For depth data, use more appropriate variogram parameters
                 OK = OrdinaryKriging(
@@ -205,15 +194,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     weight=True,  # Enable nugget effect for depth data
                     anisotropy_scaling=1.0,  # No anisotropy scaling
                     anisotropy_angle=0.0
-                )
-            elif method == 'specific_capacity_kriging':
-                # For specific capacity data, use similar parameters to yield kriging
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
-                    variogram_model=variogram_model,
-                    verbose=False,
-                    enable_plotting=False,
-                    variogram_parameters=None  # Let PyKrige auto-fit parameters
                 )
             else:
                 # Standard yield kriging
@@ -228,16 +208,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Execute kriging to get predictions (ignore variance)
             interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
 
-            # Additional validation for different interpolation types
+            # Additional validation for depth interpolation
             if method == 'depth_kriging':
                 print(f"Depth interpolation stats: min={np.min(interpolated_z):.2f}, max={np.max(interpolated_z):.2f}, mean={np.mean(interpolated_z):.2f}")
                 # Ensure reasonable depth values (depths should be positive and reasonable)
                 interpolated_z = np.maximum(0.1, interpolated_z)  # Minimum depth of 0.1m
                 interpolated_z = np.minimum(200.0, interpolated_z)  # Maximum reasonable depth of 200m
-            elif method == 'specific_capacity_kriging':
-                print(f"Specific capacity interpolation stats: min={np.min(interpolated_z):.2f}, max={np.max(interpolated_z):.2f}, mean={np.mean(interpolated_z):.2f}")
-                # Ensure reasonable specific capacity values (should be positive)
-                interpolated_z = np.maximum(0.001, interpolated_z)  # Minimum specific capacity
 
         else:
             # Use standard griddata interpolation for other cases
@@ -574,15 +550,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             yields = wells_df_filtered['depth_to_groundwater'].values.astype(float)
         else:
             yields = wells_df_filtered['depth'].values.astype(float)
-    elif method == 'specific_capacity_kriging':
-        # Get wells appropriate for specific capacity interpolation
-        wells_df_filtered = get_wells_for_interpolation(wells_df, 'specific_capacity')
-        if wells_df_filtered.empty:
-            return []
-        
-        lats = wells_df_filtered['latitude'].values.astype(float)
-        lons = wells_df_filtered['longitude'].values.astype(float)
-        yields = wells_df_filtered['specific_capacity_rate'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -673,57 +640,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
             except Exception as e:
                 print(f"Yield kriging error: {e}, falling back to standard interpolation")
-                interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
-                nan_mask = np.isnan(interpolated_z)
-                if np.any(nan_mask):
-                    interpolated_z[nan_mask] = griddata(
-                        points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
-                    )
-
-        elif method == 'specific_capacity_kriging' and len(wells_df) >= 5:
-            try:
-                print("Using specific capacity kriging interpolation for heat map")
-
-                # Filter to meaningful specific capacity data for better kriging
-                meaningful_capacity_mask = yields > 0.001
-
-                if meaningful_capacity_mask.any() and np.sum(meaningful_capacity_mask) >= 5:
-                    # Use filtered data
-                    filtered_x_coords = x_coords[meaningful_capacity_mask]
-                    filtered_y_coords = y_coords[meaningful_capacity_mask] 
-                    filtered_yields = yields[meaningful_capacity_mask]
-
-                    # Convert to lat/lon for kriging
-                    filtered_lons = filtered_x_coords / km_per_degree_lon + center_lon
-                    filtered_lats = filtered_y_coords / km_per_degree_lat + center_lat
-
-                    # Set up kriging with spherical model (same as yield kriging)
-                    OK = OrdinaryKriging(
-                        filtered_lons, filtered_lats, filtered_yields,
-                        variogram_model='spherical',
-                        verbose=False,
-                        enable_plotting=False,
-                        variogram_parameters=None
-                    )
-
-                    # Execute kriging
-                    xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-                    xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
-                    interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
-
-                    # Ensure non-negative specific capacity
-                    interpolated_z = np.maximum(0, interpolated_z)
-                else:
-                    # Fallback to griddata if insufficient data
-                    interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
-                    nan_mask = np.isnan(interpolated_z)
-                    if np.any(nan_mask):
-                        interpolated_z[nan_mask] = griddata(
-                            points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
-                        )
-
-            except Exception as e:
-                print(f"Specific capacity kriging error: {e}, falling back to standard interpolation")
                 interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
                 nan_mask = np.isnan(interpolated_z)
                 if np.any(nan_mask):

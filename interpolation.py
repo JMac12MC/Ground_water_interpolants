@@ -81,67 +81,32 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
 
-    # Choose which values to interpolate based on method
+    # Use the new categorization system
+    from data_loader import get_wells_for_interpolation
+    
     if method == 'depth_kriging':
-        # For depth interpolation, ONLY use wells that have actual groundwater access
-        # Wells without depth data should already be filtered out in data loading
-        if 'is_dry_well' in wells_df.columns:
-            # Use the explicit dry well marking - exclude any well marked as dry
-            valid_depth_mask = (~wells_df['is_dry_well'])
-
-            # Require valid depth_to_groundwater data if available
-            if 'depth_to_groundwater' in wells_df.columns:
-                valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
-            elif 'depth' in wells_df.columns:
-                valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
-
-        elif 'depth_to_groundwater' in wells_df.columns:
-            # Use depth_to_groundwater data and exclude wells with missing depth data
-            valid_depth_mask = (
-                (~wells_df['depth_to_groundwater'].isna()) & 
-                (wells_df['depth_to_groundwater'] > 0)
-            )
+        # Get wells appropriate for depth interpolation
+        wells_df = get_wells_for_interpolation(wells_df, 'depth')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
+        lats = wells_df['latitude'].values.astype(float)
+        lons = wells_df['longitude'].values.astype(float)
+        
+        # Use depth_to_groundwater if available, otherwise fall back to depth
+        if 'depth_to_groundwater' in wells_df.columns and wells_df['depth_to_groundwater'].notna().any():
+            yields = wells_df['depth_to_groundwater'].values.astype(float)
         else:
-            # Use regular depth column and exclude wells with missing depth data
-            valid_depth_mask = (
-                (~wells_df['depth'].isna()) & 
-                (wells_df['depth'] > 0)
-            )
-
-        if valid_depth_mask.any():
-            wells_df = wells_df[valid_depth_mask].copy()
-            lats = wells_df['latitude'].values.astype(float)
-            lons = wells_df['longitude'].values.astype(float)
-            # Use depth_to_groundwater if available, otherwise fall back to depth
-            if 'depth_to_groundwater' in wells_df.columns:
-                yields = wells_df['depth_to_groundwater'].values.astype(float)
-            else:
-                yields = wells_df['depth'].values.astype(float)
-        else:
-            return {"type": "FeatureCollection", "features": []}  # No valid depth data
+            yields = wells_df['depth'].values.astype(float)
     else:
-        # For yield interpolation, ONLY use wells with actual yield data
-        # Exclude wells with unknown yields (screen data but no MAX_YIELD)
-        if 'has_unknown_yield' in wells_df.columns:
-            # Filter out wells with unknown yields for yield interpolation
-            yield_mask = (~wells_df['has_unknown_yield']) & (wells_df['yield_rate'].notna())
-            if yield_mask.any():
-                wells_df = wells_df[yield_mask].copy()
-                lats = wells_df['latitude'].values.astype(float)
-                lons = wells_df['longitude'].values.astype(float)
-                yields = wells_df['yield_rate'].values.astype(float)
-            else:
-                return {"type": "FeatureCollection", "features": []}  # No valid yield data
-        else:
-            # Fallback: use wells with non-null yield data
-            yield_mask = wells_df['yield_rate'].notna()
-            if yield_mask.any():
-                wells_df = wells_df[yield_mask].copy()
-                lats = wells_df['latitude'].values.astype(float)
-                lons = wells_df['longitude'].values.astype(float)
-                yields = wells_df['yield_rate'].values.astype(float)
-            else:
-                return {"type": "FeatureCollection", "features": []}  # No valid yield data
+        # Get wells appropriate for yield interpolation
+        wells_df = get_wells_for_interpolation(wells_df, 'yield')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
+        lats = wells_df['latitude'].values.astype(float)
+        lons = wells_df['longitude'].values.astype(float)
+        yields = wells_df['yield_rate'].values.astype(float)
 
     # Convert to km-based coordinates for proper interpolation
     x_coords = (lons - center_lon) * km_per_degree_lon
@@ -568,49 +533,32 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return []
 
-    # Extract coordinates and yields based on method
+    # Use the new categorization system
+    from data_loader import get_wells_for_interpolation
+    
     if method == 'depth_kriging':
-        # For depth interpolation, ONLY use wells that have actual groundwater access
-        # Wells without depth data should already be filtered out in data loading
-        if 'is_dry_well' in wells_df.columns:
-            # Use the explicit dry well marking - exclude any well marked as dry
-            valid_depth_mask = (~wells_df['is_dry_well'])
-
-            # Require valid depth_to_groundwater data if available
-            if 'depth_to_groundwater' in wells_df.columns:
-                valid_depth_mask = valid_depth_mask & (~wells_df['depth_to_groundwater'].isna()) & (wells_df['depth_to_groundwater'] > 0)
-            elif 'depth' in wells_df.columns:
-                valid_depth_mask = valid_depth_mask & (~wells_df['depth'].isna()) & (wells_df['depth'] > 0)
-
-        elif 'depth_to_groundwater' in wells_df.columns:
-            # Use depth_to_groundwater data and exclude wells with missing depth data
-            valid_depth_mask = (
-                (~wells_df['depth_to_groundwater'].isna()) & 
-                (wells_df['depth_to_groundwater'] > 0)
-            )
+        # Get wells appropriate for depth interpolation
+        wells_df_filtered = get_wells_for_interpolation(wells_df, 'depth')
+        if wells_df_filtered.empty:
+            return []
+        
+        lats = wells_df_filtered['latitude'].values.astype(float)
+        lons = wells_df_filtered['longitude'].values.astype(float)
+        
+        # Use depth_to_groundwater if available, otherwise fall back to depth
+        if 'depth_to_groundwater' in wells_df_filtered.columns and wells_df_filtered['depth_to_groundwater'].notna().any():
+            yields = wells_df_filtered['depth_to_groundwater'].values.astype(float)
         else:
-            # Use regular depth column and exclude wells with missing depth data
-            valid_depth_mask = (
-                (~wells_df['depth'].isna()) & 
-                (wells_df['depth'] > 0)
-            )
-
-        if valid_depth_mask.any():
-            wells_df_filtered = wells_df[valid_depth_mask].copy()
-            lats = wells_df_filtered['latitude'].values.astype(float)
-            lons = wells_df_filtered['longitude'].values.astype(float)
-            # Use depth_to_groundwater if available, otherwise fall back to depth
-            if 'depth_to_groundwater' in wells_df_filtered.columns:
-                yields = wells_df_filtered['depth_to_groundwater'].values.astype(float)
-            else:
-                yields = wells_df_filtered['depth'].values.astype(float)
-        else:
-            return []  # No valid depth data
+            yields = wells_df_filtered['depth'].values.astype(float)
     else:
-        # For yield interpolation, include ALL wells (including dry wells with 0 yield)
-        lats = wells_df['latitude'].values.astype(float)
-        lons = wells_df['longitude'].values.astype(float)
-        yields = wells_df['yield_rate'].values.astype(float)
+        # Get wells appropriate for yield interpolation
+        wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
+        if wells_df_filtered.empty:
+            return []
+        
+        lats = wells_df_filtered['latitude'].values.astype(float)
+        lons = wells_df_filtered['longitude'].values.astype(float)
+        yields = wells_df_filtered['yield_rate'].values.astype(float)
 
     # Handle case with too few data points
     if len(wells_df) < 3:

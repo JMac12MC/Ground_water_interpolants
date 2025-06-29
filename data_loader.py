@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -128,6 +129,175 @@ def load_custom_data(uploaded_file):
         st.error(f"Error loading CSV file: {e}")
         return None
 
+def categorize_wells(wells_df):
+    """
+    Categorize wells into clear groups for different interpolation purposes.
+    This is the single source of truth for well categorization.
+    
+    Returns:
+    --------
+    dict: Contains categorized DataFrames for different interpolation purposes
+    """
+    # Start with basic data validation
+    wells_df = wells_df.copy()
+    
+    # Convert yield and depth columns to numeric
+    wells_df['yield_rate'] = pd.to_numeric(wells_df['yield_rate'], errors='coerce')
+    if 'depth_to_groundwater' in wells_df.columns:
+        wells_df['depth_to_groundwater'] = pd.to_numeric(wells_df['depth_to_groundwater'], errors='coerce')
+    if 'depth' in wells_df.columns:
+        wells_df['depth'] = pd.to_numeric(wells_df['depth'], errors='coerce')
+    
+    # Check for screen data (indicates groundwater access)
+    screen_columns = ['TOP_SCREEN_1', 'TOP_SCREEN_2', 'TOP_SCREEN_3', 'BOTTOM_SCREEN_1', 'BOTTOM_SCREEN_2', 'BOTTOM_SCREEN_3']
+    has_screen_data = pd.Series(False, index=wells_df.index)
+    
+    for screen_col in screen_columns:
+        if screen_col in wells_df.columns:
+            screen_values = pd.to_numeric(wells_df[screen_col], errors='coerce')
+            has_screen_data |= screen_values.notna()
+    
+    # Determine depth information
+    has_depth_to_groundwater = False
+    if 'depth_to_groundwater' in wells_df.columns:
+        has_depth_to_groundwater = wells_df['depth_to_groundwater'].notna().any()
+    
+    has_depth = False
+    if 'depth' in wells_df.columns:
+        has_depth = wells_df['depth'].notna().any()
+    
+    # Create clear categories
+    categories = {}
+    
+    # Category 1: Wells with actual yield data (for yield interpolation)
+    yield_wells = wells_df[
+        wells_df['yield_rate'].notna() & 
+        (wells_df['yield_rate'] > 0)
+    ].copy()
+    categories['yield_wells'] = yield_wells
+    
+    # Category 2: Wells with depth data but NO yield data (for depth interpolation only)
+    if has_depth_to_groundwater:
+        depth_column = 'depth_to_groundwater'
+        depth_wells = wells_df[
+            wells_df[depth_column].notna() & 
+            (wells_df[depth_column] > 0) &
+            (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0))
+        ].copy()
+    elif has_depth:
+        depth_column = 'depth'
+        depth_wells = wells_df[
+            wells_df[depth_column].notna() & 
+            (wells_df[depth_column] > 0) &
+            (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0))
+        ].copy()
+    else:
+        depth_wells = pd.DataFrame()
+    
+    categories['depth_only_wells'] = depth_wells
+    
+    # Category 3: Wells with BOTH yield and depth data (can be used for both)
+    if has_depth_to_groundwater:
+        depth_column = 'depth_to_groundwater'
+        both_wells = wells_df[
+            wells_df['yield_rate'].notna() & 
+            (wells_df['yield_rate'] > 0) &
+            wells_df[depth_column].notna() & 
+            (wells_df[depth_column] > 0)
+        ].copy()
+    elif has_depth:
+        depth_column = 'depth'
+        both_wells = wells_df[
+            wells_df['yield_rate'].notna() & 
+            (wells_df['yield_rate'] > 0) &
+            wells_df[depth_column].notna() & 
+            (wells_df[depth_column] > 0)
+        ].copy()
+    else:
+        both_wells = pd.DataFrame()
+    
+    categories['both_wells'] = both_wells
+    
+    # Category 4: Dry wells (no yield, no depth, no screen data)
+    dry_wells = wells_df[
+        (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0)) &
+        (~has_screen_data)
+    ].copy()
+    
+    if has_depth_to_groundwater:
+        dry_wells = dry_wells[dry_wells['depth_to_groundwater'].isna()]
+    elif has_depth:
+        dry_wells = dry_wells[dry_wells['depth'].isna()]
+    
+    # Set yield to 0 for dry wells
+    dry_wells['yield_rate'] = 0.0
+    categories['dry_wells'] = dry_wells
+    
+    return categories
+
+def get_wells_for_interpolation(wells_df, interpolation_type):
+    """
+    Get the appropriate wells for a specific interpolation type.
+    
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        Full wells dataset
+    interpolation_type : str
+        'yield' or 'depth'
+    
+    Returns:
+    --------
+    DataFrame
+        Wells appropriate for the specified interpolation
+    """
+    categories = categorize_wells(wells_df)
+    
+    if interpolation_type == 'yield':
+        # For yield interpolation: use wells with yield data + dry wells
+        yield_wells = categories['yield_wells']
+        both_wells = categories['both_wells']
+        dry_wells = categories['dry_wells']
+        
+        # Combine all wells that have yield information (including 0 for dry wells)
+        all_yield_wells = []
+        
+        if not yield_wells.empty:
+            all_yield_wells.append(yield_wells)
+        
+        if not both_wells.empty:
+            all_yield_wells.append(both_wells)
+        
+        if not dry_wells.empty:
+            all_yield_wells.append(dry_wells)
+        
+        if all_yield_wells:
+            return pd.concat(all_yield_wells, ignore_index=True)
+        else:
+            return pd.DataFrame()
+    
+    elif interpolation_type == 'depth':
+        # For depth interpolation: use wells with depth data (but NOT dry wells)
+        depth_wells = categories['depth_only_wells']
+        both_wells = categories['both_wells']
+        
+        # Combine wells that have depth information
+        all_depth_wells = []
+        
+        if not depth_wells.empty:
+            all_depth_wells.append(depth_wells)
+        
+        if not both_wells.empty:
+            all_depth_wells.append(both_wells)
+        
+        if all_depth_wells:
+            return pd.concat(all_depth_wells, ignore_index=True)
+        else:
+            return pd.DataFrame()
+    
+    else:
+        raise ValueError(f"Unknown interpolation type: {interpolation_type}")
+
 def load_nz_govt_data(search_center=None, search_radius_km=None):
     """
     Load well data from the Wells_30k dataset
@@ -252,12 +422,12 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             for screen_col in ['TOP_SCREEN_1', 'TOP_SCREEN_2', 'TOP_SCREEN_3', 'BOTTOM_SCREEN_1', 'BOTTOM_SCREEN_2', 'BOTTOM_SCREEN_3']:
                 if screen_col in raw_df.columns:
                     screen_depths.append(pd.to_numeric(raw_df[screen_col], errors='coerce'))
+                    # Keep the original screen columns for categorization
+                    wells_df[screen_col] = pd.to_numeric(raw_df[screen_col], errors='coerce')
 
-            # Check if wells have any screen data (indicates active groundwater well)
-            has_screen_data = pd.Series(False, index=raw_df.index)
+            # Set depth to groundwater
             if screen_depths:
                 all_screens = pd.concat(screen_depths, axis=1)
-                has_screen_data = all_screens.notna().any(axis=1)
                 wells_df['depth_to_groundwater'] = all_screens.min(axis=1, skipna=True)
                 wells_df['display_depth'] = wells_df['depth_to_groundwater'].fillna(pd.to_numeric(raw_df['DEPTH'], errors='coerce'))
             else:
@@ -272,39 +442,10 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             wells_df['depth_m'] = wells_df['display_depth']
 
             # Add yield information - ONLY use MAX_YIELD from the Wells_30k dataset
-            # Do NOT use SPECIFIC_CAPACITY or any other columns for yield calculation
             if 'MAX_YIELD' in raw_df.columns:
-                # Convert MAX_YIELD to numeric, keeping NaN for missing/invalid values
-                max_yield_values = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
-                wells_df['yield_rate'] = max_yield_values
+                wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
             else:
                 wells_df['yield_rate'] = pd.Series([np.nan] * len(wells_df))
-
-            # Determine well categories for interpolation:
-            # 1. Wells with actual yield data (MAX_YIELD > 0)
-            # 2. Wells with screen data but no yield data (can be used for depth interpolation only)
-            # 3. Dry wells (no screen data and no yield data)
-            
-            has_depth_data = wells_df['depth_to_groundwater'].notna() | wells_df['drill_hole_depth'].notna()
-            has_yield_data = wells_df['yield_rate'].notna() & (wells_df['yield_rate'] > 0)
-            
-            # Mark as dry well only if no screen data AND no depth data AND no yield data
-            wells_df['is_dry_well'] = (~has_screen_data) & (~has_depth_data) & (~has_yield_data)
-            
-            # Wells with screen data but no yield data should NOT be used for yield interpolation
-            # but can still be used for depth interpolation
-            wells_df['has_unknown_yield'] = has_screen_data & (~has_yield_data)
-            
-            # CRITICAL: ONLY set yield to 0 for wells that are confirmed completely dry
-            # Wells with unknown yield (has_unknown_yield = True) must keep NaN yield values
-            wells_df.loc[wells_df['is_dry_well'], 'yield_rate'] = 0.0
-            
-            # Explicitly ensure wells with unknown yield keep their NaN values
-            # Do NOT modify yield_rate for any well that has screen data
-
-            # Remove wells with no depth information from the dataset
-            # These wells cannot contribute to either yield or depth interpolation
-            wells_df = wells_df[has_depth_data].copy()
 
             # Add well type and status information using Wells_30k columns
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')

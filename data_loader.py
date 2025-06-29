@@ -268,7 +268,8 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
             return pd.DataFrame()
     
     elif interpolation_type == 'specific_capacity':
-        # For specific capacity interpolation: use wells with specific capacity data
+        # For specific capacity interpolation: ONLY use wells with actual specific capacity data
+        # No fallback logic - if no specific capacity data exists, exclude the well entirely
         wells_with_specific_capacity = wells_df[
             wells_df['specific_capacity'].notna() & 
             (wells_df['specific_capacity'] > 0)

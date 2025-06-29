@@ -104,6 +104,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
         
+        # Double-check that all wells have valid specific capacity data
+        wells_df = wells_df[
+            wells_df['specific_capacity'].notna() & 
+            (wells_df['specific_capacity'] > 0)
+        ].copy()
+        
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['specific_capacity'].values.astype(float)
@@ -562,6 +571,15 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     elif method == 'specific_capacity_kriging':
         # Get wells appropriate for specific capacity interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'specific_capacity')
+        if wells_df_filtered.empty:
+            return []
+        
+        # Ensure all wells have valid specific capacity data
+        wells_df_filtered = wells_df_filtered[
+            wells_df_filtered['specific_capacity'].notna() & 
+            (wells_df_filtered['specific_capacity'] > 0)
+        ].copy()
+        
         if wells_df_filtered.empty:
             return []
         

@@ -274,7 +274,9 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             # Add yield information - ONLY use MAX_YIELD from the Wells_30k dataset
             # Do NOT use SPECIFIC_CAPACITY or any other columns for yield calculation
             if 'MAX_YIELD' in raw_df.columns:
-                wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
+                # Convert MAX_YIELD to numeric, keeping NaN for missing/invalid values
+                max_yield_values = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
+                wells_df['yield_rate'] = max_yield_values
             else:
                 wells_df['yield_rate'] = pd.Series([np.nan] * len(wells_df))
 
@@ -293,18 +295,13 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             # but can still be used for depth interpolation
             wells_df['has_unknown_yield'] = has_screen_data & (~has_yield_data)
             
-            # Initialize all yield_rate values as NaN first
-            wells_df['yield_rate'] = wells_df['yield_rate'].astype(float)
+            # CRITICAL: Do NOT modify yield_rate for wells with unknown yield
+            # They should keep their NaN values from the original MAX_YIELD conversion
             
             # ONLY set yield to 0 for wells that are confirmed dry (no screen data, no depth data)
             wells_df.loc[wells_df['is_dry_well'], 'yield_rate'] = 0.0
             
-            # Ensure wells with screen data but no MAX_YIELD are explicitly set to NaN
-            # This prevents them from being treated as dry wells in the interpolation
-            wells_df.loc[wells_df['has_unknown_yield'], 'yield_rate'] = np.nan
-            
-            # Wells that had actual MAX_YIELD > 0 should keep their original values
-            # (these are already preserved from the original data loading)
+            # Do NOT set yield_rate for wells with unknown yield - leave them as NaN
 
             # Remove wells with no depth information from the dataset
             # These wells cannot contribute to either yield or depth interpolation

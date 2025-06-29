@@ -293,13 +293,18 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             # but can still be used for depth interpolation
             wells_df['has_unknown_yield'] = has_screen_data & (~has_yield_data)
             
+            # Initialize all yield_rate values as NaN first
+            wells_df['yield_rate'] = wells_df['yield_rate'].astype(float)
+            
             # ONLY set yield to 0 for wells that are confirmed dry (no screen data, no depth data)
-            # Wells with screen data but no MAX_YIELD should keep NaN yield values
             wells_df.loc[wells_df['is_dry_well'], 'yield_rate'] = 0.0
             
-            # Ensure wells with screen data but no MAX_YIELD keep NaN (not 0) for yield_rate
+            # Ensure wells with screen data but no MAX_YIELD are explicitly set to NaN
             # This prevents them from being treated as dry wells in the interpolation
             wells_df.loc[wells_df['has_unknown_yield'], 'yield_rate'] = np.nan
+            
+            # Wells that had actual MAX_YIELD > 0 should keep their original values
+            # (these are already preserved from the original data loading)
 
             # Remove wells with no depth information from the dataset
             # These wells cannot contribute to either yield or depth interpolation

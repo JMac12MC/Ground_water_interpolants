@@ -338,7 +338,7 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
 
 def load_nz_govt_data(search_center=None, search_radius_km=None):
     """
-    Load well data from the Wells_30k dataset
+    Load well data from the attached Wells and Bores dataset
 
     Parameters:
     -----------
@@ -355,8 +355,8 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
     # Create the sample_data directory if it doesn't exist
     os.makedirs("sample_data", exist_ok=True)
 
-    # Path for the new Wells_30k dataset
-    wells_30k_file = "attached_assets/Wells_30k_1751105715343.csv"
+    # Path for the attached Wells and Bores dataset
+    wells_30k_file = "attached_assets/Wells_and_Bores_-_All (4)_modified_1751187023841.csv"
 
     if os.path.exists(wells_30k_file):
         with st.spinner("Loading well database..."):
@@ -370,8 +370,8 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             wells_df = pd.DataFrame()
             wells_df['well_id'] = raw_df['WELL_NO']
 
-            # Process NZTM coordinates (New Zealand Transverse Mercator)
-            # The Wells_30k dataset has NZTMX and NZTMY columns
+            # Process coordinates - this dataset has X,Y coordinates and NZTM coordinates
+            # First try NZTM coordinates if available
             if 'NZTMX' in raw_df.columns and 'NZTMY' in raw_df.columns:
                 # Convert to numeric, handling any non-numeric values
                 nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
@@ -412,6 +412,50 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 # Also keep original NZTM coordinates
                 wells_df['nztm_x'] = nztmx
                 wells_df['nztm_y'] = nztmy
+                
+            # If NZTM coordinates not available or invalid, try X,Y coordinates  
+            elif 'X' in raw_df.columns and 'Y' in raw_df.columns:
+                # Convert to numeric, handling any non-numeric values
+                x_coords = pd.to_numeric(raw_df['X'], errors='coerce')
+                y_coords = pd.to_numeric(raw_df['Y'], errors='coerce')
+
+                # Determine coordinate system based on coordinate ranges
+                # If coordinates are in millions, likely NZTM; if small, likely lat/lon
+                if x_coords.max() > 1000000:  # NZTM coordinates
+                    # Use pyproj to transform from NZTM to WGS84
+                    transformer = pyproj.Transformer.from_crs(
+                        "EPSG:2193",  # NZTM2000 
+                        "EPSG:4326",  # WGS84 (standard lat/long)
+                        always_xy=True
+                    )
+
+                    # Create dataframe with valid coordinates only
+                    valid_coords = ~x_coords.isna() & ~y_coords.isna()
+
+                    # Initialize with placeholder values
+                    lat = np.full(len(y_coords), np.nan)
+                    lon = np.full(len(x_coords), np.nan)
+
+                    # Only transform coordinates that are valid
+                    if valid_coords.any():
+                        # Get valid coordinates
+                        valid_x = x_coords[valid_coords].values
+                        valid_y = y_coords[valid_coords].values
+
+                        # Transform coordinates using pyproj
+                        transformed_lon, transformed_lat = transformer.transform(valid_x, valid_y)
+
+                        # Assign transformed coordinates back to arrays
+                        lon[valid_coords] = transformed_lon
+                        lat[valid_coords] = transformed_lat
+
+                    # Set latitude and longitude in wells_df
+                    wells_df['latitude'] = lat
+                    wells_df['longitude'] = lon
+
+                else:  # Already in lat/lon format
+                    wells_df['latitude'] = y_coords
+                    wells_df['longitude'] = x_coords
             
             # Fallback to NZMG coordinates if needed
             elif 'NZMGX' in raw_df.columns and 'NZMGY' in raw_df.columns:
@@ -522,7 +566,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
 
             # Simple message showing well count without technical jargon
             if len(valid_wells) > 0:
-                st.info(f"Using {len(valid_wells):,} wells from Wells_30k database")
+                st.info(f"Using {len(valid_wells):,} wells from Wells and Bores database")
 
             # If we have a specific search area, filter by distance
             if search_center and search_radius_km:
@@ -549,11 +593,11 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             return valid_wells
 
         except Exception as e:
-            st.error(f"Error processing Wells_30k data: {e}")
+            st.error(f"Error processing Wells and Bores data: {e}")
             # Generate fallback wells
             return generate_wells_for_area((-43.5, 172.5), 100)
     else:
-        st.error(f"Wells_30k data file not found at {wells_30k_file}")
+        st.error(f"Wells and Bores data file not found at {wells_30k_file}")
         # Generate fallback wells
         return generate_wells_for_area((-43.5, 172.5), 100)
 

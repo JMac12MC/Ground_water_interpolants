@@ -703,15 +703,9 @@ with main_col1:
                                 tooltip=f"Well ID: {well['WELL_ID']}"
                             ).add_to(radius_wells_layer)
 
-    # Add click handler
-    def get_location(x):
-        st.session_state.selected_point = [x['coords']['lat'], x['coords']['lng']]
-        st.session_state.zoom_level = 12  # Adjust zoom when a point is selected
-        st.rerun()
-
+    # Add click handler for map interaction
     m.add_child(folium.LatLngPopup())
     m.add_child(folium.ClickForMarker(popup="Selected Location"))
-    m.add_child(folium.ClickForGeoJson(fields=['yield'], callback=get_location))
 
     # Add layer control
     folium.LayerControl().add_to(m)

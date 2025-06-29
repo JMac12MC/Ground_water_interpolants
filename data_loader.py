@@ -271,26 +271,31 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             wells_df['depth'] = wells_df['display_depth']
             wells_df['depth_m'] = wells_df['display_depth']
 
-            # Add yield information - use MAX_YIELD from the Wells_30k dataset
+            # Add yield information - ONLY use MAX_YIELD from the Wells_30k dataset
+            # Do NOT use SPECIFIC_CAPACITY or any other columns for yield calculation
             if 'MAX_YIELD' in raw_df.columns:
-                wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce').fillna(0)
+                wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
             else:
-                # Fallback - generate yields based on depth if MAX_YIELD not available
-                wells_df['yield_rate'] = (wells_df['depth'] / 10).clip(lower=0.1, upper=40)
+                wells_df['yield_rate'] = pd.Series([np.nan] * len(wells_df))
 
-            # Improved dry well detection logic:
-            # A well is considered dry only if:
-            # 1. It has NO screen data AND no yield data, OR
-            # 2. It has depth data but explicitly shows 0 yield AND no screen data
-            # Wells with screen data are assumed to be active/productive even without yield data
+            # Determine well categories for interpolation:
+            # 1. Wells with actual yield data (MAX_YIELD > 0)
+            # 2. Wells with screen data but no yield data (can be used for depth interpolation only)
+            # 3. Dry wells (no screen data and no yield data)
+            
             has_depth_data = wells_df['depth_to_groundwater'].notna() | wells_df['drill_hole_depth'].notna()
-            has_yield_data = wells_df['yield_rate'] > 0
+            has_yield_data = wells_df['yield_rate'].notna() & (wells_df['yield_rate'] > 0)
             
-            # Mark as dry well only if no screen data AND either no depth data OR (has depth but no yield)
-            wells_df['is_dry_well'] = (~has_screen_data) & (~has_depth_data | (has_depth_data & ~has_yield_data))
+            # Mark as dry well only if no screen data AND no depth data
+            wells_df['is_dry_well'] = (~has_screen_data) & (~has_depth_data)
             
-            # For wells with screen data but no yield data, assign a small positive yield to indicate potential
-            wells_df.loc[has_screen_data & ~has_yield_data, 'yield_rate'] = 0.5
+            # Wells with screen data but no yield data should NOT be used for yield interpolation
+            # but can still be used for depth interpolation
+            wells_df['has_unknown_yield'] = has_screen_data & (~has_yield_data)
+            
+            # Fill NaN yield values with 0 for wells that are confirmed dry
+            # Leave NaN for wells with unknown yield (screen data but no MAX_YIELD)
+            wells_df.loc[wells_df['is_dry_well'], 'yield_rate'] = 0.0
 
             # Remove wells with no depth information from the dataset
             # These wells cannot contribute to either yield or depth interpolation

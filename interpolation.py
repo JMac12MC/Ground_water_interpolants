@@ -120,8 +120,28 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         else:
             return {"type": "FeatureCollection", "features": []}  # No valid depth data
     else:
-        # For yield interpolation, use ALL wells (including dry wells with 0 yield)
-        yields = wells_df['yield_rate'].values.astype(float)  # Use yield values for standard interpolation
+        # For yield interpolation, ONLY use wells with actual yield data
+        # Exclude wells with unknown yields (screen data but no MAX_YIELD)
+        if 'has_unknown_yield' in wells_df.columns:
+            # Filter out wells with unknown yields for yield interpolation
+            yield_mask = (~wells_df['has_unknown_yield']) & (wells_df['yield_rate'].notna())
+            if yield_mask.any():
+                wells_df = wells_df[yield_mask].copy()
+                lats = wells_df['latitude'].values.astype(float)
+                lons = wells_df['longitude'].values.astype(float)
+                yields = wells_df['yield_rate'].values.astype(float)
+            else:
+                return {"type": "FeatureCollection", "features": []}  # No valid yield data
+        else:
+            # Fallback: use wells with non-null yield data
+            yield_mask = wells_df['yield_rate'].notna()
+            if yield_mask.any():
+                wells_df = wells_df[yield_mask].copy()
+                lats = wells_df['latitude'].values.astype(float)
+                lons = wells_df['longitude'].values.astype(float)
+                yields = wells_df['yield_rate'].values.astype(float)
+            else:
+                return {"type": "FeatureCollection", "features": []}  # No valid yield data
 
     # Convert to km-based coordinates for proper interpolation
     x_coords = (lons - center_lon) * km_per_degree_lon
@@ -1035,10 +1055,19 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
     Simplified IDW (Inverse Distance Weighting) interpolation as fallback method
     Creates a continuous interpolated surface based on actual well yield values
     """
+    # Filter to only use wells with actual yield data (exclude unknown yields)
+    if 'has_unknown_yield' in wells_df.columns:
+        valid_wells = wells_df[(~wells_df['has_unknown_yield']) & (wells_df['yield_rate'].notna())].copy()
+    else:
+        valid_wells = wells_df[wells_df['yield_rate'].notna()].copy()
+    
+    if valid_wells.empty:
+        return []
+    
     # Extract coordinates and yields
-    lats = wells_df['latitude'].values.astype(float)
-    lons = wells_df['longitude'].values.astype(float)
-    yields = wells_df['yield_rate'].values.astype(float)
+    lats = valid_wells['latitude'].values.astype(float)
+    lons = valid_wells['longitude'].values.astype(float)
+    yields = valid_wells['yield_rate'].values.astype(float)
 
     # Handle empty dataset
     if len(yields) == 0:
@@ -1234,14 +1263,23 @@ def get_prediction_at_point(wells_df, point_lat, point_lon):
 def basic_idw_prediction(wells_df, point_lat, point_lon):
     """
     Calculate yield using basic Inverse Distance Weighting (IDW)
-    Used as a fallback method
+    Used as a fallback method - only uses wells with actual yield data
     """
     if not isinstance(wells_df, pd.DataFrame) or wells_df.empty:
         return 0
 
+    # Filter to only use wells with actual yield data
+    if 'has_unknown_yield' in wells_df.columns:
+        valid_wells = wells_df[(~wells_df['has_unknown_yield']) & (wells_df['yield_rate'].notna())].copy()
+    else:
+        valid_wells = wells_df[wells_df['yield_rate'].notna()].copy()
+    
+    if valid_wells.empty:
+        return 0
+
     # Calculate distance from each well to the point (in km)
     distances = []
-    for idx, row in wells_df.iterrows():
+    for idx, row in valid_wells.iterrows():
         lat = float(row['latitude'])
         lon = float(row['longitude'])
         # Convert to kilometers using approximate conversion
@@ -1259,8 +1297,8 @@ def basic_idw_prediction(wells_df, point_lat, point_lon):
         return 0
 
     # Calculate weighted average of yields
-    weighted_yield = sum(w * float(row['yield_rate']) for w, (idx, row) in zip(weights, wells_df.iterrows())) / total_weight
-    return float(max(0, weighted_yield))  # Ensure non-negative yield
+    weighted_yield = sum(w * float(row['yield_rate']) for w, (idx, row) in zip(weights, valid_wells.iterrows())) / total_weight
+    return float(max(0, weighted_yield))  # Ensure non-negative yieldld
 
 def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50, variogram_model='spherical', use_depth=False, soil_polygons=None):
     """

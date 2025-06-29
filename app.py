@@ -710,15 +710,34 @@ with main_col1:
     # Add layer control
     folium.LayerControl().add_to(m)
 
-    # Display map with error handling
+    # Display map with proper click handling
     try:
         map_data = folium_static(m, width=None, height=600)
 
+        # Handle map clicks properly
+        if map_data and 'last_clicked' in map_data:
+            clicked_lat = map_data['last_clicked']['lat']
+            clicked_lng = map_data['last_clicked']['lng']
+            
+            # Update session state with new clicked point
+            new_point = [clicked_lat, clicked_lng]
+            
+            # Only update if it's a different point (avoid infinite loops)
+            if (st.session_state.selected_point is None or 
+                abs(st.session_state.selected_point[0] - clicked_lat) > 0.001 or 
+                abs(st.session_state.selected_point[1] - clicked_lng) > 0.001):
+                
+                st.session_state.selected_point = new_point
+                st.session_state.zoom_level = 12
+                st.rerun()
+
         # Debug information
         if st.session_state.selected_point:
-            st.write(f"📍 Map centered at: {st.session_state.selected_point[0]:.4f}, {st.session_state.selected_point[1]:.4f}")
+            st.write(f"📍 Selected location: {st.session_state.selected_point[0]:.4f}, {st.session_state.selected_point[1]:.4f}")
+            st.write(f"🔍 Analysis radius: {st.session_state.search_radius} km")
         else:
             st.write(f"📍 Map centered at: {default_location[0]:.4f}, {default_location[1]:.4f}")
+            st.info("👆 Click anywhere on the map to generate interpolation analysis for that location")
 
     except Exception as e:
         st.error(f"Map loading error: {e}")

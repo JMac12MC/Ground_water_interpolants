@@ -683,3 +683,49 @@ with main_col1:
                     radius_wells_layer = folium.FeatureGroup(name="Local Wells").add_to(m)
 
                     # Filter out geotechnical/geological investigation wells and wells with no depth
+
+                    # Add well markers
+                    for index, well in st.session_state.filtered_wells.iterrows():
+                        if pd.notna(well['depth']):
+                            # Add a regular marker
+                            popup_text = f"""
+                            <b>Well Details</b><br>
+                            Well ID: {well['WELL_ID']}<br>
+                            Depth: {well['depth']} m<br>
+                            Yield: {well['yield_rate']} L/s<br>
+                            Distance: {well['distance']:.2f} km
+                            """
+
+                            folium.Marker(
+                                location=[well['latitude'], well['longitude']],
+                                popup=folium.Popup(popup_text, max_width=300),
+                                icon=folium.Icon(color='blue', icon='tint', prefix='fa'),
+                                tooltip=f"Well ID: {well['WELL_ID']}"
+                            ).add_to(radius_wells_layer)
+
+    # Add click handler
+    def get_location(x):
+        st.session_state.selected_point = [x['coords']['lat'], x['coords']['lng']]
+        st.session_state.zoom_level = 12  # Adjust zoom when a point is selected
+        st.rerun()
+
+    m.add_child(folium.LatLngPopup())
+    m.add_child(folium.ClickForMarker(popup="Selected Location"))
+    m.add_child(folium.ClickForGeoJson(fields=['yield'], callback=get_location))
+
+    # Add layer control
+    folium.LayerControl().add_to(m)
+
+    # Display map with error handling
+    try:
+        map_data = folium_static(m, width=None, height=600)
+
+        # Debug information
+        if st.session_state.selected_point:
+            st.write(f"📍 Map centered at: {st.session_state.selected_point[0]:.4f}, {st.session_state.selected_point[1]:.4f}")
+        else:
+            st.write(f"📍 Map centered at: {default_location[0]:.4f}, {default_location[1]:.4f}")
+
+    except Exception as e:
+        st.error(f"Map loading error: {e}")
+        st.info("If the map doesn't load, try refreshing the page or checking your internet connection.")

@@ -218,7 +218,17 @@ def categorize_wells(wells_df):
     
     categories['both_wells'] = both_wells
     
-    # Category 4: TRUE dry wells - ONLY wells with no screen data AND no depth data AND no yield
+    # Category 4: Wells with unknown yield (have screen data but no MAX_YIELD)
+    # These should keep NaN yield values and be excluded from yield interpolation
+    unknown_yield_wells = wells_df[
+        (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0)) &
+        has_screen_data
+    ].copy()
+    # Keep their yield as NaN (don't set to 0)
+    unknown_yield_wells['yield_rate'] = np.nan
+    categories['unknown_yield_wells'] = unknown_yield_wells
+    
+    # Category 5: TRUE dry wells - ONLY wells with no screen data AND no depth data AND no yield
     # Wells with screen data but no MAX_YIELD should NOT be classified as dry wells
     dry_wells = wells_df[
         (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0)) &
@@ -231,19 +241,14 @@ def categorize_wells(wells_df):
     elif has_depth:
         dry_wells = dry_wells[dry_wells['depth'].isna()]
     
+    # CRITICAL: Remove any wells that have screen data from dry wells
+    # This prevents wells like L35/1011 from being incorrectly classified as dry
+    if not unknown_yield_wells.empty:
+        dry_wells = dry_wells[~dry_wells.index.isin(unknown_yield_wells.index)]
+    
     # ONLY set yield to 0 for truly dry wells (no evidence of groundwater)
     dry_wells['yield_rate'] = 0.0
     categories['dry_wells'] = dry_wells
-    
-    # Category 5: Wells with unknown yield (have screen data but no MAX_YIELD)
-    # These should keep NaN yield values and be excluded from yield interpolation
-    unknown_yield_wells = wells_df[
-        (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0)) &
-        has_screen_data
-    ].copy()
-    # Keep their yield as NaN (don't set to 0)
-    unknown_yield_wells['yield_rate'] = np.nan
-    categories['unknown_yield_wells'] = unknown_yield_wells
     
     return categories
 

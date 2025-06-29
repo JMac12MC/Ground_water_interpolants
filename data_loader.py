@@ -130,12 +130,10 @@ def load_custom_data(uploaded_file):
 
 def load_nz_govt_data(search_center=None, search_radius_km=None):
     """
-    Load well data from the official Canterbury Maps OpenData dataset
+    Load well data from the Wells_30k dataset
 
     Parameters:
     -----------
-    use_full_dataset : bool
-        Whether to load the full dataset (all 56,498 wells)
     search_center : tuple
         (latitude, longitude) of search center to filter by location
     search_radius_km : float
@@ -149,25 +147,23 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
     # Create the sample_data directory if it doesn't exist
     os.makedirs("sample_data", exist_ok=True)
 
-    # Path for the original well data CSV file
-    canterbury_wells_file = "sample_data/canterbury_wells.csv"
+    # Path for the new Wells_30k dataset
+    wells_30k_file = "attached_assets/Wells_30k_1751105715343.csv"
 
-    if os.path.exists(canterbury_wells_file):
+    if os.path.exists(wells_30k_file):
         with st.spinner("Loading well database..."):
             pass
 
         try:
             # Read the CSV file directly
-            raw_df = pd.read_csv(canterbury_wells_file)
+            raw_df = pd.read_csv(wells_30k_file)
 
             # Create DataFrame with well IDs
             wells_df = pd.DataFrame()
             wells_df['well_id'] = raw_df['WELL_NO']
 
             # Process NZTM coordinates (New Zealand Transverse Mercator)
-            # The Canterbury dataset has column NZTMX and NZTMY which are in NZTM2000 coordinate system
-
-            # First try to use NZTM coordinates - these should be more accurate 
+            # The Wells_30k dataset has NZTMX and NZTMY columns
             if 'NZTMX' in raw_df.columns and 'NZTMY' in raw_df.columns:
                 # Convert to numeric, handling any non-numeric values
                 nztmx = pd.to_numeric(raw_df['NZTMX'], errors='coerce')
@@ -208,7 +204,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 # Also keep original NZTM coordinates
                 wells_df['nztm_x'] = nztmx
                 wells_df['nztm_y'] = nztmy
-
+            
             # Fallback to NZMG coordinates if needed
             elif 'NZMGX' in raw_df.columns and 'NZMGY' in raw_df.columns:
                 # Convert to numeric, handling any non-numeric values  
@@ -249,10 +245,9 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
 
                 # Also keep original NZMG coordinates
                 wells_df['nzmg_x'] = nzmgx
-                wells_df['nzmg_y'] = nzmgy
+                wells_df['nzmgy'] = nzmgy
 
-            # Calculate depth to groundwater using lowest screen depth (most accurate for groundwater analysis)
-            # First get all screen depths
+            # Calculate depth to groundwater using screen depths if available
             screen_depths = []
             for screen_col in ['TOP_SCREEN_1', 'TOP_SCREEN_2', 'TOP_SCREEN_3', 'BOTTOM_SCREEN_1', 'BOTTOM_SCREEN_2', 'BOTTOM_SCREEN_3']:
                 if screen_col in raw_df.columns:
@@ -262,34 +257,30 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 # Combine all screen depths and find the minimum (shallowest groundwater)
                 all_screens = pd.concat(screen_depths, axis=1)
                 wells_df['depth_to_groundwater'] = all_screens.min(axis=1, skipna=True)
-
-                # Mark wells with no screen data as dry wells but don't assign artificial depth
+                
+                # Mark wells with no screen data as dry wells
                 wells_df['is_dry_well'] = wells_df['depth_to_groundwater'].isna()
-                # For dry wells, keep NaN depth for groundwater interpolation (they'll be excluded)
-                # But for display purposes, we can show the drill hole depth
+                
+                # For display purposes, use screen depth or fall back to drill hole depth
                 wells_df['display_depth'] = wells_df['depth_to_groundwater'].fillna(pd.to_numeric(raw_df['DEPTH'], errors='coerce'))
             else:
-                # Fallback to drill depth if no screen data available
+                # Use drill hole depth as fallback
                 wells_df['depth_to_groundwater'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce')
                 wells_df['is_dry_well'] = wells_df['depth_to_groundwater'].isna()
                 wells_df['display_depth'] = wells_df['depth_to_groundwater']
 
             # Keep original depth for reference
             wells_df['drill_hole_depth'] = pd.to_numeric(raw_df['DEPTH'], errors='coerce').fillna(0)
-            # For general display, use display_depth (which includes drill depth for dry wells)
+            # For general display, use display_depth
             wells_df['depth'] = wells_df['display_depth']
             wells_df['depth_m'] = wells_df['display_depth']
 
-            # Add yield information - use MAX_YIELD or calculate if not available
+            # Add yield information - use MAX_YIELD from the Wells_30k dataset
             if 'MAX_YIELD' in raw_df.columns:
-                # Convert to numeric and fill missing values with 0 as requested
-                # This ensures wells with missing yield data are still displayed and treated as having 0 yield
+                # Convert to numeric and fill missing values with 0
                 wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce').fillna(0)
-            elif 'YIELD_RATE' in raw_df.columns:
-                # Also check if YIELD_RATE column exists
-                wells_df['yield_rate'] = pd.to_numeric(raw_df['YIELD_RATE'], errors='coerce').fillna(0)
             else:
-                # Generate yields based on depth (correlation between depth and yield)
+                # Fallback - generate yields based on depth if MAX_YIELD not available
                 wells_df['yield_rate'] = (wells_df['depth'] / 10).clip(lower=0.1, upper=40)
 
             # Only mark wells as dry if they have depth data but no yield
@@ -301,7 +292,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             # These wells cannot contribute to either yield or depth interpolation
             wells_df = wells_df[has_depth_data].copy()
 
-            # Add well type and status information
+            # Add well type and status information using Wells_30k columns
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
             wells_df['status'] = raw_df['WELL_STATUS_DESC'].fillna('Unknown')
 
@@ -338,7 +329,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
 
             # Simple message showing well count without technical jargon
             if len(valid_wells) > 0:
-                st.info(f"Using {len(valid_wells):,} wells from Canterbury region database")
+                st.info(f"Using {len(valid_wells):,} wells from Wells_30k database")
 
             # If we have a specific search area, filter by distance
             if search_center and search_radius_km:
@@ -365,11 +356,11 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             return valid_wells
 
         except Exception as e:
-            st.error(f"Error processing Canterbury wells data: {e}")
+            st.error(f"Error processing Wells_30k data: {e}")
             # Generate fallback wells
             return generate_wells_for_area((-43.5, 172.5), 100)
     else:
-        st.error(f"Canterbury wells data file not found at {canterbury_wells_file}")
+        st.error(f"Wells_30k data file not found at {wells_30k_file}")
         # Generate fallback wells
         return generate_wells_for_area((-43.5, 172.5), 100)
 

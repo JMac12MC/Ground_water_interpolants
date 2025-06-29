@@ -170,6 +170,7 @@ def categorize_wells(wells_df):
     categories = {}
     
     # Category 1: Wells with actual yield data (for yield interpolation)
+    # SIMPLIFIED: Only use wells with valid MAX_YIELD values
     yield_wells = wells_df[
         wells_df['yield_rate'].notna() & 
         (wells_df['yield_rate'] > 0)
@@ -182,14 +183,14 @@ def categorize_wells(wells_df):
         depth_wells = wells_df[
             wells_df[depth_column].notna() & 
             (wells_df[depth_column] > 0) &
-            (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0))
+            wells_df['yield_rate'].isna()
         ].copy()
     elif has_depth:
         depth_column = 'depth'
         depth_wells = wells_df[
             wells_df[depth_column].notna() & 
             (wells_df[depth_column] > 0) &
-            (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0))
+            wells_df['yield_rate'].isna()
         ].copy()
     else:
         depth_wells = pd.DataFrame()
@@ -218,37 +219,13 @@ def categorize_wells(wells_df):
     
     categories['both_wells'] = both_wells
     
-    # Category 4: Wells with unknown yield (have screen data but no MAX_YIELD)
-    # These should keep NaN yield values and be excluded from yield interpolation
-    unknown_yield_wells = wells_df[
-        (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0)) &
+    # Category 4: Wells with depth data but no yield data (used for depth interpolation)
+    # These wells are excluded from yield interpolation but can be used for depth
+    wells_without_yield = wells_df[
+        wells_df['yield_rate'].isna() &
         has_screen_data
     ].copy()
-    # Keep their yield as NaN (don't set to 0)
-    unknown_yield_wells['yield_rate'] = np.nan
-    categories['unknown_yield_wells'] = unknown_yield_wells
-    
-    # Category 5: TRUE dry wells - ONLY wells with no screen data AND no depth data AND no yield
-    # Wells with screen data but no MAX_YIELD should NOT be classified as dry wells
-    dry_wells = wells_df[
-        (wells_df['yield_rate'].isna() | (wells_df['yield_rate'] == 0)) &
-        (~has_screen_data)
-    ].copy()
-    
-    # Further restrict to wells that also have no depth information
-    if has_depth_to_groundwater:
-        dry_wells = dry_wells[dry_wells['depth_to_groundwater'].isna()]
-    elif has_depth:
-        dry_wells = dry_wells[dry_wells['depth'].isna()]
-    
-    # CRITICAL: Remove any wells that have screen data from dry wells
-    # This prevents wells like L35/1011 from being incorrectly classified as dry
-    if not unknown_yield_wells.empty:
-        dry_wells = dry_wells[~dry_wells.index.isin(unknown_yield_wells.index)]
-    
-    # ONLY set yield to 0 for truly dry wells (no evidence of groundwater)
-    dry_wells['yield_rate'] = 0.0
-    categories['dry_wells'] = dry_wells
+    categories['wells_without_yield'] = wells_without_yield
     
     return categories
 
@@ -271,13 +248,12 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
     categories = categorize_wells(wells_df)
     
     if interpolation_type == 'yield':
-        # For yield interpolation: use wells with yield data + dry wells
-        # EXCLUDE wells with unknown yield (those with screen data but no MAX_YIELD)
+        # For yield interpolation: ONLY use wells with actual MAX_YIELD values
+        # No dry well logic - just use the numeric values from MAX_YIELD
         yield_wells = categories['yield_wells']
         both_wells = categories['both_wells']
-        dry_wells = categories['dry_wells']
         
-        # Combine all wells that have KNOWN yield information (including 0 for dry wells)
+        # Combine wells that have actual yield measurements
         all_yield_wells = []
         
         if not yield_wells.empty:
@@ -286,19 +262,16 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         if not both_wells.empty:
             all_yield_wells.append(both_wells)
         
-        if not dry_wells.empty:
-            all_yield_wells.append(dry_wells)
-        
         if all_yield_wells:
             return pd.concat(all_yield_wells, ignore_index=True)
         else:
             return pd.DataFrame()
     
     elif interpolation_type == 'depth':
-        # For depth interpolation: use wells with depth data (including unknown yield wells)
+        # For depth interpolation: use wells with depth data (including wells without yield)
         depth_wells = categories['depth_only_wells']
         both_wells = categories['both_wells']
-        unknown_yield_wells = categories.get('unknown_yield_wells', pd.DataFrame())
+        wells_without_yield = categories.get('wells_without_yield', pd.DataFrame())
         
         # Combine wells that have depth information
         all_depth_wells = []
@@ -309,24 +282,24 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         if not both_wells.empty:
             all_depth_wells.append(both_wells)
         
-        # Include wells with unknown yield if they have depth data
-        if not unknown_yield_wells.empty:
-            # Filter unknown yield wells to only those with depth data
-            if 'depth_to_groundwater' in unknown_yield_wells.columns:
-                unknown_with_depth = unknown_yield_wells[
-                    unknown_yield_wells['depth_to_groundwater'].notna() & 
-                    (unknown_yield_wells['depth_to_groundwater'] > 0)
+        # Include wells without yield if they have depth data
+        if not wells_without_yield.empty:
+            # Filter wells without yield to only those with depth data
+            if 'depth_to_groundwater' in wells_without_yield.columns:
+                wells_with_depth = wells_without_yield[
+                    wells_without_yield['depth_to_groundwater'].notna() & 
+                    (wells_without_yield['depth_to_groundwater'] > 0)
                 ].copy()
-            elif 'depth' in unknown_yield_wells.columns:
-                unknown_with_depth = unknown_yield_wells[
-                    unknown_yield_wells['depth'].notna() & 
-                    (unknown_yield_wells['depth'] > 0)
+            elif 'depth' in wells_without_yield.columns:
+                wells_with_depth = wells_without_yield[
+                    wells_without_yield['depth'].notna() & 
+                    (wells_without_yield['depth'] > 0)
                 ].copy()
             else:
-                unknown_with_depth = pd.DataFrame()
+                wells_with_depth = pd.DataFrame()
             
-            if not unknown_with_depth.empty:
-                all_depth_wells.append(unknown_with_depth)
+            if not wells_with_depth.empty:
+                all_depth_wells.append(wells_with_depth)
         
         if all_depth_wells:
             return pd.concat(all_depth_wells, ignore_index=True)

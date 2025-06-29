@@ -238,7 +238,7 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
     wells_df : DataFrame
         Full wells dataset
     interpolation_type : str
-        'yield' or 'depth'
+        'yield', 'depth', or 'specific_capacity'
     
     Returns:
     --------
@@ -264,6 +264,23 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         
         if all_yield_wells:
             return pd.concat(all_yield_wells, ignore_index=True)
+        else:
+            return pd.DataFrame()
+    
+    elif interpolation_type == 'specific_capacity':
+        # For specific capacity interpolation: use wells with valid SPECIFIC_CAPACITY values
+        if 'SPECIFIC_CAPACITY' in wells_df.columns:
+            specific_capacity_wells = wells_df[
+                wells_df['SPECIFIC_CAPACITY'].notna() & 
+                (pd.to_numeric(wells_df['SPECIFIC_CAPACITY'], errors='coerce') > 0)
+            ].copy()
+            
+            # Convert to numeric and add as specific_capacity_rate column
+            specific_capacity_wells['specific_capacity_rate'] = pd.to_numeric(
+                specific_capacity_wells['SPECIFIC_CAPACITY'], errors='coerce'
+            )
+            
+            return specific_capacity_wells
         else:
             return pd.DataFrame()
     

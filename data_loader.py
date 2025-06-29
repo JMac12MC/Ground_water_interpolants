@@ -267,6 +267,15 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         else:
             return pd.DataFrame()
     
+    elif interpolation_type == 'specific_capacity':
+        # For specific capacity interpolation: use wells with specific capacity data
+        wells_with_specific_capacity = wells_df[
+            wells_df['specific_capacity'].notna() & 
+            (wells_df['specific_capacity'] > 0)
+        ].copy()
+        
+        return wells_with_specific_capacity
+    
     elif interpolation_type == 'depth':
         # For depth interpolation: use wells with depth data (including wells without yield)
         depth_wells = categories['depth_only_wells']
@@ -501,6 +510,12 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 wells_df['yield_rate'] = pd.to_numeric(raw_df['MAX_YIELD'], errors='coerce')
             else:
                 wells_df['yield_rate'] = pd.Series([np.nan] * len(wells_df))
+
+            # Add specific capacity information if available
+            if 'SPECIFIC_CAPACITY' in raw_df.columns:
+                wells_df['specific_capacity'] = pd.to_numeric(raw_df['SPECIFIC_CAPACITY'], errors='coerce')
+            else:
+                wells_df['specific_capacity'] = pd.Series([np.nan] * len(wells_df))
 
             # Add well type and status information using Wells_30k columns
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')

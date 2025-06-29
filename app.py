@@ -181,6 +181,7 @@ with st.sidebar:
         options=[
             "Standard Kriging (Yield)", 
             "Yield Kriging (Spherical)",
+            "Specific Capacity Kriging (Spherical)",
             "Kriging Variance (Yield Uncertainty)",
             "Kriging Variance (Depth Uncertainty)",
             "Depth to Groundwater (Standard Kriging)",
@@ -209,6 +210,11 @@ with st.sidebar:
         st.session_state.auto_fit_variogram = False
     elif visualization_method == "Yield Kriging (Spherical)":
         st.session_state.interpolation_method = 'yield_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
+    elif visualization_method == "Specific Capacity Kriging (Spherical)":
+        st.session_state.interpolation_method = 'specific_capacity_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
@@ -298,6 +304,8 @@ with main_col1:
             # Try to load pre-computed heatmap data
             if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('yield')
+            elif visualization_method == "Specific Capacity Kriging (Spherical)":
+                heatmap_data = st.session_state.polygon_db.get_heatmap_data('specific_capacity')
             elif "Depth" in visualization_method:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
 
@@ -368,6 +376,9 @@ with main_col1:
                 if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
                     value_field = 'yield_value'
                     display_name = 'yield'
+                elif visualization_method == "Specific Capacity Kriging (Spherical)":
+                    value_field = 'specific_capacity_value'
+                    display_name = 'yield'  # Keep for compatibility
                 else:
                     value_field = 'depth_value'
                     display_name = 'yield'  # Keep for compatibility

@@ -98,6 +98,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             yields = wells_df['depth_to_groundwater'].values.astype(float)
         else:
             yields = wells_df['depth'].values.astype(float)
+    elif method == 'specific_capacity_kriging':
+        # Get wells appropriate for specific capacity interpolation
+        wells_df = get_wells_for_interpolation(wells_df, 'specific_capacity')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
+        lats = wells_df['latitude'].values.astype(float)
+        lons = wells_df['longitude'].values.astype(float)
+        yields = wells_df['specific_capacity'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -550,6 +559,15 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             yields = wells_df_filtered['depth_to_groundwater'].values.astype(float)
         else:
             yields = wells_df_filtered['depth'].values.astype(float)
+    elif method == 'specific_capacity_kriging':
+        # Get wells appropriate for specific capacity interpolation
+        wells_df_filtered = get_wells_for_interpolation(wells_df, 'specific_capacity')
+        if wells_df_filtered.empty:
+            return []
+        
+        lats = wells_df_filtered['latitude'].values.astype(float)
+        lons = wells_df_filtered['longitude'].values.astype(float)
+        yields = wells_df_filtered['specific_capacity'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -596,9 +614,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         xi_inside = xi[mask]
 
         # Choose interpolation method based on parameter and dataset size
-        if method == 'yield_kriging' and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging') and len(wells_df) >= 5:
             try:
-                print("Using yield kriging interpolation for heat map")
+                interpolation_name = "specific capacity kriging" if method == 'specific_capacity_kriging' else "yield kriging"
+                print(f"Using {interpolation_name} interpolation for heat map")
 
                 # Filter to meaningful yield data for better kriging
                 meaningful_yield_mask = yields > 0.1

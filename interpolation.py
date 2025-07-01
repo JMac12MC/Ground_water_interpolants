@@ -131,9 +131,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         print(f"Initial SWL interpolation: Using {len(wells_df)} wells with SWL data")
         print(f"SWL value range: {wells_df['initial_swl'].min():.2f} to {wells_df['initial_swl'].max():.2f}")
 
+        # Convert negative SWL values to positive by adding the absolute minimum value + 1
+        swl_values = wells_df['initial_swl'].values.astype(float)
+        min_swl = np.min(swl_values)
+        if min_swl < 0:
+            # Add the absolute value of the minimum plus 1 to make all values positive
+            swl_offset = abs(min_swl) + 1
+            swl_values = swl_values + swl_offset
+            print(f"Applied offset of {swl_offset:.2f} to make SWL values positive")
+            print(f"Adjusted SWL range: {np.min(swl_values):.2f} to {np.max(swl_values):.2f}")
+
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
-        yields = wells_df['initial_swl'].values.astype(float)
+        yields = swl_values
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -367,8 +377,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                 # Adjust value threshold based on interpolation method
                 if method == 'initial_swl_kriging':
-                    # For SWL, use a much lower threshold since values can be negative or close to zero
-                    effective_threshold = -999.0  # Accept almost all SWL values
+                    # For SWL, use a lower threshold since values have been converted to positive
+                    effective_threshold = 0.01  # Accept almost all positive SWL values
                 else:
                     effective_threshold = value_threshold
 
@@ -614,9 +624,18 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         if wells_df_filtered.empty:
             return []
 
+        # Convert negative SWL values to positive by adding the absolute minimum value + 1
+        swl_values = wells_df_filtered['initial_swl'].values.astype(float)
+        min_swl = np.min(swl_values)
+        if min_swl < 0:
+            # Add the absolute value of the minimum plus 1 to make all values positive
+            swl_offset = abs(min_swl) + 1
+            swl_values = swl_values + swl_offset
+            print(f"Heat map: Applied offset of {swl_offset:.2f} to make SWL values positive")
+
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
-        yields = wells_df_filtered['initial_swl'].values.astype(float)
+        yields = swl_values
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -984,8 +1003,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             for i in range(len(lat_points)):
                 # Adjust threshold based on interpolation method
                 if method == 'initial_swl_kriging':
-                    # For SWL, accept almost all values including negative ones
-                    meaningful_threshold = -200.0
+                    # For SWL, accept all positive values (since we converted them)
+                    meaningful_threshold = 0.01
                 else:
                     meaningful_threshold = 0.01
 

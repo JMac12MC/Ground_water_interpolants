@@ -128,6 +128,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
         
+        print(f"Initial SWL interpolation: Using {len(wells_df)} wells with SWL data")
+        print(f"SWL value range: {wells_df['initial_swl'].min():.2f} to {wells_df['initial_swl'].max():.2f}")
+        
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['initial_swl'].values.astype(float)
@@ -362,57 +365,55 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                 avg_yield = avg_value  # Keep for backwards compatibility
 
+                # Adjust value threshold based on interpolation method
+                if method == 'initial_swl_kriging':
+                    # For SWL, use a much lower threshold since values can be negative or close to zero
+                    effective_threshold = -999.0  # Accept almost all SWL values
+                else:
+                    effective_threshold = value_threshold
+                
                 # Only add triangles with meaningful values and within our radius
-                if avg_yield > value_threshold:
+                if avg_yield > effective_threshold:
                     # Check if triangle should be included based on soil polygons
                     include_triangle = True
 
-                    if merged_soil_geometry is not None:
-                        # Calculate triangle centroid
+                    if merged_soil_geometry is not None and method != 'initial_swl_kriging':
+                        # For non-SWL methods, apply soil polygon filtering
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         centroid_point = Point(centroid_lon, centroid_lat)
 
                         # Only include if centroid is within soil drainage areas
                         include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
-
-                    if include_triangle:
-                        # Double-check: ensure triangle centroid is actually within soil polygons
+                    elif merged_soil_geometry is not None and method == 'initial_swl_kriging':
+                        # For SWL, use much more relaxed soil polygon filtering
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
+                        centroid_point = Point(centroid_lon, centroid_lat)
+                        
+                        # Use a large buffer for SWL data - 200 meters
+                        buffer_distance = 0.002  # roughly 200 meters in degrees
+                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                        include_triangle = buffered_geometry.contains(centroid_point) or buffered_geometry.intersects(centroid_point)
 
-                        # Final validation: check if centroid is within any soil polygon
-                        final_include = True
-                        if merged_soil_geometry is not None:
-                            centroid_point = Point(centroid_lon, centroid_lat)
-                            # For initial SWL, use more relaxed containment - allow intersection
-                            final_include = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
-
-                            # If still not included, check with larger buffer for SWL data
-                            if not final_include:
-                                # Allow triangles close to boundary (within 50 meters for SWL)
-                                buffer_distance = 0.0005  # roughly 50 meters in degrees
-                                buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                                final_include = buffered_geometry.contains(centroid_point) or buffered_geometry.intersects(centroid_point)
-
-                        if final_include:
+                    if include_triangle:
                             # Create polygon for this triangle
-                            poly = {
-                                "type": "Feature",
-                                "geometry": {
-                                    "type": "Polygon",
-                                    "coordinates": [[
-                                        [float(vertices[0,0]), float(vertices[0,1])],
-                                        [float(vertices[1,0]), float(vertices[1,1])],
-                                        [float(vertices[2,0]), float(vertices[2,1])],
-                                        [float(vertices[0,0]), float(vertices[0,1])]
-                                    ]]
-                                },
-                                "properties": {
-                                    "yield": avg_yield
-                                }
+                        poly = {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [[
+                                    [float(vertices[0,0]), float(vertices[0,1])],
+                                    [float(vertices[1,0]), float(vertices[1,1])],
+                                    [float(vertices[2,0]), float(vertices[2,1])],
+                                    [float(vertices[0,0]), float(vertices[0,1])]
+                                ]]
+                            },
+                            "properties": {
+                                "yield": avg_yield
                             }
-                            features.append(poly)
+                        }
+                        features.append(poly)
         else:
             # Fallback to rectangular grid if triangulation is not possible
             for i in range(len(lat_vals)-1):
@@ -981,39 +982,35 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             heat_data = []
             # Add interpolated points
             for i in range(len(lat_points)):
+                # Adjust threshold based on interpolation method
+                if method == 'initial_swl_kriging':
+                    # For SWL, accept almost all values including negative ones
+                    meaningful_threshold = -999.0
+                else:
+                    meaningful_threshold = 0.01
+                
                 # Only add points with meaningful values
-                if interpolated_z[i] > 0.01:
+                if interpolated_z[i] > meaningful_threshold:
                     # Check if point should be included based on soil polygons
                     include_point = True
-                    if merged_soil_geometry is not None:
+                    if merged_soil_geometry is not None and method != 'initial_swl_kriging':
+                        # For non-SWL methods, apply normal soil polygon filtering
                         point = Point(lon_points[i], lat_points[i])
                         include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
+                    elif merged_soil_geometry is not None and method == 'initial_swl_kriging':
+                        # For SWL, use much more relaxed soil polygon filtering
+                        point = Point(lon_points[i], lat_points[i])
+                        # Use large buffer for SWL data - 200 meters
+                        buffer_distance = 0.002  # roughly 200 meters in degrees
+                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                        include_point = buffered_geometry.contains(point) or buffered_geometry.intersects(point)
 
                     if include_point:
-                        # Double-check: ensure point is actually within soil polygons
-                        if merged_soil_geometry is not None:
-                            point = Point(lon_points[i], lat_points[i])
-                            # For initial SWL, use more relaxed containment including intersection
-                            contained = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
-
-                            # If not contained, check with larger buffer for SWL data
-                            if not contained:
-                                buffer_distance = 0.0005  # roughly 50 meters - larger buffer for SWL
-                                buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                                contained = buffered_geometry.contains(point) or buffered_geometry.intersects(point)
-
-                            if contained:
-                                heat_data.append([
-                                    float(lat_points[i]),  # Latitude
-                                    float(lon_points[i]),  # Longitude
-                                    float(interpolated_z[i])  # Yield value (actual value, not normalized)
-                                ])
-                        else:
-                            heat_data.append([
-                                float(lat_points[i]),  # Latitude
-                                float(lon_points[i]),  # Longitude
-                                float(interpolated_z[i])  # Yield value (actual value, not normalized)
-                            ])
+                        heat_data.append([
+                            float(lat_points[i]),  # Latitude
+                            float(lon_points[i]),  # Longitude
+                            float(interpolated_z[i])  # SWL/yield value (actual value, not normalized)
+                        ])
 
         # Always make sure well points themselves are included for accuracy
         # These are the actual data points we have, so they should be shown
@@ -1033,17 +1030,26 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     include_well = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
 
                 if include_well:
-                    # Double-check: ensure well point is actually within soil polygons
-                    if merged_soil_geometry is not None:
+                    # Check soil polygon containment based on method
+                    if merged_soil_geometry is not None and method != 'initial_swl_kriging':
+                        # For non-SWL methods, use normal containment
                         well_point = Point(lons[j], lats[j])
-                        # For initial SWL wells, use more relaxed containment including intersection
                         well_contained = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
-
-                        # If not contained, check with larger buffer for SWL wells
-                        if not well_contained:
-                            buffer_distance = 0.0005  # roughly 50 meters - larger buffer for SWL
-                            buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                            well_contained = buffered_geometry.contains(well_point) or buffered_geometry.intersects(well_point)
+                        
+                        if well_contained:
+                            heat_data.append([
+                                float(lats[j]),
+                                float(lons[j]),
+                                float(yields[j])
+                            ])
+                            well_points_added += 1
+                    elif merged_soil_geometry is not None and method == 'initial_swl_kriging':
+                        # For SWL wells, use much more relaxed containment
+                        well_point = Point(lons[j], lats[j])
+                        # Use large buffer for SWL wells - 200 meters
+                        buffer_distance = 0.002  # roughly 200 meters in degrees
+                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
+                        well_contained = buffered_geometry.contains(well_point) or buffered_geometry.intersects(well_point)
 
                         if well_contained:
                             heat_data.append([
@@ -1053,6 +1059,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                             ])
                             well_points_added += 1
                     else:
+                        # No soil polygon filtering
                         heat_data.append([
                             float(lats[j]),
                             float(lons[j]),

@@ -83,16 +83,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     # Use the new categorization system
     from data_loader import get_wells_for_interpolation
-    
+
     if method == 'depth_kriging':
         # Get wells appropriate for depth interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'depth')
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
-        
+
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
-        
+
         # Use depth_to_groundwater if available, otherwise fall back to depth
         if 'depth_to_groundwater' in wells_df.columns and wells_df['depth_to_groundwater'].notna().any():
             yields = wells_df['depth_to_groundwater'].values.astype(float)
@@ -103,16 +103,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         wells_df = get_wells_for_interpolation(wells_df, 'specific_capacity')
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
-        
+
         # Double-check that all wells have valid specific capacity data
         wells_df = wells_df[
             wells_df['specific_capacity'].notna() & 
             (wells_df['specific_capacity'] > 0)
         ].copy()
-        
+
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
-        
+
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['specific_capacity'].values.astype(float)
@@ -121,16 +121,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         wells_df = get_wells_for_interpolation(wells_df, 'initial_swl')
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
-        
+
         # Double-check that all wells have valid initial SWL data (allow zero and negative values)
         wells_df = wells_df[wells_df['initial_swl'].notna()].copy()
-        
+
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
-        
+
         print(f"Initial SWL interpolation: Using {len(wells_df)} wells with SWL data")
         print(f"SWL value range: {wells_df['initial_swl'].min():.2f} to {wells_df['initial_swl'].max():.2f}")
-        
+
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['initial_swl'].values.astype(float)
@@ -139,7 +139,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
-        
+
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['yield_rate'].values.astype(float)
@@ -371,7 +371,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     effective_threshold = -999.0  # Accept almost all SWL values
                 else:
                     effective_threshold = value_threshold
-                
+
                 # Only add triangles with meaningful values and within our radius
                 if avg_yield > effective_threshold:
                     # Check if triangle should be included based on soil polygons
@@ -390,7 +390,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         centroid_point = Point(centroid_lon, centroid_lat)
-                        
+
                         # Use a large buffer for SWL data - 200 meters
                         buffer_distance = 0.002  # roughly 200 meters in degrees
                         buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
@@ -569,16 +569,16 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
     # Use the new categorization system
     from data_loader import get_wells_for_interpolation
-    
+
     if method == 'depth_kriging':
         # Get wells appropriate for depth interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'depth')
         if wells_df_filtered.empty:
             return []
-        
+
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
-        
+
         # Use depth_to_groundwater if available, otherwise fall back to depth
         if 'depth_to_groundwater' in wells_df_filtered.columns and wells_df_filtered['depth_to_groundwater'].notna().any():
             yields = wells_df_filtered['depth_to_groundwater'].values.astype(float)
@@ -589,16 +589,16 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'specific_capacity')
         if wells_df_filtered.empty:
             return []
-        
+
         # Ensure all wells have valid specific capacity data
         wells_df_filtered = wells_df_filtered[
             wells_df_filtered['specific_capacity'].notna() & 
             (wells_df_filtered['specific_capacity'] > 0)
         ].copy()
-        
+
         if wells_df_filtered.empty:
             return []
-        
+
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['specific_capacity'].values.astype(float)
@@ -607,13 +607,13 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'initial_swl')
         if wells_df_filtered.empty:
             return []
-        
+
         # Ensure all wells have valid initial SWL data (allow zero and negative values)
         wells_df_filtered = wells_df_filtered[wells_df_filtered['initial_swl'].notna()].copy()
-        
+
         if wells_df_filtered.empty:
             return []
-        
+
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['initial_swl'].values.astype(float)
@@ -622,7 +622,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
         if wells_df_filtered.empty:
             return []
-        
+
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['yield_rate'].values.astype(float)
@@ -985,10 +985,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 # Adjust threshold based on interpolation method
                 if method == 'initial_swl_kriging':
                     # For SWL, accept almost all values including negative ones
-                    meaningful_threshold = -999.0
+                    meaningful_threshold = -200.0
                 else:
                     meaningful_threshold = 0.01
-                
+
                 # Only add points with meaningful values
                 if interpolated_z[i] > meaningful_threshold:
                     # Check if point should be included based on soil polygons
@@ -1035,7 +1035,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         # For non-SWL methods, use normal containment
                         well_point = Point(lons[j], lats[j])
                         well_contained = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
-                        
+
                         if well_contained:
                             heat_data.append([
                                 float(lats[j]),
@@ -1087,10 +1087,10 @@ def fallback_interpolation(wells_df, center_point, radius_km, resolution=50):
         valid_wells = wells_df[(~wells_df['has_unknown_yield']) & (wells_df['yield_rate'].notna())].copy()
     else:
         valid_wells = wells_df[wells_df['yield_rate'].notna()].copy()
-    
+
     if valid_wells.empty:
         return []
-    
+
     # Extract coordinates and yields
     lats = valid_wells['latitude'].values.astype(float)
     lons = valid_wells['longitude'].values.astype(float)
@@ -1300,7 +1300,7 @@ def basic_idw_prediction(wells_df, point_lat, point_lon):
         valid_wells = wells_df[(~wells_df['has_unknown_yield']) & (wells_df['yield_rate'].notna())].copy()
     else:
         valid_wells = wells_df[wells_df['yield_rate'].notna()].copy()
-    
+
     if valid_wells.empty:
         return 0
 

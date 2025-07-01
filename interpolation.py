@@ -385,15 +385,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         final_include = True
                         if merged_soil_geometry is not None:
                             centroid_point = Point(centroid_lon, centroid_lat)
-                            # Use strict containment - triangle must be clearly within soil areas
-                            final_include = merged_soil_geometry.contains(centroid_point)
+                            # For initial SWL, use more relaxed containment - allow intersection
+                            final_include = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
 
-                            # If not strictly contained, check if it's very close to the boundary
+                            # If still not included, check with larger buffer for SWL data
                             if not final_include:
-                                # Allow triangles very close to boundary (within 10 meters)
-                                buffer_distance = 0.0001  # roughly 10 meters in degrees
+                                # Allow triangles close to boundary (within 50 meters for SWL)
+                                buffer_distance = 0.0005  # roughly 50 meters in degrees
                                 buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                                final_include = buffered_geometry.contains(centroid_point)
+                                final_include = buffered_geometry.contains(centroid_point) or buffered_geometry.intersects(centroid_point)
 
                         if final_include:
                             # Create polygon for this triangle
@@ -993,16 +993,16 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         # Double-check: ensure point is actually within soil polygons
                         if merged_soil_geometry is not None:
                             point = Point(lon_points[i], lat_points[i])
-                            # Use strict containment
-                            strictly_contained = merged_soil_geometry.contains(point)
+                            # For initial SWL, use more relaxed containment including intersection
+                            contained = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
 
-                            # If not strictly contained, check if very close to boundary
-                            if not strictly_contained:
-                                buffer_distance = 0.0001  # roughly 10 meters
+                            # If not contained, check with larger buffer for SWL data
+                            if not contained:
+                                buffer_distance = 0.0005  # roughly 50 meters - larger buffer for SWL
                                 buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                                strictly_contained = buffered_geometry.contains(point)
+                                contained = buffered_geometry.contains(point) or buffered_geometry.intersects(point)
 
-                            if strictly_contained:
+                            if contained:
                                 heat_data.append([
                                     float(lat_points[i]),  # Latitude
                                     float(lon_points[i]),  # Longitude
@@ -1036,16 +1036,16 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     # Double-check: ensure well point is actually within soil polygons
                     if merged_soil_geometry is not None:
                         well_point = Point(lons[j], lats[j])
-                        # Use strict containment for wells
-                        strictly_contained = merged_soil_geometry.contains(well_point)
+                        # For initial SWL wells, use more relaxed containment including intersection
+                        well_contained = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
 
-                        # If not strictly contained, check if very close to boundary
-                        if not strictly_contained:
-                            buffer_distance = 0.0001  # roughly 10 meters
+                        # If not contained, check with larger buffer for SWL wells
+                        if not well_contained:
+                            buffer_distance = 0.0005  # roughly 50 meters - larger buffer for SWL
                             buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                            strictly_contained = buffered_geometry.contains(well_point)
+                            well_contained = buffered_geometry.contains(well_point) or buffered_geometry.intersects(well_point)
 
-                        if strictly_contained:
+                        if well_contained:
                             heat_data.append([
                                 float(lats[j]),
                                 float(lons[j]),

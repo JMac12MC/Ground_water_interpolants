@@ -116,34 +116,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['specific_capacity'].values.astype(float)
-    elif method == 'initial_swl_kriging':
-        # Get wells appropriate for initial SWL interpolation
-        wells_df = get_wells_for_interpolation(wells_df, 'initial_swl')
-        if wells_df.empty:
-            return {"type": "FeatureCollection", "features": []}
-
-        # Double-check that all wells have valid initial SWL data (allow zero and negative values)
-        wells_df = wells_df[wells_df['initial_swl'].notna()].copy()
-
-        if wells_df.empty:
-            return {"type": "FeatureCollection", "features": []}
-
-        print(f"Initial SWL interpolation: Using {len(wells_df)} wells with SWL data")
-        print(f"SWL value range: {wells_df['initial_swl'].min():.2f} to {wells_df['initial_swl'].max():.2f}")
-
-        # Convert negative SWL values to positive by adding the absolute minimum value + 1
-        swl_values = wells_df['initial_swl'].values.astype(float)
-        min_swl = np.min(swl_values)
-        if min_swl < 0:
-            # Add the absolute value of the minimum plus 1 to make all values positive
-            swl_offset = abs(min_swl) + 1
-            swl_values = swl_values + swl_offset
-            print(f"Applied offset of {swl_offset:.2f} to make SWL values positive")
-            print(f"Adjusted SWL range: {np.min(swl_values):.2f} to {np.max(swl_values):.2f}")
-
-        lats = wells_df['latitude'].values.astype(float)
-        lons = wells_df['longitude'].values.astype(float)
-        yields = swl_values
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -376,18 +348,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 avg_yield = avg_value  # Keep for backwards compatibility
 
                 # Adjust value threshold based on interpolation method
-                if method == 'initial_swl_kriging':
-                    # For SWL, use a lower threshold since values have been converted to positive
-                    effective_threshold = 0.01  # Accept almost all positive SWL values
-                else:
-                    effective_threshold = value_threshold
+                effective_threshold = value_threshold
 
                 # Only add triangles with meaningful values and within our radius
                 if avg_yield > effective_threshold:
                     # Check if triangle should be included based on soil polygons
                     include_triangle = True
 
-                    if merged_soil_geometry is not None and method != 'initial_swl_kriging':
+                    if merged_soil_geometry is not None:
                         # For non-SWL methods, apply soil polygon filtering
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
@@ -395,16 +363,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                         # Only include if centroid is within soil drainage areas
                         include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
-                    elif merged_soil_geometry is not None and method == 'initial_swl_kriging':
-                        # For SWL, use much more relaxed soil polygon filtering
-                        centroid_lon = float(np.mean(vertices[:, 0]))
-                        centroid_lat = float(np.mean(vertices[:, 1]))
-                        centroid_point = Point(centroid_lon, centroid_lat)
-
-                        # Use a large buffer for SWL data - 200 meters
-                        buffer_distance = 0.002  # roughly 200 meters in degrees
-                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                        include_triangle = buffered_geometry.contains(centroid_point) or buffered_geometry.intersects(centroid_point)
 
                     if include_triangle:
                             # Create polygon for this triangle
@@ -612,30 +570,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['specific_capacity'].values.astype(float)
-    elif method == 'initial_swl_kriging':
-        # Get wells appropriate for initial SWL interpolation
-        wells_df_filtered = get_wells_for_interpolation(wells_df, 'initial_swl')
-        if wells_df_filtered.empty:
-            return []
-
-        # Ensure all wells have valid initial SWL data (allow zero and negative values)
-        wells_df_filtered = wells_df_filtered[wells_df_filtered['initial_swl'].notna()].copy()
-
-        if wells_df_filtered.empty:
-            return []
-
-        # Convert negative SWL values to positive by adding the absolute minimum value + 1
-        swl_values = wells_df_filtered['initial_swl'].values.astype(float)
-        min_swl = np.min(swl_values)
-        if min_swl < 0:
-            # Add the absolute value of the minimum plus 1 to make all values positive
-            swl_offset = abs(min_swl) + 1
-            swl_values = swl_values + swl_offset
-            print(f"Heat map: Applied offset of {swl_offset:.2f} to make SWL values positive")
-
-        lats = wells_df_filtered['latitude'].values.astype(float)
-        lons = wells_df_filtered['longitude'].values.astype(float)
-        yields = swl_values
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -682,12 +616,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         xi_inside = xi[mask]
 
         # Choose interpolation method based on parameter and dataset size
-        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'initial_swl_kriging') and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging') and len(wells_df) >= 5:
             try:
                 if method == 'specific_capacity_kriging':
                     interpolation_name = "specific capacity kriging"
-                elif method == 'initial_swl_kriging':
-                    interpolation_name = "initial SWL kriging"
                 else:
                     interpolation_name = "yield kriging"
                 print(f"Using {interpolation_name} interpolation for heat map")
@@ -1002,27 +934,16 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             # Add interpolated points
             for i in range(len(lat_points)):
                 # Adjust threshold based on interpolation method
-                if method == 'initial_swl_kriging':
-                    # For SWL, accept all positive values (since we converted them)
-                    meaningful_threshold = 0.01
-                else:
-                    meaningful_threshold = 0.01
+                meaningful_threshold = 0.01
 
                 # Only add points with meaningful values
                 if interpolated_z[i] > meaningful_threshold:
                     # Check if point should be included based on soil polygons
                     include_point = True
-                    if merged_soil_geometry is not None and method != 'initial_swl_kriging':
+                    if merged_soil_geometry is not None:
                         # For non-SWL methods, apply normal soil polygon filtering
                         point = Point(lon_points[i], lat_points[i])
                         include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
-                    elif merged_soil_geometry is not None and method == 'initial_swl_kriging':
-                        # For SWL, use much more relaxed soil polygon filtering
-                        point = Point(lon_points[i], lat_points[i])
-                        # Use large buffer for SWL data - 200 meters
-                        buffer_distance = 0.002  # roughly 200 meters in degrees
-                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                        include_point = buffered_geometry.contains(point) or buffered_geometry.intersects(point)
 
                     if include_point:
                         heat_data.append([
@@ -1050,33 +971,16 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
                 if include_well:
                     # Check soil polygon containment based on method
-                    if merged_soil_geometry is not None and method != 'initial_swl_kriging':
-                        # For non-SWL methods, use normal containment
-                        well_point = Point(lons[j], lats[j])
-                        well_contained = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
+                    well_point = Point(lons[j], lats[j])
+                    well_contained = merged_soil_geometry.contains(well_point) or merged_soil_geometry.intersects(well_point)
 
-                        if well_contained:
-                            heat_data.append([
-                                float(lats[j]),
-                                float(lons[j]),
-                                float(yields[j])
-                            ])
-                            well_points_added += 1
-                    elif merged_soil_geometry is not None and method == 'initial_swl_kriging':
-                        # For SWL wells, use much more relaxed containment
-                        well_point = Point(lons[j], lats[j])
-                        # Use large buffer for SWL wells - 200 meters
-                        buffer_distance = 0.002  # roughly 200 meters in degrees
-                        buffered_geometry = merged_soil_geometry.buffer(buffer_distance)
-                        well_contained = buffered_geometry.contains(well_point) or buffered_geometry.intersects(well_point)
-
-                        if well_contained:
-                            heat_data.append([
-                                float(lats[j]),
-                                float(lons[j]),
-                                float(yields[j])
-                            ])
-                            well_points_added += 1
+                    if well_contained:
+                        heat_data.append([
+                            float(lats[j]),
+                            float(lons[j]),
+                            float(yields[j])
+                        ])
+                        well_points_added += 1
                     else:
                         # No soil polygon filtering
                         heat_data.append([

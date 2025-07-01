@@ -140,7 +140,7 @@ with st.sidebar:
         st.warning("Database connection not available. Cannot load soil polygons.")
         st.session_state.soil_polygons = None
 
-    
+
 
     # Advanced option for uploading custom data (hidden in expander)
     with st.expander("Upload Custom Data (Optional)"):
@@ -183,8 +183,7 @@ with st.sidebar:
             "Yield Kriging (Spherical)",
             "Specific Capacity Kriging (Spherical)",
             "Depth to Groundwater (Standard Kriging)",
-            "Depth to Groundwater (Auto-Fitted Spherical)",
-            "Initial Groundwater Level (SWL Kriging)"
+            "Depth to Groundwater (Auto-Fitted Spherical)"
         ],
         index=0,
         help="Choose the visualization type: yield estimation, depth analysis, or initial groundwater level"
@@ -200,7 +199,7 @@ with st.sidebar:
     if 'variogram_model' not in st.session_state:
         st.session_state.variogram_model = 'spherical'
 
-    
+
 
     # Update session state based on selection
     if visualization_method == "Standard Kriging (Yield)":
@@ -226,11 +225,6 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
-    elif visualization_method == "Initial Groundwater Level (SWL Kriging)":
-        st.session_state.interpolation_method = 'initial_swl_kriging'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
 
     # Display options
     st.header("Display Options")
@@ -239,7 +233,7 @@ with st.sidebar:
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
 
-    
+
 
 # Main content area
 main_col1, main_col2 = st.columns([3, 1])
@@ -288,8 +282,6 @@ with main_col1:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('specific_capacity')
             elif "Depth" in visualization_method:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
-            elif "Initial Groundwater Level" in visualization_method:
-                heatmap_data = st.session_state.polygon_db.get_heatmap_data('initial_swl')
 
             if heatmap_data:
                 st.info(f"🚀 Using pre-computed heatmap with {len(heatmap_data):,} data points")
@@ -361,9 +353,6 @@ with main_col1:
                 elif visualization_method == "Specific Capacity Kriging (Spherical)":
                     value_field = 'specific_capacity_value'
                     display_name = 'yield'  # Keep for compatibility
-                elif "Initial Groundwater Level" in visualization_method:
-                    value_field = 'initial_swl_value'
-                    display_name = 'yield'  # Keep for compatibility
                 else:
                     value_field = 'depth_value'
                     display_name = 'yield'  # Keep for compatibility
@@ -409,7 +398,7 @@ with main_col1:
                     with st.spinner("🔄 Generating interpolation (consider running preprocessing for faster performance)..."):
                         pass
 
-                    
+
                         # Generate regular interpolation visualization
                         geojson_data = generate_geo_json_grid(
                             st.session_state.filtered_wells.copy(), 

@@ -277,13 +277,7 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         
         return wells_with_specific_capacity
     
-    elif interpolation_type == 'initial_swl':
-        # For initial SWL interpolation: ONLY use wells with actual initial SWL data
-        # No fallback logic - if no initial SWL data exists, exclude the well entirely
-        # Allow zero and negative values as they are valid for SWL measurements
-        wells_with_initial_swl = wells_df[wells_df['initial_swl'].notna()].copy()
-        
-        return wells_with_initial_swl
+    
     
     elif interpolation_type == 'depth':
         # For depth interpolation: use wells with depth data (including wells without yield)

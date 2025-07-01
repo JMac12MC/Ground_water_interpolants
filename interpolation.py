@@ -116,6 +116,24 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['specific_capacity'].values.astype(float)
+    elif method == 'initial_swl_kriging':
+        # Get wells appropriate for initial SWL interpolation
+        wells_df = get_wells_for_interpolation(wells_df, 'initial_swl')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
+        # Double-check that all wells have valid initial SWL data
+        wells_df = wells_df[
+            wells_df['initial_swl'].notna() & 
+            (wells_df['initial_swl'] > 0)
+        ].copy()
+        
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
+        lats = wells_df['latitude'].values.astype(float)
+        lons = wells_df['longitude'].values.astype(float)
+        yields = wells_df['initial_swl'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -586,6 +604,24 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['specific_capacity'].values.astype(float)
+    elif method == 'initial_swl_kriging':
+        # Get wells appropriate for initial SWL interpolation
+        wells_df_filtered = get_wells_for_interpolation(wells_df, 'initial_swl')
+        if wells_df_filtered.empty:
+            return []
+        
+        # Ensure all wells have valid initial SWL data
+        wells_df_filtered = wells_df_filtered[
+            wells_df_filtered['initial_swl'].notna() & 
+            (wells_df_filtered['initial_swl'] > 0)
+        ].copy()
+        
+        if wells_df_filtered.empty:
+            return []
+        
+        lats = wells_df_filtered['latitude'].values.astype(float)
+        lons = wells_df_filtered['longitude'].values.astype(float)
+        yields = wells_df_filtered['initial_swl'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -632,9 +668,14 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         xi_inside = xi[mask]
 
         # Choose interpolation method based on parameter and dataset size
-        if (method == 'yield_kriging' or method == 'specific_capacity_kriging') and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'initial_swl_kriging') and len(wells_df) >= 5:
             try:
-                interpolation_name = "specific capacity kriging" if method == 'specific_capacity_kriging' else "yield kriging"
+                if method == 'specific_capacity_kriging':
+                    interpolation_name = "specific capacity kriging"
+                elif method == 'initial_swl_kriging':
+                    interpolation_name = "initial SWL kriging"
+                else:
+                    interpolation_name = "yield kriging"
                 print(f"Using {interpolation_name} interpolation for heat map")
 
                 # Filter to meaningful yield data for better kriging

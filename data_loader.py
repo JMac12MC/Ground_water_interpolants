@@ -277,6 +277,16 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         
         return wells_with_specific_capacity
     
+    elif interpolation_type == 'initial_swl':
+        # For initial SWL interpolation: ONLY use wells with actual initial SWL data
+        # No fallback logic - if no initial SWL data exists, exclude the well entirely
+        wells_with_initial_swl = wells_df[
+            wells_df['initial_swl'].notna() & 
+            (wells_df['initial_swl'] > 0)
+        ].copy()
+        
+        return wells_with_initial_swl
+    
     elif interpolation_type == 'depth':
         # For depth interpolation: use wells with depth data (including wells without yield)
         depth_wells = categories['depth_only_wells']
@@ -517,6 +527,12 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 wells_df['specific_capacity'] = pd.to_numeric(raw_df['SPECIFIC_CAPACITY'], errors='coerce')
             else:
                 wells_df['specific_capacity'] = pd.Series([np.nan] * len(wells_df))
+
+            # Add initial SWL (Standing Water Level) information if available
+            if 'INITIAL_SWL' in raw_df.columns:
+                wells_df['initial_swl'] = pd.to_numeric(raw_df['INITIAL_SWL'], errors='coerce')
+            else:
+                wells_df['initial_swl'] = pd.Series([np.nan] * len(wells_df))
 
             # Add well type and status information using Wells_30k columns
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')

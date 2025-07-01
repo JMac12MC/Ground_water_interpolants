@@ -183,10 +183,11 @@ with st.sidebar:
             "Yield Kriging (Spherical)",
             "Specific Capacity Kriging (Spherical)",
             "Depth to Groundwater (Standard Kriging)",
-            "Depth to Groundwater (Auto-Fitted Spherical)"
+            "Depth to Groundwater (Auto-Fitted Spherical)",
+            "Initial Groundwater Level (SWL Kriging)"
         ],
         index=0,
-        help="Choose the visualization type: yield estimation or depth analysis"
+        help="Choose the visualization type: yield estimation, depth analysis, or initial groundwater level"
     )
 
     # Map visualization selection to internal parameters
@@ -222,6 +223,11 @@ with st.sidebar:
         st.session_state.auto_fit_variogram = False
     elif visualization_method == "Depth to Groundwater (Auto-Fitted Spherical)":
         st.session_state.interpolation_method = 'depth_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
+    elif visualization_method == "Initial Groundwater Level (SWL Kriging)":
+        st.session_state.interpolation_method = 'initial_swl_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
@@ -282,6 +288,8 @@ with main_col1:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('specific_capacity')
             elif "Depth" in visualization_method:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
+            elif "Initial Groundwater Level" in visualization_method:
+                heatmap_data = st.session_state.polygon_db.get_heatmap_data('initial_swl')
 
             if heatmap_data:
                 st.info(f"🚀 Using pre-computed heatmap with {len(heatmap_data):,} data points")
@@ -352,6 +360,9 @@ with main_col1:
                     display_name = 'yield'
                 elif visualization_method == "Specific Capacity Kriging (Spherical)":
                     value_field = 'specific_capacity_value'
+                    display_name = 'yield'  # Keep for compatibility
+                elif "Initial Groundwater Level" in visualization_method:
+                    value_field = 'initial_swl_value'
                     display_name = 'yield'  # Keep for compatibility
                 else:
                     value_field = 'depth_value'

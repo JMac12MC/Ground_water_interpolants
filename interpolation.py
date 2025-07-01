@@ -122,11 +122,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
         
-        # Double-check that all wells have valid initial SWL data
-        wells_df = wells_df[
-            wells_df['initial_swl'].notna() & 
-            (wells_df['initial_swl'] > 0)
-        ].copy()
+        # Double-check that all wells have valid initial SWL data (allow zero and negative values)
+        wells_df = wells_df[wells_df['initial_swl'].notna()].copy()
         
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
@@ -610,11 +607,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         if wells_df_filtered.empty:
             return []
         
-        # Ensure all wells have valid initial SWL data
-        wells_df_filtered = wells_df_filtered[
-            wells_df_filtered['initial_swl'].notna() & 
-            (wells_df_filtered['initial_swl'] > 0)
-        ].copy()
+        # Ensure all wells have valid initial SWL data (allow zero and negative values)
+        wells_df_filtered = wells_df_filtered[wells_df_filtered['initial_swl'].notna()].copy()
         
         if wells_df_filtered.empty:
             return []

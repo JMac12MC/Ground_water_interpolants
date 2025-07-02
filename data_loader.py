@@ -341,7 +341,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
     os.makedirs("sample_data", exist_ok=True)
 
     # Path for the attached Wells and Bores dataset
-    wells_30k_file = "attached_assets/Wells_and_Bores_-_All (4)_modified_1751187023841.csv"
+    wells_30k_file = "attached_assets/2_07_2025 - Wells_and_Bores_-_All (4)_modified_modified_1751451995416.csv"
 
     if os.path.exists(wells_30k_file):
         with st.spinner("Loading well database..."):

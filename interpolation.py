@@ -116,6 +116,24 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['specific_capacity'].values.astype(float)
+    elif method == 'ground_water_level_kriging':
+        # Get wells appropriate for ground water level interpolation
+        wells_df = get_wells_for_interpolation(wells_df, 'ground_water_level')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+
+        # Double-check that all wells have valid ground water level data
+        wells_df = wells_df[
+            wells_df['ground water level'].notna() & 
+            (wells_df['ground water level'] != 0)
+        ].copy()
+
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+
+        lats = wells_df['latitude'].values.astype(float)
+        lons = wells_df['longitude'].values.astype(float)
+        yields = wells_df['ground water level'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -570,6 +588,24 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['specific_capacity'].values.astype(float)
+    elif method == 'ground_water_level_kriging':
+        # Get wells appropriate for ground water level interpolation
+        wells_df_filtered = get_wells_for_interpolation(wells_df, 'ground_water_level')
+        if wells_df_filtered.empty:
+            return []
+
+        # Ensure all wells have valid ground water level data
+        wells_df_filtered = wells_df_filtered[
+            wells_df_filtered['ground water level'].notna() & 
+            (wells_df_filtered['ground water level'] != 0)
+        ].copy()
+
+        if wells_df_filtered.empty:
+            return []
+
+        lats = wells_df_filtered['latitude'].values.astype(float)
+        lons = wells_df_filtered['longitude'].values.astype(float)
+        yields = wells_df_filtered['ground water level'].values.astype(float)
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -616,10 +652,12 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         xi_inside = xi[mask]
 
         # Choose interpolation method based on parameter and dataset size
-        if (method == 'yield_kriging' or method == 'specific_capacity_kriging') and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging') and len(wells_df) >= 5:
             try:
                 if method == 'specific_capacity_kriging':
                     interpolation_name = "specific capacity kriging"
+                elif method == 'ground_water_level_kriging':
+                    interpolation_name = "ground water level kriging"
                 else:
                     interpolation_name = "yield kriging"
                 print(f"Using {interpolation_name} interpolation for heat map")

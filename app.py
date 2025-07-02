@@ -183,10 +183,11 @@ with st.sidebar:
             "Yield Kriging (Spherical)",
             "Specific Capacity Kriging (Spherical)",
             "Depth to Groundwater (Standard Kriging)",
-            "Depth to Groundwater (Auto-Fitted Spherical)"
+            "Depth to Groundwater (Auto-Fitted Spherical)",
+            "Ground Water Level (Spherical Kriging)"
         ],
         index=0,
-        help="Choose the visualization type: yield estimation, depth analysis, or initial groundwater level"
+        help="Choose the visualization type: yield estimation, depth analysis, or groundwater level"
     )
 
     # Map visualization selection to internal parameters
@@ -222,6 +223,11 @@ with st.sidebar:
         st.session_state.auto_fit_variogram = False
     elif visualization_method == "Depth to Groundwater (Auto-Fitted Spherical)":
         st.session_state.interpolation_method = 'depth_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
+    elif visualization_method == "Ground Water Level (Spherical Kriging)":
+        st.session_state.interpolation_method = 'ground_water_level_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
@@ -282,6 +288,8 @@ with main_col1:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('specific_capacity')
             elif "Depth" in visualization_method:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
+            elif visualization_method == "Ground Water Level (Spherical Kriging)":
+                heatmap_data = st.session_state.polygon_db.get_heatmap_data('ground_water_level')
 
             if heatmap_data:
                 st.info(f"🚀 Using pre-computed heatmap with {len(heatmap_data):,} data points")
@@ -456,6 +464,25 @@ with main_col1:
                                 '#660000',
                                 '#330000'   # Dark red (very deep)
                             ]
+                        elif st.session_state.interpolation_method == 'ground_water_level_kriging':
+                            # Ground water level colors: blue (low level) to brown (high level)
+                            colors = [
+                                '#000080',  # Dark blue (low level)
+                                '#0033CC',
+                                '#0066FF',
+                                '#0099FF',
+                                '#00CCFF',
+                                '#00FFFF',  # Cyan (medium-low)
+                                '#66FFCC',
+                                '#99FF99',
+                                '#CCFF66',
+                                '#FFFF33',  # Yellow (medium)
+                                '#FFCC00',
+                                '#FF9900',
+                                '#FF6600',
+                                '#CC3300',
+                                '#993300'   # Brown (high level)
+                            ]
                         else:
                             # Yield colors: blue (low yield) to red (high yield)
                             colors = [
@@ -521,6 +548,16 @@ with main_col1:
                             vmax=float(max_value),
                             caption='Depth to Groundwater (m) - 15 Bands'
                         )
+                    elif st.session_state.interpolation_method == 'ground_water_level_kriging':
+                        # Ground water level legend
+                        colormap = folium.LinearColormap(
+                            colors=['#000080', '#0033CC', '#0066FF', '#0099FF', '#00CCFF', 
+                                    '#00FFFF', '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33', 
+                                    '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'],
+                            vmin=0,
+                            vmax=float(max_value),
+                            caption='Ground Water Level (m) - 15 Bands'
+                        )
                     else:
                         # Yield legend with original colors
                         colormap = folium.LinearColormap(
@@ -543,6 +580,9 @@ with main_col1:
                     if st.session_state.interpolation_method == 'depth_kriging':
                         tooltip_field = 'yield'
                         tooltip_label = 'Depth (m):'
+                    elif st.session_state.interpolation_method == 'ground_water_level_kriging':
+                        tooltip_field = 'yield'
+                        tooltip_label = 'Ground Water Level (m):'
                     else:
                         tooltip_field = 'yield'
                         tooltip_label = 'Yield (L/s):'

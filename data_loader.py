@@ -277,6 +277,20 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         
         return wells_with_specific_capacity
     
+    elif interpolation_type == 'ground_water_level':
+        # For ground water level interpolation: ONLY use wells with actual ground water level data
+        # Check for the column that contains ground water level values
+        if 'ground water level' in wells_df.columns:
+            wells_with_gwl = wells_df[
+                wells_df['ground water level'].notna() & 
+                (wells_df['ground water level'] != 0)
+            ].copy()
+        else:
+            # Fallback to empty DataFrame if column doesn't exist
+            wells_with_gwl = pd.DataFrame()
+        
+        return wells_with_gwl
+    
     
     
     elif interpolation_type == 'depth':

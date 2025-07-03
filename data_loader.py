@@ -751,7 +751,7 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
                     "outFields": "*",
                     "returnGeometry": "true",
                     "f": "json",
-                    ""resultRecordCount": 5000
+                    "resultRecordCount": 5000
                 }
             }
         ]

@@ -238,6 +238,16 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
+    
+    # Regional interpolation option
+    if 'use_regional_interpolation' not in st.session_state:
+        st.session_state.use_regional_interpolation = False
+    
+    st.session_state.use_regional_interpolation = st.checkbox(
+        "Use pre-computed Canterbury region", 
+        value=st.session_state.use_regional_interpolation,
+        help="Load pre-generated regional interpolation for instant display (requires running generate_regional_data.py first)"
+    )
 
 
 
@@ -279,7 +289,24 @@ with main_col1:
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None
-    if st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
+    regional_geojson = None
+    
+    # Check for regional interpolation option
+    if (st.session_state.use_regional_interpolation and 
+        visualization_method == "Ground Water Level (Spherical Kriging)"):
+        try:
+            from generate_regional_gwl import load_regional_interpolation
+            regional_geojson = load_regional_interpolation()
+            if regional_geojson:
+                st.success(f"🌍 Loaded regional interpolation with {len(regional_geojson['features']):,} features")
+            else:
+                st.error("Regional interpolation file not found. Run 'python generate_regional_data.py' first.")
+        except Exception as e:
+            st.error(f"Failed to load regional interpolation: {e}")
+            st.info("Make sure to run 'python generate_regional_data.py' to generate the regional data file.")
+    
+    # Fallback to database heatmaps if regional not available/selected
+    if not regional_geojson and st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
         try:
             # Try to load pre-computed heatmap data
             if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
@@ -357,9 +384,63 @@ with main_col1:
                 fill_opacity=0.1
             ).add_to(m)
 
-        # Display heatmap - use pre-computed if available, otherwise generate on-demand
+        # Display heatmap - use regional, pre-computed, or generate on-demand
         if st.session_state.heat_map_visibility:
-            if heatmap_data:
+            if regional_geojson:
+                # Display regional interpolation GeoJSON
+                st.success("🌍 Displaying regional Canterbury groundwater level interpolation!")
+                
+                # Calculate max value for color scaling
+                max_value = 0
+                for feature in regional_geojson['features']:
+                    if 'yield' in feature['properties']:
+                        max_value = max(max_value, feature['properties']['yield'])
+                
+                max_value = max(max_value, 50.0)  # Ensure reasonable minimum for visualization
+                
+                # Ground water level colors: blue (low level) to brown (high level)
+                def get_gwl_color(value):
+                    step = max_value / 15.0
+                    colors = [
+                        '#000080',  # Dark blue (low level)
+                        '#0033CC', '#0066FF', '#0099FF', '#00CCFF',
+                        '#00FFFF',  # Cyan (medium-low)
+                        '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33',  # Yellow (medium)
+                        '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'   # Brown (high level)
+                    ]
+                    band_index = min(14, int(value / step)) if step > 0 else 0
+                    return colors[band_index]
+                
+                # Add GeoJSON with styling
+                folium.GeoJson(
+                    data=regional_geojson,
+                    name='Regional Groundwater Level',
+                    style_function=lambda feature: {
+                        'fillColor': get_gwl_color(feature['properties']['yield']),
+                        'color': 'none',
+                        'weight': 0,
+                        'fillOpacity': 0.7
+                    },
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=['yield'],
+                        aliases=['Ground Water Level (m):'],
+                        labels=True,
+                        sticky=False
+                    )
+                ).add_to(m)
+                
+                # Add colormap legend
+                colormap = folium.LinearColormap(
+                    colors=['#000080', '#0033CC', '#0066FF', '#0099FF', '#00CCFF', 
+                            '#00FFFF', '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33', 
+                            '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'],
+                    vmin=0,
+                    vmax=float(max_value),
+                    caption='Ground Water Level (m) - Regional Canterbury'
+                )
+                colormap.add_to(m)
+                
+            elif heatmap_data:
                 # Display pre-computed heatmap
                 st.success("⚡ Displaying pre-computed heatmap - instant loading!")
 

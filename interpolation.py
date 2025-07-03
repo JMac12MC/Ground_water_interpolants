@@ -123,17 +123,24 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             return {"type": "FeatureCollection", "features": []}
 
         # Double-check that all wells have valid ground water level data
-        wells_df = wells_df[
+        # Filter for non-zero, non-null values
+        valid_gwl_mask = (
             wells_df['ground water level'].notna() & 
-            (wells_df['ground water level'] != 0)
-        ].copy()
+            (wells_df['ground water level'] != 0) &
+            (wells_df['ground water level'].abs() > 0.1)  # Exclude very small values
+        )
+        
+        wells_df = wells_df[valid_gwl_mask].copy()
 
         if wells_df.empty:
+            print("No valid ground water level data found for interpolation")
             return {"type": "FeatureCollection", "features": []}
 
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['ground water level'].values.astype(float)
+        
+        print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -592,20 +599,27 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # Get wells appropriate for ground water level interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'ground_water_level')
         if wells_df_filtered.empty:
+            print("No wells found for ground water level interpolation")
             return []
 
         # Ensure all wells have valid ground water level data
-        wells_df_filtered = wells_df_filtered[
+        valid_gwl_mask = (
             wells_df_filtered['ground water level'].notna() & 
-            (wells_df_filtered['ground water level'] != 0)
-        ].copy()
+            (wells_df_filtered['ground water level'] != 0) &
+            (wells_df_filtered['ground water level'].abs() > 0.1)  # Exclude very small values
+        )
+        
+        wells_df_filtered = wells_df_filtered[valid_gwl_mask].copy()
 
         if wells_df_filtered.empty:
+            print("No valid ground water level data after filtering")
             return []
 
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['ground water level'].values.astype(float)
+        
+        print(f"Heat map ground water level: using {len(yields)} wells with GWL values from {yields.min():.2f} to {yields.max():.2f}")
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')

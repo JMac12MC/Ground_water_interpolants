@@ -290,6 +290,18 @@ with main_col1:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
             elif visualization_method == "Ground Water Level (Spherical Kriging)":
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('ground_water_level')
+                
+                # Debug ground water level data availability
+                if st.session_state.wells_data is not None:
+                    gwl_column_exists = 'ground water level' in st.session_state.wells_data.columns
+                    if gwl_column_exists:
+                        gwl_data = st.session_state.wells_data['ground water level']
+                        non_null_count = gwl_data.notna().sum()
+                        non_zero_count = (gwl_data != 0).sum() if non_null_count > 0 else 0
+                        valid_count = ((gwl_data.notna()) & (gwl_data != 0) & (gwl_data.abs() > 0.1)).sum()
+                        st.info(f"Ground Water Level Data: {non_null_count} non-null, {non_zero_count} non-zero, {valid_count} valid values")
+                    else:
+                        st.warning("'ground water level' column not found in dataset")
 
             if heatmap_data:
                 st.info(f"🚀 Using pre-computed heatmap with {len(heatmap_data):,} data points")

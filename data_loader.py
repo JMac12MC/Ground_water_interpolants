@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -133,42 +132,42 @@ def categorize_wells(wells_df):
     """
     Categorize wells into clear groups for different interpolation purposes.
     This is the single source of truth for well categorization.
-    
+
     Returns:
     --------
     dict: Contains categorized DataFrames for different interpolation purposes
     """
     # Start with basic data validation
     wells_df = wells_df.copy()
-    
+
     # Convert yield and depth columns to numeric
     wells_df['yield_rate'] = pd.to_numeric(wells_df['yield_rate'], errors='coerce')
     if 'depth_to_groundwater' in wells_df.columns:
         wells_df['depth_to_groundwater'] = pd.to_numeric(wells_df['depth_to_groundwater'], errors='coerce')
     if 'depth' in wells_df.columns:
         wells_df['depth'] = pd.to_numeric(wells_df['depth'], errors='coerce')
-    
+
     # Check for screen data (indicates groundwater access)
     screen_columns = ['TOP_SCREEN_1', 'TOP_SCREEN_2', 'TOP_SCREEN_3', 'BOTTOM_SCREEN_1', 'BOTTOM_SCREEN_2', 'BOTTOM_SCREEN_3']
     has_screen_data = pd.Series(False, index=wells_df.index)
-    
+
     for screen_col in screen_columns:
         if screen_col in wells_df.columns:
             screen_values = pd.to_numeric(wells_df[screen_col], errors='coerce')
             has_screen_data |= screen_values.notna()
-    
+
     # Determine depth information
     has_depth_to_groundwater = False
     if 'depth_to_groundwater' in wells_df.columns:
         has_depth_to_groundwater = wells_df['depth_to_groundwater'].notna().any()
-    
+
     has_depth = False
     if 'depth' in wells_df.columns:
         has_depth = wells_df['depth'].notna().any()
-    
+
     # Create clear categories
     categories = {}
-    
+
     # Category 1: Wells with actual yield data (for yield interpolation)
     # SIMPLIFIED: Only use wells with valid MAX_YIELD values
     yield_wells = wells_df[
@@ -176,7 +175,7 @@ def categorize_wells(wells_df):
         (wells_df['yield_rate'] > 0)
     ].copy()
     categories['yield_wells'] = yield_wells
-    
+
     # Category 2: Wells with depth data but NO yield data (for depth interpolation only)
     if has_depth_to_groundwater:
         depth_column = 'depth_to_groundwater'
@@ -194,9 +193,9 @@ def categorize_wells(wells_df):
         ].copy()
     else:
         depth_wells = pd.DataFrame()
-    
+
     categories['depth_only_wells'] = depth_wells
-    
+
     # Category 3: Wells with BOTH yield and depth data (can be used for both)
     if has_depth_to_groundwater:
         depth_column = 'depth_to_groundwater'
@@ -216,9 +215,9 @@ def categorize_wells(wells_df):
         ].copy()
     else:
         both_wells = pd.DataFrame()
-    
+
     categories['both_wells'] = both_wells
-    
+
     # Category 4: Wells with depth data but no yield data (used for depth interpolation)
     # These wells are excluded from yield interpolation but can be used for depth
     wells_without_yield = wells_df[
@@ -226,47 +225,47 @@ def categorize_wells(wells_df):
         has_screen_data
     ].copy()
     categories['wells_without_yield'] = wells_without_yield
-    
+
     return categories
 
 def get_wells_for_interpolation(wells_df, interpolation_type):
     """
     Get the appropriate wells for a specific interpolation type.
-    
+
     Parameters:
     -----------
     wells_df : DataFrame
         Full wells dataset
     interpolation_type : str
         'yield' or 'depth'
-    
+
     Returns:
     --------
     DataFrame
         Wells appropriate for the specified interpolation
     """
     categories = categorize_wells(wells_df)
-    
+
     if interpolation_type == 'yield':
         # For yield interpolation: ONLY use wells with actual MAX_YIELD values
         # No dry well logic - just use the numeric values from MAX_YIELD
         yield_wells = categories['yield_wells']
         both_wells = categories['both_wells']
-        
+
         # Combine wells that have actual yield measurements
         all_yield_wells = []
-        
+
         if not yield_wells.empty:
             all_yield_wells.append(yield_wells)
-        
+
         if not both_wells.empty:
             all_yield_wells.append(both_wells)
-        
+
         if all_yield_wells:
             return pd.concat(all_yield_wells, ignore_index=True)
         else:
             return pd.DataFrame()
-    
+
     elif interpolation_type == 'specific_capacity':
         # For specific capacity interpolation: ONLY use wells with actual specific capacity data
         # No fallback logic - if no specific capacity data exists, exclude the well entirely
@@ -274,9 +273,9 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
             wells_df['specific_capacity'].notna() & 
             (wells_df['specific_capacity'] > 0)
         ].copy()
-        
+
         return wells_with_specific_capacity
-    
+
     elif interpolation_type == 'ground_water_level':
         # For ground water level interpolation: ONLY use wells with actual ground water level data
         # Check for the column that contains ground water level values
@@ -288,26 +287,26 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
         else:
             # Fallback to empty DataFrame if column doesn't exist
             wells_with_gwl = pd.DataFrame()
-        
+
         return wells_with_gwl
-    
-    
-    
+
+
+
     elif interpolation_type == 'depth':
         # For depth interpolation: use wells with depth data (including wells without yield)
         depth_wells = categories['depth_only_wells']
         both_wells = categories['both_wells']
         wells_without_yield = categories.get('wells_without_yield', pd.DataFrame())
-        
+
         # Combine wells that have depth information
         all_depth_wells = []
-        
+
         if not depth_wells.empty:
             all_depth_wells.append(depth_wells)
-        
+
         if not both_wells.empty:
             all_depth_wells.append(both_wells)
-        
+
         # Include wells without yield if they have depth data
         if not wells_without_yield.empty:
             # Filter wells without yield to only those with depth data
@@ -323,15 +322,15 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
                 ].copy()
             else:
                 wells_with_depth = pd.DataFrame()
-            
+
             if not wells_with_depth.empty:
                 all_depth_wells.append(wells_with_depth)
-        
+
         if all_depth_wells:
             return pd.concat(all_depth_wells, ignore_index=True)
         else:
             return pd.DataFrame()
-    
+
     else:
         raise ValueError(f"Unknown interpolation type: {interpolation_type}")
 
@@ -411,7 +410,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 # Also keep original NZTM coordinates
                 wells_df['nztm_x'] = nztmx
                 wells_df['nztm_y'] = nztmy
-                
+
             # If NZTM coordinates not available or invalid, try X,Y coordinates  
             elif 'X' in raw_df.columns and 'Y' in raw_df.columns:
                 # Convert to numeric, handling any non-numeric values
@@ -455,7 +454,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 else:  # Already in lat/lon format
                     wells_df['latitude'] = y_coords
                     wells_df['longitude'] = x_coords
-            
+
             # Fallback to NZMG coordinates if needed
             elif 'NZMGX' in raw_df.columns and 'NZMGY' in raw_df.columns:
                 # Convert to numeric, handling any non-numeric values  
@@ -539,6 +538,12 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 wells_df['initial_swl'] = pd.to_numeric(raw_df['INITIAL_SWL'], errors='coerce')
             else:
                 wells_df['initial_swl'] = pd.Series([np.nan] * len(wells_df))
+
+            # Add ground water level information from the 'ground water level' column
+            if 'ground water level' in raw_df.columns:
+                wells_df['ground water level'] = pd.to_numeric(raw_df['ground water level'], errors='coerce')
+            else:
+                wells_df['ground water level'] = pd.Series([np.nan] * len(wells_df))
 
             # Add well type and status information using Wells_30k columns
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
@@ -746,7 +751,7 @@ def fetch_nz_wells_api(search_center=None, search_radius_km=None):
                     "outFields": "*",
                     "returnGeometry": "true",
                     "f": "json",
-                    "resultRecordCount": 5000
+                    ""resultRecordCount": 5000
                 }
             }
         ]

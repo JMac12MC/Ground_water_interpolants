@@ -31,10 +31,10 @@ def main():
     print("\nStarting regional interpolation generation...")
     
     try:
-        output_file = save_regional_interpolation()
+        output_file = save_regional_interpolation(store_in_database=True)
         if output_file:
             print(f"\n✅ Regional interpolation successfully generated!")
-            print(f"📁 Saved to: {output_file}")
+            print(f"💾 Stored in database and saved to: {output_file}")
             print("\nYou can now use the 'Use pre-computed Canterbury region' option")
             print("in the main application for instant loading of regional data.")
         else:

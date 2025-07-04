@@ -320,7 +320,7 @@ def generate_canterbury_gwl_interpolation(
     
     return geojson
 
-def save_regional_interpolation(output_file="canterbury_gwl_interpolation.json"):
+def save_regional_interpolation(output_file="canterbury_gwl_interpolation.json", store_in_database=True):
     """
     Generate and save the Canterbury groundwater level interpolation
     """
@@ -335,7 +335,21 @@ def save_regional_interpolation(output_file="canterbury_gwl_interpolation.json")
         max_workers=4
     )
     
-    # Save to file
+    # Store in database if requested
+    if store_in_database:
+        try:
+            from database import PolygonDatabase
+            db = PolygonDatabase()
+            success = db.store_regional_interpolation('canterbury', geojson, 'ground_water_level')
+            if success:
+                print("✅ Regional interpolation stored in database successfully!")
+            else:
+                print("❌ Failed to store in database, falling back to file storage")
+        except Exception as e:
+            print(f"❌ Database storage failed: {e}")
+            print("Falling back to file storage")
+    
+    # Save to file as backup
     os.makedirs("sample_data", exist_ok=True)
     output_path = os.path.join("sample_data", output_file)
     
@@ -349,10 +363,26 @@ def save_regional_interpolation(output_file="canterbury_gwl_interpolation.json")
         print(f"Error saving file: {e}")
         return None
 
-def load_regional_interpolation(input_file="canterbury_gwl_interpolation.json"):
+def load_regional_interpolation(input_file="canterbury_gwl_interpolation.json", from_database=True):
     """
     Load the pre-computed Canterbury groundwater level interpolation
     """
+    # Try database first if requested
+    if from_database:
+        try:
+            from database import PolygonDatabase
+            db = PolygonDatabase()
+            geojson = db.get_regional_interpolation('canterbury', 'ground_water_level')
+            if geojson:
+                print(f"✅ Loaded regional interpolation from database")
+                print(f"Contains {len(geojson['features'])} features")
+                return geojson
+            else:
+                print("No regional interpolation found in database, trying file...")
+        except Exception as e:
+            print(f"Database loading failed: {e}, trying file...")
+    
+    # Fallback to file loading
     input_path = os.path.join("sample_data", input_file)
     
     if os.path.exists(input_path):

@@ -296,14 +296,14 @@ with main_col1:
         visualization_method == "Ground Water Level (Spherical Kriging)"):
         try:
             from generate_regional_gwl import load_regional_interpolation
-            regional_geojson = load_regional_interpolation()
+            regional_geojson = load_regional_interpolation(from_database=True)
             if regional_geojson:
                 st.success(f"🌍 Loaded regional interpolation with {len(regional_geojson['features']):,} features")
             else:
-                st.error("Regional interpolation file not found. Run 'python generate_regional_data.py' first.")
+                st.error("Regional interpolation not found in database or file. Run 'python generate_regional_data.py' first.")
         except Exception as e:
             st.error(f"Failed to load regional interpolation: {e}")
-            st.info("Make sure to run 'python generate_regional_data.py' to generate the regional data file.")
+            st.info("Make sure to run 'python generate_regional_data.py' to generate the regional data.")
     
     # Fallback to database heatmaps if regional not available/selected
     if not regional_geojson and st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:

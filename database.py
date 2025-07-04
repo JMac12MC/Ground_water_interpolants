@@ -372,3 +372,144 @@ class PolygonDatabase:
                 'total_wells': 0,
                 'overall_avg_yield': 0
             }
+
+    def store_regional_interpolation(self, region_name, geojson_data, interpolation_type='ground_water_level'):
+        """
+        Store regional interpolation data in the database
+        
+        Parameters:
+        -----------
+        region_name : str
+            Name of the region (e.g., 'canterbury')
+        geojson_data : dict
+            GeoJSON data with interpolated features
+        interpolation_type : str
+            Type of interpolation ('ground_water_level', 'yield', etc.)
+        
+        Returns:
+        --------
+        bool
+            True if successful
+        """
+        try:
+            # Create table if it doesn't exist
+            with self.engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS regional_interpolations (
+                        id SERIAL PRIMARY KEY,
+                        region_name VARCHAR(100) NOT NULL,
+                        interpolation_type VARCHAR(50) NOT NULL,
+                        geojson_data JSON NOT NULL,
+                        feature_count INTEGER,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(region_name, interpolation_type)
+                    )
+                """))
+                
+                # Store the interpolation data
+                feature_count = len(geojson_data.get('features', []))
+                
+                # Use ON CONFLICT to update if exists
+                conn.execute(text("""
+                    INSERT INTO regional_interpolations 
+                    (region_name, interpolation_type, geojson_data, feature_count, created_at, updated_at)
+                    VALUES (:region_name, :interpolation_type, :geojson_data, :feature_count, :created_at, :updated_at)
+                    ON CONFLICT (region_name, interpolation_type) 
+                    DO UPDATE SET 
+                        geojson_data = EXCLUDED.geojson_data,
+                        feature_count = EXCLUDED.feature_count,
+                        updated_at = EXCLUDED.updated_at
+                """), {
+                    'region_name': region_name,
+                    'interpolation_type': interpolation_type,
+                    'geojson_data': json.dumps(geojson_data),
+                    'feature_count': feature_count,
+                    'created_at': datetime.now(),
+                    'updated_at': datetime.now()
+                })
+                
+                conn.commit()
+                print(f"Stored regional interpolation for {region_name} ({interpolation_type}) with {feature_count} features")
+                return True
+                
+        except Exception as e:
+            print(f"Error storing regional interpolation: {e}")
+            return False
+
+    def get_regional_interpolation(self, region_name, interpolation_type='ground_water_level'):
+        """
+        Retrieve regional interpolation data from the database
+        
+        Parameters:
+        -----------
+        region_name : str
+            Name of the region
+        interpolation_type : str
+            Type of interpolation
+        
+        Returns:
+        --------
+        dict or None
+            GeoJSON data if found
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT geojson_data, feature_count, created_at, updated_at 
+                    FROM regional_interpolations 
+                    WHERE region_name = :region_name AND interpolation_type = :interpolation_type
+                """), {
+                    'region_name': region_name,
+                    'interpolation_type': interpolation_type
+                })
+                
+                row = result.fetchone()
+                if row:
+                    geojson_str = row[0]
+                    if isinstance(geojson_str, str):
+                        geojson_data = json.loads(geojson_str)
+                    else:
+                        geojson_data = geojson_str
+                    
+                    print(f"Retrieved regional interpolation for {region_name} ({interpolation_type}) with {row[1]} features")
+                    return geojson_data
+                    
+                return None
+                
+        except Exception as e:
+            print(f"Error retrieving regional interpolation: {e}")
+            return None
+
+    def list_regional_interpolations(self):
+        """
+        List all available regional interpolations
+        
+        Returns:
+        --------
+        list
+            List of available interpolations
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT region_name, interpolation_type, feature_count, created_at, updated_at
+                    FROM regional_interpolations
+                    ORDER BY region_name, interpolation_type
+                """))
+                
+                interpolations = []
+                for row in result:
+                    interpolations.append({
+                        'region_name': row[0],
+                        'interpolation_type': row[1],
+                        'feature_count': row[2],
+                        'created_at': row[3],
+                        'updated_at': row[4]
+                    })
+                    
+                return interpolations
+                
+        except Exception as e:
+            print(f"Error listing regional interpolations: {e}")
+            return []

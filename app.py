@@ -769,4 +769,7 @@ with main_col1:
 
         # Only update if this is a genuinely new location (larger threshold for stability)
         current_point = st.session_state.selected_point
-        if not current_point or (abs(current_point[0] - clicked_lat)
+        if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
+            # Update the selected point
+            st.session_state.selected_point = [clicked_lat, clicked_lng]
+            st.rerun()

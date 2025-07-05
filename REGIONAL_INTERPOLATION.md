@@ -1,4 +1,3 @@
-
 # Canterbury Regional Groundwater Level Interpolation
 
 This system generates a pre-computed, region-wide groundwater level interpolation for the Canterbury region using a grid-based approach with overlapping sub-regions.
@@ -44,16 +43,16 @@ In the main app, when selecting "Ground Water Level" interpolation:
 
 ### Grid Parameters
 - **Region**: Canterbury bounds (-42.5° to -45.0° lat, 170.5° to 173.5° lon)
-- **Grid Spacing**: 10km between grid points
 - **Interpolation Radius**: 15km around each grid point
-- **Resolution**: 50 points per interpolation
+- **Grid Spacing**: 10km between grid points (15km radius - 5km overlap)
 - **Overlap**: 5km overlap between adjacent interpolations
+- **Resolution**: 50 points per interpolation
 
 ### Performance Optimizations
 - **Parallel Processing**: Uses 4 workers by default
-- **Duplicate Removal**: Merges points within 100m
-- **Memory Management**: Processes sub-regions individually
-- **Caching**: Saves result for instant future loading
+- **Resumable Processing**: Each sub-interpolation stored immediately in database
+- **Progress Tracking**: Can resume from any interruption point
+- **Fault Tolerance**: Failed grid points can be retried individually
 
 ### Data Quality
 - **Input Wells**: 34,000+ wells filtered to valid groundwater level data

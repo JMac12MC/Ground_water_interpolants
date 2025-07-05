@@ -4,7 +4,7 @@ import pandas as pd
 import json
 import os
 from scipy.spatial import Delaunay
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 import geopandas as gpd
 from interpolation import generate_geo_json_grid
@@ -46,13 +46,22 @@ def load_soil_polygons():
         print(f"Error loading soil polygons: {e}")
         return None
 
-def process_grid_point(args):
+def process_grid_point_resumable(args):
     """
-    Process a single grid point for interpolation
+    Process a single grid point for interpolation with database storage
     """
     idx, center_lat, center_lon, wells_df, radius_km, resolution, variogram_model, soil_polygons = args
     
     try:
+        from database import PolygonDatabase
+        db = PolygonDatabase()
+        
+        # Check if this sub-interpolation already exists
+        existing = db.get_sub_interpolation(idx, 'canterbury', 'ground_water_level')
+        if existing:
+            print(f"Grid point {idx} already completed, skipping...")
+            return idx, existing, "Already completed"
+        
         # Calculate km per degree for this location
         km_per_degree_lat = 111.0
         km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
@@ -85,35 +94,30 @@ def process_grid_point(args):
             soil_polygons=soil_polygons
         )
         
-        # Extract point values for merging
-        point_values = []
-        features = []
+        # Store in database immediately
+        success = db.store_sub_interpolation(
+            idx, 'canterbury', 'ground_water_level', 
+            local_geojson, center_lat, center_lon, len(local_geojson['features'])
+        )
         
-        for feature in local_geojson['features']:
-            coords = feature['geometry']['coordinates'][0]
-            centroid_x = np.mean([p[0] for p in coords[:-1]])
-            centroid_y = np.mean([p[1] for p in coords[:-1]])
-            value = feature['properties']['yield']
-            
-            if value > 0.1:  # Only include significant values
-                point_values.append([centroid_x, centroid_y, value])
-                features.append(feature)
-        
-        return idx, {'features': features, 'points': point_values}, f"Success: {len(features)} features"
+        if success:
+            return idx, local_geojson, f"Success: {len(local_geojson['features'])} features stored"
+        else:
+            return idx, None, "Failed to store in database"
         
     except Exception as e:
         return idx, None, f"Error: {str(e)}"
 
-def generate_canterbury_gwl_interpolation(
+def generate_canterbury_gwl_interpolation_resumable(
     wells_df=None, 
     radius_km=15, 
-    grid_spacing_km=10, 
+    grid_spacing_km=10,  # 15km radius - 5km overlap = 10km spacing
     resolution=50, 
     variogram_model='spherical',
     max_workers=4
 ):
     """
-    Generate a region-wide groundwater level interpolation for Canterbury
+    Generate a resumable region-wide groundwater level interpolation for Canterbury
     
     Parameters:
     -----------
@@ -122,7 +126,7 @@ def generate_canterbury_gwl_interpolation(
     radius_km : float
         Radius for each local interpolation (default: 15 km)
     grid_spacing_km : float
-        Spacing between grid points (default: 10 km for overlap)
+        Spacing between grid points (default: 10 km for 5km overlap)
     resolution : int
         Grid resolution for each sub-region (default: 50)
     variogram_model : str
@@ -137,7 +141,7 @@ def generate_canterbury_gwl_interpolation(
     """
     warnings.filterwarnings('ignore')
     
-    print("Starting Canterbury region-wide groundwater level interpolation...")
+    print("Starting resumable Canterbury region-wide groundwater level interpolation...")
     start_time = time.time()
     
     # Load wells data if not provided
@@ -148,6 +152,7 @@ def generate_canterbury_gwl_interpolation(
     # Get Canterbury bounds
     bounds = get_canterbury_bounds()
     print(f"Canterbury bounds: {bounds}")
+    print(f"Using 15km radius with 5km overlap (10km grid spacing)")
     
     # Load soil polygons
     soil_polygons = load_soil_polygons()
@@ -193,6 +198,12 @@ def generate_canterbury_gwl_interpolation(
     print(f"Generated {len(grid_points)} grid points for interpolation")
     print(f"Grid dimensions: {lat_steps} x {lon_steps}")
     
+    # Check existing progress
+    from database import PolygonDatabase
+    db = PolygonDatabase()
+    existing_count = db.count_sub_interpolations('canterbury', 'ground_water_level')
+    print(f"Found {existing_count}/{len(grid_points)} existing sub-interpolations")
+    
     # Prepare arguments for parallel processing
     args_list = []
     for idx, (center_lat, center_lon) in enumerate(grid_points):
@@ -202,15 +213,13 @@ def generate_canterbury_gwl_interpolation(
         ))
     
     # Process grid points in parallel
-    all_point_values = []
-    all_features = []
-    successful_interpolations = 0
+    successful_interpolations = existing_count
     
     print(f"Starting parallel processing with {max_workers} workers...")
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
-        future_to_idx = {executor.submit(process_grid_point, args): args[0] for args in args_list}
+        future_to_idx = {executor.submit(process_grid_point_resumable, args): args[0] for args in args_list}
         
         # Process completed tasks
         for future in as_completed(future_to_idx):
@@ -219,19 +228,42 @@ def generate_canterbury_gwl_interpolation(
             try:
                 result_idx, result_data, message = future.result()
                 
-                if result_data is not None:
-                    all_features.extend(result_data['features'])
-                    all_point_values.extend(result_data['points'])
+                if result_data is not None and "already completed" not in message.lower():
                     successful_interpolations += 1
                 
-                # Progress update every 10 completed tasks
-                if (result_idx + 1) % 10 == 0:
-                    print(f"Completed {result_idx + 1}/{len(grid_points)}: {message}")
+                # Progress update every 5 completed tasks
+                if (result_idx + 1) % 5 == 0:
+                    progress = (successful_interpolations / len(grid_points)) * 100
+                    print(f"Progress: {progress:.1f}% ({successful_interpolations}/{len(grid_points)}) - Point {result_idx + 1}: {message}")
                     
             except Exception as e:
                 print(f"Error processing grid point {idx}: {e}")
     
-    print(f"Completed parallel processing. {successful_interpolations}/{len(grid_points)} successful interpolations")
+    print(f"Completed parallel processing. {successful_interpolations}/{len(grid_points)} total sub-interpolations")
+    
+    # Merge all sub-interpolations
+    print("Merging all sub-interpolations into final surface...")
+    all_sub_interpolations = db.list_sub_interpolations('canterbury', 'ground_water_level')
+    
+    all_features = []
+    all_point_values = []
+    
+    for sub_interp in all_sub_interpolations:
+        geojson_data = sub_interp['geojson_data']
+        if isinstance(geojson_data, str):
+            geojson_data = json.loads(geojson_data)
+        
+        for feature in geojson_data['features']:
+            coords = feature['geometry']['coordinates'][0]
+            centroid_x = np.mean([p[0] for p in coords[:-1]])
+            centroid_y = np.mean([p[1] for p in coords[:-1]])
+            value = feature['properties']['yield']
+            
+            if value > 0.1:  # Only include significant values
+                all_point_values.append([centroid_x, centroid_y, value])
+                all_features.append(feature)
+    
+    print(f"Collected {len(all_features)} features from sub-interpolations")
     
     # Remove duplicate points and create final surface
     if all_point_values:
@@ -242,6 +274,10 @@ def generate_canterbury_gwl_interpolation(
         unique_values = []
         
         # Remove duplicates within 100m
+        center_lat = (bounds['north'] + bounds['south']) / 2
+        km_per_degree_lat = 111.0
+        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        
         for i, (x, y, val) in enumerate(point_values):
             keep = True
             for j, (ux, uy, _) in enumerate(unique_points):
@@ -314,6 +350,26 @@ def generate_canterbury_gwl_interpolation(
             "features": []
         }
     
+    # Apply soil polygon clipping to final surface
+    if soil_polygons is not None and len(geojson['features']) > 0:
+        print("Applying soil polygon clipping to final surface...")
+        try:
+            # Create merged soil geometry
+            soil_geometries = [geom for geom in soil_polygons.geometry if geom is not None and geom.is_valid]
+            if soil_geometries:
+                merged_soil_geometry = unary_union(soil_geometries)
+                
+                clipped_features = []
+                for feature in geojson['features']:
+                    feature_geometry = Polygon(feature['geometry']['coordinates'][0])
+                    if feature_geometry.intersects(merged_soil_geometry):
+                        clipped_features.append(feature)
+                
+                geojson['features'] = clipped_features
+                print(f"Clipped to {len(clipped_features)} features within soil drainage areas")
+        except Exception as e:
+            print(f"Soil clipping error: {e}, using unclipped surface")
+    
     total_time = time.time() - start_time
     print(f"Regional interpolation completed in {total_time:.1f} seconds")
     print(f"Final GeoJSON contains {len(geojson['features'])} features")
@@ -325,11 +381,12 @@ def save_regional_interpolation(output_file="canterbury_gwl_interpolation.json",
     Generate and save the Canterbury groundwater level interpolation
     """
     print("Generating Canterbury region-wide groundwater level interpolation...")
+    print("Using 15km radius with 5km overlap (10km grid spacing)")
     
-    # Generate the interpolation
-    geojson = generate_canterbury_gwl_interpolation(
+    # Generate the interpolation with resumable approach
+    geojson = generate_canterbury_gwl_interpolation_resumable(
         radius_km=15,
-        grid_spacing_km=10,
+        grid_spacing_km=10,  # 15km radius - 5km overlap
         resolution=50,
         variogram_model='spherical',
         max_workers=4

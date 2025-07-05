@@ -476,6 +476,208 @@ class PolygonDatabase:
                     return geojson_data
                     
                 return None
+        except Exception as e:
+            print(f"Error retrieving regional interpolation: {e}")
+            return None
+
+    def store_sub_interpolation(self, grid_idx, region_name, interpolation_type, geojson_data, center_lat, center_lon, feature_count):
+        """
+        Store a sub-interpolation in the database for resumable processing
+        
+        Parameters:
+        -----------
+        grid_idx : int
+            Grid point index
+        region_name : str
+            Name of the region
+        interpolation_type : str
+            Type of interpolation
+        geojson_data : dict
+            GeoJSON data
+        center_lat : float
+            Center latitude of the sub-region
+        center_lon : float
+            Center longitude of the sub-region
+        feature_count : int
+            Number of features in the GeoJSON
+        
+        Returns:
+        --------
+        bool
+            True if successful, False otherwise
+        """
+        try:
+            with self.engine.connect() as conn:
+                # Create table if it doesn't exist
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS sub_interpolations (
+                        id SERIAL PRIMARY KEY,
+                        grid_idx INTEGER NOT NULL,
+                        region_name VARCHAR(100) NOT NULL,
+                        interpolation_type VARCHAR(50) NOT NULL,
+                        geojson_data JSON NOT NULL,
+                        center_lat DOUBLE PRECISION NOT NULL,
+                        center_lon DOUBLE PRECISION NOT NULL,
+                        feature_count INTEGER,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(grid_idx, region_name, interpolation_type)
+                    )
+                """))
+                
+                # Store the sub-interpolation
+                conn.execute(text("""
+                    INSERT INTO sub_interpolations 
+                    (grid_idx, region_name, interpolation_type, geojson_data, center_lat, center_lon, feature_count)
+                    VALUES (:grid_idx, :region_name, :interpolation_type, :geojson_data, :center_lat, :center_lon, :feature_count)
+                    ON CONFLICT (grid_idx, region_name, interpolation_type) 
+                    DO UPDATE SET 
+                        geojson_data = EXCLUDED.geojson_data,
+                        center_lat = EXCLUDED.center_lat,
+                        center_lon = EXCLUDED.center_lon,
+                        feature_count = EXCLUDED.feature_count,
+                        created_at = CURRENT_TIMESTAMP
+                """), {
+                    'grid_idx': grid_idx,
+                    'region_name': region_name,
+                    'interpolation_type': interpolation_type,
+                    'geojson_data': json.dumps(geojson_data),
+                    'center_lat': center_lat,
+                    'center_lon': center_lon,
+                    'feature_count': feature_count
+                })
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            print(f"Error storing sub-interpolation: {e}")
+            return False
+
+    def get_sub_interpolation(self, grid_idx, region_name, interpolation_type):
+        """
+        Get a specific sub-interpolation
+        
+        Parameters:
+        -----------
+        grid_idx : int
+            Grid point index
+        region_name : str
+            Name of the region
+        interpolation_type : str
+            Type of interpolation
+        
+        Returns:
+        --------
+        dict or None
+            GeoJSON data if found
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT geojson_data FROM sub_interpolations 
+                    WHERE grid_idx = :grid_idx AND region_name = :region_name AND interpolation_type = :interpolation_type
+                """), {
+                    'grid_idx': grid_idx,
+                    'region_name': region_name,
+                    'interpolation_type': interpolation_type
+                })
+                
+                row = result.fetchone()
+                if row:
+                    geojson_str = row[0]
+                    if isinstance(geojson_str, str):
+                        return json.loads(geojson_str)
+                    else:
+                        return geojson_str
+                    
+                return None
+                
+        except Exception as e:
+            return None
+
+    def count_sub_interpolations(self, region_name, interpolation_type):
+        """
+        Count completed sub-interpolations
+        
+        Parameters:
+        -----------
+        region_name : str
+            Name of the region
+        interpolation_type : str
+            Type of interpolation
+        
+        Returns:
+        --------
+        int
+            Number of completed sub-interpolations
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT COUNT(*) FROM sub_interpolations 
+                    WHERE region_name = :region_name AND interpolation_type = :interpolation_type
+                """), {
+                    'region_name': region_name,
+                    'interpolation_type': interpolation_type
+                })
+                
+                row = result.fetchone()
+                return row[0] if row else 0
+                
+        except Exception as e:
+            return 0
+
+    def list_sub_interpolations(self, region_name, interpolation_type):
+        """
+        List all sub-interpolations for a region
+        
+        Parameters:
+        -----------
+        region_name : str
+            Name of the region
+        interpolation_type : str
+            Type of interpolation
+        
+        Returns:
+        --------
+        list
+            List of sub-interpolation records
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT grid_idx, geojson_data, center_lat, center_lon, feature_count, created_at
+                    FROM sub_interpolations 
+                    WHERE region_name = :region_name AND interpolation_type = :interpolation_type
+                    ORDER BY grid_idx
+                """), {
+                    'region_name': region_name,
+                    'interpolation_type': interpolation_type
+                })
+                
+                rows = result.fetchall()
+                sub_interpolations = []
+                for row in rows:
+                    geojson_str = row[1]
+                    if isinstance(geojson_str, str):
+                        geojson_data = json.loads(geojson_str)
+                    else:
+                        geojson_data = geojson_str
+                    
+                    sub_interpolations.append({
+                        'grid_idx': row[0],
+                        'geojson_data': geojson_data,
+                        'center_lat': row[2],
+                        'center_lon': row[3],
+                        'feature_count': row[4],
+                        'created_at': row[5]
+                    })
+                
+                return sub_interpolations
+                
+        except Exception as e:
+            print(f"Error listing sub-interpolations: {e}")
+            return []
                 
         except Exception as e:
             print(f"Error retrieving regional interpolation: {e}")

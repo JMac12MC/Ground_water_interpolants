@@ -43,8 +43,7 @@ if 'wells_data' not in st.session_state:
 if 'filtered_wells' not in st.session_state:
     st.session_state.filtered_wells = None
 # No more yield filtering - removed
-if 'total_wells_in_radius' not in st.session_state:
-    st.session_state.total_wells_in_radius = 0
+
 if 'heat_map_visibility' not in st.session_state:
     st.session_state.heat_map_visibility = True
 if 'well_markers_visibility' not in st.session_state:
@@ -336,7 +335,6 @@ with main_col1:
                 filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
 
             st.session_state.filtered_wells = filtered_wells.copy()
-            st.session_state.total_wells_in_radius = len(filtered_wells)
 
             # Create marker for selected point
             folium.Marker(
@@ -718,7 +716,7 @@ with main_col2:
                 mime="text/csv"
             )
     elif st.session_state.selected_point:
-        st.warning("No wells found in the selected area with current filters. Try increasing the search radius or adjusting yield filters.")
+        st.info("Location selected. View the interpolated heatmap on the left.")
     else:
         st.info("Click on the map to select a location and view nearby wells")
 

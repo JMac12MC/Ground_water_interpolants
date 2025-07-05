@@ -51,8 +51,7 @@ if 'well_markers_visibility' not in st.session_state:
     st.session_state.well_markers_visibility = True
 if 'search_radius' not in st.session_state:
     st.session_state.search_radius = 10
-if 'selected_well' not in st.session_state:
-    st.session_state.selected_well = None
+
 if 'soil_polygons' not in st.session_state:
     st.session_state.soil_polygons = None
 if 'show_soil_polygons' not in st.session_state:
@@ -699,7 +698,7 @@ with main_col1:
     # Add a clear button to reset the map
     if st.button("Clear Results", use_container_width=True):
         # Reset the session state safely
-        for key in ['selected_point', 'filtered_wells', 'selected_well']:
+        for key in ['selected_point', 'filtered_wells']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
@@ -708,22 +707,6 @@ with main_col2:
     st.subheader("Analysis Results")
 
     if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
-        # Show the total wells count in radius
-        st.write(f"**Total wells in radius:** {st.session_state.total_wells_in_radius}")
-
-        # Calculate statistics using ALL wells in the radius (no yield filtering)
-        # Replace NaN with 0 for yield calculations
-        yields = st.session_state.filtered_wells['yield_rate'].fillna(0)
-        avg_yield = yields.mean() if len(yields) > 0 else 0
-        max_yield = yields.max() if len(yields) > 0 else 0
-
-        # Use all wells in radius for depth statistics
-        avg_depth = st.session_state.filtered_wells['depth'].mean() if not st.session_state.filtered_wells.empty else 0
-
-        st.write(f"**Average Yield:** {avg_yield:.2f} L/s")
-        st.write(f"**Maximum Yield:** {max_yield:.2f} L/s")
-        st.write(f"**Average Depth:** {avg_depth:.2f} m")
-
         # Add export data option
         st.subheader("Export Data")
         if st.button("Download Wells Data"):

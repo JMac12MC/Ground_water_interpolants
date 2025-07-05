@@ -238,16 +238,6 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
-    
-    # Regional interpolation option
-    if 'use_regional_interpolation' not in st.session_state:
-        st.session_state.use_regional_interpolation = False
-    
-    st.session_state.use_regional_interpolation = st.checkbox(
-        "Use pre-computed Canterbury region", 
-        value=st.session_state.use_regional_interpolation,
-        help="Load pre-generated regional interpolation for instant display (requires running generate_regional_data.py first)"
-    )
 
 
 
@@ -289,25 +279,7 @@ with main_col1:
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None
-    regional_geojson = None
-    
-    # Check for regional interpolation option FIRST
-    if st.session_state.use_regional_interpolation:
-        try:
-            from generate_regional_gwl import load_regional_interpolation
-            regional_geojson = load_regional_interpolation(from_database=True)
-            if regional_geojson and len(regional_geojson.get('features', [])) > 0:
-                st.success(f"🌍 Loaded regional Canterbury interpolation with {len(regional_geojson['features']):,} features")
-            else:
-                st.error("Regional interpolation not found. Run 'python generate_regional_data.py' first.")
-                regional_geojson = None
-        except Exception as e:
-            st.error(f"Failed to load regional interpolation: {e}")
-            st.info("Make sure to run 'python generate_regional_data.py' to generate the regional data.")
-            regional_geojson = None
-    
-    # Fallback to database heatmaps if regional not available/selected
-    if not regional_geojson and st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
+    if st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
         try:
             # Try to load pre-computed heatmap data
             if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
@@ -318,7 +290,7 @@ with main_col1:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
             elif visualization_method == "Ground Water Level (Spherical Kriging)":
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('ground_water_level')
-
+                
                 # Debug ground water level data availability
                 if st.session_state.wells_data is not None:
                     gwl_column_exists = 'ground water level' in st.session_state.wells_data.columns
@@ -385,88 +357,9 @@ with main_col1:
                 fill_opacity=0.1
             ).add_to(m)
 
-        # Display heatmap - use regional, pre-computed, or generate on-demand
+        # Display heatmap - use pre-computed if available, otherwise generate on-demand
         if st.session_state.heat_map_visibility:
-            if regional_geojson and len(regional_geojson.get('features', [])) > 0:
-                # Display regional interpolation GeoJSON
-                st.success("🌍 Displaying regional Canterbury groundwater level interpolation!")
-                
-                # Calculate max value for color scaling
-                max_value = 0
-                min_value = float('inf')
-                valid_values = []
-                
-                for feature in regional_geojson['features']:
-                    if 'yield' in feature['properties']:
-                        value = feature['properties']['yield']
-                        if value is not None and not np.isnan(value):
-                            valid_values.append(value)
-                            max_value = max(max_value, value)
-                            min_value = min(min_value, value)
-                
-                if not valid_values:
-                    st.error("No valid data found in regional interpolation")
-                else:
-                    # Ensure reasonable range for visualization
-                    max_value = max(max_value, 1.0)  # Minimum range
-                    min_value = max(min_value, 0.0)  # Don't go below 0
-                    
-                    st.info(f"Displaying {len(valid_values)} polygons with values from {min_value:.2f} to {max_value:.2f}")
-                    
-                    # Ground water level colors: blue (low level) to brown (high level)
-                    def get_gwl_color(value):
-                        if value is None or np.isnan(value):
-                            return '#808080'  # Gray for invalid values
-                        
-                        # Normalize value to 0-1 range
-                        if max_value > min_value:
-                            normalized = (value - min_value) / (max_value - min_value)
-                        else:
-                            normalized = 0.5
-                        
-                        # 15-color gradient
-                        colors = [
-                            '#000080',  # Dark blue (low level)
-                            '#0033CC', '#0066FF', '#0099FF', '#00CCFF',
-                            '#00FFFF',  # Cyan (medium-low)
-                            '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33',  # Yellow (medium)
-                            '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'   # Brown (high level)
-                        ]
-                        
-                        # Get color index (0-14)
-                        color_index = min(14, int(normalized * 15))
-                        return colors[color_index]
-                    
-                    # Add GeoJSON with styling
-                    folium.GeoJson(
-                        data=regional_geojson,
-                        name='Regional Groundwater Level',
-                        style_function=lambda feature: {
-                            'fillColor': get_gwl_color(feature['properties'].get('yield')),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        },
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=['yield'],
-                            aliases=['Ground Water Level (m):'],
-                            labels=True,
-                            sticky=False
-                        )
-                    ).add_to(m)
-                    
-                    # Add colormap legend
-                    colormap = folium.LinearColormap(
-                        colors=['#000080', '#0033CC', '#0066FF', '#0099FF', '#00CCFF', 
-                                '#00FFFF', '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33', 
-                                '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'],
-                        vmin=float(min_value),
-                        vmax=float(max_value),
-                        caption='Ground Water Level (m) - Regional Canterbury'
-                    )
-                    colormap.add_to(m)
-                
-            elif heatmap_data:
+            if heatmap_data:
                 # Display pre-computed heatmap
                 st.success("⚡ Displaying pre-computed heatmap - instant loading!")
 
@@ -796,6 +689,221 @@ with main_col1:
         # Only update if this is a genuinely new location (larger threshold for stability)
         current_point = st.session_state.selected_point
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
-            # Update the selected point
+            # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
+            # Clear filtered wells to trigger recalculation
+            st.session_state.filtered_wells = None
+            # Use experimental_rerun to reduce instability
             st.rerun()
+
+    # Add comprehensive well data summary report
+    if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
+        st.subheader("📊 Well Data Summary Report")
+
+        # Create summary statistics
+        wells_data = st.session_state.filtered_wells
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Total Wells Found", 
+                len(wells_data),
+                help="Number of wells within the selected radius"
+            )
+
+            # Filter for active productive wells only (exclude dry wells)
+            active_productive_wells = wells_data[
+                (wells_data['yield_rate'] > 0) & 
+                (wells_data['status'].str.contains('Active', case=False, na=False)) &
+                (~wells_data.get('is_dry_well', False))
+            ]
+
+            # Use depth_to_groundwater if available, otherwise fall back to depth
+            if 'depth_to_groundwater' in active_productive_wells.columns and not active_productive_wells['depth_to_groundwater'].isna().all():
+                depth_column = 'depth_to_groundwater'
+                active_depths = active_productive_wells[depth_column].dropna()
+            else:
+                depth_column = 'depth'
+                active_depths = active_productive_wells[depth_column].dropna()
+
+            if len(active_depths) > 0:
+                avg_depth = active_depths.mean()
+                min_depth = active_depths.min()
+                max_depth = active_depths.max()
+
+                st.metric(
+                    "Average Depth to Groundwater", 
+                    f"{avg_depth:.1f} m",
+                    help="Mean depth to groundwater for active productive wells only"
+                )
+            else:
+                st.metric(
+                    "Average Depth to Groundwater", 
+                    "No data",
+                    help="No active productive wells with depth data found"
+                )
+
+        with col2:
+            # Yield statistics  
+            yields = wells_data['yield_rate'].fillna(0)
+            avg_yield = yields.mean()
+            productive_wells = len(wells_data[wells_data['yield_rate'] > 1])
+
+            st.metric(
+                "Average Yield Rate", 
+                f"{avg_yield:.2f} L/s",
+                help="Mean water yield across all wells"
+            )
+
+            st.metric(
+                "Productive Wells", 
+                f"{productive_wells}",
+                help="Wells with yield > 1 L/s"
+            )
+
+        with col3:
+            # Show active wells count and depth range for active productive wells
+            active_wells_count = len(active_productive_wells)
+            st.metric(
+                "Active Wells", 
+                f"{active_wells_count}",
+                help="Active wells with yield > 0 L/s"
+            )
+
+            if len(active_depths) > 0:
+                st.metric(
+                    "Groundwater Depth Range", 
+                    f"{min_depth:.1f} - {max_depth:.1f} m",
+                    help="Depth to groundwater range for active productive wells"
+                )
+            else:
+                st.metric(
+                    "Groundwater Depth Range", 
+                    "No data",
+                    help="No active productive wells with depth data"
+                )
+
+            high_yield_wells = len(wells_data[wells_data['yield_rate'] > 5])
+
+            st.metric(
+                "High-Yield Wells", 
+                f"{high_yield_wells}",
+                help="Wells with yield > 5 L/s"
+            )
+
+        # Detailed data table
+        st.subheader("📋 Detailed Well Information")
+
+        # Display top wells by yield
+        top_wells = wells_data.nlargest(10, 'yield_rate')[['well_id', 'yield_rate', 'depth', 'distance', 'status']]
+        st.write("**Top 10 Wells by Yield Rate:**")
+        st.dataframe(
+            top_wells,
+            column_config={
+                "well_id": "Well ID",
+                "yield_rate": st.column_config.NumberColumn("Yield (L/s)", format="%.2f"),
+                "depth": st.column_config.NumberColumn("Depth (m)", format="%.1f"),
+                "distance": st.column_config.NumberColumn("Distance (km)", format="%.2f"),
+                "status": "Status"
+            },
+            hide_index=True
+        )
+
+        # Downloadable CSV
+        csv_data = wells_data.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Complete Well Data (CSV)",
+            data=csv_data,
+            file_name=f"well_data_{st.session_state.selected_point[0]:.4f}_{st.session_state.selected_point[1]:.4f}.csv",
+            mime="text/csv"
+        )
+
+    # Add a clear button to reset the map
+    if st.button("Clear Results", use_container_width=True):
+        # Reset the session state safely
+        for key in ['selected_point', 'filtered_wells', 'selected_well']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+with main_col2:
+    st.subheader("Analysis Results")
+
+    if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
+        # Show the total wells count in radius
+        st.write(f"**Total wells in radius:** {st.session_state.total_wells_in_radius}")
+
+        # Calculate statistics using ALL wells in the radius (no yield filtering)
+        # Replace NaN with 0 for yield calculations
+        yields = st.session_state.filtered_wells['yield_rate'].fillna(0)
+        avg_yield = yields.mean() if len(yields) > 0 else 0
+        max_yield = yields.max() if len(yields) > 0 else 0
+
+        # Use all wells in radius for depth statistics
+        avg_depth = st.session_state.filtered_wells['depth'].mean() if not st.session_state.filtered_wells.empty else 0
+
+        st.write(f"**Average Yield:** {avg_yield:.2f} L/s")
+        st.write(f"**Maximum Yield:** {max_yield:.2f} L/s")
+        st.write(f"**Average Depth:** {avg_depth:.2f} m")
+
+        # Show detailed well info if selected
+        if st.session_state.selected_well:
+            well_details = st.session_state.filtered_wells[
+                st.session_state.filtered_wells['well_id'] == st.session_state.selected_well
+            ]
+
+            if isinstance(well_details, pd.DataFrame) and not well_details.empty:
+                well = well_details.iloc[0]
+                st.subheader(f"Well {well['well_id']} Details")
+
+                details_col1, details_col2 = st.columns(2)
+
+                with details_col1:
+                    st.write(f"**Latitude:** {well['latitude']}")
+                    st.write(f"**Depth:** {well['depth']} m")
+                    st.write(f"**Status:** {well['status']}")
+
+                with details_col2:
+                    st.write(f"**Longitude:** {well['longitude']}")
+                    st.write(f"**Yield Rate:** {well['yield_rate']} L/s")
+                    st.write(f"**Distance:** {well['distance']:.2f} km")
+
+                # Clear selection button
+                if st.button("Close Well Details"):
+                    st.session_state.selected_well = None
+                    st.rerun()
+
+        # Add export data option
+        st.subheader("Export Data")
+        if st.button("Download Wells Data"):
+            csv_data = download_as_csv(st.session_state.filtered_wells)
+            st.download_button(
+                label="Download CSV",
+                data=csv_data,
+                file_name="nearby_wells.csv",
+                mime="text/csv"
+            )
+    elif st.session_state.selected_point:
+        st.warning("No wells found in the selected area with current filters. Try increasing the search radius or adjusting yield filters.")
+    else:
+        st.info("Click on the map to select a location and view nearby wells")
+
+    # Add information about water well drilling - always display
+    st.subheader("Finding Groundwater")
+    st.write("""
+    Traditional methods like water divining lack scientific basis. Our tool uses actual well data 
+    to help you make informed decisions about where to drill based on:
+
+    * Proximity to existing successful wells
+    * Aquifer yield patterns in your area
+    * Depth trends for accessing groundwater
+    """)
+
+# Add footer
+st.markdown("""
+<div style="text-align: center; margin-top: 40px; padding: 20px; background-color: #f0f2f6; border-radius: 10px;">
+    <p>© 2023 Groundwater Finder | Data sourced from public well databases</p>
+    <p>This tool is designed to assist farmers in locating potential groundwater sources. Results are based on existing data and interpolation techniques.</p>
+</div>
+""", unsafe_allow_html=True)

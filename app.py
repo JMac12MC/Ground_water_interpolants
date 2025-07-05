@@ -291,19 +291,20 @@ with main_col1:
     heatmap_data = None
     regional_geojson = None
     
-    # Check for regional interpolation option
-    if (st.session_state.use_regional_interpolation and 
-        visualization_method == "Ground Water Level (Spherical Kriging)"):
+    # Check for regional interpolation option FIRST
+    if st.session_state.use_regional_interpolation:
         try:
             from generate_regional_gwl import load_regional_interpolation
             regional_geojson = load_regional_interpolation(from_database=True)
-            if regional_geojson:
-                st.success(f"🌍 Loaded regional interpolation with {len(regional_geojson['features']):,} features")
+            if regional_geojson and len(regional_geojson.get('features', [])) > 0:
+                st.success(f"🌍 Loaded regional Canterbury interpolation with {len(regional_geojson['features']):,} features")
             else:
-                st.error("Regional interpolation not found in database or file. Run 'python generate_regional_data.py' first.")
+                st.error("Regional interpolation not found. Run 'python generate_regional_data.py' first.")
+                regional_geojson = None
         except Exception as e:
             st.error(f"Failed to load regional interpolation: {e}")
             st.info("Make sure to run 'python generate_regional_data.py' to generate the regional data.")
+            regional_geojson = None
     
     # Fallback to database heatmaps if regional not available/selected
     if not regional_geojson and st.session_state.polygon_db and st.session_state.polygon_db.pg_engine:
@@ -386,59 +387,84 @@ with main_col1:
 
         # Display heatmap - use regional, pre-computed, or generate on-demand
         if st.session_state.heat_map_visibility:
-            if regional_geojson:
+            if regional_geojson and len(regional_geojson.get('features', [])) > 0:
                 # Display regional interpolation GeoJSON
                 st.success("🌍 Displaying regional Canterbury groundwater level interpolation!")
                 
                 # Calculate max value for color scaling
                 max_value = 0
+                min_value = float('inf')
+                valid_values = []
+                
                 for feature in regional_geojson['features']:
                     if 'yield' in feature['properties']:
-                        max_value = max(max_value, feature['properties']['yield'])
+                        value = feature['properties']['yield']
+                        if value is not None and not np.isnan(value):
+                            valid_values.append(value)
+                            max_value = max(max_value, value)
+                            min_value = min(min_value, value)
                 
-                max_value = max(max_value, 50.0)  # Ensure reasonable minimum for visualization
-                
-                # Ground water level colors: blue (low level) to brown (high level)
-                def get_gwl_color(value):
-                    step = max_value / 15.0
-                    colors = [
-                        '#000080',  # Dark blue (low level)
-                        '#0033CC', '#0066FF', '#0099FF', '#00CCFF',
-                        '#00FFFF',  # Cyan (medium-low)
-                        '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33',  # Yellow (medium)
-                        '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'   # Brown (high level)
-                    ]
-                    band_index = min(14, int(value / step)) if step > 0 else 0
-                    return colors[band_index]
-                
-                # Add GeoJSON with styling
-                folium.GeoJson(
-                    data=regional_geojson,
-                    name='Regional Groundwater Level',
-                    style_function=lambda feature: {
-                        'fillColor': get_gwl_color(feature['properties']['yield']),
-                        'color': 'none',
-                        'weight': 0,
-                        'fillOpacity': 0.7
-                    },
-                    tooltip=folium.GeoJsonTooltip(
-                        fields=['yield'],
-                        aliases=['Ground Water Level (m):'],
-                        labels=True,
-                        sticky=False
+                if not valid_values:
+                    st.error("No valid data found in regional interpolation")
+                else:
+                    # Ensure reasonable range for visualization
+                    max_value = max(max_value, 1.0)  # Minimum range
+                    min_value = max(min_value, 0.0)  # Don't go below 0
+                    
+                    st.info(f"Displaying {len(valid_values)} polygons with values from {min_value:.2f} to {max_value:.2f}")
+                    
+                    # Ground water level colors: blue (low level) to brown (high level)
+                    def get_gwl_color(value):
+                        if value is None or np.isnan(value):
+                            return '#808080'  # Gray for invalid values
+                        
+                        # Normalize value to 0-1 range
+                        if max_value > min_value:
+                            normalized = (value - min_value) / (max_value - min_value)
+                        else:
+                            normalized = 0.5
+                        
+                        # 15-color gradient
+                        colors = [
+                            '#000080',  # Dark blue (low level)
+                            '#0033CC', '#0066FF', '#0099FF', '#00CCFF',
+                            '#00FFFF',  # Cyan (medium-low)
+                            '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33',  # Yellow (medium)
+                            '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'   # Brown (high level)
+                        ]
+                        
+                        # Get color index (0-14)
+                        color_index = min(14, int(normalized * 15))
+                        return colors[color_index]
+                    
+                    # Add GeoJSON with styling
+                    folium.GeoJson(
+                        data=regional_geojson,
+                        name='Regional Groundwater Level',
+                        style_function=lambda feature: {
+                            'fillColor': get_gwl_color(feature['properties'].get('yield')),
+                            'color': 'none',
+                            'weight': 0,
+                            'fillOpacity': 0.7
+                        },
+                        tooltip=folium.GeoJsonTooltip(
+                            fields=['yield'],
+                            aliases=['Ground Water Level (m):'],
+                            labels=True,
+                            sticky=False
+                        )
+                    ).add_to(m)
+                    
+                    # Add colormap legend
+                    colormap = folium.LinearColormap(
+                        colors=['#000080', '#0033CC', '#0066FF', '#0099FF', '#00CCFF', 
+                                '#00FFFF', '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33', 
+                                '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'],
+                        vmin=float(min_value),
+                        vmax=float(max_value),
+                        caption='Ground Water Level (m) - Regional Canterbury'
                     )
-                ).add_to(m)
-                
-                # Add colormap legend
-                colormap = folium.LinearColormap(
-                    colors=['#000080', '#0033CC', '#0066FF', '#0099FF', '#00CCFF', 
-                            '#00FFFF', '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33', 
-                            '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'],
-                    vmin=0,
-                    vmax=float(max_value),
-                    caption='Ground Water Level (m) - Regional Canterbury'
-                )
-                colormap.add_to(m)
+                    colormap.add_to(m)
                 
             elif heatmap_data:
                 # Display pre-computed heatmap

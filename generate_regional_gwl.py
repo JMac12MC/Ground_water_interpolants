@@ -1,114 +1,230 @@
 
+#!/usr/bin/env python3
+"""
+Resumable regional groundwater level interpolation system for Canterbury
+Uses database-backed sub-interpolations that can be resumed if interrupted
+"""
+
+import os
+import json
 import numpy as np
 import pandas as pd
-import json
-import os
-from scipy.spatial import Delaunay
-from shapely.geometry import Point, Polygon
-from shapely.ops import unary_union
 import geopandas as gpd
-from interpolation import generate_geo_json_grid
-from data_loader import load_nz_govt_data
-import warnings
+from shapely.geometry import Point, Polygon
+from pykrige.ok import OrdinaryKriging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from database import PolygonDatabase
+from data_loader import load_wells_data
+from utils import filter_by_soil_polygons
 
-def get_canterbury_bounds():
+def create_grid_points(bounds, spacing_km=10):
     """
-    Define the Canterbury region bounds
-    """
-    return {
-        'north': -42.5,    # Northern boundary
-        'south': -45.0,    # Southern boundary  
-        'east': 173.5,     # Eastern boundary
-        'west': 170.5      # Western boundary
-    }
-
-def load_soil_polygons():
-    """
-    Load soil polygons for filtering (if available)
-    """
-    try:
-        soil_files = [
-            "attached_assets/s-map-soil-drainage-aug-2024_1749379069732.shp",
-            "attached_assets/s-map-soil-drainage-aug-2024_1749427998471.shp"
-        ]
-        
-        for soil_file in soil_files:
-            if os.path.exists(soil_file):
-                print(f"Loading soil polygons from {soil_file}")
-                soil_polygons = gpd.read_file(soil_file)
-                return soil_polygons
-        
-        print("No soil polygon files found, proceeding without soil filtering")
-        return None
-    except Exception as e:
-        print(f"Error loading soil polygons: {e}")
-        return None
-
-def process_grid_point_resumable(args):
-    """
-    Process a single grid point for interpolation with database storage
-    """
-    idx, center_lat, center_lon, wells_df, radius_km, resolution, variogram_model, soil_polygons = args
+    Create a grid of points covering the specified bounds
     
+    Parameters:
+    -----------
+    bounds : dict
+        Dictionary with 'south', 'north', 'west', 'east' keys
+    spacing_km : float
+        Spacing between grid points in kilometers
+    
+    Returns:
+    --------
+    list
+        List of (lat, lon) tuples
+    """
+    # Convert km to degrees (approximate)
+    lat_spacing = spacing_km / 111.0  # 1 degree ≈ 111 km
+    lon_spacing = spacing_km / (111.0 * np.cos(np.radians((bounds['south'] + bounds['north']) / 2)))
+    
+    lats = np.arange(bounds['south'], bounds['north'] + lat_spacing, lat_spacing)
+    lons = np.arange(bounds['west'], bounds['east'] + lon_spacing, lon_spacing)
+    
+    grid_points = []
+    for lat in lats:
+        for lon in lons:
+            grid_points.append((lat, lon))
+    
+    return grid_points
+
+def get_wells_in_radius(wells_df, center_lat, center_lon, radius_km=15):
+    """
+    Get wells within specified radius of a center point
+    
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        Wells data with 'latitude', 'longitude', 'ground water level' columns
+    center_lat : float
+        Center latitude
+    center_lon : float
+        Center longitude
+    radius_km : float
+        Radius in kilometers
+    
+    Returns:
+    --------
+    DataFrame
+        Filtered wells within radius
+    """
+    # Calculate distances using approximate conversion
+    lat_diff = wells_df['latitude'] - center_lat
+    lon_diff = wells_df['longitude'] - center_lon
+    
+    # Convert to km (approximate)
+    lat_km = lat_diff * 111.0
+    lon_km = lon_diff * 111.0 * np.cos(np.radians(center_lat))
+    
+    distance_km = np.sqrt(lat_km**2 + lon_km**2)
+    
+    return wells_df[distance_km <= radius_km].copy()
+
+def generate_sub_interpolation(grid_idx, center_lat, center_lon, wells_df, radius_km=15, resolution=50):
+    """
+    Generate interpolation for a single grid point
+    
+    Parameters:
+    -----------
+    grid_idx : int
+        Grid point index
+    center_lat : float
+        Center latitude
+    center_lon : float
+        Center longitude
+    wells_df : DataFrame
+        Full wells dataset
+    radius_km : float
+        Interpolation radius in km
+    resolution : int
+        Number of interpolation points per dimension
+    
+    Returns:
+    --------
+    dict or None
+        GeoJSON data for the sub-interpolation
+    """
     try:
-        from database import PolygonDatabase
-        db = PolygonDatabase()
+        # Get wells within radius
+        local_wells = get_wells_in_radius(wells_df, center_lat, center_lon, radius_km)
         
-        # Check if this sub-interpolation already exists
-        existing = db.get_sub_interpolation(idx, 'canterbury', 'ground_water_level')
-        if existing:
-            print(f"Grid point {idx} already completed, skipping...")
-            return idx, existing, "Already completed"
+        if len(local_wells) < 3:
+            print(f"Grid {grid_idx}: Insufficient wells ({len(local_wells)}) - skipping")
+            return None
         
-        # Calculate km per degree for this location
-        km_per_degree_lat = 111.0
-        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        # Filter out invalid values
+        local_wells = local_wells[
+            (local_wells['ground water level'].notna()) & 
+            (local_wells['ground water level'] > 0) &
+            (local_wells['ground water level'] < 1000)  # Reasonable max depth
+        ].copy()
         
-        # Filter wells within radius
-        wells_df_copy = wells_df.copy()
-        wells_df_copy['distance'] = wells_df_copy.apply(
-            lambda row: np.sqrt(
-                ((row['latitude'] - center_lat) * km_per_degree_lat)**2 +
-                ((row['longitude'] - center_lon) * km_per_degree_lon)**2
-            ),
-            axis=1
-        )
+        if len(local_wells) < 3:
+            print(f"Grid {grid_idx}: Insufficient valid wells after filtering - skipping")
+            return None
         
-        local_wells = wells_df_copy[wells_df_copy['distance'] <= radius_km].copy()
+        print(f"Grid {grid_idx}: Processing {len(local_wells)} wells at ({center_lat:.3f}, {center_lon:.3f})")
         
-        if len(local_wells) < 5:
-            return idx, None, f"Only {len(local_wells)} wells found"
+        # Create interpolation grid around center point
+        lat_range = radius_km / 111.0  # Convert km to degrees
+        lon_range = radius_km / (111.0 * np.cos(np.radians(center_lat)))
         
-        # Generate interpolation for this sub-region
-        local_geojson = generate_geo_json_grid(
-            local_wells,
-            center_point=(center_lat, center_lon),
-            radius_km=radius_km,
-            resolution=resolution,
-            method='ground_water_level_kriging',
-            show_variance=False,
-            auto_fit_variogram=True,
-            variogram_model=variogram_model,
-            soil_polygons=soil_polygons
-        )
+        grid_lat = np.linspace(center_lat - lat_range, center_lat + lat_range, resolution)
+        grid_lon = np.linspace(center_lon - lon_range, center_lon + lon_range, resolution)
         
-        # Store in database immediately
+        # Perform kriging
+        try:
+            krig = OrdinaryKriging(
+                local_wells['longitude'].values,
+                local_wells['latitude'].values,
+                local_wells['ground water level'].values,
+                variogram_model='spherical',
+                verbose=False,
+                enable_plotting=False
+            )
+            
+            z, ss = krig.execute('grid', grid_lon, grid_lat)
+            
+        except Exception as e:
+            print(f"Grid {grid_idx}: Kriging failed - {e}")
+            return None
+        
+        # Convert to GeoJSON
+        features = []
+        for i in range(len(grid_lat)-1):
+            for j in range(len(grid_lon)-1):
+                if not np.isnan(z[i, j]):
+                    # Create polygon for this grid cell
+                    polygon = Polygon([
+                        (grid_lon[j], grid_lat[i]),
+                        (grid_lon[j+1], grid_lat[i]),
+                        (grid_lon[j+1], grid_lat[i+1]),
+                        (grid_lon[j], grid_lat[i+1]),
+                        (grid_lon[j], grid_lat[i])
+                    ])
+                    
+                    feature = {
+                        "type": "Feature",
+                        "geometry": polygon.__geo_interface__,
+                        "properties": {
+                            "yield": float(z[i, j]),
+                            "variance": float(ss[i, j]) if not np.isnan(ss[i, j]) else 0.0,
+                            "grid_idx": grid_idx
+                        }
+                    }
+                    features.append(feature)
+        
+        if not features:
+            print(f"Grid {grid_idx}: No valid features generated")
+            return None
+        
+        geojson = {
+            "type": "FeatureCollection",
+            "features": features
+        }
+        
+        print(f"Grid {grid_idx}: Generated {len(features)} features")
+        return geojson
+        
+    except Exception as e:
+        print(f"Grid {grid_idx}: Error - {e}")
+        return None
+
+def process_grid_point(args):
+    """
+    Process a single grid point (for parallel execution)
+    """
+    grid_idx, center_lat, center_lon, wells_df, db, radius_km, resolution = args
+    
+    # Check if already completed
+    existing = db.get_sub_interpolation(grid_idx, 'canterbury', 'ground_water_level')
+    if existing:
+        print(f"Grid {grid_idx}: Already completed - skipping")
+        return True
+    
+    # Generate the interpolation
+    geojson = generate_sub_interpolation(
+        grid_idx, center_lat, center_lon, wells_df, radius_km, resolution
+    )
+    
+    if geojson:
+        # Store in database
+        feature_count = len(geojson['features'])
         success = db.store_sub_interpolation(
-            idx, 'canterbury', 'ground_water_level', 
-            local_geojson, center_lat, center_lon, len(local_geojson['features'])
+            grid_idx, 'canterbury', 'ground_water_level', 
+            geojson, center_lat, center_lon, feature_count
         )
         
         if success:
-            return idx, local_geojson, f"Success: {len(local_geojson['features'])} features stored"
+            print(f"Grid {grid_idx}: Stored {feature_count} features in database")
+            return True
         else:
-            return idx, None, "Failed to store in database"
-        
-    except Exception as e:
-        return idx, None, f"Error: {str(e)}"
+            print(f"Grid {grid_idx}: Failed to store in database")
+            return False
+    
+    return False
 
-def generate_canterbury_gwl_interpolation_resumable(
+def generate_canterbury_gwl_interpolation(
     wells_df=None, 
     radius_km=15, 
     grid_spacing_km=10,  # 15km radius - 5km overlap = 10km spacing
@@ -117,345 +233,267 @@ def generate_canterbury_gwl_interpolation_resumable(
     max_workers=4
 ):
     """
-    Generate a resumable region-wide groundwater level interpolation for Canterbury
+    Generate resumable Canterbury region-wide groundwater level interpolation
     
     Parameters:
     -----------
     wells_df : DataFrame, optional
-        Wells data. If None, will load from NZ government data
+        Wells data. If None, will load from data_loader
     radius_km : float
-        Radius for each local interpolation (default: 15 km)
+        Interpolation radius in kilometers
     grid_spacing_km : float
-        Spacing between grid points (default: 10 km for 5km overlap)
+        Grid spacing in kilometers
     resolution : int
-        Grid resolution for each sub-region (default: 50)
+        Number of interpolation points per sub-region
     variogram_model : str
-        Variogram model for kriging (default: 'spherical')
+        Kriging variogram model
     max_workers : int
-        Maximum number of parallel workers (default: 4)
+        Number of parallel workers
     
     Returns:
     --------
-    dict
-        GeoJSON FeatureCollection with interpolated groundwater level values
+    dict or None
+        GeoJSON FeatureCollection with interpolated data
     """
-    warnings.filterwarnings('ignore')
-    
-    print("Starting resumable Canterbury region-wide groundwater level interpolation...")
-    start_time = time.time()
+    print("=" * 60)
+    print("Canterbury Regional Groundwater Level Interpolation")
+    print("=" * 60)
+    print(f"Search radius: {radius_km}km")
+    print(f"Grid spacing: {grid_spacing_km}km")
+    print(f"Overlap: {radius_km - grid_spacing_km}km")
+    print(f"Resolution: {resolution} points per sub-region")
+    print(f"Workers: {max_workers}")
+    print()
     
     # Load wells data if not provided
     if wells_df is None:
         print("Loading wells data...")
-        wells_df = load_nz_govt_data()
+        wells_df = load_wells_data()
+        if wells_df is None or wells_df.empty:
+            print("❌ Failed to load wells data")
+            return None
     
-    # Get Canterbury bounds
-    bounds = get_canterbury_bounds()
-    print(f"Canterbury bounds: {bounds}")
-    print(f"Using 15km radius with 5km overlap (10km grid spacing)")
+    # Filter for Canterbury region and valid data
+    canterbury_bounds = {
+        'south': -45.0,
+        'north': -42.5,
+        'west': 170.5,
+        'east': 173.5
+    }
     
-    # Load soil polygons
-    soil_polygons = load_soil_polygons()
-    
-    # Filter wells to Canterbury region and valid ground water level data
-    canterbury_wells = wells_df[
-        (wells_df['latitude'] >= bounds['south']) &
-        (wells_df['latitude'] <= bounds['north']) &
-        (wells_df['longitude'] >= bounds['west']) &
-        (wells_df['longitude'] <= bounds['east']) &
-        wells_df['ground water level'].notna() &
-        (wells_df['ground water level'] != 0) &
-        (wells_df['ground water level'].abs() > 0.1)
+    wells_df = wells_df[
+        (wells_df['latitude'] >= canterbury_bounds['south']) &
+        (wells_df['latitude'] <= canterbury_bounds['north']) &
+        (wells_df['longitude'] >= canterbury_bounds['west']) &
+        (wells_df['longitude'] <= canterbury_bounds['east']) &
+        (wells_df['ground water level'].notna()) &
+        (wells_df['ground water level'] > 0)
     ].copy()
     
-    if canterbury_wells.empty:
-        print("No valid ground water level data found in Canterbury region")
-        return {"type": "FeatureCollection", "features": []}
+    print(f"📊 Using {len(wells_df)} wells in Canterbury region")
     
-    print(f"Using {len(canterbury_wells)} wells with valid ground water level data in Canterbury")
-    
-    # Calculate grid parameters
-    center_lat = (bounds['north'] + bounds['south']) / 2
-    km_per_degree_lat = 111.0
-    km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+    # Initialize database
+    try:
+        db = PolygonDatabase()
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        return None
     
     # Create grid points
-    lat_range = bounds['north'] - bounds['south']
-    lon_range = bounds['east'] - bounds['west']
+    grid_points = create_grid_points(canterbury_bounds, grid_spacing_km)
+    total_points = len(grid_points)
     
-    lat_steps = int((lat_range * km_per_degree_lat) / grid_spacing_km) + 1
-    lon_steps = int((lon_range * km_per_degree_lon) / grid_spacing_km) + 1
+    print(f"🗺️  Created {total_points} grid points")
     
-    grid_lats = np.linspace(bounds['south'], bounds['north'], lat_steps)
-    grid_lons = np.linspace(bounds['west'], bounds['east'], lon_steps)
+    # Check progress
+    completed_count = db.count_sub_interpolations('canterbury', 'ground_water_level')
+    print(f"📈 Progress: {completed_count}/{total_points} sub-interpolations completed ({completed_count/total_points*100:.1f}%)")
     
-    # Create all grid point combinations
-    grid_points = []
-    for lat in grid_lats:
-        for lon in grid_lons:
-            grid_points.append((lat, lon))
-    
-    print(f"Generated {len(grid_points)} grid points for interpolation")
-    print(f"Grid dimensions: {lat_steps} x {lon_steps}")
-    
-    # Check existing progress
-    from database import PolygonDatabase
-    db = PolygonDatabase()
-    existing_count = db.count_sub_interpolations('canterbury', 'ground_water_level')
-    print(f"Found {existing_count}/{len(grid_points)} existing sub-interpolations")
-    
-    # Prepare arguments for parallel processing
-    args_list = []
-    for idx, (center_lat, center_lon) in enumerate(grid_points):
-        args_list.append((
-            idx, center_lat, center_lon, canterbury_wells, 
-            radius_km, resolution, variogram_model, soil_polygons
-        ))
-    
-    # Process grid points in parallel
-    successful_interpolations = existing_count
-    
-    print(f"Starting parallel processing with {max_workers} workers...")
-    
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all tasks
-        future_to_idx = {executor.submit(process_grid_point_resumable, args): args[0] for args in args_list}
+    if completed_count < total_points:
+        print("\n🔄 Processing remaining grid points...")
         
-        # Process completed tasks
-        for future in as_completed(future_to_idx):
-            idx = future_to_idx[future]
+        # Prepare arguments for parallel processing
+        process_args = []
+        for idx, (lat, lon) in enumerate(grid_points):
+            process_args.append((idx, lat, lon, wells_df, db, radius_km, resolution))
+        
+        # Process in parallel
+        start_time = time.time()
+        successful = 0
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(process_grid_point, args): args[0] 
+                for args in process_args
+            }
             
-            try:
-                result_idx, result_data, message = future.result()
-                
-                if result_data is not None and "already completed" not in message.lower():
-                    successful_interpolations += 1
-                
-                # Progress update every 5 completed tasks
-                if (result_idx + 1) % 5 == 0:
-                    progress = (successful_interpolations / len(grid_points)) * 100
-                    print(f"Progress: {progress:.1f}% ({successful_interpolations}/{len(grid_points)}) - Point {result_idx + 1}: {message}")
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    success = future.result()
+                    if success:
+                        successful += 1
                     
-            except Exception as e:
-                print(f"Error processing grid point {idx}: {e}")
-    
-    print(f"Completed parallel processing. {successful_interpolations}/{len(grid_points)} total sub-interpolations")
+                    # Progress update
+                    current_completed = db.count_sub_interpolations('canterbury', 'ground_water_level')
+                    elapsed = time.time() - start_time
+                    progress = current_completed / total_points * 100
+                    
+                    if current_completed > 0:
+                        eta = (elapsed / current_completed) * (total_points - current_completed)
+                        print(f"Progress: {current_completed}/{total_points} ({progress:.1f}%) - ETA: {eta/60:.1f}min")
+                    
+                except Exception as e:
+                    print(f"Grid {idx}: Processing failed - {e}")
+        
+        print(f"\n✅ Completed {successful} new sub-interpolations in {(time.time()-start_time)/60:.1f} minutes")
     
     # Merge all sub-interpolations
-    print("Merging all sub-interpolations into final surface...")
-    all_sub_interpolations = db.list_sub_interpolations('canterbury', 'ground_water_level')
+    print("\n🔗 Merging sub-interpolations into final surface...")
     
-    all_features = []
-    all_point_values = []
-    
-    for sub_interp in all_sub_interpolations:
-        geojson_data = sub_interp['geojson_data']
-        if isinstance(geojson_data, str):
-            geojson_data = json.loads(geojson_data)
+    try:
+        sub_interpolations = db.list_sub_interpolations('canterbury', 'ground_water_level')
         
-        for feature in geojson_data['features']:
-            coords = feature['geometry']['coordinates'][0]
-            centroid_x = np.mean([p[0] for p in coords[:-1]])
-            centroid_y = np.mean([p[1] for p in coords[:-1]])
-            value = feature['properties']['yield']
-            
-            if value > 0.1:  # Only include significant values
-                all_point_values.append([centroid_x, centroid_y, value])
-                all_features.append(feature)
-    
-    print(f"Collected {len(all_features)} features from sub-interpolations")
-    
-    # Remove duplicate points and create final surface
-    if all_point_values:
-        print("Removing duplicate points and creating final surface...")
+        if not sub_interpolations:
+            print("❌ No sub-interpolations found to merge")
+            return None
         
-        point_values = np.array(all_point_values)
-        unique_points = []
-        unique_values = []
+        print(f"📋 Merging {len(sub_interpolations)} sub-interpolations...")
         
-        # Remove duplicates within 100m
-        center_lat = (bounds['north'] + bounds['south']) / 2
-        km_per_degree_lat = 111.0
-        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        # Combine all features
+        all_features = []
+        for sub in sub_interpolations:
+            if 'features' in sub['geojson_data']:
+                all_features.extend(sub['geojson_data']['features'])
         
-        for i, (x, y, val) in enumerate(point_values):
-            keep = True
-            for j, (ux, uy, _) in enumerate(unique_points):
-                dist_km = np.sqrt(
-                    ((x - ux) * km_per_degree_lon)**2 +
-                    ((y - uy) * km_per_degree_lat)**2
-                )
-                if dist_km < 0.1:  # 100m threshold
-                    # Average values for close points
-                    unique_values[j] = (unique_values[j] + val) / 2
-                    keep = False
-                    break
-            if keep:
-                unique_points.append([x, y])
-                unique_values.append(val)
+        if not all_features:
+            print("❌ No features found in sub-interpolations")
+            return None
         
-        print(f"Reduced {len(point_values)} points to {len(unique_points)} unique points")
-        
-        # Create final triangulated surface
-        if len(unique_points) > 3:
-            try:
-                point_values = np.array(unique_points)
-                unique_values = np.array(unique_values)
-                
-                tri = Delaunay(point_values)
-                final_features = []
-                
-                for simplex in tri.simplices:
-                    vertices = point_values[simplex]
-                    vertex_values = unique_values[simplex]
-                    avg_value = float(np.mean(vertex_values))
-                    
-                    if avg_value > 0.1:  # Only include significant values
-                        poly = {
-                            "type": "Feature",
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [[
-                                    [float(vertices[0, 0]), float(vertices[0, 1])],
-                                    [float(vertices[1, 0]), float(vertices[1, 1])],
-                                    [float(vertices[2, 0]), float(vertices[2, 1])],
-                                    [float(vertices[0, 0]), float(vertices[0, 1])]
-                                ]]
-                            },
-                            "properties": {
-                                "yield": avg_value
-                            }
-                        }
-                        final_features.append(poly)
-                
-                geojson = {
-                    "type": "FeatureCollection",
-                    "features": final_features
-                }
-                
-            except Exception as e:
-                print(f"Triangulation error: {e}, using raw features")
-                geojson = {
-                    "type": "FeatureCollection", 
-                    "features": all_features
-                }
-        else:
-            geojson = {
-                "type": "FeatureCollection",
-                "features": all_features
-            }
-    else:
-        geojson = {
+        # Create final GeoJSON
+        final_geojson = {
             "type": "FeatureCollection",
-            "features": []
+            "features": all_features
         }
-    
-    # Apply soil polygon clipping to final surface
-    if soil_polygons is not None and len(geojson['features']) > 0:
-        print("Applying soil polygon clipping to final surface...")
+        
+        print(f"✅ Merged {len(all_features)} features into final surface")
+        
+        # Optional: Filter by soil drainage areas
         try:
-            # Create merged soil geometry
-            soil_geometries = [geom for geom in soil_polygons.geometry if geom is not None and geom.is_valid]
-            if soil_geometries:
-                merged_soil_geometry = unary_union(soil_geometries)
-                
-                clipped_features = []
-                for feature in geojson['features']:
-                    feature_geometry = Polygon(feature['geometry']['coordinates'][0])
-                    if feature_geometry.intersects(merged_soil_geometry):
-                        clipped_features.append(feature)
-                
-                geojson['features'] = clipped_features
-                print(f"Clipped to {len(clipped_features)} features within soil drainage areas")
+            print("🌱 Applying soil drainage filtering...")
+            final_geojson = filter_by_soil_polygons(final_geojson)
+            print(f"✅ Soil filtering complete: {len(final_geojson['features'])} features remain")
         except Exception as e:
-            print(f"Soil clipping error: {e}, using unclipped surface")
-    
-    total_time = time.time() - start_time
-    print(f"Regional interpolation completed in {total_time:.1f} seconds")
-    print(f"Final GeoJSON contains {len(geojson['features'])} features")
-    
-    return geojson
+            print(f"⚠️  Soil filtering failed: {e} - continuing without filtering")
+        
+        return final_geojson
+        
+    except Exception as e:
+        print(f"❌ Error merging sub-interpolations: {e}")
+        return None
 
-def save_regional_interpolation(output_file="canterbury_gwl_interpolation.json", store_in_database=True):
+def save_regional_interpolation(
+    filename="sample_data/canterbury_gwl_interpolation.json", 
+    store_in_database=True
+):
     """
-    Generate and save the Canterbury groundwater level interpolation
-    """
-    print("Generating Canterbury region-wide groundwater level interpolation...")
-    print("Using 15km radius with 5km overlap (10km grid spacing)")
+    Generate and save the regional interpolation
     
-    # Generate the interpolation with resumable approach
-    geojson = generate_canterbury_gwl_interpolation_resumable(
-        radius_km=15,
-        grid_spacing_km=10,  # 15km radius - 5km overlap
+    Parameters:
+    -----------
+    filename : str
+        Output filename for GeoJSON
+    store_in_database : bool
+        Whether to store in database
+    
+    Returns:
+    --------
+    str or None
+        Output filename if successful
+    """
+    # Generate the interpolation with 15km radius and 5km overlap
+    overlap_km = 5
+    radius_km = 15
+    grid_spacing_km = radius_km - overlap_km  # 10km spacing for 5km overlap
+    
+    geojson = generate_canterbury_gwl_interpolation(
+        radius_km=radius_km,
+        grid_spacing_km=grid_spacing_km,
         resolution=50,
         variogram_model='spherical',
         max_workers=4
     )
     
-    # Store in database if requested
+    if geojson is None:
+        print("❌ Failed to generate regional interpolation")
+        return None
+    
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    
+    # Save to file
+    try:
+        with open(filename, 'w') as f:
+            json.dump(geojson, f, indent=2)
+        print(f"💾 Saved regional interpolation to: {filename}")
+    except Exception as e:
+        print(f"❌ Failed to save file: {e}")
+        return None
+    
+    # Store in database
     if store_in_database:
         try:
-            from database import PolygonDatabase
             db = PolygonDatabase()
-            success = db.store_regional_interpolation('canterbury', geojson, 'ground_water_level')
+            success = db.store_regional_interpolation(
+                'canterbury', geojson, 'ground_water_level'
+            )
             if success:
-                print("✅ Regional interpolation stored in database successfully!")
+                print("💾 Stored regional interpolation in database")
             else:
-                print("❌ Failed to store in database, falling back to file storage")
+                print("⚠️  Failed to store in database")
         except Exception as e:
-            print(f"❌ Database storage failed: {e}")
-            print("Falling back to file storage")
+            print(f"⚠️  Database storage failed: {e}")
     
-    # Save to file as backup
-    os.makedirs("sample_data", exist_ok=True)
-    output_path = os.path.join("sample_data", output_file)
-    
-    try:
-        with open(output_path, 'w') as f:
-            json.dump(geojson, f, indent=2)
-        print(f"Regional interpolation saved to {output_path}")
-        print(f"File size: {os.path.getsize(output_path) / (1024*1024):.1f} MB")
-        return output_path
-    except Exception as e:
-        print(f"Error saving file: {e}")
-        return None
+    return filename
 
-def load_regional_interpolation(input_file="canterbury_gwl_interpolation.json", from_database=True):
+def load_regional_interpolation(from_database=True):
     """
-    Load the pre-computed Canterbury groundwater level interpolation
+    Load regional interpolation from database or file
+    
+    Parameters:
+    -----------
+    from_database : bool
+        Whether to load from database first
+    
+    Returns:
+    --------
+    dict or None
+        GeoJSON data if found
     """
-    # Try database first if requested
+    # Try database first
     if from_database:
         try:
-            from database import PolygonDatabase
             db = PolygonDatabase()
             geojson = db.get_regional_interpolation('canterbury', 'ground_water_level')
             if geojson:
-                print(f"✅ Loaded regional interpolation from database")
-                print(f"Contains {len(geojson['features'])} features")
+                print("📊 Loaded regional interpolation from database")
                 return geojson
-            else:
-                print("No regional interpolation found in database, trying file...")
         except Exception as e:
-            print(f"Database loading failed: {e}, trying file...")
+            print(f"⚠️  Database load failed: {e}")
     
-    # Fallback to file loading
-    input_path = os.path.join("sample_data", input_file)
-    
-    if os.path.exists(input_path):
+    # Fallback to file
+    filename = "sample_data/canterbury_gwl_interpolation.json"
+    if os.path.exists(filename):
         try:
-            with open(input_path, 'r') as f:
+            with open(filename, 'r') as f:
                 geojson = json.load(f)
-            print(f"Loaded regional interpolation from {input_path}")
-            print(f"Contains {len(geojson['features'])} features")
+            print(f"📊 Loaded regional interpolation from: {filename}")
             return geojson
         except Exception as e:
-            print(f"Error loading regional interpolation: {e}")
-            return None
-    else:
-        print(f"Regional interpolation file not found: {input_path}")
-        return None
+            print(f"❌ Failed to load file: {e}")
+    
+    return None
 
 if __name__ == "__main__":
     # Generate and save the regional interpolation
-    save_regional_interpolation()
+    save_regional_interpolation(store_in_database=True)

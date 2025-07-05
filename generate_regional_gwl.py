@@ -15,7 +15,7 @@ from pykrige.ok import OrdinaryKriging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from database import PolygonDatabase
-from data_loader import load_data
+from data_loader import load_nz_govt_data
 from utils import filter_by_soil_polygons
 
 def create_grid_points(bounds, spacing_km=10):
@@ -268,7 +268,7 @@ def generate_canterbury_gwl_interpolation(
     # Load wells data if not provided
     if wells_df is None:
         print("Loading wells data...")
-        wells_df = load_data()
+        wells_df = load_nz_govt_data()
         if wells_df is None or wells_df.empty:
             print("❌ Failed to load wells data")
             return None

@@ -10,7 +10,7 @@ import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask
+from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data
 from database import PolygonDatabase
 # Regional heatmap removed per user request
 
@@ -984,11 +984,21 @@ with main_col2:
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
                         )
                         
-                        # Get the GeoJSON data that creates the triangular mesh visualization
-                        geojson_data = None
-                        if 'geo_json_data' in st.session_state and st.session_state.geo_json_data:
-                            geojson_data = st.session_state.geo_json_data
-                            print(f"Storing GeoJSON with {len(geojson_data.get('features', []))} features")
+                        # Generate the GeoJSON triangular mesh data that creates the proper visualization
+                        geojson_data = generate_geo_json_grid(
+                            st.session_state.filtered_wells.copy(),
+                            st.session_state.selected_point,
+                            st.session_state.search_radius,
+                            resolution=100,
+                            method=st.session_state.interpolation_method,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                            indicator_mask=st.session_state.get('indicator_mask', None)
+                        )
+                        
+                        if geojson_data and geojson_data.get('features'):
+                            print(f"Generated fresh GeoJSON with {len(geojson_data.get('features', []))} triangular features for storage")
+                        else:
+                            print("Warning: No GeoJSON data generated, will store point data only")
                         
                         # Store the heatmap in the database
                         heatmap_id = st.session_state.polygon_db.store_heatmap(

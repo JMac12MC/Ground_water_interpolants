@@ -121,11 +121,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 06, 2025**: Enhanced indicator kriging with three-tier color system
+  - Resolved critical data filtering bug: NaN values now properly excluded from analysis
+  - Upgraded from binary (red/green) to three-tier indicator kriging visualization
+  - Color mapping: Red (0-0.5 L/s), Orange (0.5-0.75 L/s), Green (≥0.75 L/s)
+  - Updated legend and color assignment functions for three-tier system
+  - Fixed data integrity: legitimate 0.0 yield wells included, empty values excluded
 - **July 06, 2025**: Completed PostgreSQL database integration for merged polygon storage
   - Created PolygonDatabase class with full CRUD operations
   - Added database management interface to sidebar
   - Integrated polygon saving/loading with analysis sessions
-  - Fixed syntax errors and ensured app stability
   - Database stores polygon geometry, properties, well statistics, and metadata
 
 ## Changelog

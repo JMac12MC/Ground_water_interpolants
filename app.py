@@ -13,6 +13,7 @@ from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, l
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance
 from database import PolygonDatabase
 from regional_heatmap import generate_default_regional_heatmap, RegionalHeatmapGenerator
+from tiled_regional_heatmap import generate_tiled_regional_heatmap
 
 # Set page configuration with stability settings
 st.set_page_config(
@@ -195,11 +196,12 @@ with st.sidebar:
     if st.button("🚀 Generate Regional Heatmap", key="generate_regional_btn"):
         if st.session_state.wells_data is not None:
             try:
-                with st.spinner("Generating regional heatmap (this may take several minutes)..."):
-                    # Generate comprehensive regional heatmap
-                    regional_data = generate_default_regional_heatmap(
+                with st.spinner("Generating tiled regional heatmap (this may take a few minutes)..."):
+                    # Generate comprehensive regional heatmap using tiled approach
+                    regional_data = generate_tiled_regional_heatmap(
                         st.session_state.wells_data, 
-                        st.session_state.soil_polygons
+                        variable='depth_to_groundwater',
+                        soil_polygons=st.session_state.soil_polygons
                     )
                     
                     if regional_data and len(regional_data) > 0:
@@ -255,16 +257,16 @@ with st.sidebar:
 
     # Load existing regional heatmap if available
     if st.session_state.regional_heatmap_data is None and st.session_state.wells_data is not None:
-        # Try to load cached regional heatmap
-        cached_heatmap = st.session_state.regional_heatmap_generator.load_regional_heatmap()
-        if cached_heatmap:
-            # Apply soil polygon mask
-            if st.session_state.soil_polygons is not None:
-                cached_heatmap = st.session_state.regional_heatmap_generator.apply_soil_polygon_mask(
-                    cached_heatmap, st.session_state.soil_polygons
-                )
-            st.session_state.regional_heatmap_data = cached_heatmap
-            st.success(f"Loaded cached regional heatmap ({len(cached_heatmap)} points)")
+        # Try to load cached tiled regional heatmap
+        try:
+            from tiled_regional_heatmap import TiledRegionalHeatmapGenerator
+            tiled_generator = TiledRegionalHeatmapGenerator()
+            cached_heatmap = tiled_generator.load_heatmap_cache('depth_to_groundwater')
+            if cached_heatmap:
+                st.session_state.regional_heatmap_data = cached_heatmap
+                st.success(f"Loaded cached tiled regional heatmap ({len(cached_heatmap)} points)")
+        except Exception as e:
+            pass  # No cached data available
 
 
 

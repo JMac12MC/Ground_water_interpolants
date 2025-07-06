@@ -12,8 +12,7 @@ from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance
 from database import PolygonDatabase
-from regional_heatmap import generate_default_regional_heatmap, RegionalHeatmapGenerator
-from tiled_regional_heatmap import generate_tiled_regional_heatmap
+# Regional heatmap removed per user request
 
 # Set page configuration with stability settings
 st.set_page_config(
@@ -63,12 +62,7 @@ if 'polygon_db' not in st.session_state:
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         st.session_state.polygon_db = None
-if 'regional_heatmap_data' not in st.session_state:
-    st.session_state.regional_heatmap_data = None
-if 'show_regional_heatmap' not in st.session_state:
-    st.session_state.show_regional_heatmap = True
-if 'regional_heatmap_generator' not in st.session_state:
-    st.session_state.regional_heatmap_generator = RegionalHeatmapGenerator()
+# Regional heatmap session state removed per user request
 
 # Add banner
 add_banner()
@@ -156,6 +150,10 @@ with st.sidebar:
                 st.session_state.wells_data = load_custom_data(uploaded_file)
 
     st.header("Filters")
+    
+    # Manual refresh button for when hot reload isn't working
+    if st.button("🔄 Refresh App", help="Click if the app doesn't update automatically"):
+        st.rerun()
 
     # Radius filter (now used for local context when pre-computed heatmaps are available)
     st.session_state.search_radius = st.slider(

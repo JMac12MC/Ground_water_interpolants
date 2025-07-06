@@ -179,6 +179,36 @@ with st.sidebar:
     else:
         st.write("**Standard Mode**: Click on map to generate local interpolation within search radius.")
 
+    # Regional Heatmap Controls (moved to prominent position)
+    st.header("Regional Background")
+    st.session_state.show_regional_heatmap = st.checkbox(
+        "Show Regional Groundwater Depth Heatmap",
+        value=st.session_state.show_regional_heatmap,
+        help="Display a high-resolution background heatmap covering the entire Canterbury region using all available well data"
+    )
+    
+    # Generate regional heatmap button
+    if st.button("Generate Regional Heatmap"):
+        if st.session_state.wells_data is not None:
+            with st.spinner("Generating regional heatmap (this may take several minutes)..."):
+                # Generate comprehensive regional heatmap
+                st.session_state.regional_heatmap_data = generate_default_regional_heatmap(
+                    st.session_state.wells_data, 
+                    st.session_state.soil_polygons
+                )
+                if st.session_state.regional_heatmap_data:
+                    st.success(f"Generated regional heatmap with {len(st.session_state.regional_heatmap_data)} data points")
+                else:
+                    st.error("Failed to generate regional heatmap")
+        else:
+            st.warning("No wells data available for regional heatmap generation")
+    
+    # Show regional heatmap status
+    if st.session_state.regional_heatmap_data:
+        st.info(f"✓ Regional heatmap ready: {len(st.session_state.regional_heatmap_data):,} data points")
+    elif st.session_state.show_regional_heatmap:
+        st.warning("Regional heatmap not available. Click 'Generate Regional Heatmap' to create one.")
+
     # Visualization method selection - single dropdown for all options
     st.header("Analysis Options")
     visualization_method = st.selectbox(
@@ -205,30 +235,6 @@ with st.sidebar:
     if 'variogram_model' not in st.session_state:
         st.session_state.variogram_model = 'spherical'
 
-    # Regional Heatmap Controls
-    st.header("Regional Background")
-    st.session_state.show_regional_heatmap = st.checkbox(
-        "Show Regional Groundwater Depth Heatmap",
-        value=st.session_state.show_regional_heatmap,
-        help="Display a high-resolution background heatmap covering the entire Canterbury region using all available well data"
-    )
-    
-    # Generate regional heatmap button
-    if st.button("Generate Regional Heatmap"):
-        if st.session_state.wells_data is not None:
-            with st.spinner("Generating regional heatmap (this may take several minutes)..."):
-                # Generate comprehensive regional heatmap
-                st.session_state.regional_heatmap_data = generate_default_regional_heatmap(
-                    st.session_state.wells_data, 
-                    st.session_state.soil_polygons
-                )
-                if st.session_state.regional_heatmap_data:
-                    st.success(f"Generated regional heatmap with {len(st.session_state.regional_heatmap_data)} data points")
-                else:
-                    st.error("Failed to generate regional heatmap")
-        else:
-            st.warning("No wells data available for regional heatmap generation")
-    
     # Load existing regional heatmap if available
     if st.session_state.regional_heatmap_data is None and st.session_state.wells_data is not None:
         # Try to load cached regional heatmap
@@ -240,13 +246,7 @@ with st.sidebar:
                     cached_heatmap, st.session_state.soil_polygons
                 )
             st.session_state.regional_heatmap_data = cached_heatmap
-            st.sidebar.success(f"Loaded cached regional heatmap ({len(cached_heatmap)} points)")
-    
-    # Show regional heatmap status
-    if st.session_state.regional_heatmap_data:
-        st.sidebar.info(f"✓ Regional heatmap ready: {len(st.session_state.regional_heatmap_data):,} data points")
-    elif st.session_state.show_regional_heatmap:
-        st.sidebar.warning("Regional heatmap not available. Click 'Generate Regional Heatmap' to create one.")
+            st.success(f"Loaded cached regional heatmap ({len(cached_heatmap)} points)")
 
 
 

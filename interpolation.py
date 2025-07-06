@@ -145,22 +145,22 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # For indicator kriging, we need wells with ACTUAL yield data (including 0.0)
         # But exclude wells that have missing yield data entirely
         wells_df_original = wells_df.copy()
-        
+
         # Only filter for valid coordinates and yield_rate column existence
         if 'yield_rate' not in wells_df_original.columns:
             return {"type": "FeatureCollection", "features": []}
-        
+
         # For indicator kriging, be more selective about 0.0 values
         # Only include wells that are explicitly water wells with yield measurements
         # Exclude wells that appear to be monitoring, geotechnical, or no-yield wells
-        
+
         # Filter for valid coordinates and wells with actual yield measurements
         valid_coord_mask = (
             wells_df_original['latitude'].notna() & 
             wells_df_original['longitude'].notna() &
             wells_df_original['yield_rate'].notna()  # Must have yield data
         )
-        
+
         # Additional filtering to exclude wells that shouldn't be in indicator kriging
         if 'well_use' in wells_df_original.columns:
             # Exclude geotechnical/geological investigation wells
@@ -169,9 +169,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 case=False, na=False, regex=True
             )
             valid_coord_mask = valid_coord_mask & investigation_mask
-        
+
         wells_df = wells_df_original[valid_coord_mask].copy()
-        
+
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
 
@@ -183,18 +183,18 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # 0.5-0.75: Moderate yield (0.625) -> Orange  
         # 0.75-1.0: Good yield (0.875) -> Green
         raw_yields = wells_df['yield_rate'].values.astype(float)
-        
+
         # Create three-tier classification
         yields = np.zeros_like(raw_yields)
         yields[(raw_yields >= 0.0) & (raw_yields < 0.5)] = 0.25   # Poor - Red
         yields[(raw_yields >= 0.5) & (raw_yields < 0.75)] = 0.625  # Moderate - Orange
         yields[raw_yields >= 0.75] = 0.875                         # Good - Green
-        
+
         # Count wells in each category
         poor_count = np.sum((raw_yields >= 0.0) & (raw_yields < 0.5))
         moderate_count = np.sum((raw_yields >= 0.5) & (raw_yields < 0.75))
         good_count = np.sum(raw_yields >= 0.75)
-        
+
         print(f"Three-tier indicator kriging: using {len(yields)} wells")
         print(f"Poor yield (0.0-0.5 L/s): {poor_count} wells ({100*poor_count/len(yields):.1f}%)")
         print(f"Moderate yield (0.5-0.75 L/s): {moderate_count} wells ({100*moderate_count/len(yields):.1f}%)")
@@ -291,7 +291,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Use spherical model with limited range to prevent high values far from viable wells
             max_range_km = min(radius_km * 0.5, 5.0)  # Limit influence to half radius or 5km max
             range_degrees = max_range_km / 111.0  # Convert km to degrees (rough approximation)
-            
+
             OK = OrdinaryKriging(
                 lon_values, lat_values, yields,
                 variogram_model='spherical',  # Better spatial control than linear
@@ -306,42 +306,42 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
             # Ensure values are in [0,1] range (probabilities)
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
-            
+
             # Apply distance-based decay to prevent high values far from good wells
             # Calculate distances from each grid point to nearest good well (yield >= 0.75)
             good_wells_mask = yields >= 0.75  # Wells with good yield indicators
             if np.any(good_wells_mask):
                 good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
                 grid_coords = grid_points
-                
+
                 # Calculate distance to nearest good well for each grid point
                 from scipy.spatial.distance import cdist
                 distances = cdist(grid_coords, good_coords)
                 min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
-                
+
                 # Apply exponential decay for distances > 3km
                 decay_threshold_km = 3.0
                 decay_factor = 0.3  # Gentle decay to preserve three-tier structure
-                
+
                 distance_mask = min_distances_km > decay_threshold_km
                 excess_distance = min_distances_km[distance_mask] - decay_threshold_km
                 decay_multiplier = np.exp(-decay_factor * excess_distance)
                 interpolated_z[distance_mask] *= decay_multiplier
-            
+
             # Classify interpolated values into three tiers
             # Preserve three-tier structure: 0.25 (red), 0.625 (orange), 0.875 (green)
             final_values = np.zeros_like(interpolated_z)
             final_values[interpolated_z < 0.4] = 0.25   # Red tier
             final_values[(interpolated_z >= 0.4) & (interpolated_z < 0.7)] = 0.625   # Orange tier
             final_values[interpolated_z >= 0.7] = 0.875   # Green tier
-            
+
             interpolated_z = final_values
-            
+
             # Count points in each tier
             red_count = np.sum(interpolated_z == 0.25)
             orange_count = np.sum(interpolated_z == 0.625)
             green_count = np.sum(interpolated_z == 0.875)
-            
+
             print(f"Three-tier indicator kriging results:")
             print(f"Red (poor): {red_count} points, Orange (moderate): {orange_count} points, Green (good): {green_count} points")
 
@@ -1381,7 +1381,8 @@ def get_prediction_at_point(wells_df, point_lat, point_lon):
     if not isinstance(wells_df, pd.DataFrame) or wells_df.empty:
         return 0
 
-    # Extract coordinates and yields
+    # Extract coordinates```python
+ and yields
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
     yields = wells_df['yield_rate'].values.astype(float)
@@ -1502,8 +1503,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     radius_km : float
         Radius in kilometers to generate the variance data for.
     resolution : int
-        Number of points to generate<previous_generation>```
- in each dimension.
+        Number of points to generate in each dimension.
     variogram_model : str, optional
         Variogram model to use for kriging (e.g., 'linear', 'spherical', 'gaussian').
         Defaults to 'spherical'.
@@ -1844,3 +1844,314 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     except Exception as e:
         print(f"Error calculating kriging variance: {e}")
         return []  # Return empty list in case of error
+
+# The following function is for create_base_map,
+# I am adding the code here for generating the map with three-tier color system with red (0-0.5), orange (0.5-0.75), and green (0.75-1.0).
+
+def create_base_map(location, zoom_start=10, tiles='OpenStreetMap'):
+    """
+    Create a base map centered at the specified location.
+
+    Parameters:
+    -----------
+    location : tuple
+        Tuple containing (latitude, longitude) of the center point.
+    zoom_start : int, optional
+        Initial zoom level. Defaults to 10.
+    tiles : str, optional
+        Tile provider for the map. Defaults to 'OpenStreetMap'.
+
+    Returns:
+    --------
+    folium.Map
+        A folium Map object.
+    """
+    import folium
+
+    m = folium.Map(location=location, zoom_start=zoom_start, tiles=tiles)
+    return m
+
+def add_heatmap(m, data, radius=25, blur=15, max_value=1.0):
+    """
+    Add a heatmap layer to the map.
+
+    Parameters:
+    -----------
+    m : folium.Map
+        The folium Map object to add the heatmap to.
+    data : list
+        List of [lat, lng, intensity] points for the heatmap.
+    radius : int, optional
+        Radius of each point. Defaults to 25.
+    blur : int, optional
+        Amount of blur. Defaults to 15.
+    max_value : float, optional
+        Maximum intensity value. Defaults to 1.0.
+    """
+    from folium.plugins import HeatMap
+
+    # Ensure data is not empty
+    if not data:
+        print("Warning: Heatmap data is empty. No heatmap will be added.")
+        return
+
+    # Create HeatMap layer and add it to the map
+    hm = HeatMap(
+        data,
+        radius=radius,
+        blur=blur,
+        max_val=max_value,
+        gradient={0.4: 'blue', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red'}  # Custom gradient
+    )
+    hm.add_to(m)
+
+def add_circle_markers(m, wells_df, color='blue', radius=5, popup_text=None):
+    """
+    Add circle markers to the map for each well.
+
+    Parameters:
+    -----------
+    m : folium.Map
+        The folium Map object to add the markers to.
+    wells_df : DataFrame
+        DataFrame containing well data with latitude, longitude, and optional
+        columns for popup text.
+    color : str, optional
+        Color of the markers. Defaults to 'blue'.
+    radius : int, optional
+        Radius of the markers. Defaults to 5.
+    popup_text : list, optional
+        List of column names to include in the popup text. Defaults to None.
+    """
+    import folium
+
+    # Ensure wells_df is not empty
+    if not isinstance(wells_df, pd.DataFrame) or wells_df.empty:
+        print("Warning: wells_df is empty. No circle markers will be added.")
+        return
+
+    # Iterate through each well and add a circle marker
+    for idx, row in wells_df.iterrows():
+        lat = float(row['latitude'])
+        lon = float(row['longitude'])
+
+        # Create popup text if popup_text is specified
+        if popup_text:
+            popup_content = ""
+            for col in popup_text:
+                if col in row:
+                    popup_content += f"<b>{col}:</b> {row[col]}<br>"
+            popup = folium.Popup(popup_content, max_width=300)
+        else:
+            popup = None
+
+        # Create circle marker
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=radius,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.6,
+            popup=popup
+        ).add_to(m)
+
+def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolution=50, interpolation_method='kriging', show_variance=False, variogram_model='spherical', soil_polygons=None):
+    """
+    Create a Folium map with interpolated groundwater yield data as a heat map.
+
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        DataFrame containing well data with latitude, longitude, and yield_rate columns.
+    center_point : tuple
+        Tuple containing (latitude, longitude) of the map's center point.
+    radius_km : float
+        Radius in kilometers to generate the heat map data for.
+    resolution : int
+        Number of points to generate in each dimension for interpolation.
+    interpolation_method : str, optional
+        Interpolation method to use ('kriging', 'idw', 'rf_kriging'). Defaults to 'kriging'.
+    show_variance : bool, optional
+        Whether to show kriging variance instead of interpolated values.
+    variogram_model : str, optional
+        Variogram model to use for kriging (e.g., 'linear', 'spherical', 'gaussian').
+        Defaults to 'spherical'.
+    soil_polygons : GeoDataFrame, optional
+        Soil polygon data for clipping the interpolation output.
+
+    Returns:
+    --------
+    folium.Map
+        A Folium Map object with a heat map layer of interpolated yield data.
+    """
+    import folium
+    import streamlit as st
+
+    # Create the base map
+    m = create_base_map(center_point, zoom_start=10)
+
+    # Try to get the heat map data
+    try:
+        if show_variance:
+            # Calculate kriging variance for uncertainty visualization
+            heat_data = calculate_kriging_variance(wells_df, center_point, radius_km, resolution, variogram_model, soil_polygons=soil_polygons)
+            # Set a maximum variance value for the heatmap
+            max_value = 0.1  # Adjust this value as needed based on your data
+        else:
+            # Generate heat map data using the specified interpolation method
+            heat_data = generate_heat_map_data(wells_df, center_point, radius_km, resolution, interpolation_method, soil_polygons=soil_polygons)
+
+            # Calculate max_value
+            if heat_data:
+                max_value = max(point[2] for point in heat_data)
+            else:
+                max_value = 1.0
+
+        if heat_data:
+            # Add the heatmap layer to the map
+            # Define colors based on what we're displaying
+                    def get_color(value):
+                        if st.session_state.interpolation_method == 'indicator_kriging':
+                            # Three-tier indicator classification
+                            if value < 0.5:
+                                return '#FF0000'    # Red (0-0.5): Poor yield
+                            elif value < 0.75:
+                                return '#FFA500'    # Orange (0.5-0.75): Moderate yield
+                            else:
+                                return '#00FF00'    # Green (0.75-1.0): Good yield
+                        elif st.session_state.interpolation_method == 'depth_kriging':
+                            # Create 15-band color scale for depth
+                            step = max_value / 15.0
+                            # Depth colors: green (shallow) to red (deep)
+                            colors = [
+                                '#00ff00',  # Green (shallow depth)
+                                '#33ff00',
+                                '#66ff00',
+                                '#99ff00',
+                                '#ccff00',
+                                '#ffff00',  # Yellow
+                                '#ffcc00',
+                                '#ff9900',
+                                '#ff6600',
+                                '#ff3300',
+                                '#ff0000',  # Red (deep depth)
+                                '#cc0000',
+                                '#990000',
+                                '#660000',
+                                '#330000'   # Dark red (very deep)
+                            ]
+                            band_index = min(14, int(value / step))
+                            return colors[band_index]
+                        elif st.session_state.interpolation_method == 'ground_water_level_kriging':
+                            # Create 15-band color scale for ground water level
+                            step = max_value / 15.0
+                            # Ground water level colors: blue (low level) to brown (high level)
+                            colors = [
+                                '#000080',  # Dark blue (low level)
+                                '#0033CC',
+                                '#0066FF',
+                                '#0099FF',
+                                '#00CCFF',
+                                '#00FFFF',  # Cyan (medium-low)
+                                '#66FFCC',
+                                '#99FF99',
+                                '#CCFF66',
+                                '#FFFF33',  # Yellow (medium)
+                                '#FFCC00',
+                                '#FF9900',
+                                '#FF6600',
+                                '#CC3300',
+                                '#993300'   # Brown (high level)
+                            ]
+                            band_index = min(14, int(value / step))
+                            return colors[band_index]
+                        else:
+                            # Create 15-band color scale for yield
+                            step = max_value / 15.0
+                            # Yield colors: blue (low yield) to red (high yield)
+                            colors = [
+                                '#000080',  # Band 1: Dark blue
+                                '#0000B3',  # Band 2: Blue
+                                '#0000E6',  # Band 3: Bright blue
+                                '#0033FF',  # Band 4: Blue-cyan
+                                '#0066FF',  # Band 5: Light blue
+                                '#0099FF',  # Band 6: Sky blue
+                                '#00CCFF',  # Band 7: Cyan
+                                '#00FFCC',  # Band 8: Cyan-green
+                                '#00FF99',  # Band 9: Aqua green
+                                '#00FF66',  # Band 10: Green-yellow
+                                '#33FF33',  # Band 11: Green
+                                '#99FF00',  # Band 12: Yellow-green
+                                '#FFFF00',  # Band 13: Yellow
+                                '#FF9900',  # Band 14: Orange
+                                '#FF0000'   # Band 15: Red
+                            ]
+                            band_index = min(14, int(value / step))
+                            return colors[band_index]
+
+            if show_variance:
+                add_heatmap(m, heat_data, radius=20, blur=15, max_value=max_value)  # Show variance as heatmap
+            else:
+                add_heatmap(m, heat_data, radius=25, blur=15, max_value=max_value)  # Show yield/depth as heatmap
+        else:
+            print("No heat data generated")
+
+    except Exception as e:
+        print(f"Error generating or adding heatmap: {e}")
+
+    # Add circle markers for the well locations
+    add_circle_markers(m, wells_df, color='black', radius=4, popup_text=['name', 'yield_rate', 'depth_to_groundwater', 'depth'])
+
+    # Add a colormap legend to the map
+    try:
+        if show_variance:
+            # Variance colormap legend
+            colormap = folium.LinearColormap(
+                colors=['blue', 'lime', 'yellow', 'red'],
+                vmin=0,
+                vmax=max_value,
+                caption='Kriging Variance (Uncertainty)'
+            )
+            m.add_child(colormap)
+        elif st.session_state.interpolation_method == 'indicator_kriging':
+                        # Three-tier indicator kriging legend
+                        colormap = folium.StepColormap(
+                            colors=['#FF0000', '#FFA500', '#00FF00'],  # Red, Orange, Green
+                            vmin=0,
+                            vmax=1.0,
+                            index=[0, 0.5, 0.75, 1.0],  # Three-tier thresholds
+                            caption='Groundwater Yield Probability: Red (Poor 0-0.5), Orange (Moderate 0.5-0.75), Green (Good 0.75-1.0)'
+                        )
+            m.add_child(colormap)
+        elif st.session_state.interpolation_method == 'depth_kriging':
+            # Depth colormap legend
+            colormap = folium.LinearColormap(
+                colors=['green', 'yellow', 'red'],
+                vmin=0,
+                vmax=max_value,
+                caption='Depth to Groundwater (m)'
+            )
+            m.add_child(colormap)
+        elif st.session_state.interpolation_method == 'ground_water_level_kriging':
+            # Ground water level colormap legend
+            colormap = folium.LinearColormap(
+                colors=['blue', 'cyan', 'yellow', 'orange', 'red'],
+                vmin=0,
+                vmax=max_value,
+                caption='Ground Water Level'
+            )
+            m.add_child(colormap)
+        else:
+            # Yield colormap legend
+            colormap = folium.LinearColormap(
+                colors=['blue', 'lime', 'yellow', 'red'],
+                vmin=0,
+                vmax=max_value,
+                caption='Groundwater Yield (L/s)'
+            )
+            m.add_child(colormap)
+    except Exception as e:
+        print(f"Error adding colormap legend: {e}")
+
+    return m

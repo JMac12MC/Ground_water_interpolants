@@ -149,12 +149,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
-        
+
         # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
         yield_threshold = 0.1
         raw_yields = wells_df['yield_rate'].values.astype(float)
         yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
-        
+
         print(f"Indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
     else:
         # Get wells appropriate for yield interpolation
@@ -181,7 +181,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     # Use square bounds instead of circular radius
     mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
-    
+
     # Define grid_points early to avoid UnboundLocalError
     grid_points = xi[mask]
 
@@ -682,13 +682,13 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
-        
+
         # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
         yield_threshold = 0.1
         raw_yields = wells_df_filtered['yield_rate'].values.astype(float)
         yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
-        
-        print(f"Heat map indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield")
+
+        print(f"Heat map indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -732,7 +732,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # Filter points outside the square bounds
         mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
-        
+
         # Define grid_points for compatibility
         grid_points = xi_inside
 
@@ -773,7 +773,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         variogram_model_to_use = 'linear'
                     else:
                         variogram_model_to_use = 'spherical'
-                    
+
                     OK = OrdinaryKriging(
                         filtered_lons, filtered_lats, filtered_yields,
                         variogram_model=variogram_model_to_use,
@@ -791,6 +791,12 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     if method == 'indicator_kriging':
                         # Ensure probability values are in [0,1] range
                         interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+
+                        # Apply binary threshold for clear visualization (0.5 = 50% probability)
+                        binary_threshold = 0.5
+                        interpolated_z = (interpolated_z >= binary_threshold).astype(float)
+
+                        print(f"Heat map indicator kriging: binary classification with {np.sum(interpolated_z)}/{len(interpolated_z)} areas classified as 'likely' for groundwater")
                     else:
                         # Ensure non-negative yields for other methods
                         interpolated_z = np.maximum(0, interpolated_z)
@@ -1410,7 +1416,8 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
     radius_km : float
         Radius in kilometers to generate the variance data for.
     resolution : int
-        Number of points to generate in each dimension.
+        Number of points to generate<previous_generation>```
+ in each dimension.
     variogram_model : str, optional
         Variogram model to use for kriging (e.g., 'linear', 'spherical', 'gaussian').
         Defaults to 'spherical'.

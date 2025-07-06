@@ -28,7 +28,7 @@ def add_banner():
         """
         <div style="text-align: center; margin-bottom: 30px; padding: 40px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white;">
             <h1 style="font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Groundwater Finder</h1>
-            <p style="font-size: 1.2rem; margin-bottom: 0; opacity: 0.9;">Helping you understand water resources using scientific data</p>
+            <p style="font-size: 1.2rem; margin-bottom: 0; opacity: 0.9;">Clean interface for local groundwater analysis</p>
         </div>
         """, 
         unsafe_allow_html=True
@@ -153,6 +153,10 @@ with st.sidebar:
     
     # Manual refresh button for when hot reload isn't working
     if st.button("🔄 Refresh App", help="Click if the app doesn't update automatically"):
+        # Clear session state to force fresh start
+        for key in list(st.session_state.keys()):
+            if key.startswith('regional_heatmap'):
+                del st.session_state[key]
         st.rerun()
 
     # Radius filter (now used for local context when pre-computed heatmaps are available)

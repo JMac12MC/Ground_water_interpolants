@@ -62,6 +62,9 @@ if 'polygon_db' not in st.session_state:
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         st.session_state.polygon_db = None
+
+if 'stored_heatmaps' not in st.session_state:
+    st.session_state.stored_heatmaps = []
 # Regional heatmap session state removed per user request
 
 # Add banner
@@ -257,6 +260,44 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
+    
+    # Stored Heatmaps Management Section
+    st.markdown("---")
+    st.subheader("🗺️ Stored Heatmaps")
+    
+    # Load stored heatmaps from database if we haven't already
+    if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
+        stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+        st.session_state.stored_heatmaps = stored_heatmaps
+    
+    if st.session_state.stored_heatmaps:
+        st.write(f"**{len(st.session_state.stored_heatmaps)} stored heatmaps available**")
+        
+        # Clear all stored heatmaps button
+        if st.button("🗑️ Clear All Stored Heatmaps", type="secondary"):
+            if st.session_state.polygon_db:
+                count = st.session_state.polygon_db.delete_all_stored_heatmaps()
+                st.session_state.stored_heatmaps = []
+                st.success(f"Cleared {count} stored heatmaps")
+                st.rerun()
+        
+        # Display each stored heatmap with details
+        for heatmap in st.session_state.stored_heatmaps:
+            with st.expander(f"📍 {heatmap['heatmap_name']}"):
+                st.write(f"**Method:** {heatmap['interpolation_method']}")
+                st.write(f"**Location:** {heatmap['center_lat']:.4f}, {heatmap['center_lon']:.4f}")
+                st.write(f"**Radius:** {heatmap['radius_km']} km")
+                st.write(f"**Wells:** {heatmap['well_count']}")
+                st.write(f"**Created:** {heatmap['created_at']}")
+                
+                if st.button(f"🗑️ Delete", key=f"delete_{heatmap['id']}"):
+                    if st.session_state.polygon_db.delete_stored_heatmap(heatmap['id']):
+                        st.session_state.stored_heatmaps = [h for h in st.session_state.stored_heatmaps if h['id'] != heatmap['id']]
+                        st.success(f"Deleted heatmap: {heatmap['heatmap_name']}")
+                        st.rerun()
+    else:
+        st.write("*No stored heatmaps available*")
+        st.write("Generate a heatmap and use the 'Save Heatmap' button to store it permanently.")
 
 
 
@@ -295,6 +336,34 @@ with main_col1:
                 sticky=False
             )
         ).add_to(m)
+
+    # Display all stored heatmaps on the map
+    if st.session_state.stored_heatmaps:
+        for stored_heatmap in st.session_state.stored_heatmaps:
+            try:
+                heatmap_data = stored_heatmap['heatmap_data']
+                if heatmap_data and len(heatmap_data) > 0:
+                    # Add the stored heatmap to the map
+                    from folium.plugins import HeatMap
+                    HeatMap(heatmap_data, 
+                           radius=25, 
+                           blur=15, 
+                           name=f"Stored: {stored_heatmap['heatmap_name']}",
+                           overlay=True,
+                           control=True).add_to(m)
+                    
+                    # Add a marker showing the center point of the stored heatmap
+                    folium.Marker(
+                        location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
+                        popup=f"<b>{stored_heatmap['heatmap_name']}</b><br>"
+                              f"Method: {stored_heatmap['interpolation_method']}<br>"
+                              f"Radius: {stored_heatmap['radius_km']} km<br>"
+                              f"Wells: {stored_heatmap['well_count']}<br>"
+                              f"Created: {stored_heatmap['created_at']}",
+                        icon=folium.Icon(color='purple', icon='info-sign')
+                    ).add_to(m)
+            except Exception as e:
+                print(f"Error displaying stored heatmap {stored_heatmap['heatmap_name']}: {e}")
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None
@@ -828,6 +897,59 @@ with main_col2:
     else:
         st.info("Click on the map to select a location and view nearby wells")
 
+    # Save Heatmap functionality
+    if (st.session_state.selected_point and 
+        st.session_state.heat_map_visibility and 
+        st.session_state.polygon_db):
+        
+        st.subheader("💾 Save Current Heatmap")
+        
+        heatmap_name = st.text_input(
+            "Heatmap Name:", 
+            value=f"{st.session_state.interpolation_method}_{st.session_state.selected_point[0]:.3f}_{st.session_state.selected_point[1]:.3f}",
+            key="heatmap_name_input"
+        )
+        
+        if st.button("💾 Save Heatmap", type="primary"):
+            if heatmap_name.strip():
+                try:
+                    # Generate the heatmap data if not already done
+                    if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
+                        heat_map_data = generate_heat_map_data(
+                            st.session_state.filtered_wells.copy(),
+                            st.session_state.selected_point,
+                            st.session_state.search_radius,
+                            resolution=100,
+                            method=st.session_state.interpolation_method,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                        )
+                        
+                        # Store the heatmap in the database
+                        heatmap_id = st.session_state.polygon_db.store_heatmap(
+                            heatmap_name.strip(),
+                            st.session_state.selected_point[0],
+                            st.session_state.selected_point[1],
+                            st.session_state.search_radius,
+                            st.session_state.interpolation_method,
+                            heat_map_data,
+                            geojson_data=None,  # Could add GeoJSON data here if needed
+                            well_count=len(st.session_state.filtered_wells)
+                        )
+                        
+                        if heatmap_id:
+                            # Refresh the stored heatmaps list
+                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            st.success(f"✅ Saved heatmap: {heatmap_name}")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to save heatmap")
+                    else:
+                        st.warning("⚠️ No heatmap data to save. Generate a heatmap first.")
+                except Exception as e:
+                    st.error(f"❌ Error saving heatmap: {e}")
+            else:
+                st.warning("⚠️ Please enter a name for the heatmap")
+    
     # Add information about water well drilling - always display
     st.subheader("Finding Groundwater")
     st.write("""

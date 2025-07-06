@@ -95,13 +95,15 @@ class PolygonDatabase:
             return None
 
     def _create_tables(self):
-        """Create the merged_polygons table if it doesn't exist"""
+        """Create the merged_polygons and stored_heatmaps tables if they don't exist"""
         try:
-            # Check if table exists
+            # Check if tables exist
             inspector = inspect(self.engine)
-            if 'merged_polygons' not in inspector.get_table_names():
-                # Create the table
-                with self.engine.connect() as conn:
+            table_names = inspector.get_table_names()
+            
+            with self.engine.connect() as conn:
+                # Create merged_polygons table
+                if 'merged_polygons' not in table_names:
                     conn.execute(text("""
                         CREATE TABLE merged_polygons (
                             id SERIAL PRIMARY KEY,
@@ -117,8 +119,27 @@ class PolygonDatabase:
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     """))
-                    conn.commit()
-                    print("Created merged_polygons table successfully")
+                    print("Created merged_polygons table")
+                
+                # Create stored_heatmaps table
+                if 'stored_heatmaps' not in table_names:
+                    conn.execute(text("""
+                        CREATE TABLE stored_heatmaps (
+                            id SERIAL PRIMARY KEY,
+                            heatmap_name VARCHAR(255) NOT NULL,
+                            center_lat FLOAT NOT NULL,
+                            center_lon FLOAT NOT NULL,
+                            radius_km FLOAT NOT NULL,
+                            interpolation_method VARCHAR(100) NOT NULL,
+                            heatmap_data JSON NOT NULL,
+                            geojson_data JSON,
+                            well_count INTEGER DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    print("Created stored_heatmaps table")
+                
+                conn.commit()
         except Exception as e:
             print(f"Error creating tables: {e}")
 
@@ -372,3 +393,147 @@ class PolygonDatabase:
                 'total_wells': 0,
                 'overall_avg_yield': 0
             }
+
+    def store_heatmap(self, heatmap_name, center_lat, center_lon, radius_km, interpolation_method, heatmap_data, geojson_data=None, well_count=0):
+        """
+        Store a heatmap in the database for persistent display
+
+        Parameters:
+        -----------
+        heatmap_name : str
+            Name or identifier for the heatmap
+        center_lat : float
+            Center latitude of the heatmap
+        center_lon : float
+            Center longitude of the heatmap
+        radius_km : float
+            Search radius in km
+        interpolation_method : str
+            Method used for interpolation
+        heatmap_data : list
+            Heat map data as list of [lat, lon, value] points
+        geojson_data : dict, optional
+            GeoJSON data for more detailed visualization
+        well_count : int
+            Number of wells used in the interpolation
+
+        Returns:
+        --------
+        int
+            The ID of the stored heatmap
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    INSERT INTO stored_heatmaps (
+                        heatmap_name, center_lat, center_lon, radius_km, 
+                        interpolation_method, heatmap_data, geojson_data, well_count
+                    ) VALUES (
+                        :heatmap_name, :center_lat, :center_lon, :radius_km,
+                        :interpolation_method, :heatmap_data, :geojson_data, :well_count
+                    ) RETURNING id
+                """), {
+                    'heatmap_name': heatmap_name,
+                    'center_lat': center_lat,
+                    'center_lon': center_lon,
+                    'radius_km': radius_km,
+                    'interpolation_method': interpolation_method,
+                    'heatmap_data': json.dumps(heatmap_data),
+                    'geojson_data': json.dumps(geojson_data) if geojson_data else None,
+                    'well_count': well_count
+                })
+                conn.commit()
+                heatmap_id = result.fetchone()[0]
+                print(f"Stored heatmap '{heatmap_name}' with ID {heatmap_id}")
+                return heatmap_id
+
+        except Exception as e:
+            print(f"Error storing heatmap: {e}")
+            return None
+
+    def get_all_stored_heatmaps(self):
+        """
+        Retrieve all stored heatmaps from the database
+
+        Returns:
+        --------
+        list
+            List of heatmap dictionaries
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT id, heatmap_name, center_lat, center_lon, radius_km,
+                           interpolation_method, heatmap_data, geojson_data, well_count, created_at
+                    FROM stored_heatmaps
+                    ORDER BY created_at DESC
+                """))
+                
+                heatmaps = []
+                for row in result:
+                    heatmap = {
+                        'id': row[0],
+                        'heatmap_name': row[1],
+                        'center_lat': row[2],
+                        'center_lon': row[3],
+                        'radius_km': row[4],
+                        'interpolation_method': row[5],
+                        'heatmap_data': json.loads(row[6]) if row[6] else [],
+                        'geojson_data': json.loads(row[7]) if row[7] else None,
+                        'well_count': row[8],
+                        'created_at': row[9]
+                    }
+                    heatmaps.append(heatmap)
+                
+                return heatmaps
+
+        except Exception as e:
+            print(f"Error retrieving stored heatmaps: {e}")
+            return []
+
+    def delete_all_stored_heatmaps(self):
+        """
+        Delete all stored heatmaps from the database
+
+        Returns:
+        --------
+        int
+            Number of heatmaps deleted
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("DELETE FROM stored_heatmaps"))
+                conn.commit()
+                deleted_count = result.rowcount
+                print(f"Deleted {deleted_count} stored heatmaps")
+                return deleted_count
+
+        except Exception as e:
+            print(f"Error deleting stored heatmaps: {e}")
+            return 0
+
+    def delete_stored_heatmap(self, heatmap_id):
+        """
+        Delete a specific stored heatmap by ID
+
+        Parameters:
+        -----------
+        heatmap_id : int
+            ID of the heatmap to delete
+
+        Returns:
+        --------
+        bool
+            True if deletion was successful
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    DELETE FROM stored_heatmaps WHERE id = :heatmap_id
+                """), {'heatmap_id': heatmap_id})
+                conn.commit()
+                return result.rowcount > 0
+
+        except Exception as e:
+            print(f"Error deleting heatmap: {e}")
+            return False

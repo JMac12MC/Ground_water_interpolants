@@ -768,6 +768,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     point = Point(grid_lons[i], grid_lats[i])
                     include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
 
+                # Additional clipping by indicator kriging geometry (high-probability zones)
+                if include_point and indicator_geometry is not None:
+                    point = Point(grid_lons[i], grid_lats[i])
+                    include_point = indicator_geometry.contains(point) or indicator_geometry.intersects(point)
+
                 if include_point:
                     # Create a small circle as a polygon (approximated with 8 points)
                     radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])

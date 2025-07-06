@@ -114,12 +114,24 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         Grid resolution (number of cells per dimension)
     method : str
         Interpolation method to use
+    indicator_mask : tuple or None
+        Tuple containing indicator kriging mask data for clipping
 
     Returns:
     --------
     dict
         GeoJSON data structure with interpolated yield values
     """
+    
+    # Debug indicator mask status
+    print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
+    if indicator_mask is not None:
+        mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
+        print(f"Indicator mask grid shape: {mask_values.shape if mask_values is not None else 'None'}")
+        if mask_values is not None:
+            high_prob_count = np.sum(mask_values >= 0.7)
+            print(f"Mask has {high_prob_count} high-probability points (≥0.7) out of {mask_values.size} total")
+
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
         return {"type": "FeatureCollection", "features": []}
@@ -672,6 +684,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                                 # Only include if probability is in high-probability zone (≥0.7)
                                 if indicator_prob < 0.7:
                                     include_cell = False
+                                    # Debug logging to see clipping in action
+                                    if cell_value > 0.01:  # Only log for meaningful cells that would otherwise be included
+                                        print(f"Indicator clipping: cell at ({cell_lat:.3f}, {cell_lon:.3f}) with value {cell_value:.2f} excluded (indicator prob: {indicator_prob:.3f})")
 
                         if include_cell:
                             # Create polygon for this grid cell

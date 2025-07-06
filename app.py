@@ -483,6 +483,10 @@ with main_col1:
                                 threshold=0.7
                             )
 
+                        # Debug: Check if mask is being passed
+                        print(f"App.py: About to call generate_geo_json_grid with method='{st.session_state.interpolation_method}'")
+                        print(f"App.py: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
+                        
                         # Generate regular interpolation visualization
                         geojson_data = generate_geo_json_grid(
                             st.session_state.filtered_wells.copy(), 

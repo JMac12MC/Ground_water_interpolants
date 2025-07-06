@@ -9,7 +9,7 @@ deploymentTarget = "autoscale"
 run = ["streamlit", "run", "app.py", "--server.port", "5000"]
 
 [workflows]
-runButton = "Fixed Groundwater App"
+runButton = "Restart Groundwater App"
 
 [[workflows.workflow]]
 name = "Start Groundwater App"
@@ -67,6 +67,23 @@ args = "streamlit run app.py --server.port 5000 --server.address 0.0.0.0 --serve
 name = "Fixed Groundwater App"
 author = 42797086
 mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "streamlit run app.py --server.port 5000 --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false"
+
+[[workflows.workflow]]
+name = "Restart Groundwater App"
+author = 42797086
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pkill -f streamlit"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "sleep 2"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"

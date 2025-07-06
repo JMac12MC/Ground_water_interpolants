@@ -127,86 +127,76 @@ class TiledRegionalHeatmapGenerator:
             
         return tile_wells
     
-    def interpolate_tile(self, tile_wells: pd.DataFrame, tile: Dict, 
+    def interpolate_tile(self, wells_df: pd.DataFrame, tile: Dict, 
                         variable: str = 'depth_to_groundwater', 
                         resolution: int = 50, soil_polygons=None) -> List[List[float]]:
         """
-        Interpolate values for a single tile using Ordinary Kriging (same as local interpolations)
-        
-        Parameters:
-        -----------
-        tile_wells : DataFrame
-            Wells within the tile area
-        tile : dict
-            Tile definition
-        variable : str
-            Variable to interpolate
-        resolution : int
-            Grid resolution for the tile (increased for better quality)
-        soil_polygons : GeoDataFrame, optional
-            Soil polygons for clipping
-            
-        Returns:
-        --------
-        list
-            Heatmap data points [[lat, lng, value], ...]
+        Interpolate exactly like "ground water level (spherical kriging)" for a 20km x 20km tile
+        Uses same parameters as successful local interpolations
         """
-        if len(tile_wells) < 5:  # Need minimum 5 wells for kriging
-            return []
-            
-        # Filter wells with valid data
-        valid_wells = tile_wells.dropna(subset=[variable])
-        if len(valid_wells) < 5:
-            return []
-            
         try:
-            # Import kriging here to avoid import errors
-            from pykrige.ok import OrdinaryKriging
+            # Import the exact interpolation function from interpolation.py
+            from interpolation import generate_geo_json_grid
+            from data_loader import get_wells_for_interpolation
             
-            # Create interpolation grid for this tile
-            bounds = tile['bounds']
-            lat_grid = np.linspace(bounds['min_lat'], bounds['max_lat'], resolution)
-            lng_grid = np.linspace(bounds['min_lng'], bounds['max_lng'], resolution)
-            grid_lats, grid_lngs = np.meshgrid(lat_grid, lng_grid, indexing='ij')
+            # Get tile center and 10km radius (20km diameter = 20km tile)
+            center_lat = tile['center_lat']
+            center_lng = tile['center_lng'] 
+            radius_km = 10.0  # 10km radius = 20km diameter tile
             
-            # Get well coordinates and values  
-            well_lngs = valid_wells['longitude'].values
-            well_lats = valid_wells['latitude'].values
-            values = valid_wells[variable].values
+            # Filter wells to appropriate type
+            if variable == 'depth_to_groundwater':
+                # Use ground water level interpolation type  
+                filtered_wells = get_wells_for_interpolation(wells_df, 'ground_water_level')
+                if filtered_wells.empty:
+                    return []
+                    
+                # Map depth_to_groundwater to ground water level for consistency
+                if 'ground water level' in filtered_wells.columns:
+                    filtered_wells = filtered_wells.copy()
+                    filtered_wells['target_variable'] = filtered_wells['ground water level']
+                else:
+                    return []
+            else:
+                # Use yield interpolation as fallback
+                filtered_wells = get_wells_for_interpolation(wells_df, 'yield')
+                if filtered_wells.empty:
+                    return []
+                filtered_wells = filtered_wells.copy()
+                filtered_wells['target_variable'] = filtered_wells['yield_rate']
             
-            # Create Ordinary Kriging model with spherical variogram (same as local interpolations)
-            OK = OrdinaryKriging(
-                well_lngs, well_lats, values,
-                variogram_model='spherical',
-                verbose=False,
-                enable_plotting=False,
-                coordinates_type='geographic'
+            # Call the EXACT same function used for successful local interpolations
+            geojson_result = generate_geo_json_grid(
+                wells_df=filtered_wells,
+                center_point=(center_lat, center_lng),
+                radius_km=radius_km,
+                resolution=resolution,
+                method='ground_water_level_kriging',  # Use exact same method
+                show_variance=False,
+                auto_fit_variogram=True,  # Same as successful local searches
+                variogram_model='spherical',  # Exact same model
+                soil_polygons=soil_polygons
             )
             
-            # Perform kriging interpolation
-            interpolated_grid, variance_grid = OK.execute('grid', lng_grid, lat_grid)
-            
-            # Convert to heatmap points format
+            # Convert GeoJSON result to heatmap points format
             heatmap_points = []
-            for i in range(len(lat_grid)):
-                for j in range(len(lng_grid)):
-                    lat = lat_grid[i]
-                    lng = lng_grid[j]
-                    value = interpolated_grid[i, j]
-                    
-                    # Skip masked/invalid values
-                    if not np.isnan(value) and not np.ma.is_masked(value):
-                        heatmap_points.append([lat, lng, float(value)])
-            
-            # Apply soil polygon clipping if available (same as local interpolations)
-            if soil_polygons is not None and len(heatmap_points) > 0:
-                heatmap_points = self._apply_soil_polygon_clipping(heatmap_points, soil_polygons, tile)
+            if geojson_result and 'features' in geojson_result:
+                for feature in geojson_result['features']:
+                    if 'geometry' in feature and 'properties' in feature:
+                        coords = feature['geometry']['coordinates'][0]  # Polygon coordinates
+                        value = feature['properties'].get('value', 0)
+                        
+                        # Use polygon center as point location
+                        center_lat = sum(coord[1] for coord in coords) / len(coords)
+                        center_lng = sum(coord[0] for coord in coords) / len(coords)
+                        
+                        heatmap_points.append([center_lat, center_lng, float(value)])
                         
             return heatmap_points
             
         except Exception as e:
-            # Fallback to IDW if kriging fails
-            return self._idw_fallback(valid_wells, tile, variable, resolution)
+            print(f"Tile {tile['id']} interpolation error: {e}")
+            return []
     
     def _apply_soil_polygon_clipping(self, heatmap_points, soil_polygons, tile):
         """
@@ -285,8 +275,8 @@ class TiledRegionalHeatmapGenerator:
             (tile_id, heatmap_points)
         """
         try:
-            tile_wells = self.get_wells_for_tile(wells_df, tile)
-            heatmap_points = self.interpolate_tile(tile_wells, tile, variable, soil_polygons=soil_polygons)
+            # Pass full wells dataset - interpolate_tile will handle filtering within 20km
+            heatmap_points = self.interpolate_tile(wells_df, tile, variable, soil_polygons=soil_polygons)
             return tile['id'], heatmap_points
         except Exception as e:
             print(f"Error processing tile {tile['id']}: {e}")

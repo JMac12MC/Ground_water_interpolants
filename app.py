@@ -192,10 +192,11 @@ with st.sidebar:
             "Specific Capacity Kriging (Spherical)",
             "Depth to Groundwater (Standard Kriging)",
             "Depth to Groundwater (Auto-Fitted Spherical)",
-            "Ground Water Level (Spherical Kriging)"
+            "Ground Water Level (Spherical Kriging)",
+            "Indicator Kriging (Yield Suitability)"
         ],
         index=0,
-        help="Choose the visualization type: yield estimation, depth analysis, or groundwater level"
+        help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability"
     )
 
     # Map visualization selection to internal parameters
@@ -241,6 +242,11 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
+    elif visualization_method == "Indicator Kriging (Yield Suitability)":
+        st.session_state.interpolation_method = 'indicator_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'linear'
 
     # Display options
     st.header("Display Options")
@@ -534,6 +540,25 @@ with main_col1:
                                 '#CC3300',
                                 '#993300'   # Brown (high level)
                             ]
+                        elif st.session_state.interpolation_method == 'indicator_kriging':
+                            # Indicator colors: red (low probability) to green (high probability)
+                            colors = [
+                                '#8B0000',  # Dark red (very low probability)
+                                '#B22222',  # Fire brick
+                                '#DC143C',  # Crimson
+                                '#FF0000',  # Red
+                                '#FF4500',  # Orange red
+                                '#FF8C00',  # Dark orange
+                                '#FFA500',  # Orange
+                                '#FFD700',  # Gold
+                                '#FFFF00',  # Yellow (medium probability)
+                                '#ADFF2F',  # Green yellow
+                                '#9AFF9A',  # Light green
+                                '#7FFF00',  # Chartreuse
+                                '#32CD32',  # Lime green
+                                '#228B22',  # Forest green
+                                '#006400'   # Dark green (high probability)
+                            ]
                         else:
                             # Yield colors: blue (low yield) to red (high yield)
                             colors = [
@@ -609,6 +634,16 @@ with main_col1:
                             vmax=float(max_value),
                             caption='Ground Water Level (m) - 15 Bands'
                         )
+                    elif st.session_state.interpolation_method == 'indicator_kriging':
+                        # Indicator kriging legend (probability scale)
+                        colormap = folium.LinearColormap(
+                            colors=['#8B0000', '#B22222', '#DC143C', '#FF0000', '#FF4500', 
+                                    '#FF8C00', '#FFA500', '#FFD700', '#FFFF00', '#ADFF2F', 
+                                    '#9AFF9A', '#7FFF00', '#32CD32', '#228B22', '#006400'],
+                            vmin=0,
+                            vmax=1.0,  # Probability scale 0-1
+                            caption='Probability of Viable Yield (≥0.1 L/s) - 15 Bands'
+                        )
                     else:
                         # Yield legend with original colors
                         colormap = folium.LinearColormap(
@@ -634,6 +669,9 @@ with main_col1:
                     elif st.session_state.interpolation_method == 'ground_water_level_kriging':
                         tooltip_field = 'yield'
                         tooltip_label = 'Ground Water Level (m):'
+                    elif st.session_state.interpolation_method == 'indicator_kriging':
+                        tooltip_field = 'yield'
+                        tooltip_label = 'Probability:'
                     else:
                         tooltip_field = 'yield'
                         tooltip_label = 'Yield (L/s):'

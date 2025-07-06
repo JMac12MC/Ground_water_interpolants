@@ -141,6 +141,21 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         yields = wells_df['ground water level'].values.astype(float)
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
+    elif method == 'indicator_kriging':
+        # Get wells appropriate for indicator interpolation (binary yield suitability)
+        wells_df = get_wells_for_interpolation(wells_df, 'yield')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+
+        lats = wells_df['latitude'].values.astype(float)
+        lons = wells_df['longitude'].values.astype(float)
+        
+        # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
+        yield_threshold = 0.1
+        raw_yields = wells_df['yield_rate'].values.astype(float)
+        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
+        
+        print(f"Indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -212,6 +227,37 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
             # Execute kriging to get both predictions and variance
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
+
+        elif method == 'indicator_kriging' and len(wells_df) >= 5:
+            # Perform indicator kriging for binary yield suitability
+            print("Performing indicator kriging for yield suitability mapping...")
+
+            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
+            lon_values = x_coords / km_per_degree_lon + center_lon
+            lat_values = y_coords / km_per_degree_lat + center_lat
+
+            # Use already defined grid_points
+            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
+            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
+
+            # Set up kriging for binary indicator data
+            # Use linear variogram model which works well for indicator data
+            OK = OrdinaryKriging(
+                lon_values, lat_values, yields,
+                variogram_model='linear',  # Linear model works well for binary data
+                verbose=False,
+                enable_plotting=False,
+                weight=True,  # Enable nugget effect for indicator data
+                exact_values=True  # Preserve exact values at data points
+            )
+
+            # Execute kriging to get probability predictions
+            interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+
+            # Ensure values are in [0,1] range (probabilities)
+            interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+
+            print(f"Indicator kriging results: probability range {np.min(interpolated_z):.3f} to {np.max(interpolated_z):.3f}")
 
         elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield/depth visualization (without variance output)
@@ -628,6 +674,21 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         yields = wells_df_filtered['ground water level'].values.astype(float)
 
         print(f"Heat map ground water level: using {len(yields)} wells with GWL values from {yields.min():.2f} to {yields.max():.2f}")
+    elif method == 'indicator_kriging':
+        # Get wells appropriate for indicator interpolation
+        wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
+        if wells_df_filtered.empty:
+            return []
+
+        lats = wells_df_filtered['latitude'].values.astype(float)
+        lons = wells_df_filtered['longitude'].values.astype(float)
+        
+        # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
+        yield_threshold = 0.1
+        raw_yields = wells_df_filtered['yield_rate'].values.astype(float)
+        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
+        
+        print(f"Heat map indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield")
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -676,33 +737,46 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         grid_points = xi_inside
 
         # Choose interpolation method based on parameter and dataset size
-        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging') and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging') and len(wells_df) >= 5:
             try:
                 if method == 'specific_capacity_kriging':
                     interpolation_name = "specific capacity kriging"
                 elif method == 'ground_water_level_kriging':
                     interpolation_name = "ground water level kriging"
+                elif method == 'indicator_kriging':
+                    interpolation_name = "indicator kriging (yield suitability)"
                 else:
                     interpolation_name = "yield kriging"
                 print(f"Using {interpolation_name} interpolation for heat map")
 
-                # Filter to meaningful yield data for better kriging
-                meaningful_yield_mask = yields > 0.1
+                # Filter to meaningful data for better kriging
+                if method == 'indicator_kriging':
+                    # For indicator kriging, use all data (including 0s and 1s)
+                    meaningful_data_mask = np.ones(len(yields), dtype=bool)  # Use all data
+                else:
+                    # For other methods, filter to meaningful yield data
+                    meaningful_data_mask = yields > 0.1
 
-                if meaningful_yield_mask.any() and np.sum(meaningful_yield_mask) >= 5:
+                if meaningful_data_mask.any() and np.sum(meaningful_data_mask) >= 5:
                     # Use filtered data
-                    filtered_x_coords = x_coords[meaningful_yield_mask]
-                    filtered_y_coords = y_coords[meaningful_yield_mask] 
-                    filtered_yields = yields[meaningful_yield_mask]
+                    filtered_x_coords = x_coords[meaningful_data_mask]
+                    filtered_y_coords = y_coords[meaningful_data_mask] 
+                    filtered_yields = yields[meaningful_data_mask]
 
                     # Convert to lat/lon for kriging
                     filtered_lons = filtered_x_coords / km_per_degree_lon + center_lon
                     filtered_lats = filtered_y_coords / km_per_degree_lat + center_lat
 
-                    # Set up kriging
+                    # Set up kriging with appropriate variogram model
+                    if method == 'indicator_kriging':
+                        # Use linear variogram for binary indicator data
+                        variogram_model_to_use = 'linear'
+                    else:
+                        variogram_model_to_use = 'spherical'
+                    
                     OK = OrdinaryKriging(
                         filtered_lons, filtered_lats, filtered_yields,
-                        variogram_model='spherical',
+                        variogram_model=variogram_model_to_use,
                         verbose=False,
                         enable_plotting=False,
                         variogram_parameters=None
@@ -713,8 +787,13 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
                     interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
 
-                    # Ensure non-negative yields
-                    interpolated_z = np.maximum(0, interpolated_z)
+                    # Process results based on interpolation method
+                    if method == 'indicator_kriging':
+                        # Ensure probability values are in [0,1] range
+                        interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+                    else:
+                        # Ensure non-negative yields for other methods
+                        interpolated_z = np.maximum(0, interpolated_z)
                 else:
                     # Fallback to griddata if insufficient data
                     interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)

@@ -673,6 +673,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         # Only include if centroid is within soil drainage areas
                         include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
 
+                    # Additional clipping by indicator kriging geometry (high-probability zones)
+                    if include_triangle and indicator_geometry is not None:
+                        centroid_lon = float(np.mean(vertices[:, 0]))
+                        centroid_lat = float(np.mean(vertices[:, 1]))
+                        centroid_point = Point(centroid_lon, centroid_lat)
+                        was_included = include_triangle
+                        include_triangle = indicator_geometry.contains(centroid_point) or indicator_geometry.intersects(centroid_point)
+                        if was_included and not include_triangle:
+                            print(f"Triangulation indicator clipping: excluded triangle at ({centroid_lat:.3f}, {centroid_lon:.3f}) with value {avg_yield:.2f}")
+
                     if include_triangle:
                             # Create polygon for this triangle
                         poly = {

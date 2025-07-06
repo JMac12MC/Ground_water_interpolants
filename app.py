@@ -180,15 +180,19 @@ with st.sidebar:
         st.write("**Standard Mode**: Click on map to generate local interpolation within search radius.")
 
     # Regional Heatmap Controls (moved to prominent position)
-    st.header("Regional Background")
-    st.session_state.show_regional_heatmap = st.checkbox(
+    st.header("🌍 Regional Background")
+    
+    # Force refresh checkbox to ensure visibility
+    show_regional = st.checkbox(
         "Show Regional Groundwater Depth Heatmap",
-        value=st.session_state.show_regional_heatmap,
+        value=st.session_state.get('show_regional_heatmap', True),
+        key="regional_heatmap_checkbox",
         help="Display a high-resolution background heatmap covering the entire Canterbury region using all available well data"
     )
+    st.session_state.show_regional_heatmap = show_regional
     
-    # Generate regional heatmap button
-    if st.button("Generate Regional Heatmap"):
+    # Generate regional heatmap button with unique key
+    if st.button("🚀 Generate Regional Heatmap", key="generate_regional_btn"):
         if st.session_state.wells_data is not None:
             with st.spinner("Generating regional heatmap (this may take several minutes)..."):
                 # Generate comprehensive regional heatmap
@@ -197,17 +201,24 @@ with st.sidebar:
                     st.session_state.soil_polygons
                 )
                 if st.session_state.regional_heatmap_data:
-                    st.success(f"Generated regional heatmap with {len(st.session_state.regional_heatmap_data)} data points")
+                    st.success(f"✅ Generated regional heatmap with {len(st.session_state.regional_heatmap_data)} data points")
+                    st.rerun()  # Force refresh after generation
                 else:
-                    st.error("Failed to generate regional heatmap")
+                    st.error("❌ Failed to generate regional heatmap")
         else:
-            st.warning("No wells data available for regional heatmap generation")
+            st.warning("⚠️ No wells data available for regional heatmap generation")
     
-    # Show regional heatmap status
+    # Show regional heatmap status with clear indicators
     if st.session_state.regional_heatmap_data:
-        st.info(f"✓ Regional heatmap ready: {len(st.session_state.regional_heatmap_data):,} data points")
-    elif st.session_state.show_regional_heatmap:
-        st.warning("Regional heatmap not available. Click 'Generate Regional Heatmap' to create one.")
+        st.success(f"✅ Regional heatmap ready: {len(st.session_state.regional_heatmap_data):,} data points")
+        if show_regional:
+            st.info("🗺️ Regional heatmap is displayed on map")
+    elif show_regional:
+        st.warning("⚠️ Regional heatmap not available. Click 'Generate Regional Heatmap' to create one.")
+    
+    # Add refresh button to force preview updates
+    if st.button("🔄 Refresh Preview", key="refresh_preview", help="Force refresh the app preview"):
+        st.rerun()
 
     # Visualization method selection - single dropdown for all options
     st.header("Analysis Options")

@@ -10,7 +10,92 @@ from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import unary_union
 import geopandas as gpd
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None):
+def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolution=50, soil_polygons=None, threshold=0.7):
+    """
+    Generate an indicator kriging mask for high-probability zones (≥ threshold)
+    
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        DataFrame containing well data
+    center_point : tuple
+        (latitude, longitude) of center point
+    radius_km : float
+        Radius in km to include in the grid
+    resolution : int
+        Grid resolution (number of cells per dimension)
+    soil_polygons : GeoDataFrame, optional
+        Soil polygon data for initial clipping
+    threshold : float
+        Threshold for high-probability zones (default 0.7)
+        
+    Returns:
+    --------
+    tuple
+        (lat_grid, lon_grid, mask_values, grid_lats, grid_lons)
+    """
+    if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
+        return None, None, None, None, None
+        
+    # Get indicator kriging interpolation for the area
+    try:
+        # Use indicator kriging to get probability surface
+        geojson_data = generate_geo_json_grid(
+            wells_df, center_point, radius_km, 
+            resolution=resolution, method='indicator_kriging',
+            soil_polygons=soil_polygons
+        )
+        
+        if not geojson_data or not geojson_data.get('features'):
+            return None, None, None, None, None
+            
+        # Extract center coordinates and setup grid
+        center_lat, center_lon = center_point
+        km_per_degree_lat = 111.0
+        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        
+        min_lat = center_lat - (radius_km / km_per_degree_lat)
+        max_lat = center_lat + (radius_km / km_per_degree_lat)
+        min_lon = center_lon - (radius_km / km_per_degree_lon)
+        max_lon = center_lon + (radius_km / km_per_degree_lon)
+        
+        # Create grid
+        grid_size = min(150, max(50, resolution))
+        lat_vals = np.linspace(min_lat, max_lat, grid_size)
+        lon_vals = np.linspace(min_lon, max_lon, grid_size)
+        grid_lons, grid_lats = np.meshgrid(lon_vals, lat_vals)
+        
+        # Initialize mask with zeros
+        mask_values = np.zeros_like(grid_lats)
+        
+        # Extract probability values from GeoJSON features
+        for feature in geojson_data['features']:
+            if feature['geometry']['type'] == 'Polygon':
+                # Get polygon coordinates and yield value
+                coords = feature['geometry']['coordinates'][0]
+                yield_value = feature['properties']['yield']
+                
+                # Find centroid of polygon
+                if len(coords) >= 4:  # Valid polygon
+                    centroid_lon = np.mean([c[0] for c in coords[:-1]])
+                    centroid_lat = np.mean([c[1] for c in coords[:-1]])
+                    
+                    # Find nearest grid point
+                    lat_idx = np.argmin(np.abs(lat_vals - centroid_lat))
+                    lon_idx = np.argmin(np.abs(lon_vals - centroid_lon))
+                    
+                    # Set mask value (1 if above threshold, 0 otherwise)
+                    if yield_value >= threshold:
+                        mask_values[lat_idx, lon_idx] = 1
+                        
+        print(f"Indicator mask generated: {np.sum(mask_values)} high-probability points (≥{threshold}) out of {mask_values.size} total grid points")
+        return grid_lats, grid_lons, mask_values, lat_vals, lon_vals
+        
+    except Exception as e:
+        print(f"Error generating indicator mask: {e}")
+        return None, None, None, None, None
+
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -571,6 +656,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                             # Check if cell center is within soil drainage areas
                             cell_center_point = Point(cell_lon, cell_lat)
                             include_cell = merged_soil_geometry.contains(cell_center_point) or merged_soil_geometry.intersects(cell_center_point)
+
+                        # Additional clipping by indicator kriging mask (high-probability zones)
+                        if include_cell and indicator_mask is not None:
+                            # Check if this cell is in a high-probability zone
+                            mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
+                            if mask_values is not None:
+                                # Find nearest mask grid point
+                                mask_lat_idx = np.argmin(np.abs(mask_lat_vals - cell_lat))
+                                mask_lon_idx = np.argmin(np.abs(mask_lon_vals - cell_lon))
+                                
+                                # Only include if mask value is 1 (high probability)
+                                if mask_values[mask_lat_idx, mask_lon_idx] < 1:
+                                    include_cell = False
 
                         if include_cell:
                             # Create polygon for this grid cell

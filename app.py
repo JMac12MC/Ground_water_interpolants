@@ -10,7 +10,7 @@ import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance
+from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask
 from database import PolygonDatabase
 # Regional heatmap removed per user request
 
@@ -465,6 +465,24 @@ with main_col1:
                         pass
 
 
+                        # Check if we need to generate indicator kriging mask for clipping
+                        indicator_mask = None
+                        methods_requiring_mask = [
+                            'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
+                            'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
+                        ]
+                        
+                        if st.session_state.interpolation_method in methods_requiring_mask:
+                            # Generate indicator kriging mask for high-probability zones (≥0.7)
+                            indicator_mask = generate_indicator_kriging_mask(
+                                st.session_state.filtered_wells.copy(),
+                                st.session_state.selected_point,
+                                st.session_state.search_radius,
+                                resolution=100,
+                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                                threshold=0.7
+                            )
+
                         # Generate regular interpolation visualization
                         geojson_data = generate_geo_json_grid(
                             st.session_state.filtered_wells.copy(), 
@@ -475,7 +493,8 @@ with main_col1:
                             show_variance=False,
                             auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
                             variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                            indicator_mask=indicator_mask
                         )
                 else:
                     geojson_data = {"type": "FeatureCollection", "features": []}

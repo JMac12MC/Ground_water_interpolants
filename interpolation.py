@@ -674,7 +674,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
-                    if include_triangle and indicator_geometry is not None:
+                    # Only apply to non-indicator methods
+                    non_indicator_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'idw']
+                    if include_triangle and indicator_geometry is not None and method in non_indicator_methods:
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         centroid_point = Point(centroid_lon, centroid_lat)
@@ -715,7 +717,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
 
                 # Additional clipping by indicator kriging geometry (high-probability zones)
-                if include_point and indicator_geometry is not None:
+                # Only apply to non-indicator methods
+                non_indicator_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'idw']
+                if include_point and indicator_geometry is not None and method in non_indicator_methods:
                     point = Point(grid_lons[i], grid_lats[i])
                     was_included = include_point
                     include_point = indicator_geometry.contains(point) or indicator_geometry.intersects(point)

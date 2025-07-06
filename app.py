@@ -544,24 +544,8 @@ with main_col1:
                                 '#993300'   # Brown (high level)
                             ]
                         elif st.session_state.interpolation_method == 'indicator_kriging':
-                            # Indicator colors: red (low probability) to green (high probability)
-                            colors = [
-                                '#8B0000',  # Dark red (very low probability)
-                                '#B22222',  # Fire brick
-                                '#DC143C',  # Crimson
-                                '#FF0000',  # Red
-                                '#FF4500',  # Orange red
-                                '#FF8C00',  # Dark orange
-                                '#FFA500',  # Orange
-                                '#FFD700',  # Gold
-                                '#FFFF00',  # Yellow (medium probability)
-                                '#ADFF2F',  # Green yellow
-                                '#9AFF9A',  # Light green
-                                '#7FFF00',  # Chartreuse
-                                '#32CD32',  # Lime green
-                                '#228B22',  # Forest green
-                                '#006400'   # Dark green (high probability)
-                            ]
+                            # Binary indicator colors: red for non-viable (0), green for viable (1)
+                            colors = ['#FF0000', '#00FF00']  # Red and Green only
                         else:
                             # Yield colors: blue (low yield) to red (high yield)
                             colors = [
@@ -582,9 +566,13 @@ with main_col1:
                                 '#FF0000'   # Band 15: Red
                             ]
 
-                        # Determine which band the value falls into
-                        band_index = min(14, int(value / step))
-                        return colors[band_index]
+                        if st.session_state.interpolation_method == 'indicator_kriging':
+                            # Binary classification: red for < 0.5, green for >= 0.5
+                            return '#FF0000' if value < 0.5 else '#00FF00'
+                        else:
+                            # Determine which band the value falls into
+                            band_index = min(14, int(value / step))
+                            return colors[band_index]
 
                     # Style function that uses our color mapping
                     def style_feature(feature):
@@ -638,14 +626,13 @@ with main_col1:
                             caption='Ground Water Level (m) - 15 Bands'
                         )
                     elif st.session_state.interpolation_method == 'indicator_kriging':
-                        # Indicator kriging legend (probability scale)
-                        colormap = folium.LinearColormap(
-                            colors=['#8B0000', '#B22222', '#DC143C', '#FF0000', '#FF4500', 
-                                    '#FF8C00', '#FFA500', '#FFD700', '#FFFF00', '#ADFF2F', 
-                                    '#9AFF9A', '#7FFF00', '#32CD32', '#228B22', '#006400'],
+                        # Binary indicator kriging legend
+                        colormap = folium.StepColormap(
+                            colors=['#FF0000', '#00FF00'],  # Red and Green only
                             vmin=0,
-                            vmax=1.0,  # Probability scale 0-1
-                            caption='Probability of Viable Yield (≥0.1 L/s) - 15 Bands'
+                            vmax=1.0,
+                            index=[0, 0.5, 1.0],  # Binary thresholds
+                            caption='Well Viability: Red = Non-viable (<0.5), Green = Viable (≥0.5)'
                         )
                     else:
                         # Yield legend with original colors

@@ -240,15 +240,18 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
-            # Set up kriging for binary indicator data
-            # Use linear variogram model which works well for indicator data
+            # Set up kriging for binary indicator data with constrained parameters
+            # Use spherical model with limited range to prevent high values far from viable wells
+            max_range_km = min(radius_km * 0.5, 5.0)  # Limit influence to half radius or 5km max
+            range_degrees = max_range_km / 111.0  # Convert km to degrees (rough approximation)
+            
             OK = OrdinaryKriging(
                 lon_values, lat_values, yields,
-                variogram_model='linear',  # Linear model works well for binary data
+                variogram_model='spherical',  # Better spatial control than linear
                 verbose=False,
                 enable_plotting=False,
                 weight=True,  # Enable nugget effect for indicator data
-                exact_values=True  # Preserve exact values at data points
+                variogram_parameters=[0.2, 0.6, range_degrees]  # [nugget, sill, range] - constrained range
             )
 
             # Execute kriging to get probability predictions
@@ -256,8 +259,34 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
             # Ensure values are in [0,1] range (probabilities)
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+            
+            # Apply distance-based decay to prevent high values far from viable wells
+            # Calculate distances from each grid point to nearest viable well (yield >= 0.1)
+            viable_wells_mask = yields >= 0.5  # Wells with viable yield indicators
+            if np.any(viable_wells_mask):
+                viable_coords = np.column_stack([x_coords[viable_wells_mask], y_coords[viable_wells_mask]])
+                grid_coords = grid_points
+                
+                # Calculate distance to nearest viable well for each grid point
+                from scipy.spatial.distance import cdist
+                distances = cdist(grid_coords, viable_coords)
+                min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
+                
+                # Apply exponential decay for distances > 2km
+                decay_threshold_km = 2.0
+                decay_factor = 0.5  # Halve probability for each km beyond threshold
+                
+                distance_mask = min_distances_km > decay_threshold_km
+                excess_distance = min_distances_km[distance_mask] - decay_threshold_km
+                decay_multiplier = np.exp(-decay_factor * excess_distance)
+                interpolated_z[distance_mask] *= decay_multiplier
+            
+            # Apply strict binary threshold for final classification
+            # This ensures only two colors in the visualization
+            binary_threshold = 0.5
+            interpolated_z = (interpolated_z >= binary_threshold).astype(float)
 
-            print(f"Indicator kriging results: probability range {np.min(interpolated_z):.3f} to {np.max(interpolated_z):.3f}")
+            print(f"Indicator kriging results: binary values 0 and 1, {np.sum(interpolated_z)}/{len(interpolated_z)} points classified as viable")
 
         elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield/depth visualization (without variance output)

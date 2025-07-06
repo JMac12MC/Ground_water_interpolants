@@ -10,6 +10,64 @@ from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import unary_union
 import geopandas as gpd
 
+def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
+    """
+    Convert indicator kriging mask into polygon geometry for clipping
+    
+    Parameters:
+    -----------
+    indicator_mask : tuple
+        Tuple containing indicator kriging mask data
+    threshold : float
+        Threshold for high-probability zones
+        
+    Returns:
+    --------
+    shapely.geometry or None
+        Merged polygon geometry of high-probability zones
+    """
+    try:
+        if indicator_mask is None:
+            return None
+            
+        mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
+        if mask_values is None:
+            return None
+            
+        from shapely.geometry import Polygon, MultiPolygon
+        from shapely.ops import unary_union
+        
+        # Create polygons for grid cells where probability >= threshold
+        polygons = []
+        for i in range(len(mask_lat_vals)-1):
+            for j in range(len(mask_lon_vals)-1):
+                if mask_values[i, j] >= threshold:
+                    # Create polygon for this grid cell
+                    min_lat, max_lat = mask_lat_vals[i], mask_lat_vals[i+1]
+                    min_lon, max_lon = mask_lon_vals[j], mask_lon_vals[j+1]
+                    
+                    polygon = Polygon([
+                        (min_lon, min_lat),
+                        (max_lon, min_lat), 
+                        (max_lon, max_lat),
+                        (min_lon, max_lat),
+                        (min_lon, min_lat)
+                    ])
+                    polygons.append(polygon)
+        
+        if not polygons:
+            return None
+            
+        # Merge all polygons into a single geometry
+        merged_geometry = unary_union(polygons)
+        
+        print(f"Created indicator clipping geometry from {len(polygons)} high-probability cells")
+        return merged_geometry
+        
+    except Exception as e:
+        print(f"Error creating indicator polygon geometry: {e}")
+        return None
+
 def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolution=50, soil_polygons=None, threshold=0.7):
     """
     Generate an indicator kriging mask for high-probability zones (≥ threshold)
@@ -123,14 +181,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         GeoJSON data structure with interpolated yield values
     """
     
-    # Debug indicator mask status
+    # Debug indicator mask status and create polygon geometry for clipping
     print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
+    indicator_geometry = None
     if indicator_mask is not None:
         mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
         print(f"Indicator mask grid shape: {mask_values.shape if mask_values is not None else 'None'}")
         if mask_values is not None:
             high_prob_count = np.sum(mask_values >= 0.7)
             print(f"Mask has {high_prob_count} high-probability points (≥0.7) out of {mask_values.size} total")
+            # Create polygon geometry from indicator mask for clipping
+            indicator_geometry = create_indicator_polygon_geometry(indicator_mask, threshold=0.7)
 
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
@@ -669,24 +730,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                             cell_center_point = Point(cell_lon, cell_lat)
                             include_cell = merged_soil_geometry.contains(cell_center_point) or merged_soil_geometry.intersects(cell_center_point)
 
-                        # Additional clipping by indicator kriging mask (high-probability zones)
-                        if include_cell and indicator_mask is not None:
-                            # Get the actual indicator kriging probability at this location
-                            mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
-                            if mask_values is not None:
-                                # Find nearest mask grid point
-                                mask_lat_idx = np.argmin(np.abs(mask_lat_vals - cell_lat))
-                                mask_lon_idx = np.argmin(np.abs(mask_lon_vals - cell_lon))
-                                
-                                # Get the indicator kriging probability value
-                                indicator_prob = mask_values[mask_lat_idx, mask_lon_idx]
-                                
-                                # Only include if probability is in high-probability zone (≥0.7)
-                                if indicator_prob < 0.7:
-                                    include_cell = False
-                                    # Debug logging to see clipping in action
-                                    if cell_value > 0.01:  # Only log for meaningful cells that would otherwise be included
-                                        print(f"Indicator clipping: cell at ({cell_lat:.3f}, {cell_lon:.3f}) with value {cell_value:.2f} excluded (indicator prob: {indicator_prob:.3f})")
+                        # Additional clipping by indicator kriging geometry (high-probability zones)
+                        if include_cell and indicator_geometry is not None:
+                            # Check if cell center is within indicator high-probability zones
+                            cell_center_point = Point(cell_lon, cell_lat)
+                            include_cell = indicator_geometry.contains(cell_center_point) or indicator_geometry.intersects(cell_center_point)
 
                         if include_cell:
                             # Create polygon for this grid cell

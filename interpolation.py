@@ -178,27 +178,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
 
-        # Convert yields to three-tier indicator values
-        # 0.0-0.5: Poor yield (0.25)  -> Red
-        # 0.5-0.75: Moderate yield (0.625) -> Orange  
-        # 0.75-1.0: Good yield (0.875) -> Green
+        # Convert yields to BINARY indicator values for kriging input
+        # 0 for wells with yield < 0.1 L/s (not viable)
+        # 1 for wells with yield ≥ 0.1 L/s (viable)
+        yield_threshold = 0.1
         raw_yields = wells_df['yield_rate'].values.astype(float)
+        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
 
-        # Create three-tier classification
-        yields = np.zeros_like(raw_yields)
-        yields[(raw_yields >= 0.0) & (raw_yields < 0.5)] = 0.25   # Poor - Red
-        yields[(raw_yields >= 0.5) & (raw_yields < 0.75)] = 0.625  # Moderate - Orange
-        yields[raw_yields >= 0.75] = 0.875                         # Good - Green
+        # Count wells in each category for logging
+        viable_count = np.sum(yields == 1)
+        non_viable_count = np.sum(yields == 0)
 
-        # Count wells in each category
-        poor_count = np.sum((raw_yields >= 0.0) & (raw_yields < 0.5))
-        moderate_count = np.sum((raw_yields >= 0.5) & (raw_yields < 0.75))
-        good_count = np.sum(raw_yields >= 0.75)
-
-        print(f"Three-tier indicator kriging: using {len(yields)} wells")
-        print(f"Poor yield (0.0-0.5 L/s): {poor_count} wells ({100*poor_count/len(yields):.1f}%)")
-        print(f"Moderate yield (0.5-0.75 L/s): {moderate_count} wells ({100*moderate_count/len(yields):.1f}%)")
-        print(f"Good yield (≥0.75 L/s): {good_count} wells ({100*good_count/len(yields):.1f}%)")
+        print(f"GeoJSON indicator kriging: using {len(yields)} wells with binary classification")
+        print(f"Non-viable (<{yield_threshold} L/s): {non_viable_count} wells ({100*non_viable_count/len(yields):.1f}%)")
+        print(f"Viable (≥{yield_threshold} L/s): {viable_count} wells ({100*viable_count/len(yields):.1f}%)")
         print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
         print(f"Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
         print(f"Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
@@ -328,22 +321,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 decay_multiplier = np.exp(-decay_factor * excess_distance)
                 interpolated_z[distance_mask] *= decay_multiplier
 
-            # Classify interpolated values into three tiers
-            # Preserve three-tier structure: 0.25 (red), 0.625 (orange), 0.875 (green)
-            final_values = np.zeros_like(interpolated_z)
-            final_values[interpolated_z < 0.4] = 0.25   # Red tier
-            final_values[(interpolated_z >= 0.4) & (interpolated_z < 0.7)] = 0.625   # Orange tier
-            final_values[interpolated_z >= 0.7] = 0.875   # Green tier
+            # Count points in each tier based on OUTPUT ranges (continuous 0-1 function)
+            # Keep the continuous kriging output values intact - colors applied during visualization
+            red_count = np.sum((interpolated_z >= 0.0) & (interpolated_z < 0.4))     # Red: 0.0-0.4
+            orange_count = np.sum((interpolated_z >= 0.4) & (interpolated_z < 0.7))  # Orange: 0.4-0.7  
+            green_count = np.sum(interpolated_z >= 0.7)                              # Green: 0.7-1.0
 
-            interpolated_z = final_values
-
-            # Count points in each tier
-            red_count = np.sum(interpolated_z == 0.25)
-            orange_count = np.sum(interpolated_z == 0.625)
-            green_count = np.sum(interpolated_z == 0.875)
-
-            print(f"Three-tier indicator kriging results:")
-            print(f"Red (poor): {red_count} points, Orange (moderate): {orange_count} points, Green (good): {green_count} points")
+            print(f"Indicator kriging results (output function ranges):")
+            print(f"Red (0.0-0.4): {red_count} points, Orange (0.4-0.7): {orange_count} points, Green (0.7-1.0): {green_count} points")
+            print(f"Output value range: {interpolated_z.min():.3f} to {interpolated_z.max():.3f}")
 
         elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield/depth visualization (without variance output)
@@ -769,27 +755,21 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
 
-        # Convert yields to three-tier indicator values
-        # 0.0-0.5: Poor yield (0.25) -> Red
-        # 0.5-0.75: Moderate yield (0.625) -> Orange  
-        # 0.75+: Good yield (0.875) -> Green
+        # Convert yields to BINARY indicator values for kriging input
+        # 0 for wells with yield < 0.1 L/s (not viable)
+        # 1 for wells with yield ≥ 0.1 L/s (viable)
+        yield_threshold = 0.1
         raw_yields = wells_df_filtered['yield_rate'].values.astype(float)
-        
-        # Create three-tier classification
-        yields = np.zeros_like(raw_yields)
-        yields[(raw_yields >= 0.0) & (raw_yields < 0.5)] = 0.25   # Poor - Red
-        yields[(raw_yields >= 0.5) & (raw_yields < 0.75)] = 0.625  # Moderate - Orange
-        yields[raw_yields >= 0.75] = 0.875                         # Good - Green
+        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
 
-        # Count wells in each category
-        poor_count = np.sum((raw_yields >= 0.0) & (raw_yields < 0.5))
-        moderate_count = np.sum((raw_yields >= 0.5) & (raw_yields < 0.75))
-        good_count = np.sum(raw_yields >= 0.75)
+        # Count wells in each category for logging
+        viable_count = np.sum(yields == 1)
+        non_viable_count = np.sum(yields == 0)
 
-        print(f"Heat map three-tier indicator kriging: using {len(yields)} wells")
-        print(f"Poor yield (0.0-0.5 L/s): {poor_count} wells ({100*poor_count/len(yields):.1f}%)")
-        print(f"Moderate yield (0.5-0.75 L/s): {moderate_count} wells ({100*moderate_count/len(yields):.1f}%)")
-        print(f"Good yield (≥0.75 L/s): {good_count} wells ({100*good_count/len(yields):.1f}%)")
+        print(f"Heat map indicator kriging: using {len(yields)} wells with binary classification")
+        print(f"Non-viable (<{yield_threshold} L/s): {non_viable_count} wells ({100*non_viable_count/len(yields):.1f}%)")
+        print(f"Viable (≥{yield_threshold} L/s): {viable_count} wells ({100*viable_count/len(yields):.1f}%)")
+        print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')

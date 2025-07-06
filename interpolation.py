@@ -184,7 +184,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Debug indicator mask status and create polygon geometry for clipping
     print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
     indicator_geometry = None
-    if indicator_mask is not None:
+    
+    # Don't apply indicator clipping to indicator kriging methods themselves
+    # Indicator methods should not be clipped by their own output
+    indicator_methods = ['indicator_kriging', 'indicator_variance']
+    clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'idw']
+    
+    if indicator_mask is not None and method in clippable_methods:
         mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
         print(f"Indicator mask grid shape: {mask_values.shape if mask_values is not None else 'None'}")
         if mask_values is not None:
@@ -192,6 +198,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             print(f"Mask has {high_prob_count} high-probability points (≥0.7) out of {mask_values.size} total")
             # Create polygon geometry from indicator mask for clipping
             indicator_geometry = create_indicator_polygon_geometry(indicator_mask, threshold=0.7)
+            if indicator_geometry is not None:
+                print(f"Created indicator clipping geometry from {high_prob_count} high-probability cells")
 
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
@@ -674,9 +682,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
-                    # Only apply to non-indicator methods
-                    non_indicator_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'idw']
-                    if include_triangle and indicator_geometry is not None and method in non_indicator_methods:
+                    if include_triangle and indicator_geometry is not None:
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         centroid_point = Point(centroid_lon, centroid_lat)
@@ -717,9 +723,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
 
                 # Additional clipping by indicator kriging geometry (high-probability zones)
-                # Only apply to non-indicator methods
-                non_indicator_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'idw']
-                if include_point and indicator_geometry is not None and method in non_indicator_methods:
+                if include_point and indicator_geometry is not None:
                     point = Point(grid_lons[i], grid_lats[i])
                     was_included = include_point
                     include_point = indicator_geometry.contains(point) or indicator_geometry.intersects(point)

@@ -50,7 +50,7 @@ if 'heat_map_visibility' not in st.session_state:
 if 'well_markers_visibility' not in st.session_state:
     st.session_state.well_markers_visibility = True
 if 'search_radius' not in st.session_state:
-    st.session_state.search_radius = 10
+    st.session_state.search_radius = 20
 
 if 'soil_polygons' not in st.session_state:
     st.session_state.soil_polygons = None

@@ -710,7 +710,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     # Fallback to griddata if insufficient data
                     interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
                     nan_mask = np.isnan(interpolated_z)
-                    if np.any(nan_mask):```python
+                    if np.any(nan_mask):
                         interpolated_z[nan_mask] = griddata(
                             points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
                         )

@@ -171,6 +171,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         print(f"Indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
         print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
+        print(f"Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
+        print(f"Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')

@@ -142,21 +142,62 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
     elif method == 'indicator_kriging':
-        # For indicator kriging, we need ALL wells including those with zero yield
-        # Don't use get_wells_for_interpolation which filters out low yields
+        # For indicator kriging, we need wells with ACTUAL yield data (including 0.0)
+        # But exclude wells that have missing yield data entirely
         wells_df_original = wells_df.copy()
         
         # Only filter for valid coordinates and yield_rate column existence
         if 'yield_rate' not in wells_df_original.columns:
             return {"type": "FeatureCollection", "features": []}
-            
-        # Filter for valid coordinates and non-empty yield_rate (but include explicit zeros)
+        
+        # For indicator kriging, be more selective about 0.0 values
+        # Only include wells that are explicitly water wells with yield measurements
+        # Exclude wells that appear to be monitoring, geotechnical, or no-yield wells
+        
+        # Filter for valid coordinates and wells with actual yield measurements
         valid_coord_mask = (
             wells_df_original['latitude'].notna() & 
             wells_df_original['longitude'].notna() &
-            wells_df_original['yield_rate'].notna()  # Exclude NaN/empty, but include 0.0
+            wells_df_original['yield_rate'].notna()  # Must have yield data
         )
+        
+        # Additional filtering to exclude wells that shouldn't be in indicator kriging
+        if 'well_use' in wells_df_original.columns:
+            # Exclude geotechnical/geological investigation wells
+            investigation_mask = ~wells_df_original['well_use'].str.contains(
+                'Geotechnical.*Investigation|Geological.*Investigation|Monitoring', 
+                case=False, na=False, regex=True
+            )
+            valid_coord_mask = valid_coord_mask & investigation_mask
+        
+        # For indicator kriging, be very conservative about 0.0 yields
+        # Only include them if they seem to be legitimate water wells with pump tests
+        has_pump_test_info = False
+        if 'PUMPING_TEST' in wells_df_original.columns:
+            has_pump_test_info = wells_df_original['PUMPING_TEST'].notna()
+        elif 'pump_test' in wells_df_original.columns:
+            has_pump_test_info = wells_df_original['pump_test'].notna()
+        
         wells_df = wells_df_original[valid_coord_mask].copy()
+        
+        # Final filter: for wells with 0.0 yield, only include if they have pump test info
+        # This helps distinguish between "tested and found to be 0.0" vs "missing data converted to 0.0"
+        if has_pump_test_info.any():
+            zero_yield_mask = (wells_df['yield_rate'] == 0.0)
+            wells_df = wells_df[
+                (wells_df['yield_rate'] > 0.0) |  # Include all non-zero yields
+                (zero_yield_mask & has_pump_test_info[wells_df.index])  # Only include 0.0 yields with pump test data
+            ].copy()
+        else:
+            # If no pump test info available, exclude most 0.0 yields to be safe
+            # Only keep a small percentage of 0.0 yields (assume some are legitimate)
+            zero_yield_indices = wells_df[wells_df['yield_rate'] == 0.0].index
+            if len(zero_yield_indices) > 10:  # If more than 10 zero-yield wells
+                # Keep only 20% of zero yields (randomly selected) to avoid bias
+                keep_count = max(2, len(zero_yield_indices) // 5)
+                keep_indices = np.random.choice(zero_yield_indices, keep_count, replace=False)
+                exclude_zero_mask = ~((wells_df['yield_rate'] == 0.0) & (~wells_df.index.isin(keep_indices)))
+                wells_df = wells_df[exclude_zero_mask].copy()
         
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
@@ -166,13 +207,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
         yield_threshold = 0.1
-        raw_yields = wells_df['yield_rate'].values.astype(float)  # Don't fill NaN - they're already filtered out
+        raw_yields = wells_df['yield_rate'].values.astype(float)
         yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
 
         print(f"Indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
         print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
         print(f"Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
         print(f"Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
+        print(f"Total wells excluded for quality: {len(wells_df_original) - len(wells_df)}")
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')

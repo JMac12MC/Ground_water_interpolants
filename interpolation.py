@@ -84,11 +84,11 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
                     lat_idx = np.argmin(np.abs(lat_vals - centroid_lat))
                     lon_idx = np.argmin(np.abs(lon_vals - centroid_lon))
                     
-                    # Set mask value (1 if above threshold, 0 otherwise)
-                    if yield_value >= threshold:
-                        mask_values[lat_idx, lon_idx] = 1
+                    # Set mask value to the actual indicator kriging probability
+                    mask_values[lat_idx, lon_idx] = yield_value
                         
-        print(f"Indicator mask generated: {np.sum(mask_values)} high-probability points (≥{threshold}) out of {mask_values.size} total grid points")
+        high_prob_count = np.sum(mask_values >= threshold)
+        print(f"Indicator mask generated: {high_prob_count} high-probability points (≥{threshold}) out of {mask_values.size} total grid points")
         return grid_lats, grid_lons, mask_values, lat_vals, lon_vals
         
     except Exception as e:
@@ -659,15 +659,18 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                         # Additional clipping by indicator kriging mask (high-probability zones)
                         if include_cell and indicator_mask is not None:
-                            # Check if this cell is in a high-probability zone
+                            # Get the actual indicator kriging probability at this location
                             mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
                             if mask_values is not None:
                                 # Find nearest mask grid point
                                 mask_lat_idx = np.argmin(np.abs(mask_lat_vals - cell_lat))
                                 mask_lon_idx = np.argmin(np.abs(mask_lon_vals - cell_lon))
                                 
-                                # Only include if mask value is 1 (high probability)
-                                if mask_values[mask_lat_idx, mask_lon_idx] < 1:
+                                # Get the indicator kriging probability value
+                                indicator_prob = mask_values[mask_lat_idx, mask_lon_idx]
+                                
+                                # Only include if probability is in high-probability zone (≥0.7)
+                                if indicator_prob < 0.7:
                                     include_cell = False
 
                         if include_cell:

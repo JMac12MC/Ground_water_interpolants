@@ -188,6 +188,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         print(f"Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
         print(f"Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
         print(f"Total wells excluded for quality: {len(wells_df_original) - len(wells_df)}")
+        
+        # Debug: Check if L35/1011 is in the filtered dataset
+        if 'WELL_NO' in wells_df.columns:
+            l35_wells = wells_df[wells_df['WELL_NO'].str.contains('L35/1011', na=False)]
+            if not l35_wells.empty:
+                print(f"DEBUG: L35/1011 found in filtered data with yield: {l35_wells['yield_rate'].iloc[0]}")
+            else:
+                print("DEBUG: L35/1011 correctly excluded from indicator kriging")
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')

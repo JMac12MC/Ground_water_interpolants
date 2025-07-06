@@ -687,6 +687,7 @@ with main_col1:
     # Display the map
     st.subheader("Interactive Map")
     st.caption("Click on the map to select a location and find nearby wells")
+    st.caption("🔧 App Version: Updated 2025-01-06")
 
     # Use st_folium instead of folium_static to capture clicks
     from streamlit_folium import st_folium
@@ -723,13 +724,24 @@ with main_col1:
             # Use experimental_rerun to reduce instability
             st.rerun()
 
-    # Add a clear button to reset the map
-    if st.button("Clear Results", use_container_width=True):
-        # Reset the session state safely
-        for key in ['selected_point', 'filtered_wells']:
-            if key in st.session_state:
+    # Add cache clearing and reset buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Clear Results", use_container_width=True):
+            # Reset the session state safely
+            for key in ['selected_point', 'filtered_wells']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Refresh App", use_container_width=True):
+            # Clear all caches and reset session state
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            for key in list(st.session_state.keys()):
                 del st.session_state[key]
-        st.rerun()
+            st.rerun()
 
 with main_col2:
     st.subheader("Analysis Results")

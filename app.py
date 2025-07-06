@@ -196,7 +196,8 @@ with st.sidebar:
             "Indicator Kriging (Yield Suitability)"
         ],
         index=0,
-        help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability"
+        help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
+        key="visualization_method_selector"
     )
 
     # Map visualization selection to internal parameters

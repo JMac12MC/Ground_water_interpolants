@@ -194,17 +194,24 @@ with st.sidebar:
     # Generate regional heatmap button with unique key
     if st.button("🚀 Generate Regional Heatmap", key="generate_regional_btn"):
         if st.session_state.wells_data is not None:
-            with st.spinner("Generating regional heatmap (this may take several minutes)..."):
-                # Generate comprehensive regional heatmap
-                st.session_state.regional_heatmap_data = generate_default_regional_heatmap(
-                    st.session_state.wells_data, 
-                    st.session_state.soil_polygons
-                )
-                if st.session_state.regional_heatmap_data:
-                    st.success(f"✅ Generated regional heatmap with {len(st.session_state.regional_heatmap_data)} data points")
-                    st.rerun()  # Force refresh after generation
-                else:
-                    st.error("❌ Failed to generate regional heatmap")
+            try:
+                with st.spinner("Generating regional heatmap (this may take several minutes)..."):
+                    # Generate comprehensive regional heatmap
+                    regional_data = generate_default_regional_heatmap(
+                        st.session_state.wells_data, 
+                        st.session_state.soil_polygons
+                    )
+                    
+                    if regional_data and len(regional_data) > 0:
+                        st.session_state.regional_heatmap_data = regional_data
+                        st.success(f"✅ Generated regional heatmap with {len(regional_data)} data points")
+                        st.rerun()  # Force refresh after generation
+                    else:
+                        st.error("❌ Failed to generate regional heatmap - no data returned")
+                        
+            except Exception as e:
+                st.error(f"❌ Error generating regional heatmap: {str(e)}")
+                st.session_state.regional_heatmap_data = None
         else:
             st.warning("⚠️ No wells data available for regional heatmap generation")
     

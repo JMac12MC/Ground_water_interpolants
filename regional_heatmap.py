@@ -28,7 +28,7 @@ class RegionalHeatmapGenerator:
             'min_lng': 170.0,  # Western boundary
             'max_lng': 173.0   # Eastern boundary (coast)
         }
-        self.resolution = 200  # High resolution grid (200x200)
+        self.resolution = 100  # Optimized resolution grid (100x100 for performance)
         self.regional_heatmap_data = None
         self.grid_lats = None
         self.grid_lngs = None
@@ -63,6 +63,12 @@ class RegionalHeatmapGenerator:
             print(f"Insufficient data for {variable} heatmap: only {len(valid_wells)} wells")
             return []
         
+        # Limit to manageable number of wells for performance
+        if len(valid_wells) > 5000:
+            print(f"Sampling {len(valid_wells)} wells down to 5000 for performance")
+            valid_wells = valid_wells.sample(n=5000, random_state=42)
+            values = valid_wells[variable].values
+        
         print(f"Using {len(valid_wells)} wells with valid {variable} data")
         print(f"Value range: {values.min():.2f} to {values.max():.2f}")
         
@@ -85,40 +91,13 @@ class RegionalHeatmapGenerator:
         grid_points = np.column_stack([grid_lats.ravel(), grid_lngs.ravel()])
         
         try:
-            # Use Ordinary Kriging for high-quality interpolation
-            print("Performing Ordinary Kriging interpolation...")
-            
-            # Create kriging model
-            ok_model = OrdinaryKriging(
-                valid_wells['longitude'].values,
-                valid_wells['latitude'].values,
-                values,
-                variogram_model='spherical',
-                enable_plotting=False,
-                coordinates_type='geographic'
-            )
-            
-            # Perform interpolation in chunks to manage memory
-            chunk_size = 5000
-            interpolated_values = np.zeros(len(grid_points))
-            
-            for i in range(0, len(grid_points), chunk_size):
-                end_idx = min(i + chunk_size, len(grid_points))
-                chunk_points = grid_points[i:end_idx]
-                
-                # Interpolate chunk
-                z_chunk, _ = ok_model.execute('points', 
-                                            chunk_points[:, 1],  # longitude
-                                            chunk_points[:, 0])  # latitude
-                interpolated_values[i:end_idx] = z_chunk
-                
-                if (i // chunk_size + 1) % 10 == 0:
-                    print(f"Processed {i + len(chunk_points)}/{len(grid_points)} grid points")
+            # Use IDW interpolation for better performance with large datasets
+            print("Performing IDW interpolation for regional coverage...")
+            interpolated_values = self._idw_interpolation(well_coords, values, grid_points)
             
         except Exception as e:
-            print(f"Kriging failed: {e}, using IDW interpolation")
-            # Fallback to Inverse Distance Weighting
-            interpolated_values = self._idw_interpolation(well_coords, values, grid_points)
+            print(f"Regional interpolation failed: {e}")
+            return []
         
         # Reshape to grid
         interpolated_grid = interpolated_values.reshape(grid_lats.shape)

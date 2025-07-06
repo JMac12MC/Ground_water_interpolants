@@ -734,7 +734,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         if include_cell and indicator_geometry is not None:
                             # Check if cell center is within indicator high-probability zones
                             cell_center_point = Point(cell_lon, cell_lat)
+                            was_included = include_cell
                             include_cell = indicator_geometry.contains(cell_center_point) or indicator_geometry.intersects(cell_center_point)
+                            if was_included and not include_cell:
+                                print(f"Grid indicator clipping: excluded cell at ({cell_lat:.3f}, {cell_lon:.3f}) with value {cell_value:.2f}")
 
                         if include_cell:
                             # Create polygon for this grid cell
@@ -771,7 +774,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 # Additional clipping by indicator kriging geometry (high-probability zones)
                 if include_point and indicator_geometry is not None:
                     point = Point(grid_lons[i], grid_lats[i])
+                    was_included = include_point
                     include_point = indicator_geometry.contains(point) or indicator_geometry.intersects(point)
+                    if was_included and not include_point:
+                        print(f"Indicator clipping: excluded point at ({grid_lats[i]:.3f}, {grid_lons[i]:.3f}) with value {interpolated_z[i]:.2f}")
 
                 if include_point:
                     # Create a small circle as a polygon (approximated with 8 points)

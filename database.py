@@ -423,6 +423,10 @@ class PolygonDatabase:
             The ID of the stored heatmap
         """
         try:
+            # Recreate engine connection if needed
+            if not hasattr(self, 'engine') or self.engine is None:
+                self.engine = create_engine(self.database_url)
+            
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     INSERT INTO stored_heatmaps (
@@ -443,9 +447,14 @@ class PolygonDatabase:
                     'well_count': well_count
                 })
                 conn.commit()
-                heatmap_id = result.fetchone()[0]
-                print(f"Stored heatmap '{heatmap_name}' with ID {heatmap_id}")
-                return heatmap_id
+                row = result.fetchone()
+                if row:
+                    heatmap_id = row[0]
+                    print(f"Successfully stored heatmap '{heatmap_name}' with ID {heatmap_id}")
+                    return heatmap_id
+                else:
+                    print("Failed to get heatmap ID after insert")
+                    return None
 
         except Exception as e:
             print(f"Error storing heatmap: {e}")
@@ -461,6 +470,10 @@ class PolygonDatabase:
             List of heatmap dictionaries
         """
         try:
+            # Recreate engine connection if needed
+            if not hasattr(self, 'engine') or self.engine is None:
+                self.engine = create_engine(self.database_url)
+            
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     SELECT id, heatmap_name, center_lat, center_lon, radius_km,
@@ -471,6 +484,23 @@ class PolygonDatabase:
                 
                 heatmaps = []
                 for row in result:
+                    # Handle JSON data that might already be parsed
+                    heatmap_data = row[6]
+                    if isinstance(heatmap_data, str):
+                        try:
+                            heatmap_data = json.loads(heatmap_data)
+                        except json.JSONDecodeError:
+                            heatmap_data = []
+                    elif not isinstance(heatmap_data, list):
+                        heatmap_data = []
+                    
+                    geojson_data = row[7]
+                    if isinstance(geojson_data, str):
+                        try:
+                            geojson_data = json.loads(geojson_data)
+                        except json.JSONDecodeError:
+                            geojson_data = None
+                    
                     heatmap = {
                         'id': row[0],
                         'heatmap_name': row[1],
@@ -478,13 +508,14 @@ class PolygonDatabase:
                         'center_lon': row[3],
                         'radius_km': row[4],
                         'interpolation_method': row[5],
-                        'heatmap_data': json.loads(row[6]) if row[6] else [],
-                        'geojson_data': json.loads(row[7]) if row[7] else None,
+                        'heatmap_data': heatmap_data,
+                        'geojson_data': geojson_data,
                         'well_count': row[8],
                         'created_at': row[9]
                     }
                     heatmaps.append(heatmap)
                 
+                print(f"Successfully retrieved {len(heatmaps)} stored heatmaps")
                 return heatmaps
 
         except Exception as e:

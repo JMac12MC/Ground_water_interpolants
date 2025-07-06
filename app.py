@@ -265,21 +265,39 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
     
-    # Load stored heatmaps from database if we haven't already
-    if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
-        stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-        st.session_state.stored_heatmaps = stored_heatmaps
+    # Load stored heatmaps from database
+    if st.session_state.polygon_db:
+        try:
+            stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+            st.session_state.stored_heatmaps = stored_heatmaps
+            print(f"Loaded {len(stored_heatmaps)} stored heatmaps from database")
+        except Exception as e:
+            print(f"Error loading stored heatmaps: {e}")
+            st.session_state.stored_heatmaps = []
     
     if st.session_state.stored_heatmaps:
         st.write(f"**{len(st.session_state.stored_heatmaps)} stored heatmaps available**")
         
-        # Clear all stored heatmaps button
-        if st.button("🗑️ Clear All Stored Heatmaps", type="secondary"):
-            if st.session_state.polygon_db:
-                count = st.session_state.polygon_db.delete_all_stored_heatmaps()
-                st.session_state.stored_heatmaps = []
-                st.success(f"Cleared {count} stored heatmaps")
-                st.rerun()
+        # Refresh and Clear buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Refresh List", help="Reload stored heatmaps from database"):
+                if st.session_state.polygon_db:
+                    try:
+                        stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        st.session_state.stored_heatmaps = stored_heatmaps
+                        st.success(f"Refreshed: {len(stored_heatmaps)} heatmaps found")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error refreshing: {e}")
+        
+        with col2:
+            if st.button("🗑️ Clear All", type="secondary"):
+                if st.session_state.polygon_db:
+                    count = st.session_state.polygon_db.delete_all_stored_heatmaps()
+                    st.session_state.stored_heatmaps = []
+                    st.success(f"Cleared {count} stored heatmaps")
+                    st.rerun()
         
         # Display each stored heatmap with details
         for heatmap in st.session_state.stored_heatmaps:
@@ -338,19 +356,23 @@ with main_col1:
         ).add_to(m)
 
     # Display all stored heatmaps on the map
+    stored_heatmap_count = 0
     if st.session_state.stored_heatmaps:
-        for stored_heatmap in st.session_state.stored_heatmaps:
+        print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps")
+        for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
             try:
-                heatmap_data = stored_heatmap['heatmap_data']
+                heatmap_data = stored_heatmap.get('heatmap_data', [])
                 if heatmap_data and len(heatmap_data) > 0:
+                    print(f"Adding stored heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
+                    
                     # Add the stored heatmap to the map
-                    from folium.plugins import HeatMap
                     HeatMap(heatmap_data, 
-                           radius=25, 
-                           blur=15, 
+                           radius=20, 
+                           blur=10, 
                            name=f"Stored: {stored_heatmap['heatmap_name']}",
                            overlay=True,
-                           control=True).add_to(m)
+                           control=True,
+                           max_zoom=1.0).add_to(m)
                     
                     # Add a marker showing the center point of the stored heatmap
                     folium.Marker(
@@ -362,8 +384,16 @@ with main_col1:
                               f"Created: {stored_heatmap['created_at']}",
                         icon=folium.Icon(color='purple', icon='info-sign')
                     ).add_to(m)
+                    
+                    stored_heatmap_count += 1
+                else:
+                    print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data: {len(heatmap_data) if heatmap_data else 0} points")
             except Exception as e:
-                print(f"Error displaying stored heatmap {stored_heatmap['heatmap_name']}: {e}")
+                print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
+        
+        print(f"Successfully displayed {stored_heatmap_count} stored heatmaps on the map")
+    else:
+        print("No stored heatmaps to display")
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None
@@ -939,10 +969,11 @@ with main_col2:
                         if heatmap_id:
                             # Refresh the stored heatmaps list
                             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            st.success(f"✅ Saved heatmap: {heatmap_name}")
+                            st.success(f"✅ Saved heatmap: {heatmap_name} (ID: {heatmap_id})")
+                            st.success(f"📊 Heatmap contains {len(heat_map_data)} data points")
                             st.rerun()
                         else:
-                            st.error("❌ Failed to save heatmap")
+                            st.error("❌ Failed to save heatmap to database")
                     else:
                         st.warning("⚠️ No heatmap data to save. Generate a heatmap first.")
                 except Exception as e:

@@ -769,12 +769,27 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
 
-        # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
-        yield_threshold = 0.1
+        # Convert yields to three-tier indicator values
+        # 0.0-0.5: Poor yield (0.25) -> Red
+        # 0.5-0.75: Moderate yield (0.625) -> Orange  
+        # 0.75+: Good yield (0.875) -> Green
         raw_yields = wells_df_filtered['yield_rate'].values.astype(float)
-        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
+        
+        # Create three-tier classification
+        yields = np.zeros_like(raw_yields)
+        yields[(raw_yields >= 0.0) & (raw_yields < 0.5)] = 0.25   # Poor - Red
+        yields[(raw_yields >= 0.5) & (raw_yields < 0.75)] = 0.625  # Moderate - Orange
+        yields[raw_yields >= 0.75] = 0.875                         # Good - Green
 
-        print(f"Heat map indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
+        # Count wells in each category
+        poor_count = np.sum((raw_yields >= 0.0) & (raw_yields < 0.5))
+        moderate_count = np.sum((raw_yields >= 0.5) & (raw_yields < 0.75))
+        good_count = np.sum(raw_yields >= 0.75)
+
+        print(f"Heat map three-tier indicator kriging: using {len(yields)} wells")
+        print(f"Poor yield (0.0-0.5 L/s): {poor_count} wells ({100*poor_count/len(yields):.1f}%)")
+        print(f"Moderate yield (0.5-0.75 L/s): {moderate_count} wells ({100*moderate_count/len(yields):.1f}%)")
+        print(f"Good yield (≥0.75 L/s): {good_count} wells ({100*good_count/len(yields):.1f}%)")
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
@@ -2008,87 +2023,6 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
                 max_value = 1.0
 
         if heat_data:
-            # Add the heatmap layer to the map
-            # Define colors based on what we're displaying
-                    def get_color(value):
-                        if st.session_state.interpolation_method == 'indicator_kriging':
-                            # Three-tier indicator classification
-                            if value < 0.5:
-                                return '#FF0000'    # Red (0-0.5): Poor yield
-                            elif value < 0.75:
-                                return '#FFA500'    # Orange (0.5-0.75): Moderate yield
-                            else:
-                                return '#00FF00'    # Green (0.75-1.0): Good yield
-                        elif st.session_state.interpolation_method == 'depth_kriging':
-                            # Create 15-band color scale for depth
-                            step = max_value / 15.0
-                            # Depth colors: green (shallow) to red (deep)
-                            colors = [
-                                '#00ff00',  # Green (shallow depth)
-                                '#33ff00',
-                                '#66ff00',
-                                '#99ff00',
-                                '#ccff00',
-                                '#ffff00',  # Yellow
-                                '#ffcc00',
-                                '#ff9900',
-                                '#ff6600',
-                                '#ff3300',
-                                '#ff0000',  # Red (deep depth)
-                                '#cc0000',
-                                '#990000',
-                                '#660000',
-                                '#330000'   # Dark red (very deep)
-                            ]
-                            band_index = min(14, int(value / step))
-                            return colors[band_index]
-                        elif st.session_state.interpolation_method == 'ground_water_level_kriging':
-                            # Create 15-band color scale for ground water level
-                            step = max_value / 15.0
-                            # Ground water level colors: blue (low level) to brown (high level)
-                            colors = [
-                                '#000080',  # Dark blue (low level)
-                                '#0033CC',
-                                '#0066FF',
-                                '#0099FF',
-                                '#00CCFF',
-                                '#00FFFF',  # Cyan (medium-low)
-                                '#66FFCC',
-                                '#99FF99',
-                                '#CCFF66',
-                                '#FFFF33',  # Yellow (medium)
-                                '#FFCC00',
-                                '#FF9900',
-                                '#FF6600',
-                                '#CC3300',
-                                '#993300'   # Brown (high level)
-                            ]
-                            band_index = min(14, int(value / step))
-                            return colors[band_index]
-                        else:
-                            # Create 15-band color scale for yield
-                            step = max_value / 15.0
-                            # Yield colors: blue (low yield) to red (high yield)
-                            colors = [
-                                '#000080',  # Band 1: Dark blue
-                                '#0000B3',  # Band 2: Blue
-                                '#0000E6',  # Band 3: Bright blue
-                                '#0033FF',  # Band 4: Blue-cyan
-                                '#0066FF',  # Band 5: Light blue
-                                '#0099FF',  # Band 6: Sky blue
-                                '#00CCFF',  # Band 7: Cyan
-                                '#00FFCC',  # Band 8: Cyan-green
-                                '#00FF99',  # Band 9: Aqua green
-                                '#00FF66',  # Band 10: Green-yellow
-                                '#33FF33',  # Band 11: Green
-                                '#99FF00',  # Band 12: Yellow-green
-                                '#FFFF00',  # Band 13: Yellow
-                                '#FF9900',  # Band 14: Orange
-                                '#FF0000'   # Band 15: Red
-                            ]
-                            band_index = min(14, int(value / step))
-                            return colors[band_index]
-
             if show_variance:
                 add_heatmap(m, heat_data, radius=20, blur=15, max_value=max_value)  # Show variance as heatmap
             else:
@@ -2114,14 +2048,14 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
             )
             m.add_child(colormap)
         elif st.session_state.interpolation_method == 'indicator_kriging':
-                        # Three-tier indicator kriging legend
-                        colormap = folium.StepColormap(
-                            colors=['#FF0000', '#FFA500', '#00FF00'],  # Red, Orange, Green
-                            vmin=0,
-                            vmax=1.0,
-                            index=[0, 0.5, 0.75, 1.0],  # Three-tier thresholds
-                            caption='Groundwater Yield Probability: Red (Poor 0-0.5), Orange (Moderate 0.5-0.75), Green (Good 0.75-1.0)'
-                        )
+            # Three-tier indicator kriging legend
+            colormap = folium.StepColormap(
+                colors=['#FF0000', '#FFA500', '#00FF00'],  # Red, Orange, Green
+                vmin=0,
+                vmax=1.0,
+                index=[0, 0.5, 0.75, 1.0],  # Three-tier thresholds
+                caption='Groundwater Yield Probability: Red (Poor 0-0.5), Orange (Moderate 0.5-0.75), Green (Good 0.75-1.0)'
+            )
             m.add_child(colormap)
         elif st.session_state.interpolation_method == 'depth_kriging':
             # Depth colormap legend

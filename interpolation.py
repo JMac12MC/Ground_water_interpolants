@@ -142,8 +142,22 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
     elif method == 'indicator_kriging':
-        # Get wells appropriate for indicator interpolation (binary yield suitability)
-        wells_df = get_wells_for_interpolation(wells_df, 'yield')
+        # For indicator kriging, we need ALL wells including those with zero yield
+        # Don't use get_wells_for_interpolation which filters out low yields
+        wells_df_original = wells_df.copy()
+        
+        # Only filter for valid coordinates and yield_rate column existence
+        if 'yield_rate' not in wells_df_original.columns:
+            return {"type": "FeatureCollection", "features": []}
+            
+        # Filter for valid coordinates only
+        valid_coord_mask = (
+            wells_df_original['latitude'].notna() & 
+            wells_df_original['longitude'].notna() &
+            wells_df_original['yield_rate'].notna()
+        )
+        wells_df = wells_df_original[valid_coord_mask].copy()
+        
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
 
@@ -152,10 +166,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
         yield_threshold = 0.1
-        raw_yields = wells_df['yield_rate'].values.astype(float)
+        raw_yields = wells_df['yield_rate'].fillna(0).values.astype(float)  # Fill NaN with 0
         yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
 
         print(f"Indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
+        print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')

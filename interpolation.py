@@ -1381,8 +1381,7 @@ def get_prediction_at_point(wells_df, point_lat, point_lon):
     if not isinstance(wells_df, pd.DataFrame) or wells_df.empty:
         return 0
 
-    # Extract coordinates```python
- and yields
+    # Extract coordinates and yields
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
     yields = wells_df['yield_rate'].values.astype(float)

@@ -542,8 +542,8 @@ with main_col1:
                                 '#993300'   # Brown (high level)
                             ]
                         elif st.session_state.interpolation_method == 'indicator_kriging':
-                            # Binary indicator colors: red for non-viable (0), green for viable (1)
-                            colors = ['#FF0000', '#00FF00']  # Red and Green only
+                            # Three-tier indicator colors: red (poor), orange (moderate), green (good)
+                            colors = ['#FF0000', '#FF8000', '#00FF00']  # Red, Orange, Green
                         else:
                             # Yield colors: blue (low yield) to red (high yield)
                             colors = [
@@ -565,8 +565,13 @@ with main_col1:
                             ]
 
                         if st.session_state.interpolation_method == 'indicator_kriging':
-                            # Binary classification: red for < 0.5, green for >= 0.5
-                            return '#FF0000' if value < 0.5 else '#00FF00'
+                            # Three-tier classification: red (poor), orange (moderate), green (good)
+                            if value <= 0.4:
+                                return '#FF0000'    # Red for poor (0.25)
+                            elif value <= 0.7:
+                                return '#FF8000'    # Orange for moderate (0.625)
+                            else:
+                                return '#00FF00'    # Green for good (0.875)
                         else:
                             # Determine which band the value falls into
                             band_index = min(14, int(value / step))
@@ -624,13 +629,13 @@ with main_col1:
                             caption='Ground Water Level (m) - 15 Bands'
                         )
                     elif st.session_state.interpolation_method == 'indicator_kriging':
-                        # Binary indicator kriging legend
+                        # Three-tier indicator kriging legend
                         colormap = folium.StepColormap(
-                            colors=['#FF0000', '#00FF00'],  # Red and Green only
+                            colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
                             vmin=0,
                             vmax=1.0,
-                            index=[0, 0.5, 1.0],  # Binary thresholds
-                            caption='Well Viability: Red = Non-viable (<0.5), Green = Viable (≥0.5)'
+                            index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
+                            caption='Well Yield Quality: Red = Poor (0-0.5 L/s), Orange = Moderate (0.5-0.75 L/s), Green = Good (≥0.75 L/s)'
                         )
                     else:
                         # Yield legend with original colors

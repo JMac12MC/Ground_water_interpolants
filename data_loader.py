@@ -523,18 +523,9 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
 
             # Add yield information - ONLY use MAX_YIELD from the Wells_30k dataset
             if 'MAX_YIELD' in raw_df.columns:
-                # Debug: Check what values are in MAX_YIELD before processing
-                sample_values = raw_df['MAX_YIELD'].head(10).tolist()
-                print(f"DEBUG: Sample MAX_YIELD values before processing: {sample_values}")
-                
-                # First replace only empty strings with NaN, keep '0' as legitimate zero values
+                # Replace only empty strings with NaN, keep '0' as legitimate zero values
                 max_yield_series = raw_df['MAX_YIELD'].astype(str).replace(['', 'nan'], np.nan)
                 wells_df['yield_rate'] = pd.to_numeric(max_yield_series, errors='coerce')
-                
-                # Debug: Check results after processing
-                nan_count = wells_df['yield_rate'].isna().sum()
-                zero_count = (wells_df['yield_rate'] == 0.0).sum()
-                print(f"DEBUG: After processing - NaN yields: {nan_count}, Zero yields: {zero_count}")
             else:
                 wells_df['yield_rate'] = pd.Series([np.nan] * len(wells_df))
 

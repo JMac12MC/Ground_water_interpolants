@@ -363,10 +363,8 @@ with main_col1:
             # Filter wells for local display using square bounds
             filtered_wells = wells_df[wells_df['within_square']]
 
-            # Ensure all missing yield values are replaced with 0
-            if 'yield_rate' in filtered_wells.columns:
-                filtered_wells = filtered_wells.copy()
-                filtered_wells['yield_rate'] = filtered_wells['yield_rate'].fillna(0)
+            # Keep yield values as-is - NaN values should remain NaN for proper filtering
+            # Do not convert NaN to 0 as this creates false dry wells
 
             st.session_state.filtered_wells = filtered_wells.copy()
 

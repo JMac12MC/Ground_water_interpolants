@@ -178,12 +178,27 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
 
-        # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
-        yield_threshold = 0.1
+        # Convert yields to three-tier indicator values
+        # 0.0-0.5: Poor yield (0.25)  -> Red
+        # 0.5-0.75: Moderate yield (0.625) -> Orange  
+        # 0.75-1.0: Good yield (0.875) -> Green
         raw_yields = wells_df['yield_rate'].values.astype(float)
-        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
-
-        print(f"Indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")
+        
+        # Create three-tier classification
+        yields = np.zeros_like(raw_yields)
+        yields[(raw_yields >= 0.0) & (raw_yields < 0.5)] = 0.25   # Poor - Red
+        yields[(raw_yields >= 0.5) & (raw_yields < 0.75)] = 0.625  # Moderate - Orange
+        yields[raw_yields >= 0.75] = 0.875                         # Good - Green
+        
+        # Count wells in each category
+        poor_count = np.sum((raw_yields >= 0.0) & (raw_yields < 0.5))
+        moderate_count = np.sum((raw_yields >= 0.5) & (raw_yields < 0.75))
+        good_count = np.sum(raw_yields >= 0.75)
+        
+        print(f"Three-tier indicator kriging: using {len(yields)} wells")
+        print(f"Poor yield (0.0-0.5 L/s): {poor_count} wells ({100*poor_count/len(yields):.1f}%)")
+        print(f"Moderate yield (0.5-0.75 L/s): {moderate_count} wells ({100*moderate_count/len(yields):.1f}%)")
+        print(f"Good yield (≥0.75 L/s): {good_count} wells ({100*good_count/len(yields):.1f}%)")
         print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
         print(f"Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
         print(f"Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
@@ -292,33 +307,43 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Ensure values are in [0,1] range (probabilities)
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
             
-            # Apply distance-based decay to prevent high values far from viable wells
-            # Calculate distances from each grid point to nearest viable well (yield >= 0.1)
-            viable_wells_mask = yields >= 0.5  # Wells with viable yield indicators
-            if np.any(viable_wells_mask):
-                viable_coords = np.column_stack([x_coords[viable_wells_mask], y_coords[viable_wells_mask]])
+            # Apply distance-based decay to prevent high values far from good wells
+            # Calculate distances from each grid point to nearest good well (yield >= 0.75)
+            good_wells_mask = yields >= 0.75  # Wells with good yield indicators
+            if np.any(good_wells_mask):
+                good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
                 grid_coords = grid_points
                 
-                # Calculate distance to nearest viable well for each grid point
+                # Calculate distance to nearest good well for each grid point
                 from scipy.spatial.distance import cdist
-                distances = cdist(grid_coords, viable_coords)
+                distances = cdist(grid_coords, good_coords)
                 min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
                 
-                # Apply exponential decay for distances > 2km
-                decay_threshold_km = 2.0
-                decay_factor = 0.5  # Halve probability for each km beyond threshold
+                # Apply exponential decay for distances > 3km
+                decay_threshold_km = 3.0
+                decay_factor = 0.3  # Gentle decay to preserve three-tier structure
                 
                 distance_mask = min_distances_km > decay_threshold_km
                 excess_distance = min_distances_km[distance_mask] - decay_threshold_km
                 decay_multiplier = np.exp(-decay_factor * excess_distance)
                 interpolated_z[distance_mask] *= decay_multiplier
             
-            # Apply strict binary threshold for final classification
-            # This ensures only two colors in the visualization
-            binary_threshold = 0.5
-            interpolated_z = (interpolated_z >= binary_threshold).astype(float)
-
-            print(f"Indicator kriging results: binary values 0 and 1, {np.sum(interpolated_z)}/{len(interpolated_z)} points classified as viable")
+            # Classify interpolated values into three tiers
+            # Preserve three-tier structure: 0.25 (red), 0.625 (orange), 0.875 (green)
+            final_values = np.zeros_like(interpolated_z)
+            final_values[interpolated_z < 0.4] = 0.25   # Red tier
+            final_values[(interpolated_z >= 0.4) & (interpolated_z < 0.7)] = 0.625   # Orange tier
+            final_values[interpolated_z >= 0.7] = 0.875   # Green tier
+            
+            interpolated_z = final_values
+            
+            # Count points in each tier
+            red_count = np.sum(interpolated_z == 0.25)
+            orange_count = np.sum(interpolated_z == 0.625)
+            green_count = np.sum(interpolated_z == 0.875)
+            
+            print(f"Three-tier indicator kriging results:")
+            print(f"Red (poor): {red_count} points, Orange (moderate): {orange_count} points, Green (good): {green_count} points")
 
         elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield/depth visualization (without variance output)

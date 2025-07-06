@@ -155,15 +155,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     x_coords = (lons - center_lon) * km_per_degree_lon
     y_coords = (lats - center_lat) * km_per_degree_lat
 
-    # Create interpolation points for the grid
-    grid_x, grid_y = np.meshgrid(
-        np.linspace(-radius_km, radius_km, grid_size),
-        np.linspace(-radius_km, radius_km, grid_size)
-    )
+    # Create grid in km space (square bounds)
+    grid_x = np.linspace(-radius_km, radius_km, grid_size)
+    grid_y = np.linspace(-radius_km, radius_km, grid_size)
+    grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
 
-    # Calculate distance from center for each point
-    distances = np.sqrt(grid_x**2 + grid_y**2)
-    mask = distances <= radius_km  # Only keep points within radius
+    # Flatten for interpolation
+    points = np.vstack([x_coords, y_coords]).T  # Well points in km
+    xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
+
+    # Use square bounds instead of circular radius
+    mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
 
     # Perform interpolation
     points = np.vstack([x_coords, y_coords]).T
@@ -660,7 +662,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         points = np.vstack([x_coords, y_coords]).T  # Well points in km
         xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
 
-        # Filter points outside the square bounds (instead of circular)
+        # Filter points outside the square bounds
         mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
 
@@ -708,7 +710,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     # Fallback to griddata if insufficient data
                     interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
                     nan_mask = np.isnan(interpolated_z)
-                    if np.any(nan_mask):
+                    if np.any(nan_mask):```python
                         interpolated_z[nan_mask] = griddata(
                             points, yields, xi_inside[nan_mask], method='nearest', fill_value=0.0
                         )
@@ -1424,7 +1426,6 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         # Filter points outside the square bounds (instead of circular)
         mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
-
         # Convert back to lat/lon for kriging
         lon_values = x_coords / km_per_degree_lon + center_lon
         lat_values = y_coords / km_per_degree_lat + center_lat

@@ -687,7 +687,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         centroid_point = Point(centroid_lon, centroid_lat)
                         was_included = include_triangle
-                        include_triangle = indicator_geometry.contains(centroid_point) or indicator_geometry.intersects(centroid_point)
+                        
+                        # Use a small buffer to improve intersection accuracy and prevent edge artifacts
+                        buffered_point = centroid_point.buffer(0.0005)  # ~50m buffer
+                        include_triangle = (indicator_geometry.contains(centroid_point) or 
+                                          indicator_geometry.intersects(centroid_point) or
+                                          indicator_geometry.intersects(buffered_point))
                         if was_included and not include_triangle:
                             print(f"Triangulation indicator clipping: excluded triangle at ({centroid_lat:.3f}, {centroid_lon:.3f}) with value {avg_yield:.2f}")
 
@@ -726,7 +731,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 if include_point and indicator_geometry is not None:
                     point = Point(grid_lons[i], grid_lats[i])
                     was_included = include_point
-                    include_point = indicator_geometry.contains(point) or indicator_geometry.intersects(point)
+                    
+                    # Use a small buffer to improve intersection accuracy and prevent edge artifacts
+                    buffered_point = point.buffer(0.0005)  # ~50m buffer
+                    include_point = (indicator_geometry.contains(point) or 
+                                   indicator_geometry.intersects(point) or
+                                   indicator_geometry.intersects(buffered_point))
                     if was_included and not include_point:
                         print(f"Indicator clipping: excluded point at ({grid_lats[i]:.3f}, {grid_lons[i]:.3f}) with value {interpolated_z[i]:.2f}")
 

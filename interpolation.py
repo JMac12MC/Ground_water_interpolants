@@ -150,11 +150,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if 'yield_rate' not in wells_df_original.columns:
             return {"type": "FeatureCollection", "features": []}
             
-        # Filter for valid coordinates only
+        # Filter for valid coordinates and non-empty yield_rate (but include explicit zeros)
         valid_coord_mask = (
             wells_df_original['latitude'].notna() & 
             wells_df_original['longitude'].notna() &
-            wells_df_original['yield_rate'].notna()
+            wells_df_original['yield_rate'].notna()  # Exclude NaN/empty, but include 0.0
         )
         wells_df = wells_df_original[valid_coord_mask].copy()
         
@@ -166,7 +166,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         # Convert yields to binary indicator values (1 if yield >= 0.1, 0 otherwise)
         yield_threshold = 0.1
-        raw_yields = wells_df['yield_rate'].fillna(0).values.astype(float)  # Fill NaN with 0
+        raw_yields = wells_df['yield_rate'].values.astype(float)  # Don't fill NaN - they're already filtered out
         yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
 
         print(f"Indicator kriging: using {len(yields)} wells, {np.sum(yields)}/{len(yields)} ({100*np.sum(yields)/len(yields):.1f}%) have viable yield (≥{yield_threshold} L/s)")

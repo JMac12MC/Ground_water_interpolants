@@ -166,6 +166,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     # Use square bounds instead of circular radius
     mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
+    
+    # Define grid_points early to avoid UnboundLocalError
+    grid_points = xi[mask]
 
     # Perform interpolation
     points = np.vstack([x_coords, y_coords]).T
@@ -183,8 +186,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             lon_values = x_coords / km_per_degree_lon + center_lon
             lat_values = y_coords / km_per_degree_lat + center_lat
 
-            # Create grid points for kriging
-            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
+            # Use already defined grid_points
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
@@ -222,8 +224,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             lon_values = x_coords / km_per_degree_lon + center_lon
             lat_values = y_coords / km_per_degree_lat + center_lat
 
-            # Create grid points for kriging
-            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
+            # Use already defined grid_points
             xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
@@ -263,7 +264,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         else:
             # Use standard griddata interpolation for other cases
             # This is much faster than kriging for large datasets
-            grid_points = np.vstack([grid_x[mask].ravel(), grid_y[mask].ravel()]).T
             interpolated_z = griddata(
                 points, yields, grid_points,
                 method='linear', fill_value=0.0
@@ -283,8 +283,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Reshape to 2D grid for smoothing
             try:
                 # Create full 2D grid for smoothing
-                z_grid = np.zeros_like(grid_x)
-                z_grid[mask] = interpolated_z
+                z_grid = np.zeros_like(grid_X)
+                z_grid_flat = z_grid.flatten()
+                z_grid_flat[mask] = interpolated_z
+                z_grid = z_grid_flat.reshape(grid_X.shape)
 
                 # Apply multiple smoothing passes for ultra-smooth appearance
                 # First pass: moderate smoothing
@@ -293,7 +295,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 z_smooth = gaussian_filter(z_smooth, sigma=0.8)
 
                 # Extract smoothed values for our mask
-                interpolated_z = z_smooth[mask]
+                z_smooth_flat = z_smooth.flatten()
+                interpolated_z = z_smooth_flat[mask]
 
                 # Ensure values stay within reasonable bounds
                 interpolated_z = np.maximum(0, interpolated_z)
@@ -302,10 +305,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 # If smoothing fails, apply basic smoothing
                 print(f"Advanced smoothing error: {e}, using basic smoothing")
                 try:
-                    z_grid = np.zeros_like(grid_x)
-                    z_grid[mask] = interpolated_z
+                    z_grid = np.zeros_like(grid_X)
+                    z_grid_flat = z_grid.flatten()
+                    z_grid_flat[mask] = interpolated_z
+                    z_grid = z_grid_flat.reshape(grid_X.shape)
                     z_smooth = gaussian_filter(z_grid, sigma=1.0)
-                    interpolated_z = z_smooth[mask]
+                    z_smooth_flat = z_smooth.flatten()
+                    interpolated_z = z_smooth_flat[mask]
                 except:
                     print("Basic smoothing also failed, using raw interpolation")
     except Exception as e:
@@ -317,8 +323,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             interpolated_z[i] = np.sum(weights * yields) / np.sum(weights)
 
     # Convert grid coordinates back to lat/lon
-    grid_lats = (grid_y[mask].ravel() / km_per_degree_lat) + center_lat
-    grid_lons = (grid_x[mask].ravel() / km_per_degree_lon) + center_lon
+    grid_lats = (grid_points[:, 1] / km_per_degree_lat) + center_lat
+    grid_lons = (grid_points[:, 0] / km_per_degree_lon) + center_lon
 
     # Prepare soil polygon geometry for later filtering (do not apply to interpolation)
     merged_soil_geometry = None
@@ -665,6 +671,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         # Filter points outside the square bounds
         mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
+        
+        # Define grid_points for compatibility
+        grid_points = xi_inside
 
         # Choose interpolation method based on parameter and dataset size
         if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging') and len(wells_df) >= 5:

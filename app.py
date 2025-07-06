@@ -542,8 +542,8 @@ with main_col1:
                                 '#993300'   # Brown (high level)
                             ]
                         elif st.session_state.interpolation_method == 'indicator_kriging':
-                            # Binary indicator colors: red for non-viable (0), green for viable (1)
-                            colors = ['#FF0000', '#00FF00']  # Red and Green only
+                            # Three-tier indicator colors: red (poor), orange (moderate), green (good)
+                            colors = ['#FF0000', '#FF8000', '#00FF00']  # Red, Orange, Green
                         else:
                             # Yield colors: blue (low yield) to red (high yield)
                             colors = [

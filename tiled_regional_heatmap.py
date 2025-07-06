@@ -129,9 +129,9 @@ class TiledRegionalHeatmapGenerator:
     
     def interpolate_tile(self, tile_wells: pd.DataFrame, tile: Dict, 
                         variable: str = 'depth_to_groundwater', 
-                        resolution: int = 20) -> List[List[float]]:
+                        resolution: int = 50, soil_polygons=None) -> List[List[float]]:
         """
-        Interpolate values for a single tile using IDW
+        Interpolate values for a single tile using Ordinary Kriging (same as local interpolations)
         
         Parameters:
         -----------
@@ -142,54 +142,140 @@ class TiledRegionalHeatmapGenerator:
         variable : str
             Variable to interpolate
         resolution : int
-            Grid resolution for the tile
+            Grid resolution for the tile (increased for better quality)
+        soil_polygons : GeoDataFrame, optional
+            Soil polygons for clipping
             
         Returns:
         --------
         list
             Heatmap data points [[lat, lng, value], ...]
         """
-        if len(tile_wells) < 3:
+        if len(tile_wells) < 5:  # Need minimum 5 wells for kriging
             return []
             
         # Filter wells with valid data
         valid_wells = tile_wells.dropna(subset=[variable])
-        if len(valid_wells) < 3:
+        if len(valid_wells) < 5:
             return []
             
-        # Create interpolation grid for this tile
+        try:
+            # Import kriging here to avoid import errors
+            from pykrige.ok import OrdinaryKriging
+            
+            # Create interpolation grid for this tile
+            bounds = tile['bounds']
+            lat_grid = np.linspace(bounds['min_lat'], bounds['max_lat'], resolution)
+            lng_grid = np.linspace(bounds['min_lng'], bounds['max_lng'], resolution)
+            grid_lats, grid_lngs = np.meshgrid(lat_grid, lng_grid, indexing='ij')
+            
+            # Get well coordinates and values  
+            well_lngs = valid_wells['longitude'].values
+            well_lats = valid_wells['latitude'].values
+            values = valid_wells[variable].values
+            
+            # Create Ordinary Kriging model with spherical variogram (same as local interpolations)
+            OK = OrdinaryKriging(
+                well_lngs, well_lats, values,
+                variogram_model='spherical',
+                verbose=False,
+                enable_plotting=False,
+                coordinates_type='geographic'
+            )
+            
+            # Perform kriging interpolation
+            interpolated_grid, variance_grid = OK.execute('grid', lng_grid, lat_grid)
+            
+            # Convert to heatmap points format
+            heatmap_points = []
+            for i in range(len(lat_grid)):
+                for j in range(len(lng_grid)):
+                    lat = lat_grid[i]
+                    lng = lng_grid[j]
+                    value = interpolated_grid[i, j]
+                    
+                    # Skip masked/invalid values
+                    if not np.isnan(value) and not np.ma.is_masked(value):
+                        heatmap_points.append([lat, lng, float(value)])
+            
+            # Apply soil polygon clipping if available (same as local interpolations)
+            if soil_polygons is not None and len(heatmap_points) > 0:
+                heatmap_points = self._apply_soil_polygon_clipping(heatmap_points, soil_polygons, tile)
+                        
+            return heatmap_points
+            
+        except Exception as e:
+            # Fallback to IDW if kriging fails
+            return self._idw_fallback(valid_wells, tile, variable, resolution)
+    
+    def _apply_soil_polygon_clipping(self, heatmap_points, soil_polygons, tile):
+        """
+        Apply soil polygon clipping to heatmap points (same logic as local interpolations)
+        """
+        try:
+            from shapely.geometry import Point
+            import geopandas as gpd
+            
+            # Create points from heatmap data
+            points = [Point(lng, lat) for lat, lng, _ in heatmap_points]
+            points_gdf = gpd.GeoDataFrame(
+                {'value': [val for _, _, val in heatmap_points]}, 
+                geometry=points, 
+                crs='EPSG:4326'
+            )
+            
+            # Spatial join with soil polygons
+            clipped_points = gpd.sjoin(points_gdf, soil_polygons, how='inner', predicate='within')
+            
+            # Convert back to heatmap format
+            filtered_points = []
+            for idx, row in clipped_points.iterrows():
+                point = row.geometry
+                filtered_points.append([point.y, point.x, row['value']])
+                
+            return filtered_points
+            
+        except Exception as e:
+            # Return original points if clipping fails
+            return heatmap_points
+    
+    def _idw_fallback(self, valid_wells, tile, variable, resolution):
+        """
+        IDW fallback interpolation method
+        """
         bounds = tile['bounds']
         lat_grid = np.linspace(bounds['min_lat'], bounds['max_lat'], resolution)
         lng_grid = np.linspace(bounds['min_lng'], bounds['max_lng'], resolution)
         
-        # Get well coordinates and values
         well_coords = valid_wells[['latitude', 'longitude']].values
         values = valid_wells[variable].values
         
-        # Generate heatmap points for this tile
         heatmap_points = []
         
         for lat in lat_grid:
             for lng in lng_grid:
                 # Calculate distances to all wells
                 point_coords = np.array([[lat, lng]])
-                distances = cdist(point_coords, well_coords)[0]
-                
-                # Avoid division by zero
-                distances = np.maximum(distances, 1e-6)
-                
-                # IDW interpolation (power = 2)
-                weights = 1 / (distances ** 2)
-                weights_sum = np.sum(weights)
-                
-                if weights_sum > 0:
-                    interpolated_value = np.sum(weights * values) / weights_sum
-                    heatmap_points.append([lat, lng, float(interpolated_value)])
+                try:
+                    distances = np.sqrt(np.sum((point_coords - well_coords) ** 2, axis=1))
+                    
+                    # Avoid division by zero
+                    distances = np.maximum(distances, 1e-6)
+                    
+                    # IDW interpolation (power = 2)
+                    weights = 1 / (distances ** 2)
+                    weights_sum = np.sum(weights)
+                    
+                    if weights_sum > 0:
+                        interpolated_value = np.sum(weights * values) / weights_sum
+                        heatmap_points.append([lat, lng, float(interpolated_value)])
+                except:
+                    continue
                     
         return heatmap_points
     
     def process_tile(self, wells_df: pd.DataFrame, tile: Dict, 
-                    variable: str = 'depth_to_groundwater') -> Tuple[int, List[List[float]]]:
+                    variable: str = 'depth_to_groundwater', soil_polygons=None) -> Tuple[int, List[List[float]]]:
         """
         Process a single tile (for parallel execution)
         
@@ -200,7 +286,7 @@ class TiledRegionalHeatmapGenerator:
         """
         try:
             tile_wells = self.get_wells_for_tile(wells_df, tile)
-            heatmap_points = self.interpolate_tile(tile_wells, tile, variable)
+            heatmap_points = self.interpolate_tile(tile_wells, tile, variable, soil_polygons=soil_polygons)
             return tile['id'], heatmap_points
         except Exception as e:
             print(f"Error processing tile {tile['id']}: {e}")
@@ -208,7 +294,7 @@ class TiledRegionalHeatmapGenerator:
     
     def generate_regional_heatmap(self, wells_df: pd.DataFrame, 
                                 variable: str = 'depth_to_groundwater',
-                                max_workers: int = 4) -> List[List[float]]:
+                                max_workers: int = 4, soil_polygons=None) -> List[List[float]]:
         """
         Generate regional heatmap using tiled approach
         
@@ -247,7 +333,7 @@ class TiledRegionalHeatmapGenerator:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tile processing tasks
             future_to_tile = {
-                executor.submit(self.process_tile, valid_wells, tile, variable): tile
+                executor.submit(self.process_tile, valid_wells, tile, variable, soil_polygons): tile
                 for tile in tiles
             }
             
@@ -318,8 +404,8 @@ def generate_tiled_regional_heatmap(wells_df: pd.DataFrame,
     if cached_data:
         return cached_data
     
-    # Generate new heatmap
-    heatmap_data = generator.generate_regional_heatmap(wells_df, variable)
+    # Generate new heatmap with soil polygon support
+    heatmap_data = generator.generate_regional_heatmap(wells_df, variable, soil_polygons=soil_polygons)
     
     # Save to cache
     if heatmap_data:

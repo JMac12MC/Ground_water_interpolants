@@ -151,12 +151,12 @@ with st.sidebar:
 
     # Radius filter (now used for local context when pre-computed heatmaps are available)
     st.session_state.search_radius = st.slider(
-        "Local Context Radius (km)",
+        "Search Area Size (km)",
         min_value=1,
         max_value=50,
         value=st.session_state.search_radius,
         step=1,
-        help="Radius for showing nearby wells and local analysis when you click on the map"
+        help="Creates a square search area. For example, 10km creates a 20km × 20km square for showing nearby wells and local analysis when you click on the map"
     )
 
     # Informational note
@@ -313,21 +313,34 @@ with main_col1:
 
         # If we have a selected point, show local context
         if st.session_state.selected_point:
-            # Calculate distances from selected point for local well display
+            from utils import is_within_square
+            
+            # Filter wells using square bounds instead of circular distance
+            center_lat, center_lon = st.session_state.selected_point
+            wells_df['within_square'] = wells_df.apply(
+                lambda row: is_within_square(
+                    row['latitude'], 
+                    row['longitude'],
+                    center_lat,
+                    center_lon,
+                    st.session_state.search_radius
+                ), 
+                axis=1
+            )
+            
+            # Calculate distances for display purposes (still useful for tooltips)
             wells_df['distance'] = wells_df.apply(
                 lambda row: get_distance(
-                    st.session_state.selected_point[0], 
-                    st.session_state.selected_point[1], 
+                    center_lat, 
+                    center_lon, 
                     row['latitude'], 
                     row['longitude']
                 ), 
                 axis=1
             )
 
-            # Filter wells for local display (still show nearby wells for context)
-            filtered_wells = wells_df[
-                (wells_df['distance'] <= st.session_state.search_radius)
-            ]
+            # Filter wells for local display using square bounds
+            filtered_wells = wells_df[wells_df['within_square']]
 
             # Ensure all missing yield values are replaced with 0
             if 'yield_rate' in filtered_wells.columns:
@@ -344,14 +357,31 @@ with main_col1:
                 tooltip="Your Selected Point"
             ).add_to(m)
 
-            # Draw circle for search radius (now just for local context)
-            folium.Circle(
-                location=st.session_state.selected_point,
-                radius=st.session_state.search_radius * 1000,
+            # Draw square for search area (now just for local context)
+            center_lat, center_lon = st.session_state.selected_point
+            radius_km = st.session_state.search_radius
+            
+            # Calculate square bounds
+            lat_radius_deg = radius_km / 111.0  # ~111km per degree latitude
+            lon_radius_deg = radius_km / (111.0 * np.cos(np.radians(center_lat)))  # adjust for longitude
+            
+            # Create square coordinates
+            square_bounds = [
+                [center_lat - lat_radius_deg, center_lon - lon_radius_deg],  # SW corner
+                [center_lat - lat_radius_deg, center_lon + lon_radius_deg],  # SE corner
+                [center_lat + lat_radius_deg, center_lon + lon_radius_deg],  # NE corner
+                [center_lat + lat_radius_deg, center_lon - lon_radius_deg],  # NW corner
+                [center_lat - lat_radius_deg, center_lon - lon_radius_deg]   # Close square
+            ]
+            
+            # Draw square
+            folium.Polygon(
+                locations=square_bounds,
                 color="#3186cc",
                 fill=True,
                 fill_color="#3186cc",
-                fill_opacity=0.1
+                fill_opacity=0.1,
+                weight=2
             ).add_to(m)
 
         # Display heatmap - use pre-computed if available, otherwise generate on-demand

@@ -37,6 +37,21 @@ def calculate_yield_score(yield_rate, max_yield=None):
     score = min(1.0, max(0.0, yield_rate / max_yield))
     return score
 
+def is_within_square(lat, lon, center_lat, center_lon, radius_km):
+    """
+    Check if a point is within a square area defined by radius from center
+    For radius_km = 10, creates a 20km x 20km square
+    """
+    # Convert radius to degrees (approximate)
+    lat_radius_deg = radius_km / 111.0  # ~111km per degree latitude
+    lon_radius_deg = radius_km / (111.0 * np.cos(np.radians(center_lat)))  # adjust for longitude
+    
+    # Check if point is within square bounds
+    lat_within = abs(lat - center_lat) <= lat_radius_deg
+    lon_within = abs(lon - center_lon) <= lon_radius_deg
+    
+    return lat_within and lon_within
+
 def download_as_csv(dataframe):
     """
     Convert a DataFrame to a CSV string for download

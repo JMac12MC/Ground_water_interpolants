@@ -129,7 +129,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             (wells_df['ground water level'] != 0) &
             (wells_df['ground water level'].abs() > 0.1)  # Exclude very small values
         )
-        
+
         wells_df = wells_df[valid_gwl_mask].copy()
 
         if wells_df.empty:
@@ -139,7 +139,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['ground water level'].values.astype(float)
-        
+
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
     else:
         # Get wells appropriate for yield interpolation
@@ -608,7 +608,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             (wells_df_filtered['ground water level'] != 0) &
             (wells_df_filtered['ground water level'].abs() > 0.1)  # Exclude very small values
         )
-        
+
         wells_df_filtered = wells_df_filtered[valid_gwl_mask].copy()
 
         if wells_df_filtered.empty:
@@ -618,7 +618,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
         yields = wells_df_filtered['ground water level'].values.astype(float)
-        
+
         print(f"Heat map ground water level: using {len(yields)} wells with GWL values from {yields.min():.2f} to {yields.max():.2f}")
     else:
         # Get wells appropriate for yield interpolation
@@ -651,7 +651,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         x_coords = (lons - center_lon) * km_per_degree_lon
         y_coords = (lats - center_lat) * km_per_degree_lat
 
-        # Create grid in km space
+        # Create grid in km space (square bounds)
         grid_x = np.linspace(-radius_km, radius_km, grid_size)
         grid_y = np.linspace(-radius_km, radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
@@ -660,9 +660,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         points = np.vstack([x_coords, y_coords]).T  # Well points in km
         xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
 
-        # Filter points outside the radius
-        distances = np.sqrt(xi[:,0]**2 + xi[:,1]**2)
-        mask = distances <= radius_km
+        # Filter points outside the square bounds (instead of circular)
+        mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
 
         # Choose interpolation method based on parameter and dataset size
@@ -715,7 +714,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         )
 
             except Exception as e:
-                print(f"Yield kriging error: {e}, falling back to standard interpolation")
+                print(f"Yield kriging error: {e}, fallingback to standard interpolation")
                 interpolated_z = griddata(points, yields, xi_inside, method='linear', fill_value=0.0)
                 nan_mask = np.isnan(interpolated_z)
                 if np.any(nan_mask):
@@ -1414,7 +1413,7 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         x_coords = (lons - center_lon) * km_per_degree_lon
         y_coords = (lats - center_lat) * km_per_degree_lat
 
-        # Create grid in km space
+        # Create grid in km space (square bounds)
         grid_x = np.linspace(-radius_km, radius_km, grid_size)
         grid_y = np.linspace(-radius_km, radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
@@ -1422,9 +1421,8 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         # Flatten grid for interpolation
         xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T
 
-        # Filter points outside the radius
-        distances = np.sqrt(xi[:, 0]**2 + xi[:, 1]**2)
-        mask = distances <= radius_km
+        # Filter points outside the square bounds (instead of circular)
+        mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
 
         # Convert back to lat/lon for kriging

@@ -2089,13 +2089,12 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
                             band_index = min(14, int(value / step))
                             return colors[band_index]
 
-                        if heat_data:
-                            if show_variance:
-                                add_heatmap(m, heat_data, radius=20, blur=15, max_value=max_value)  # Show variance as heatmap
-                            else:
-                                add_heatmap(m, heat_data, radius=25, blur=15, max_value=max_value)  # Show yield/depth as heatmap
-                        else:
-                            print("No heat data generated")
+            if show_variance:
+                add_heatmap(m, heat_data, radius=20, blur=15, max_value=max_value)  # Show variance as heatmap
+            else:
+                add_heatmap(m, heat_data, radius=25, blur=15, max_value=max_value)  # Show yield/depth as heatmap
+        else:
+            print("No heat data generated")
 
     except Exception as e:
         print(f"Error generating or adding heatmap: {e}")

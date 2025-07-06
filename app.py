@@ -294,10 +294,15 @@ with st.sidebar:
         with col2:
             if st.button("🗑️ Clear All", type="secondary"):
                 if st.session_state.polygon_db:
-                    count = st.session_state.polygon_db.delete_all_stored_heatmaps()
-                    st.session_state.stored_heatmaps = []
-                    st.success(f"Cleared {count} stored heatmaps")
-                    st.rerun()
+                    try:
+                        count = st.session_state.polygon_db.delete_all_stored_heatmaps()
+                        st.session_state.stored_heatmaps = []
+                        st.success(f"Cleared {count} stored heatmaps")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error clearing heatmaps: {e}")
+                else:
+                    st.error("Database not available")
         
         # Display each stored heatmap with details
         for heatmap in st.session_state.stored_heatmaps:
@@ -361,33 +366,58 @@ with main_col1:
         print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps")
         for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
             try:
+                # Prefer GeoJSON data for triangular mesh visualization
+                geojson_data = stored_heatmap.get('geojson_data')
                 heatmap_data = stored_heatmap.get('heatmap_data', [])
-                if heatmap_data and len(heatmap_data) > 0:
-                    print(f"Adding stored heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
+                
+                if geojson_data and geojson_data.get('features'):
+                    print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
                     
-                    # Add the stored heatmap to the map
+                    # Add GeoJSON layer for triangular mesh visualization (preferred)
+                    folium.GeoJson(
+                        geojson_data,
+                        name=f"Stored: {stored_heatmap['heatmap_name']}",
+                        style_function=lambda feature: {
+                            'fillColor': feature['properties'].get('color', '#ff0000'),
+                            'color': feature['properties'].get('color', '#ff0000'),
+                            'weight': 0.5,
+                            'fillOpacity': 0.7,
+                            'opacity': 0.3
+                        },
+                        tooltip=folium.GeoJsonTooltip(
+                            fields=['value'],
+                            aliases=['Value:'],
+                            localize=True
+                        )
+                    ).add_to(m)
+                    stored_heatmap_count += 1
+                    
+                elif heatmap_data and len(heatmap_data) > 0:
+                    print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
+                    
+                    # Fallback to HeatMap if no GeoJSON
                     HeatMap(heatmap_data, 
                            radius=20, 
                            blur=10, 
                            name=f"Stored: {stored_heatmap['heatmap_name']}",
                            overlay=True,
                            control=True,
-                           max_zoom=1.0).add_to(m)
-                    
-                    # Add a marker showing the center point of the stored heatmap
-                    folium.Marker(
-                        location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
-                        popup=f"<b>{stored_heatmap['heatmap_name']}</b><br>"
-                              f"Method: {stored_heatmap['interpolation_method']}<br>"
-                              f"Radius: {stored_heatmap['radius_km']} km<br>"
-                              f"Wells: {stored_heatmap['well_count']}<br>"
-                              f"Created: {stored_heatmap['created_at']}",
-                        icon=folium.Icon(color='purple', icon='info-sign')
-                    ).add_to(m)
-                    
+                           max_zoom=1).add_to(m)
                     stored_heatmap_count += 1
                 else:
-                    print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data: {len(heatmap_data) if heatmap_data else 0} points")
+                    print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
+                
+                # Add a marker showing the center point of the stored heatmap
+                folium.Marker(
+                    location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
+                    popup=f"<b>{stored_heatmap['heatmap_name']}</b><br>"
+                          f"Method: {stored_heatmap['interpolation_method']}<br>"
+                          f"Radius: {stored_heatmap['radius_km']} km<br>"
+                          f"Wells: {stored_heatmap['well_count']}<br>"
+                          f"Created: {stored_heatmap['created_at']}",
+                    icon=folium.Icon(color='purple', icon='info-sign')
+                ).add_to(m)
+                    
             except Exception as e:
                 print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
         
@@ -954,6 +984,12 @@ with main_col2:
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
                         )
                         
+                        # Get the GeoJSON data that creates the triangular mesh visualization
+                        geojson_data = None
+                        if 'geo_json_data' in st.session_state and st.session_state.geo_json_data:
+                            geojson_data = st.session_state.geo_json_data
+                            print(f"Storing GeoJSON with {len(geojson_data.get('features', []))} features")
+                        
                         # Store the heatmap in the database
                         heatmap_id = st.session_state.polygon_db.store_heatmap(
                             heatmap_name.strip(),
@@ -962,7 +998,7 @@ with main_col2:
                             st.session_state.search_radius,
                             st.session_state.interpolation_method,
                             heat_map_data,
-                            geojson_data=None,  # Could add GeoJSON data here if needed
+                            geojson_data=geojson_data,  # Store the triangular mesh data
                             well_count=len(st.session_state.filtered_wells)
                         )
                         

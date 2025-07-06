@@ -12,6 +12,7 @@ from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance
 from database import PolygonDatabase
+from regional_heatmap import generate_default_regional_heatmap, RegionalHeatmapGenerator
 
 # Set page configuration with stability settings
 st.set_page_config(
@@ -61,6 +62,12 @@ if 'polygon_db' not in st.session_state:
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         st.session_state.polygon_db = None
+if 'regional_heatmap_data' not in st.session_state:
+    st.session_state.regional_heatmap_data = None
+if 'show_regional_heatmap' not in st.session_state:
+    st.session_state.show_regional_heatmap = True
+if 'regional_heatmap_generator' not in st.session_state:
+    st.session_state.regional_heatmap_generator = RegionalHeatmapGenerator()
 
 # Add banner
 add_banner()
@@ -198,6 +205,49 @@ with st.sidebar:
     if 'variogram_model' not in st.session_state:
         st.session_state.variogram_model = 'spherical'
 
+    # Regional Heatmap Controls
+    st.header("Regional Background")
+    st.session_state.show_regional_heatmap = st.checkbox(
+        "Show Regional Groundwater Depth Heatmap",
+        value=st.session_state.show_regional_heatmap,
+        help="Display a high-resolution background heatmap covering the entire Canterbury region using all available well data"
+    )
+    
+    # Generate regional heatmap button
+    if st.button("Generate Regional Heatmap"):
+        if st.session_state.wells_data is not None:
+            with st.spinner("Generating regional heatmap (this may take several minutes)..."):
+                # Generate comprehensive regional heatmap
+                st.session_state.regional_heatmap_data = generate_default_regional_heatmap(
+                    st.session_state.wells_data, 
+                    st.session_state.soil_polygons
+                )
+                if st.session_state.regional_heatmap_data:
+                    st.success(f"Generated regional heatmap with {len(st.session_state.regional_heatmap_data)} data points")
+                else:
+                    st.error("Failed to generate regional heatmap")
+        else:
+            st.warning("No wells data available for regional heatmap generation")
+    
+    # Load existing regional heatmap if available
+    if st.session_state.regional_heatmap_data is None and st.session_state.wells_data is not None:
+        # Try to load cached regional heatmap
+        cached_heatmap = st.session_state.regional_heatmap_generator.load_regional_heatmap()
+        if cached_heatmap:
+            # Apply soil polygon mask
+            if st.session_state.soil_polygons is not None:
+                cached_heatmap = st.session_state.regional_heatmap_generator.apply_soil_polygon_mask(
+                    cached_heatmap, st.session_state.soil_polygons
+                )
+            st.session_state.regional_heatmap_data = cached_heatmap
+            st.sidebar.success(f"Loaded cached regional heatmap ({len(cached_heatmap)} points)")
+    
+    # Show regional heatmap status
+    if st.session_state.regional_heatmap_data:
+        st.sidebar.info(f"✓ Regional heatmap ready: {len(st.session_state.regional_heatmap_data):,} data points")
+    elif st.session_state.show_regional_heatmap:
+        st.sidebar.warning("Regional heatmap not available. Click 'Generate Regional Heatmap' to create one.")
+
 
 
     # Update session state based on selection
@@ -274,6 +324,30 @@ with main_col1:
                 sticky=False
             )
         ).add_to(m)
+
+    # Add regional groundwater depth heatmap as background layer
+    if st.session_state.show_regional_heatmap and st.session_state.regional_heatmap_data:
+        try:
+            # Add regional heatmap as a background layer
+            HeatMap(
+                data=st.session_state.regional_heatmap_data,
+                name="Regional Groundwater Depth",
+                min_opacity=0.3,
+                max_opacity=0.6,
+                radius=8,
+                blur=5,
+                gradient={
+                    0.0: '#000080',  # Deep blue (shallow)
+                    0.2: '#0066FF',  # Blue
+                    0.4: '#00CCFF',  # Light blue
+                    0.6: '#FFFF00',  # Yellow (medium depth)
+                    0.8: '#FF9900',  # Orange
+                    1.0: '#FF0000'   # Red (deep)
+                }
+            ).add_to(m)
+            
+        except Exception as e:
+            st.warning(f"Could not display regional heatmap: {e}")
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None

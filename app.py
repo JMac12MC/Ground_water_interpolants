@@ -180,54 +180,7 @@ with st.sidebar:
     else:
         st.write("**Standard Mode**: Click on map to generate local interpolation within search radius.")
 
-    # Regional Heatmap Controls (moved to prominent position)
-    st.header("🌍 Regional Background")
-    
-    # Force refresh checkbox to ensure visibility
-    show_regional = st.checkbox(
-        "Show Regional Groundwater Depth Heatmap",
-        value=st.session_state.get('show_regional_heatmap', True),
-        key="regional_heatmap_checkbox",
-        help="Display a high-resolution background heatmap covering the entire Canterbury region using all available well data"
-    )
-    st.session_state.show_regional_heatmap = show_regional
-    
-    # Generate regional heatmap button with unique key
-    if st.button("🚀 Generate Regional Heatmap", key="generate_regional_btn"):
-        if st.session_state.wells_data is not None:
-            try:
-                with st.spinner("Generating tiled regional heatmap (this may take a few minutes)..."):
-                    # Generate comprehensive regional heatmap using tiled approach
-                    regional_data = generate_tiled_regional_heatmap(
-                        st.session_state.wells_data, 
-                        variable='depth_to_groundwater',
-                        soil_polygons=st.session_state.soil_polygons
-                    )
-                    
-                    if regional_data and len(regional_data) > 0:
-                        st.session_state.regional_heatmap_data = regional_data
-                        st.success(f"✅ Generated regional heatmap with {len(regional_data)} data points")
-                        st.rerun()  # Force refresh after generation
-                    else:
-                        st.error("❌ Failed to generate regional heatmap - no data returned")
-                        
-            except Exception as e:
-                st.error(f"❌ Error generating regional heatmap: {str(e)}")
-                st.session_state.regional_heatmap_data = None
-        else:
-            st.warning("⚠️ No wells data available for regional heatmap generation")
-    
-    # Show regional heatmap status with clear indicators
-    if st.session_state.regional_heatmap_data:
-        st.success(f"✅ Regional heatmap ready: {len(st.session_state.regional_heatmap_data):,} data points")
-        if show_regional:
-            st.info("🗺️ Regional heatmap is displayed on map")
-    elif show_regional:
-        st.warning("⚠️ Regional heatmap not available. Click 'Generate Regional Heatmap' to create one.")
-    
-    # Add refresh button to force preview updates
-    if st.button("🔄 Refresh Preview", key="refresh_preview", help="Force refresh the app preview"):
-        st.rerun()
+
 
     # Visualization method selection - single dropdown for all options
     st.header("Analysis Options")
@@ -255,18 +208,7 @@ with st.sidebar:
     if 'variogram_model' not in st.session_state:
         st.session_state.variogram_model = 'spherical'
 
-    # Load existing regional heatmap if available
-    if st.session_state.regional_heatmap_data is None and st.session_state.wells_data is not None:
-        # Try to load cached tiled regional heatmap
-        try:
-            from tiled_regional_heatmap import TiledRegionalHeatmapGenerator
-            tiled_generator = TiledRegionalHeatmapGenerator()
-            cached_heatmap = tiled_generator.load_heatmap_cache('depth_to_groundwater')
-            if cached_heatmap:
-                st.session_state.regional_heatmap_data = cached_heatmap
-                st.success(f"Loaded cached tiled regional heatmap ({len(cached_heatmap)} points)")
-        except Exception as e:
-            pass  # No cached data available
+
 
 
 
@@ -344,30 +286,6 @@ with main_col1:
                 sticky=False
             )
         ).add_to(m)
-
-    # Add regional groundwater depth heatmap as background layer
-    if st.session_state.show_regional_heatmap and st.session_state.regional_heatmap_data:
-        try:
-            # Add regional heatmap as a background layer
-            HeatMap(
-                data=st.session_state.regional_heatmap_data,
-                name="Regional Groundwater Depth",
-                min_opacity=0.3,
-                max_opacity=0.6,
-                radius=8,
-                blur=5,
-                gradient={
-                    0.0: '#000080',  # Deep blue (shallow)
-                    0.2: '#0066FF',  # Blue
-                    0.4: '#00CCFF',  # Light blue
-                    0.6: '#FFFF00',  # Yellow (medium depth)
-                    0.8: '#FF9900',  # Orange
-                    1.0: '#FF0000'   # Red (deep)
-                }
-            ).add_to(m)
-            
-        except Exception as e:
-            st.warning(f"Could not display regional heatmap: {e}")
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None

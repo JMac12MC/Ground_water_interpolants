@@ -170,34 +170,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             )
             valid_coord_mask = valid_coord_mask & investigation_mask
         
-        # For indicator kriging, be very conservative about 0.0 yields
-        # Only include them if they seem to be legitimate water wells with pump tests
-        has_pump_test_info = False
-        if 'PUMPING_TEST' in wells_df_original.columns:
-            has_pump_test_info = wells_df_original['PUMPING_TEST'].notna()
-        elif 'pump_test' in wells_df_original.columns:
-            has_pump_test_info = wells_df_original['pump_test'].notna()
-        
         wells_df = wells_df_original[valid_coord_mask].copy()
-        
-        # Final filter: for wells with 0.0 yield, only include if they have pump test info
-        # This helps distinguish between "tested and found to be 0.0" vs "missing data converted to 0.0"
-        if has_pump_test_info.any():
-            zero_yield_mask = (wells_df['yield_rate'] == 0.0)
-            wells_df = wells_df[
-                (wells_df['yield_rate'] > 0.0) |  # Include all non-zero yields
-                (zero_yield_mask & has_pump_test_info[wells_df.index])  # Only include 0.0 yields with pump test data
-            ].copy()
-        else:
-            # If no pump test info available, exclude most 0.0 yields to be safe
-            # Only keep a small percentage of 0.0 yields (assume some are legitimate)
-            zero_yield_indices = wells_df[wells_df['yield_rate'] == 0.0].index
-            if len(zero_yield_indices) > 10:  # If more than 10 zero-yield wells
-                # Keep only 20% of zero yields (randomly selected) to avoid bias
-                keep_count = max(2, len(zero_yield_indices) // 5)
-                keep_indices = np.random.choice(zero_yield_indices, keep_count, replace=False)
-                exclude_zero_mask = ~((wells_df['yield_rate'] == 0.0) & (~wells_df.index.isin(keep_indices)))
-                wells_df = wells_df[exclude_zero_mask].copy()
         
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}

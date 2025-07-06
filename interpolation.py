@@ -188,7 +188,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Don't apply indicator clipping to indicator kriging methods themselves
     # Indicator methods should not be clipped by their own output
     indicator_methods = ['indicator_kriging', 'indicator_variance']
-    clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'idw']
+    clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'ground_water_level_kriging', 'idw', 'rf_kriging']
     
     if indicator_mask is not None and method in clippable_methods:
         mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask

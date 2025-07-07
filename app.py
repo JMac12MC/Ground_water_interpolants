@@ -444,82 +444,7 @@ with main_col1:
             band_index = min(14, int(normalized_value * 15))
             return colors[band_index]
 
-    # Display all stored heatmaps on the map with UNIFIED COLORING
-    stored_heatmap_count = 0
-    if st.session_state.stored_heatmaps:
-        print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps")
-        for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
-            try:
-                # Prefer GeoJSON data for triangular mesh visualization
-                geojson_data = stored_heatmap.get('geojson_data')
-                heatmap_data = stored_heatmap.get('heatmap_data', [])
-                
-                if geojson_data and geojson_data.get('features'):
-                    print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
-                    
-                    # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
-                    for feature in geojson_data['features']:
-                        if 'properties' in feature:
-                            # If 'value' doesn't exist but 'yield' does, copy it
-                            if 'value' not in feature['properties'] and 'yield' in feature['properties']:
-                                feature['properties']['value'] = feature['properties']['yield']
-                            # If 'yield' doesn't exist but 'value' does, copy it
-                            elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
-                                feature['properties']['yield'] = feature['properties']['value']
-                    
-                    # Use the global unified color function with method info
-                    method = stored_heatmap.get('interpolation_method', 'kriging')
-                    
-                    # Add GeoJSON layer for triangular mesh visualization with UNIFIED coloring
-                    folium.GeoJson(
-                        geojson_data,
-                        name=f"Stored: {stored_heatmap['heatmap_name']}",
-                        style_function=lambda feature, method=method: {
-                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        },
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                            aliases=['Value:'],
-                            localize=True
-                        )
-                    ).add_to(m)
-                    stored_heatmap_count += 1
-                    
-                elif heatmap_data and len(heatmap_data) > 0:
-                    print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
-                    
-                    # Fallback to HeatMap if no GeoJSON
-                    HeatMap(heatmap_data, 
-                           radius=20, 
-                           blur=10, 
-                           name=f"Stored: {stored_heatmap['heatmap_name']}",
-                           overlay=True,
-                           control=True,
-                           max_zoom=1).add_to(m)
-                    stored_heatmap_count += 1
-                else:
-                    print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
-                
-                # Add a marker showing the center point of the stored heatmap
-                folium.Marker(
-                    location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
-                    popup=f"<b>{stored_heatmap['heatmap_name']}</b><br>"
-                          f"Method: {stored_heatmap['interpolation_method']}<br>"
-                          f"Radius: {stored_heatmap['radius_km']} km<br>"
-                          f"Wells: {stored_heatmap['well_count']}<br>"
-                          f"Created: {stored_heatmap['created_at']}",
-                    icon=folium.Icon(color='purple', icon='info-sign')
-                ).add_to(m)
-                    
-            except Exception as e:
-                print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
-        
-        print(f"Successfully displayed {stored_heatmap_count} stored heatmaps on the map")
-    else:
-        print("No stored heatmaps to display")
+    # PLACEHOLDER: Display stored heatmaps AFTER fresh heatmap generation and global range calculation
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None
@@ -881,51 +806,180 @@ with main_col1:
                         )
                     ).add_to(m)
 
+                    # RECALCULATE GLOBAL RANGE including fresh heatmap values
+                    # Now that we have both stored and fresh heatmap data, recalculate the unified range
+                    updated_global_min = float('inf')
+                    updated_global_max = float('-inf')
+                    
+                    # Include fresh heatmap values
+                    if geojson_data and 'features' in geojson_data:
+                        for feature in geojson_data['features']:
+                            value = feature['properties'].get('yield', feature['properties'].get('value', 0))
+                            if value > 0:
+                                updated_global_min = min(updated_global_min, value)
+                                updated_global_max = max(updated_global_max, value)
+                    
+                    # Include stored heatmap values
+                    if st.session_state.stored_heatmaps:
+                        for stored_heatmap in st.session_state.stored_heatmaps:
+                            stored_geojson = stored_heatmap.get('geojson_data')
+                            if stored_geojson and 'features' in stored_geojson:
+                                for feature in stored_geojson['features']:
+                                    value = feature['properties'].get('yield', feature['properties'].get('value', 0))
+                                    if value > 0:
+                                        updated_global_min = min(updated_global_min, value)
+                                        updated_global_max = max(updated_global_max, value)
+                    
+                    # Update global variables for consistent coloring
+                    if updated_global_min != float('inf'):
+                        global_min_value = updated_global_min
+                        global_max_value = updated_global_max
+                        print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f} (including fresh heatmap)")
+                        
+                        # UPDATE the legend with the new global range
+                        if st.session_state.interpolation_method == 'indicator_kriging':
+                            # Three-tier indicator kriging legend stays the same
+                            pass
+                        else:
+                            # Remove existing colormap from map
+                            try:
+                                # Clear any existing colormaps
+                                for layer in m._children.copy():
+                                    if hasattr(m._children[layer], 'caption'):
+                                        del m._children[layer]
+                            except:
+                                pass
+                            
+                            # Add UPDATED legend using the new GLOBAL min/max
+                            updated_colormap = folium.LinearColormap(
+                                colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
+                                        '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
+                                        '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
+                                vmin=float(global_min_value),
+                                vmax=float(global_max_value),
+                                caption=f'UPDATED UNIFIED Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s (All Heatmaps)'
+                            )
+                            updated_colormap.add_to(m)
 
-            # Show wells within the radius when a point is selected (for local context)
-            if st.session_state.well_markers_visibility and st.session_state.selected_point:
-                if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
-                    radius_wells_layer = folium.FeatureGroup(name="Local Wells").add_to(m)
-
-                    # Filter out geotechnical/geological investigation wells and wells with no depth value from well markers
-                    display_wells = st.session_state.filtered_wells.copy()
-                    if 'well_use' in display_wells.columns:
-                        geotechnical_mask = display_wells['well_use'].str.contains(
-                            'Geotechnical.*Investigation|Geological.*Investigation', 
-                            case=False, 
-                            na=False, 
-                            regex=True
+    # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
+    stored_heatmap_count = 0
+    if st.session_state.stored_heatmaps:
+        print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
+        for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
+            try:
+                # Prefer GeoJSON data for triangular mesh visualization
+                geojson_data = stored_heatmap.get('geojson_data')
+                heatmap_data = stored_heatmap.get('heatmap_data', [])
+                
+                if geojson_data and geojson_data.get('features'):
+                    print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
+                    
+                    # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
+                    for feature in geojson_data['features']:
+                        if 'properties' in feature:
+                            # If 'value' doesn't exist but 'yield' does, copy it
+                            if 'value' not in feature['properties'] and 'yield' in feature['properties']:
+                                feature['properties']['value'] = feature['properties']['yield']
+                            # If 'yield' doesn't exist but 'value' does, copy it
+                            elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
+                                feature['properties']['yield'] = feature['properties']['value']
+                    
+                    # Use the UPDATED global unified color function with method info
+                    method = stored_heatmap.get('interpolation_method', 'kriging')
+                    
+                    # Add GeoJSON layer for triangular mesh visualization with UPDATED UNIFIED coloring
+                    folium.GeoJson(
+                        geojson_data,
+                        name=f"Stored: {stored_heatmap['heatmap_name']}",
+                        style_function=lambda feature, method=method: {
+                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                            'color': 'none',
+                            'weight': 0,
+                            'fillOpacity': 0.7
+                        },
+                        tooltip=folium.GeoJsonTooltip(
+                            fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
+                            aliases=['Value:'],
+                            localize=True
                         )
-                        display_wells = display_wells[~geotechnical_mask]
+                    ).add_to(m)
+                    stored_heatmap_count += 1
+                    
+                elif heatmap_data and len(heatmap_data) > 0:
+                    print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
+                    
+                    # Fallback to HeatMap if no GeoJSON
+                    HeatMap(heatmap_data, 
+                           radius=20, 
+                           blur=10, 
+                           name=f"Stored: {stored_heatmap['heatmap_name']}",
+                           overlay=True,
+                           control=True,
+                           max_zoom=1).add_to(m)
+                    stored_heatmap_count += 1
+                else:
+                    print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
+                
+                # Add a marker showing the center point of the stored heatmap
+                folium.Marker(
+                    location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
+                    popup=f"<b>{stored_heatmap['heatmap_name']}</b><br>"
+                          f"Method: {stored_heatmap['interpolation_method']}<br>"
+                          f"Radius: {stored_heatmap['radius_km']} km<br>"
+                          f"Wells: {stored_heatmap['well_count']}<br>"
+                          f"Created: {stored_heatmap['created_at']}",
+                    icon=folium.Icon(color='purple', icon='info-sign')
+                ).add_to(m)
+                    
+            except Exception as e:
+                print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
+        
+        print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
 
-                    # Filter out wells with no depth value (NaN or empty depth)
-                    if 'depth' in display_wells.columns:
-                        display_wells = display_wells[display_wells['depth'].notna() & (display_wells['depth'] > 0)]
+    # Show wells within the radius when a point is selected (for local context)
+    if st.session_state.well_markers_visibility and st.session_state.selected_point:
+        if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
+            radius_wells_layer = folium.FeatureGroup(name="Local Wells").add_to(m)
 
-                    # Note: Active well status filtering removed to show all wells with depth data
-                    # This ensures wells with valid depth and yield data are displayed
+            # Filter out geotechnical/geological investigation wells and wells with no depth value from well markers
+            display_wells = st.session_state.filtered_wells.copy()
+            if 'well_use' in display_wells.columns:
+                geotechnical_mask = display_wells['well_use'].str.contains(
+                    'Geotechnical.*Investigation|Geological.*Investigation', 
+                    case=False, 
+                    na=False, 
+                    regex=True
+                )
+                display_wells = display_wells[~geotechnical_mask]
 
-                    # Create small dot markers for wells within the radius (excluding geotechnical wells)
-                    for idx, row in display_wells.iterrows():
-                        folium.CircleMarker(
-                            location=(float(row['latitude']), float(row['longitude'])),
-                            radius=3,
-                            color='gray',
-                            fill=True,
-                            fill_color='darkblue',
-                            fill_opacity=0.7,
-                            tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m{'(Dry)' if row.get('is_dry_well', False) else ''}"
-                        ).add_to(radius_wells_layer)
+            # Filter out wells with no depth value (NaN or empty depth)
+            if 'depth' in display_wells.columns:
+                display_wells = display_wells[display_wells['depth'].notna() & (display_wells['depth'] > 0)]
 
-        # Add click event to capture coordinates (only need this once)
-        folium.LatLngPopup().add_to(m)
+            # Note: Active well status filtering removed to show all wells with depth data
+            # This ensures wells with valid depth and yield data are displayed
 
-        # Add a simple click handler that manually tracks clicks
-        folium.LayerControl().add_to(m)
+            # Create small dot markers for wells within the radius (excluding geotechnical wells)
+            for idx, row in display_wells.iterrows():
+                folium.CircleMarker(
+                    location=(float(row['latitude']), float(row['longitude'])),
+                    radius=3,
+                    color='gray',
+                    fill=True,
+                    fill_color='darkblue',
+                    fill_opacity=0.7,
+                    tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m{'(Dry)' if row.get('is_dry_well', False) else ''}"
+                ).add_to(radius_wells_layer)
 
-        # Create a custom click handler
-        from folium.plugins import MousePosition
-        MousePosition().add_to(m)
+    # Add click event to capture coordinates (only need this once)
+    folium.LatLngPopup().add_to(m)
+
+    # Add a simple click handler that manually tracks clicks
+    folium.LayerControl().add_to(m)
+
+    # Create a custom click handler
+    from folium.plugins import MousePosition
+    MousePosition().add_to(m)
 
     # Display the map
     st.subheader("Interactive Map")

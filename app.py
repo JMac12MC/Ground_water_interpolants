@@ -666,6 +666,9 @@ with main_col1:
                     else:
                         max_value = max(max_value, 20.0)  # Minimum yield value
 
+                    # Add the new heatmap to the map (in addition to stored heatmaps)
+                    # This ensures both stored and newly generated heatmaps display together
+                    
                     # Instead of choropleth, use direct GeoJSON styling for more control
                     # This allows us to precisely map values to colors
 
@@ -761,9 +764,15 @@ with main_col1:
                     # Add the GeoJSON with our custom styling
                     display_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
 
+                    # Create a unique name for the new heatmap based on location
+                    new_heatmap_name = f"New: {st.session_state.interpolation_method.replace('_', ' ').title()}"
+                    if st.session_state.selected_point:
+                        lat, lon = st.session_state.selected_point
+                        new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
+                    
                     folium.GeoJson(
                         data=geojson_data,
-                        name='Interpolation Visualization',
+                        name=new_heatmap_name,
                         style_function=lambda feature: {
                             'fillColor': get_color(feature['properties'][display_field]),
                             'color': 'none',
@@ -912,6 +921,9 @@ with main_col1:
     // Clear any existing click handlers
     </script>
     """))
+
+    # Add layer control to toggle between different heatmaps
+    folium.LayerControl(position='topright', collapsed=False).add_to(m)
 
     # Use st_folium with stable key and minimal returned objects
     map_data = st_folium(

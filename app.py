@@ -392,16 +392,42 @@ with main_col1:
                             elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
                                 feature['properties']['yield'] = feature['properties']['value']
                     
+                    # Define dynamic color function for stored heatmaps (same as fresh ones)
+                    def get_stored_color(value):
+                        """Get color for stored heatmap based on method type"""
+                        method = stored_heatmap.get('interpolation_method', 'kriging')
+                        if method == 'indicator_kriging':
+                            # Three-tier indicator kriging colors
+                            if value < 0.4:
+                                return '#FF0000'  # Red for poor zones
+                            elif value < 0.7:
+                                return '#FF8000'  # Orange for moderate zones  
+                            else:
+                                return '#00FF00'  # Green for good zones
+                        else:
+                            # Standard yield colors
+                            if value <= 0.1:
+                                return '#000080'
+                            elif value <= 1:
+                                return '#0033FF'
+                            elif value <= 5:
+                                return '#00CCFF'
+                            elif value <= 10:
+                                return '#00FF66'
+                            elif value <= 20:
+                                return '#FFFF00'
+                            else:
+                                return '#FF0000'
+
                     # Add GeoJSON layer for triangular mesh visualization (preferred)
                     folium.GeoJson(
                         geojson_data,
                         name=f"Stored: {stored_heatmap['heatmap_name']}",
                         style_function=lambda feature: {
-                            'fillColor': feature['properties'].get('color', '#ff0000'),
-                            'color': feature['properties'].get('color', '#ff0000'),
-                            'weight': 0.5,
-                            'fillOpacity': 0.7,
-                            'opacity': 0.3
+                            'fillColor': get_stored_color(feature['properties'].get('yield', 0)),
+                            'color': 'none',
+                            'weight': 0,
+                            'fillOpacity': 0.7
                         },
                         tooltip=folium.GeoJsonTooltip(
                             fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
@@ -981,10 +1007,14 @@ with main_col1:
         # Only update if this is a genuinely new location (larger threshold for stability)
         current_point = st.session_state.selected_point
         if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
+            print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.3f}, {clicked_lng:.3f})")
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
             # Clear filtered wells to trigger recalculation
             st.session_state.filtered_wells = None
+            # Clear any cached interpolation data that might use old coordinates
+            if 'geojson_data' in st.session_state:
+                del st.session_state['geojson_data']
             # Use experimental_rerun to reduce instability
             st.rerun()
 
@@ -1026,79 +1056,7 @@ with main_col2:
     else:
         st.info("Click on the map to select a location and view nearby wells")
 
-    # Save Heatmap functionality
-    if (st.session_state.selected_point and 
-        st.session_state.heat_map_visibility and 
-        st.session_state.polygon_db):
-        
-        st.subheader("💾 Save Current Heatmap")
-        
-        heatmap_name = st.text_input(
-            "Heatmap Name:", 
-            value=f"{st.session_state.interpolation_method}_{st.session_state.selected_point[0]:.3f}_{st.session_state.selected_point[1]:.3f}",
-            key="heatmap_name_input"
-        )
-        
-        if st.button("💾 Save Heatmap", type="primary"):
-            if heatmap_name.strip():
-                try:
-                    # Generate the heatmap data if not already done
-                    if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
-                        heat_map_data = generate_heat_map_data(
-                            st.session_state.filtered_wells.copy(),
-                            st.session_state.selected_point,
-                            st.session_state.search_radius,
-                            resolution=100,
-                            method=st.session_state.interpolation_method,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
-                        )
-                        
-                        # Generate the GeoJSON triangular mesh data that creates the proper visualization
-                        geojson_data = generate_geo_json_grid(
-                            st.session_state.filtered_wells.copy(),
-                            st.session_state.selected_point,
-                            st.session_state.search_radius,
-                            resolution=100,
-                            method=st.session_state.interpolation_method,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            indicator_mask=st.session_state.get('indicator_mask', None)
-                        )
-                        
-                        if geojson_data and geojson_data.get('features'):
-                            print(f"Generated fresh GeoJSON with {len(geojson_data.get('features', []))} triangular features for storage")
-                        else:
-                            print("Warning: No GeoJSON data generated, will store point data only")
-                        
-                        # Store the heatmap in the database
-                        heatmap_id = st.session_state.polygon_db.store_heatmap(
-                            heatmap_name.strip(),
-                            st.session_state.selected_point[0],
-                            st.session_state.selected_point[1],
-                            st.session_state.search_radius,
-                            st.session_state.interpolation_method,
-                            heat_map_data,
-                            geojson_data=geojson_data,  # Store the triangular mesh data
-                            well_count=len(st.session_state.filtered_wells)
-                        )
-                        
-                        if heatmap_id:
-                            # Refresh the stored heatmaps list
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            st.success(f"✅ Saved heatmap: {heatmap_name} (ID: {heatmap_id})")
-                            st.success(f"📊 Point data: {len(heat_map_data)} data points")
-                            if geojson_data and geojson_data.get('features'):
-                                st.success(f"🔺 GeoJSON: {len(geojson_data['features'])} triangular features stored")
-                            else:
-                                st.warning("⚠️ No GeoJSON triangular data was stored - heatmap will display as points")
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to save heatmap to database")
-                    else:
-                        st.warning("⚠️ No heatmap data to save. Generate a heatmap first.")
-                except Exception as e:
-                    st.error(f"❌ Error saving heatmap: {e}")
-            else:
-                st.warning("⚠️ Please enter a name for the heatmap")
+    # Heatmaps are automatically saved - no manual action needed
     
     # Add information about water well drilling - always display
     st.subheader("Finding Groundwater")

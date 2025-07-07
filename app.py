@@ -65,6 +65,15 @@ if 'polygon_db' not in st.session_state:
 
 if 'stored_heatmaps' not in st.session_state:
     st.session_state.stored_heatmaps = []
+
+# Load stored heatmaps from database on every app refresh
+if st.session_state.polygon_db:
+    try:
+        st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+        print(f"Loaded {len(st.session_state.stored_heatmaps)} stored heatmaps from database")
+    except Exception as e:
+        print(f"Error loading stored heatmaps: {e}")
+        st.session_state.stored_heatmaps = []
 # Regional heatmap session state removed per user request
 
 # Add banner

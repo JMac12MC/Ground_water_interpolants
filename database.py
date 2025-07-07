@@ -14,11 +14,17 @@ class PolygonDatabase:
         """Initialize database connection using environment variables"""
         self.database_url = os.environ.get('DATABASE_URL')
         if not self.database_url:
-            raise ValueError("DATABASE_URL environment variable not found")
+            print("Warning: DATABASE_URL not found, using default SQLite")
+            self.database_url = 'sqlite:///groundwater.db'
 
-        self.engine = create_engine(self.database_url)
-        self.metadata = MetaData()
-        self._create_tables()
+        try:
+            self.engine = create_engine(self.database_url)
+            self.metadata = MetaData()
+            self._create_tables()
+            print(f"Database initialized successfully: {self.database_url}")
+        except Exception as e:
+            print(f"Database initialization failed: {e}")
+            raise
 
         # PostgreSQL connection for heatmap data
         self.pg_engine = None
@@ -423,8 +429,16 @@ class PolygonDatabase:
             The ID of the stored heatmap
         """
         try:
-            # Recreate engine connection if needed
+            print(f"Attempting to store heatmap: {heatmap_name}")
+            print(f"GeoJSON data present: {bool(geojson_data)}")
+            if geojson_data:
+                print(f"GeoJSON features count: {len(geojson_data.get('features', []))}")
+            
+            # Ensure engine connection is available
             if not hasattr(self, 'engine') or self.engine is None:
+                if not self.database_url:
+                    print("Error: No database URL available")
+                    return None
                 self.engine = create_engine(self.database_url)
             
             with self.engine.connect() as conn:
@@ -451,6 +465,8 @@ class PolygonDatabase:
                 if row:
                     heatmap_id = row[0]
                     print(f"Successfully stored heatmap '{heatmap_name}' with ID {heatmap_id}")
+                    if geojson_data:
+                        print(f"Stored GeoJSON with {len(geojson_data.get('features', []))} triangular features")
                     return heatmap_id
                 else:
                     print("Failed to get heatmap ID after insert")

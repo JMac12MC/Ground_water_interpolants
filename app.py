@@ -1016,7 +1016,11 @@ with main_col2:
                             # Refresh the stored heatmaps list
                             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
                             st.success(f"✅ Saved heatmap: {heatmap_name} (ID: {heatmap_id})")
-                            st.success(f"📊 Heatmap contains {len(heat_map_data)} data points")
+                            st.success(f"📊 Point data: {len(heat_map_data)} data points")
+                            if geojson_data and geojson_data.get('features'):
+                                st.success(f"🔺 GeoJSON: {len(geojson_data['features'])} triangular features stored")
+                            else:
+                                st.warning("⚠️ No GeoJSON triangular data was stored - heatmap will display as points")
                             st.rerun()
                         else:
                             st.error("❌ Failed to save heatmap to database")

@@ -729,6 +729,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                                 ]]
                             },
                             "properties": {
+                                "value": avg_yield,
                                 "yield": avg_yield
                             }
                         }
@@ -798,6 +799,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                             "coordinates": [coords]
                         },
                         "properties": {
+                            "value": float(interpolated_z[i]),
                             "yield": float(interpolated_z[i])
                         }
                     }

@@ -392,32 +392,43 @@ with main_col1:
                             elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
                                 feature['properties']['yield'] = feature['properties']['value']
                     
-                    # Define dynamic color function for stored heatmaps (same as fresh ones)
+                    # Define EXACT SAME color function used for fresh heatmaps
                     def get_stored_color(value):
-                        """Get color for stored heatmap based on method type"""
+                        """Get color for stored heatmap - EXACT same as fresh heatmap colors"""
                         method = stored_heatmap.get('interpolation_method', 'kriging')
+                        
                         if method == 'indicator_kriging':
-                            # Three-tier indicator kriging colors
-                            if value < 0.4:
-                                return '#FF0000'  # Red for poor zones
-                            elif value < 0.7:
-                                return '#FF8000'  # Orange for moderate zones  
+                            # Three-tier classification: red (poor), orange (moderate), green (good)
+                            if value <= 0.4:
+                                return '#FF0000'    # Red for poor (0.25)
+                            elif value <= 0.7:
+                                return '#FF8000'    # Orange for moderate (0.625)
                             else:
-                                return '#00FF00'  # Green for good zones
+                                return '#00FF00'    # Green for good (0.875)
                         else:
-                            # Standard yield colors
-                            if value <= 0.1:
-                                return '#000080'
-                            elif value <= 1:
-                                return '#0033FF'
-                            elif value <= 5:
-                                return '#00CCFF'
-                            elif value <= 10:
-                                return '#00FF66'
-                            elif value <= 20:
-                                return '#FFFF00'
-                            else:
-                                return '#FF0000'
+                            # EXACT same 15-band color system as fresh heatmaps
+                            max_value = 25.0  # Standard max for most interpolations
+                            step = max_value / 15
+                            colors = [
+                                '#000080',  # Band 1: Dark blue
+                                '#0000B3',  # Band 2: Blue
+                                '#0000E6',  # Band 3: Bright blue
+                                '#0033FF',  # Band 4: Blue-cyan
+                                '#0066FF',  # Band 5: Light blue
+                                '#0099FF',  # Band 6: Sky blue
+                                '#00CCFF',  # Band 7: Cyan
+                                '#00FFCC',  # Band 8: Cyan-green
+                                '#00FF99',  # Band 9: Aqua green
+                                '#00FF66',  # Band 10: Green-yellow
+                                '#33FF33',  # Band 11: Green
+                                '#99FF00',  # Band 12: Yellow-green
+                                '#FFFF00',  # Band 13: Yellow
+                                '#FF9900',  # Band 14: Orange
+                                '#FF0000'   # Band 15: Red
+                            ]
+                            # Determine which band the value falls into
+                            band_index = min(14, int(value / step))
+                            return colors[band_index]
 
                     # Add GeoJSON layer for triangular mesh visualization (preferred)
                     folium.GeoJson(
@@ -986,8 +997,7 @@ with main_col1:
     </script>
     """))
 
-    # Add layer control to toggle between different heatmaps
-    folium.LayerControl(position='topright', collapsed=False).add_to(m)
+    # Layer control removed - all heatmaps display simultaneously
 
     # Use st_folium with stable key and minimal returned objects
     map_data = st_folium(

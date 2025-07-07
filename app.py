@@ -266,7 +266,7 @@ with st.sidebar:
     # Display options
     st.header("Display Options")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
-    st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=st.session_state.well_markers_visibility)
+    st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
@@ -1014,18 +1014,23 @@ with main_col1:
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
 
-        # Only update if this is a genuinely new location (larger threshold for stability)
+        # ALWAYS update for any new click to ensure every click generates a heatmap
         current_point = st.session_state.selected_point
-        if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
+        if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
             print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.3f}, {clicked_lng:.3f})")
+            if current_point:
+                print(f"Previous coordinates: ({current_point[0]:.3f}, {current_point[1]:.3f})")
+            
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
-            # Clear filtered wells to trigger recalculation
-            st.session_state.filtered_wells = None
-            # Clear any cached interpolation data that might use old coordinates
-            if 'geojson_data' in st.session_state:
-                del st.session_state['geojson_data']
-            # Use experimental_rerun to reduce instability
+            
+            # FORCE clear all cached data to ensure fresh heatmap generation
+            for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
+                if key in st.session_state:
+                    del st.session_state[key]
+                    print(f"Cleared cached {key}")
+            
+            # Immediate rerun to process new location
             st.rerun()
 
     # Add cache clearing and reset buttons

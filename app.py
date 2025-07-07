@@ -787,6 +787,44 @@ with main_col1:
                         )
                     ).add_to(m)
 
+                    # AUTO-STORE: Automatically save every generated heatmap
+                    if st.session_state.polygon_db and st.session_state.selected_point:
+                        try:
+                            center_lat, center_lon = st.session_state.selected_point
+                            heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
+                            
+                            # Convert GeoJSON to simple heatmap data for storage
+                            heatmap_data = []
+                            for feature in geojson_data.get('features', []):
+                                if 'geometry' in feature and 'properties' in feature:
+                                    geom = feature['geometry']
+                                    if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
+                                        # Get centroid of polygon
+                                        coords = geom['coordinates'][0]
+                                        if len(coords) >= 3:
+                                            lat = sum(coord[1] for coord in coords) / len(coords)
+                                            lon = sum(coord[0] for coord in coords) / len(coords)
+                                            value = feature['properties'].get('yield', 0)
+                                            heatmap_data.append([lat, lon, value])
+                            
+                            # Store in database
+                            st.session_state.polygon_db.store_heatmap(
+                                heatmap_name=heatmap_name,
+                                center_lat=center_lat,
+                                center_lon=center_lon,
+                                radius_km=st.session_state.search_radius,
+                                interpolation_method=st.session_state.interpolation_method,
+                                heatmap_data=heatmap_data,
+                                geojson_data=geojson_data,
+                                well_count=len(st.session_state.filtered_wells) if st.session_state.filtered_wells is not None else 0
+                            )
+                            
+                            # Immediately reload stored heatmaps to include the new one
+                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            print(f"AUTO-STORED: {heatmap_name} with {len(heatmap_data)} points and {len(geojson_data.get('features', []))} features")
+                        except Exception as e:
+                            print(f"Error auto-storing heatmap: {e}")
+
                     # Add 15-band colormap legend to match the visualization
                     if st.session_state.interpolation_method == 'depth_kriging':
                         # Depth legend with depth-appropriate colors

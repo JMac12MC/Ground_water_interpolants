@@ -402,6 +402,48 @@ with main_col1:
     
     print(f"UNIFIED COLORMAP: Global value range {global_min_value:.2f} to {global_max_value:.2f} across all displayed heatmaps")
 
+    # DEFINE GLOBAL UNIFIED COLOR FUNCTION OUTSIDE THE LOOP
+    def get_global_unified_color(value, method='kriging'):
+        """Global unified color function for consistent visualization across ALL heatmaps"""
+        if method == 'indicator_kriging':
+            # Three-tier classification: red (poor), orange (moderate), green (good)
+            if value <= 0.4:
+                return '#FF0000'    # Red for poor
+            elif value <= 0.7:
+                return '#FF8000'    # Orange for moderate
+            else:
+                return '#00FF00'    # Green for good
+        else:
+            # Use GLOBAL min/max for consistent color scaling across ALL heatmaps
+            if global_max_value <= global_min_value:
+                return '#000080'  # Default blue if no range
+            
+            # Normalize value to 0-1 range using global min/max
+            normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+            normalized_value = max(0, min(1, normalized_value))  # Clamp to 0-1
+            
+            # Use 15-band color system with normalized value
+            colors = [
+                '#000080',  # Band 1: Dark blue
+                '#0000B3',  # Band 2: Blue
+                '#0000E6',  # Band 3: Bright blue
+                '#0033FF',  # Band 4: Blue-cyan
+                '#0066FF',  # Band 5: Light blue
+                '#0099FF',  # Band 6: Sky blue
+                '#00CCFF',  # Band 7: Cyan
+                '#00FFCC',  # Band 8: Cyan-green
+                '#00FF99',  # Band 9: Aqua green
+                '#00FF66',  # Band 10: Green-yellow
+                '#33FF33',  # Band 11: Green
+                '#99FF00',  # Band 12: Yellow-green
+                '#FFFF00',  # Band 13: Yellow
+                '#FF9900',  # Band 14: Orange
+                '#FF0000'   # Band 15: Red
+            ]
+            # Determine which band the normalized value falls into
+            band_index = min(14, int(normalized_value * 15))
+            return colors[band_index]
+
     # Display all stored heatmaps on the map with UNIFIED COLORING
     stored_heatmap_count = 0
     if st.session_state.stored_heatmaps:
@@ -425,56 +467,15 @@ with main_col1:
                             elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
                                 feature['properties']['yield'] = feature['properties']['value']
                     
-                    # UNIFIED color function using global min/max for ALL heatmaps
-                    def get_unified_color(value):
-                        """Get color using UNIFIED global color scale for consistent visualization"""
-                        method = stored_heatmap.get('interpolation_method', 'kriging')
-                        
-                        if method == 'indicator_kriging':
-                            # Three-tier classification: red (poor), orange (moderate), green (good)
-                            if value <= 0.4:
-                                return '#FF0000'    # Red for poor
-                            elif value <= 0.7:
-                                return '#FF8000'    # Orange for moderate
-                            else:
-                                return '#00FF00'    # Green for good
-                        else:
-                            # Use GLOBAL min/max for consistent color scaling across ALL heatmaps
-                            if global_max_value <= global_min_value:
-                                return '#000080'  # Default blue if no range
-                            
-                            # Normalize value to 0-1 range using global min/max
-                            normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
-                            normalized_value = max(0, min(1, normalized_value))  # Clamp to 0-1
-                            
-                            # Use 15-band color system with normalized value
-                            colors = [
-                                '#000080',  # Band 1: Dark blue
-                                '#0000B3',  # Band 2: Blue
-                                '#0000E6',  # Band 3: Bright blue
-                                '#0033FF',  # Band 4: Blue-cyan
-                                '#0066FF',  # Band 5: Light blue
-                                '#0099FF',  # Band 6: Sky blue
-                                '#00CCFF',  # Band 7: Cyan
-                                '#00FFCC',  # Band 8: Cyan-green
-                                '#00FF99',  # Band 9: Aqua green
-                                '#00FF66',  # Band 10: Green-yellow
-                                '#33FF33',  # Band 11: Green
-                                '#99FF00',  # Band 12: Yellow-green
-                                '#FFFF00',  # Band 13: Yellow
-                                '#FF9900',  # Band 14: Orange
-                                '#FF0000'   # Band 15: Red
-                            ]
-                            # Determine which band the normalized value falls into
-                            band_index = min(14, int(normalized_value * 15))
-                            return colors[band_index]
-
+                    # Use the global unified color function with method info
+                    method = stored_heatmap.get('interpolation_method', 'kriging')
+                    
                     # Add GeoJSON layer for triangular mesh visualization with UNIFIED coloring
                     folium.GeoJson(
                         geojson_data,
                         name=f"Stored: {stored_heatmap['heatmap_name']}",
-                        style_function=lambda feature: {
-                            'fillColor': get_unified_color(feature['properties'].get('yield', 0)),
+                        style_function=lambda feature, method=method: {
+                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
                             'color': 'none',
                             'weight': 0,
                             'fillOpacity': 0.7
@@ -748,57 +749,9 @@ with main_col1:
                     # Instead of choropleth, use direct GeoJSON styling for more control
                     # This allows us to precisely map values to colors
 
-                    # UNIFIED color function for fresh heatmaps - uses global colormap
+                    # Use the same global unified color function for fresh heatmaps
                     def get_color(value):
-                        if st.session_state.interpolation_method == 'indicator_kriging':
-                            # Three-tier classification: red (poor), orange (moderate), green (good)
-                            if value <= 0.4:
-                                return '#FF0000'    # Red for poor
-                            elif value <= 0.7:
-                                return '#FF8000'    # Orange for moderate
-                            else:
-                                return '#00FF00'    # Green for good
-                        else:
-                            # Use GLOBAL min/max for consistent color scaling with stored heatmaps
-                            if global_max_value <= global_min_value:
-                                return '#000080'  # Default blue if no range
-                            
-                            # Normalize value to 0-1 range using global min/max
-                            normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
-                            normalized_value = max(0, min(1, normalized_value))  # Clamp to 0-1
-                            
-                            # Select appropriate color scheme based on interpolation method
-                            if st.session_state.interpolation_method == 'depth_kriging':
-                                # Depth colors: green (shallow) to red (deep)
-                                colors = [
-                                    '#00ff00',  # Green (shallow depth)
-                                    '#33ff00', '#66ff00', '#99ff00', '#ccff00',
-                                    '#ffff00',  # Yellow
-                                    '#ffcc00', '#ff9900', '#ff6600', '#ff3300',
-                                    '#ff0000',  # Red (deep depth)
-                                    '#cc0000', '#990000', '#660000', '#330000'   # Dark red (very deep)
-                                ]
-                            elif st.session_state.interpolation_method == 'ground_water_level_kriging':
-                                # Ground water level colors: blue (low level) to brown (high level)
-                                colors = [
-                                    '#000080',  # Dark blue (low level)
-                                    '#0033CC', '#0066FF', '#0099FF', '#00CCFF',
-                                    '#00FFFF',  # Cyan (medium-low)
-                                    '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33',  # Yellow (medium)
-                                    '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'   # Brown (high level)
-                                ]
-                            else:
-                                # Yield colors: blue (low yield) to red (high yield)
-                                colors = [
-                                    '#000080',  # Band 1: Dark blue
-                                    '#0000B3', '#0000E6', '#0033FF', '#0066FF',
-                                    '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66',
-                                    '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'   # Band 15: Red
-                                ]
-                            
-                            # Determine which band the normalized value falls into
-                            band_index = min(14, int(normalized_value * 15))
-                            return colors[band_index]
+                        return get_global_unified_color(value, st.session_state.interpolation_method)
 
                     # Style function that uses our color mapping
                     def style_feature(feature):
@@ -874,45 +827,25 @@ with main_col1:
                         except Exception as e:
                             print(f"Error auto-storing heatmap: {e}")
 
-                    # Add 15-band colormap legend to match the visualization
-                    if st.session_state.interpolation_method == 'depth_kriging':
-                        # Depth legend with depth-appropriate colors
-                        colormap = folium.LinearColormap(
-                            colors=['#00ff00', '#33ff00', '#66ff00', '#99ff00', '#ccff00', 
-                                    '#ffff00', '#ffcc00', '#ff9900', '#ff6600', '#ff3300', 
-                                    '#ff0000', '#cc0000', '#990000', '#660000', '#330000'],
-                            vmin=0,
-                            vmax=float(max_value),
-                            caption='Depth to Groundwater (m) - 15 Bands'
-                        )
-                    elif st.session_state.interpolation_method == 'ground_water_level_kriging':
-                        # Ground water level legend
-                        colormap = folium.LinearColormap(
-                            colors=['#000080', '#0033CC', '#0066FF', '#0099FF', '#00CCFF', 
-                                    '#00FFFF', '#66FFCC', '#99FF99', '#CCFF66', '#FFFF33', 
-                                    '#FFCC00', '#FF9900', '#FF6600', '#CC3300', '#993300'],
-                            vmin=0,
-                            vmax=float(max_value),
-                            caption='Ground Water Level (m) - 15 Bands'
-                        )
-                    elif st.session_state.interpolation_method == 'indicator_kriging':
+                    # Add UNIFIED colormap legend using global min/max values
+                    if st.session_state.interpolation_method == 'indicator_kriging':
                         # Three-tier indicator kriging legend
                         colormap = folium.StepColormap(
                             colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
                             vmin=0,
                             vmax=1.0,
                             index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
-                            caption='Well Yield Quality: Red = Poor (0-0.5 L/s), Orange = Moderate (0.5-0.75 L/s), Green = Good (≥0.75 L/s)'
+                            caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
                         )
                     else:
-                        # Yield legend with original colors
+                        # UNIFIED legend using GLOBAL min/max for all interpolation types
                         colormap = folium.LinearColormap(
                             colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
                                     '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
                                     '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
-                            vmin=0,
-                            vmax=float(max_value),
-                            caption='Estimated Water Yield (L/s) - 15 Bands'
+                            vmin=float(global_min_value),
+                            vmax=float(global_max_value),
+                            caption=f'UNIFIED Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s (All Heatmaps)'
                         )
                     colormap.add_to(m)
 

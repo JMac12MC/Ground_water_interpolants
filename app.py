@@ -382,6 +382,16 @@ with main_col1:
                 if geojson_data and geojson_data.get('features'):
                     print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
                     
+                    # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
+                    for feature in geojson_data['features']:
+                        if 'properties' in feature:
+                            # If 'value' doesn't exist but 'yield' does, copy it
+                            if 'value' not in feature['properties'] and 'yield' in feature['properties']:
+                                feature['properties']['value'] = feature['properties']['yield']
+                            # If 'yield' doesn't exist but 'value' does, copy it
+                            elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
+                                feature['properties']['yield'] = feature['properties']['value']
+                    
                     # Add GeoJSON layer for triangular mesh visualization (preferred)
                     folium.GeoJson(
                         geojson_data,
@@ -394,7 +404,7 @@ with main_col1:
                             'opacity': 0.3
                         },
                         tooltip=folium.GeoJsonTooltip(
-                            fields=['value'],
+                            fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
                             aliases=['Value:'],
                             localize=True
                         )

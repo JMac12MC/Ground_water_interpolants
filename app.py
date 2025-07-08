@@ -274,14 +274,17 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
     
-    # Load stored heatmaps from database
-    if st.session_state.polygon_db:
-        try:
-            stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-            st.session_state.stored_heatmaps = stored_heatmaps
-            print(f"Loaded {len(stored_heatmaps)} stored heatmaps from database")
-        except Exception as e:
-            print(f"Error loading stored heatmaps: {e}")
+    # Load stored heatmaps from database (only if not already loaded or cleared)
+    if not hasattr(st.session_state, 'stored_heatmaps'):
+        if st.session_state.polygon_db:
+            try:
+                stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                st.session_state.stored_heatmaps = stored_heatmaps
+                print(f"Loaded {len(stored_heatmaps)} stored heatmaps from database")
+            except Exception as e:
+                print(f"Error loading stored heatmaps: {e}")
+                st.session_state.stored_heatmaps = []
+        else:
             st.session_state.stored_heatmaps = []
     
     if st.session_state.stored_heatmaps:
@@ -309,6 +312,10 @@ with st.sidebar:
                         # Reset the flag that might prevent new heatmap generation
                         st.session_state.new_heatmap_added = False
                         st.session_state.colormap_updated = False
+                        # Force a complete refresh by clearing the session cache
+                        if 'stored_heatmaps_cached' in st.session_state:
+                            del st.session_state.stored_heatmaps_cached
+                        print(f"CLEARED ALL: Deleted {count} stored heatmaps from database and session")
                         st.success(f"Cleared {count} stored heatmaps")
                         st.rerun()
                     except Exception as e:
@@ -861,7 +868,7 @@ with main_col1:
 
     # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
     stored_heatmap_count = 0
-    if st.session_state.stored_heatmaps:
+    if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
         print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
             try:
@@ -933,6 +940,8 @@ with main_col1:
                 print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
         
         print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
+    else:
+        print("No stored heatmaps to display - list is empty or cleared")
 
     # Show wells within the radius when a point is selected (for local context)
     if st.session_state.well_markers_visibility and st.session_state.selected_point:

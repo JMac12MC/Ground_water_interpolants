@@ -867,11 +867,23 @@ with main_col1:
                         print("Colormap range updated - will apply to all displayed heatmaps")
 
     # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
+    # But skip stored heatmaps that match the current fresh heatmap location
     stored_heatmap_count = 0
+    fresh_heatmap_name = None
+    if st.session_state.selected_point:
+        center_lat, center_lon = st.session_state.selected_point
+        fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
+    
     if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
         print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
+        print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
             try:
+                # Skip stored heatmaps that match the current fresh heatmap location
+                if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
+                    print(f"SKIPPING stored heatmap {stored_heatmap['heatmap_name']} - matches current fresh heatmap")
+                    continue
+                    
                 # Prefer GeoJSON data for triangular mesh visualization
                 geojson_data = stored_heatmap.get('geojson_data')
                 heatmap_data = stored_heatmap.get('heatmap_data', [])

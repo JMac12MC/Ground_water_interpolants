@@ -306,6 +306,9 @@ with st.sidebar:
                     try:
                         count = st.session_state.polygon_db.delete_all_stored_heatmaps()
                         st.session_state.stored_heatmaps = []
+                        # Reset the flag that might prevent new heatmap generation
+                        st.session_state.new_heatmap_added = False
+                        st.session_state.colormap_updated = False
                         st.success(f"Cleared {count} stored heatmaps")
                         st.rerun()
                     except Exception as e:
@@ -653,6 +656,10 @@ with main_col1:
                 else:
                     geojson_data = {"type": "FeatureCollection", "features": []}
 
+                print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
+                if geojson_data:
+                    print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")
+                
                 if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
                     max_value = 0
@@ -697,7 +704,8 @@ with main_col1:
                         lat, lon = st.session_state.selected_point
                         new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
                     
-                    folium.GeoJson(
+                    # Add the fresh heatmap to the map
+                    fresh_geojson = folium.GeoJson(
                         data=geojson_data,
                         name=new_heatmap_name,
                         style_function=lambda feature: {
@@ -712,7 +720,10 @@ with main_col1:
                             labels=True,
                             sticky=False
                         )
-                    ).add_to(m)
+                    )
+                    fresh_geojson.add_to(m)
+                    
+                    print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
                     # AUTO-STORE: Automatically save every generated heatmap
                     if st.session_state.polygon_db and st.session_state.selected_point:

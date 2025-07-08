@@ -444,7 +444,7 @@ with main_col1:
             band_index = min(14, int(normalized_value * 15))
             return colors[band_index]
 
-    # PLACEHOLDER: Display stored heatmaps AFTER fresh heatmap generation and global range calculation
+    # Stored heatmaps will be displayed after fresh heatmap generation and global range calculation
 
     # Load and display pre-computed heatmaps if available
     heatmap_data = None
@@ -836,30 +836,12 @@ with main_col1:
                         global_max_value = updated_global_max
                         print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f} (including fresh heatmap)")
                         
-                        # UPDATE the legend with the new global range
-                        if st.session_state.interpolation_method == 'indicator_kriging':
-                            # Three-tier indicator kriging legend stays the same
-                            pass
-                        else:
-                            # Remove existing colormap from map
-                            try:
-                                # Clear any existing colormaps
-                                for layer in m._children.copy():
-                                    if hasattr(m._children[layer], 'caption'):
-                                        del m._children[layer]
-                            except:
-                                pass
-                            
-                            # Add UPDATED legend using the new GLOBAL min/max
-                            updated_colormap = folium.LinearColormap(
-                                colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
-                                        '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
-                                        '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
-                                vmin=float(global_min_value),
-                                vmax=float(global_max_value),
-                                caption=f'UPDATED UNIFIED Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s (All Heatmaps)'
-                            )
-                            updated_colormap.add_to(m)
+                        # FORCE A COMPLETE MAP REFRESH by setting a flag to redraw everything
+                        st.session_state.colormap_needs_refresh = True
+                        
+                        # Trigger a rerun to refresh the entire map with updated colors
+                        print("Triggering map refresh due to updated colormap range")
+                        st.rerun()
 
     # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
     stored_heatmap_count = 0

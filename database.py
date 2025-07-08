@@ -442,6 +442,19 @@ class PolygonDatabase:
                 self.engine = create_engine(self.database_url)
             
             with self.engine.connect() as conn:
+                # Check for existing heatmap with same name to prevent duplicates
+                existing_check = conn.execute(text("""
+                    SELECT id FROM stored_heatmaps 
+                    WHERE heatmap_name = :heatmap_name
+                """), {'heatmap_name': heatmap_name})
+                
+                existing_row = existing_check.fetchone()
+                if existing_row:
+                    existing_id = existing_row[0]
+                    print(f"Heatmap '{heatmap_name}' already exists with ID {existing_id}, skipping duplicate")
+                    return existing_id
+                
+                # Insert new heatmap if no duplicate found
                 result = conn.execute(text("""
                     INSERT INTO stored_heatmaps (
                         heatmap_name, center_lat, center_lon, radius_km, 
@@ -464,7 +477,7 @@ class PolygonDatabase:
                 row = result.fetchone()
                 if row:
                     heatmap_id = row[0]
-                    print(f"Successfully stored heatmap '{heatmap_name}' with ID {heatmap_id}")
+                    print(f"Successfully stored NEW heatmap '{heatmap_name}' with ID {heatmap_id}")
                     if geojson_data:
                         print(f"Stored GeoJSON with {len(geojson_data.get('features', []))} triangular features")
                     return heatmap_id

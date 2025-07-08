@@ -731,7 +731,7 @@ with main_col1:
                     fresh_geojson.add_to(m)
                     
                     # Mark that we have a fresh heatmap displayed
-                    st.session_state.fresh_heatmap_displayed = True
+                    st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
                     
                     print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
@@ -963,9 +963,8 @@ with main_col1:
         print("No stored heatmaps to display - list is empty or cleared")
         
     # Show summary of displayed heatmaps
-    fresh_count = 1 if st.session_state.get('fresh_heatmap_displayed', False) else 0
-    total_displayed = fresh_count + stored_heatmap_count
-    print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (Fresh: {fresh_count}, Stored: {stored_heatmap_count})")
+    total_displayed = stored_heatmap_count
+    print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (All via stored heatmaps)")
 
     # Show wells within the radius when a point is selected (for local context)
     if st.session_state.well_markers_visibility and st.session_state.selected_point:
@@ -1046,10 +1045,13 @@ with main_col1:
 
         # ALWAYS update for any new click to ensure every click generates a heatmap
         current_point = st.session_state.selected_point
-        if not current_point or (abs(current_point[0] - clicked_lat) > 0.0001 or abs(current_point[1] - clicked_lng) > 0.0001):
-            print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.3f}, {clicked_lng:.3f})")
+        if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
+            print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.6f}, {clicked_lng:.6f})")
             if current_point:
-                print(f"Previous coordinates: ({current_point[0]:.3f}, {current_point[1]:.3f})")
+                print(f"Previous coordinates: ({current_point[0]:.6f}, {current_point[1]:.6f})")
+                lat_diff = abs(current_point[0] - clicked_lat)
+                lng_diff = abs(current_point[1] - clicked_lng)
+                print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
             
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]

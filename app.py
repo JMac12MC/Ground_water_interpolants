@@ -730,6 +730,9 @@ with main_col1:
                     )
                     fresh_geojson.add_to(m)
                     
+                    # Mark that we have a fresh heatmap displayed
+                    st.session_state.fresh_heatmap_displayed = True
+                    
                     print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
                     # AUTO-STORE: Automatically save every generated heatmap
@@ -764,16 +767,19 @@ with main_col1:
                                 well_count=len(st.session_state.filtered_wells) if st.session_state.filtered_wells is not None else 0
                             )
                             
-                            # Only reload and update if this is truly a new heatmap (not a duplicate)
+                            # Always reload stored heatmaps to ensure fresh heatmap is included
+                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            
+                            # Check if this was actually a new addition
                             existing_ids = [h.get('id') for h in (st.session_state.stored_heatmaps or [])]
                             if stored_heatmap_id and stored_heatmap_id not in existing_ids:
-                                st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
                                 print(f"AUTO-STORED NEW: {heatmap_name} with {len(heatmap_data)} points and {len(geojson_data.get('features', []))} features")
-                                
                                 # Mark that a new heatmap was actually added
                                 st.session_state.new_heatmap_added = True
                             else:
-                                print(f"SKIPPED DUPLICATE: {heatmap_name} already exists in database")
+                                print(f"REUSING EXISTING: {heatmap_name} already exists in database")
+                                # Still mark as new for display purposes
+                                st.session_state.new_heatmap_added = True
                         except Exception as e:
                             print(f"Error auto-storing heatmap: {e}")
 
@@ -879,10 +885,11 @@ with main_col1:
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
             try:
-                # Skip stored heatmaps that match the current fresh heatmap location
+                # Don't skip the current fresh heatmap - let it display as a stored heatmap too
+                # This ensures continuity when the page re-renders
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
-                    print(f"SKIPPING stored heatmap {stored_heatmap['heatmap_name']} - matches current fresh heatmap")
-                    continue
+                    print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
+                # All stored heatmaps should display
                     
                 # Prefer GeoJSON data for triangular mesh visualization
                 geojson_data = stored_heatmap.get('geojson_data')
@@ -954,6 +961,11 @@ with main_col1:
         print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
     else:
         print("No stored heatmaps to display - list is empty or cleared")
+        
+    # Show summary of displayed heatmaps
+    fresh_count = 1 if st.session_state.get('fresh_heatmap_displayed', False) else 0
+    total_displayed = fresh_count + stored_heatmap_count
+    print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (Fresh: {fresh_count}, Stored: {stored_heatmap_count})")
 
     # Show wells within the radius when a point is selected (for local context)
     if st.session_state.well_markers_visibility and st.session_state.selected_point:

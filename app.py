@@ -734,8 +734,8 @@ with main_col1:
                                             value = feature['properties'].get('yield', 0)
                                             heatmap_data.append([lat, lon, value])
                             
-                            # Store in database
-                            st.session_state.polygon_db.store_heatmap(
+                            # Store in database and check if it's actually new
+                            stored_heatmap_id = st.session_state.polygon_db.store_heatmap(
                                 heatmap_name=heatmap_name,
                                 center_lat=center_lat,
                                 center_lon=center_lon,
@@ -746,9 +746,16 @@ with main_col1:
                                 well_count=len(st.session_state.filtered_wells) if st.session_state.filtered_wells is not None else 0
                             )
                             
-                            # Immediately reload stored heatmaps to include the new one
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            print(f"AUTO-STORED: {heatmap_name} with {len(heatmap_data)} points and {len(geojson_data.get('features', []))} features")
+                            # Only reload and update if this is truly a new heatmap (not a duplicate)
+                            existing_ids = [h.get('id') for h in (st.session_state.stored_heatmaps or [])]
+                            if stored_heatmap_id and stored_heatmap_id not in existing_ids:
+                                st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                                print(f"AUTO-STORED NEW: {heatmap_name} with {len(heatmap_data)} points and {len(geojson_data.get('features', []))} features")
+                                
+                                # Mark that a new heatmap was actually added
+                                st.session_state.new_heatmap_added = True
+                            else:
+                                print(f"SKIPPED DUPLICATE: {heatmap_name} already exists in database")
                         except Exception as e:
                             print(f"Error auto-storing heatmap: {e}")
 
@@ -830,18 +837,16 @@ with main_col1:
                                         updated_global_min = min(updated_global_min, value)
                                         updated_global_max = max(updated_global_max, value)
                     
-                    # Update global variables for consistent coloring
-                    if updated_global_min != float('inf'):
+                    # Update global variables for consistent coloring ONLY if a new heatmap was added
+                    if updated_global_min != float('inf') and st.session_state.get('new_heatmap_added', False):
                         global_min_value = updated_global_min
                         global_max_value = updated_global_max
                         print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f} (including fresh heatmap)")
                         
-                        # FORCE A COMPLETE MAP REFRESH by setting a flag to redraw everything
-                        st.session_state.colormap_needs_refresh = True
-                        
-                        # Trigger a rerun to refresh the entire map with updated colors
-                        print("Triggering map refresh due to updated colormap range")
-                        st.rerun()
+                        # Mark that colormap has been updated for this session
+                        st.session_state.colormap_updated = True
+                        st.session_state.new_heatmap_added = False  # Reset the flag
+                        print("Colormap range updated - will apply to all displayed heatmaps")
 
     # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
     stored_heatmap_count = 0

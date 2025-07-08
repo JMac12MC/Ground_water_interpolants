@@ -442,16 +442,22 @@ class PolygonDatabase:
                 self.engine = create_engine(self.database_url)
             
             with self.engine.connect() as conn:
-                # Check for existing heatmap with same name to prevent duplicates
+                # Check for existing heatmap with same name AND location to prevent TRUE duplicates
                 existing_check = conn.execute(text("""
                     SELECT id FROM stored_heatmaps 
-                    WHERE heatmap_name = :heatmap_name
-                """), {'heatmap_name': heatmap_name})
+                    WHERE heatmap_name = :heatmap_name 
+                    AND ABS(center_lat - :center_lat) < 0.001 
+                    AND ABS(center_lon - :center_lon) < 0.001
+                """), {
+                    'heatmap_name': heatmap_name,
+                    'center_lat': center_lat,
+                    'center_lon': center_lon
+                })
                 
                 existing_row = existing_check.fetchone()
                 if existing_row:
                     existing_id = existing_row[0]
-                    print(f"Heatmap '{heatmap_name}' already exists with ID {existing_id}, skipping duplicate")
+                    print(f"Heatmap '{heatmap_name}' already exists with ID {existing_id} at same location, skipping duplicate")
                     return existing_id
                 
                 # Insert new heatmap if no duplicate found

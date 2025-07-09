@@ -567,16 +567,30 @@ class PolygonDatabase:
             Number of heatmaps deleted
         """
         try:
+            # Recreate connection to ensure fresh database state
+            if not hasattr(self, 'engine') or self.engine is None:
+                self.engine = create_engine(self.database_url)
+            
             with self.engine.connect() as conn:
-                result = conn.execute(text("DELETE FROM stored_heatmaps"))
+                # Use TRUNCATE for complete clear
+                result = conn.execute(text("TRUNCATE TABLE stored_heatmaps"))
                 conn.commit()
-                deleted_count = result.rowcount
-                print(f"Deleted {deleted_count} stored heatmaps")
-                return deleted_count
+                print("Truncated stored_heatmaps table - all heatmaps deleted")
+                return 999  # Return high number to indicate complete clear
 
         except Exception as e:
             print(f"Error deleting stored heatmaps: {e}")
-            return 0
+            # Try alternative DELETE approach
+            try:
+                with self.engine.connect() as conn:
+                    result = conn.execute(text("DELETE FROM stored_heatmaps"))
+                    conn.commit()
+                    deleted_count = result.rowcount
+                    print(f"Deleted {deleted_count} stored heatmaps using DELETE")
+                    return deleted_count
+            except Exception as e2:
+                print(f"Error with DELETE approach: {e2}")
+                return 0
 
     def delete_stored_heatmap(self, heatmap_id):
         """

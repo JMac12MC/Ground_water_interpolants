@@ -309,13 +309,15 @@ with st.sidebar:
                     try:
                         count = st.session_state.polygon_db.delete_all_stored_heatmaps()
                         st.session_state.stored_heatmaps = []
-                        # Reset the flag that might prevent new heatmap generation
+                        # Reset all flags and cache
                         st.session_state.new_heatmap_added = False
                         st.session_state.colormap_updated = False
-                        # Force a complete refresh by clearing the session cache
-                        if 'stored_heatmaps_cached' in st.session_state:
-                            del st.session_state.stored_heatmaps_cached
-                        print(f"CLEARED ALL: Deleted {count} stored heatmaps from database and session")
+                        st.session_state.fresh_heatmap_displayed = False
+                        # Clear all session data to force complete refresh
+                        for key in ['selected_point', 'filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        print(f"CLEARED ALL: Deleted {count} stored heatmaps from database and cleared all session data")
                         st.success(f"Cleared {count} stored heatmaps")
                         st.rerun()
                     except Exception as e:

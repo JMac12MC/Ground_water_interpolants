@@ -874,99 +874,8 @@ with main_col1:
                         st.session_state.new_heatmap_added = False  # Reset the flag
                         print("Colormap range updated - will apply to all displayed heatmaps")
 
-    # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
-    # But skip stored heatmaps that match the current fresh heatmap location
-    stored_heatmap_count = 0
-    fresh_heatmap_name = None
-    if st.session_state.selected_point:
-        center_lat, center_lon = st.session_state.selected_point
-        fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
-    
-    if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
-        print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
-        print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
-        for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
-            try:
-                # Don't skip the current fresh heatmap - let it display as a stored heatmap too
-                # This ensures continuity when the page re-renders
-                if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
-                    print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
-                # All stored heatmaps should display
-                    
-                # Prefer GeoJSON data for triangular mesh visualization
-                geojson_data = stored_heatmap.get('geojson_data')
-                heatmap_data = stored_heatmap.get('heatmap_data', [])
-                
-                if geojson_data and geojson_data.get('features'):
-                    print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
-                    
-                    # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
-                    for feature in geojson_data['features']:
-                        if 'properties' in feature:
-                            # If 'value' doesn't exist but 'yield' does, copy it
-                            if 'value' not in feature['properties'] and 'yield' in feature['properties']:
-                                feature['properties']['value'] = feature['properties']['yield']
-                            # If 'yield' doesn't exist but 'value' does, copy it
-                            elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
-                                feature['properties']['yield'] = feature['properties']['value']
-                    
-                    # Use the UPDATED global unified color function with method info
-                    method = stored_heatmap.get('interpolation_method', 'kriging')
-                    
-                    # Add GeoJSON layer for triangular mesh visualization with UPDATED UNIFIED coloring
-                    folium.GeoJson(
-                        geojson_data,
-                        name=f"Stored: {stored_heatmap['heatmap_name']}",
-                        style_function=lambda feature, method=method: {
-                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        },
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                            aliases=['Value:'],
-                            localize=True
-                        )
-                    ).add_to(m)
-                    stored_heatmap_count += 1
-                    
-                elif heatmap_data and len(heatmap_data) > 0:
-                    print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
-                    
-                    # Fallback to HeatMap if no GeoJSON
-                    HeatMap(heatmap_data, 
-                           radius=20, 
-                           blur=10, 
-                           name=f"Stored: {stored_heatmap['heatmap_name']}",
-                           overlay=True,
-                           control=True,
-                           max_zoom=1).add_to(m)
-                    stored_heatmap_count += 1
-                else:
-                    print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
-                
-                # Add a marker showing the center point of the stored heatmap
-                folium.Marker(
-                    location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
-                    popup=f"<b>{stored_heatmap['heatmap_name']}</b><br>"
-                          f"Method: {stored_heatmap['interpolation_method']}<br>"
-                          f"Radius: {stored_heatmap['radius_km']} km<br>"
-                          f"Wells: {stored_heatmap['well_count']}<br>"
-                          f"Created: {stored_heatmap['created_at']}",
-                    icon=folium.Icon(color='purple', icon='info-sign')
-                ).add_to(m)
-                    
-            except Exception as e:
-                print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
-        
-        print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
-    else:
-        print("No stored heatmaps to display - list is empty or cleared")
-        
-    # Show summary of displayed heatmaps
-    total_displayed = stored_heatmap_count
-    print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (All via stored heatmaps)")
+    # This section is now replaced by the simplified approach above
+    print("Using simplified stored heatmap display logic")
 
     # Show wells within the radius when a point is selected (for local context)
     if st.session_state.well_markers_visibility and st.session_state.selected_point:
@@ -1047,20 +956,57 @@ with main_col1:
         
         print(f"MAP CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
         
-        # Always update coordinates for every click
+        # Set clicked location
         st.session_state.selected_point = [clicked_lat, clicked_lng]
         
-        # Clear all cached data to ensure fresh heatmap generation
-        for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
-            if key in st.session_state:
-                del st.session_state[key]
-                print(f"Cleared cached {key}")
+        # Generate heatmap immediately and store it
+        wells_df = load_nz_govt_data(search_center=(clicked_lat, clicked_lng), search_radius_km=st.session_state.search_radius)
         
-        # Immediate rerun to process new location
-        print("PROCESSING NEW HEATMAP - triggering rerun")
+        if not wells_df.empty:
+            geojson_data = generate_geo_json_grid(
+                wells_df, 
+                (clicked_lat, clicked_lng), 
+                st.session_state.search_radius,
+                resolution=st.session_state.grid_resolution,
+                method=st.session_state.interpolation_method
+            )
+            
+            if geojson_data:
+                # Store immediately in database
+                heatmap_name = f"{st.session_state.interpolation_method}_{clicked_lat:.3f}_{clicked_lng:.3f}"
+                st.session_state.polygon_db.store_heatmap(
+                    heatmap_name=heatmap_name,
+                    center_lat=clicked_lat,
+                    center_lon=clicked_lng,
+                    radius_km=st.session_state.search_radius,
+                    interpolation_method=st.session_state.interpolation_method,
+                    heatmap_data=[],
+                    geojson_data=geojson_data,
+                    well_count=len(wells_df)
+                )
+                print(f"STORED NEW HEATMAP: {heatmap_name}")
+        
+        # Trigger rerun to refresh map with all stored heatmaps
         st.rerun()
-    else:
-        print("NO CLICK DATA: map_data or last_clicked is missing or empty")
+    
+    # Always display ALL stored heatmaps from database (simple approach)
+    all_stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+    if all_stored_heatmaps:
+        print(f"DISPLAYING {len(all_stored_heatmaps)} stored heatmaps")
+        for i, heatmap in enumerate(all_stored_heatmaps):
+            geojson_data = heatmap.get('geojson_data')
+            if geojson_data and geojson_data.get('features'):
+                print(f"Adding heatmap {i+1}: {heatmap['heatmap_name']}")
+                folium.GeoJson(
+                    geojson_data,
+                    name=f"Heatmap {i+1}",
+                    style_function=lambda feature: {
+                        'fillColor': get_global_unified_color(feature['properties'].get('yield', 0)),
+                        'color': 'none',
+                        'weight': 0,
+                        'fillOpacity': 0.7
+                    }
+                ).add_to(m)
 
     # Add cache clearing and reset buttons
     col1, col2 = st.columns(2)

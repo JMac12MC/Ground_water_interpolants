@@ -669,213 +669,8 @@ with main_col1:
                 if geojson_data:
                     print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")
                 
-                if geojson_data and len(geojson_data['features']) > 0:
-                    # Calculate max value for setting the color scale
-                    max_value = 0
-                    value_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
-
-                    for feature in geojson_data['features']:
-                        if value_field in feature['properties']:
-                            max_value = max(max_value, feature['properties'][value_field])
-
-                    # Ensure reasonable minimum for visualization
-                    if st.session_state.interpolation_method == 'kriging_variance':
-                        max_value = max(max_value, 1.0)  # Minimum variance value
-                    else:
-                        max_value = max(max_value, 20.0)  # Minimum yield value
-
-                    # Add the new heatmap to the map (in addition to stored heatmaps)
-                    # This ensures both stored and newly generated heatmaps display together
-                    
-                    # Instead of choropleth, use direct GeoJSON styling for more control
-                    # This allows us to precisely map values to colors
-
-                    # Use the same global unified color function for fresh heatmaps
-                    def get_color(value):
-                        return get_global_unified_color(value, st.session_state.interpolation_method)
-
-                    # Style function that uses our color mapping
-                    def style_feature(feature):
-                        yield_value = feature['properties']['yield']
-                        return {
-                            'fillColor': get_color(yield_value),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        }
-
-                    # Add the GeoJSON with our custom styling
-                    display_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
-
-                    # Create a unique name for the new heatmap based on location
-                    new_heatmap_name = f"New: {st.session_state.interpolation_method.replace('_', ' ').title()}"
-                    if st.session_state.selected_point:
-                        lat, lon = st.session_state.selected_point
-                        new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
-                    
-                    # Add the fresh heatmap to the map
-                    fresh_geojson = folium.GeoJson(
-                        data=geojson_data,
-                        name=new_heatmap_name,
-                        style_function=lambda feature: {
-                            'fillColor': get_color(feature['properties'][display_field]),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        },
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=[display_field],
-                            aliases=[f'{display_field.title()}:'],
-                            labels=True,
-                            sticky=False
-                        )
-                    )
-                    fresh_geojson.add_to(m)
-                    
-                    # Mark that we have a fresh heatmap displayed
-                    st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
-                    
-                    print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
-
-                    # AUTO-STORE: Automatically save every generated heatmap
-                    if st.session_state.polygon_db and st.session_state.selected_point:
-                        try:
-                            center_lat, center_lon = st.session_state.selected_point
-                            heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
-                            
-                            # Convert GeoJSON to simple heatmap data for storage
-                            heatmap_data = []
-                            for feature in geojson_data.get('features', []):
-                                if 'geometry' in feature and 'properties' in feature:
-                                    geom = feature['geometry']
-                                    if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                        # Get centroid of polygon
-                                        coords = geom['coordinates'][0]
-                                        if len(coords) >= 3:
-                                            lat = sum(coord[1] for coord in coords) / len(coords)
-                                            lon = sum(coord[0] for coord in coords) / len(coords)
-                                            value = feature['properties'].get('yield', 0)
-                                            heatmap_data.append([lat, lon, value])
-                            
-                            # Store in database and check if it's actually new
-                            stored_heatmap_id = st.session_state.polygon_db.store_heatmap(
-                                heatmap_name=heatmap_name,
-                                center_lat=center_lat,
-                                center_lon=center_lon,
-                                radius_km=st.session_state.search_radius,
-                                interpolation_method=st.session_state.interpolation_method,
-                                heatmap_data=heatmap_data,
-                                geojson_data=geojson_data,
-                                well_count=len(st.session_state.filtered_wells) if st.session_state.filtered_wells is not None else 0
-                            )
-                            
-                            # Always reload stored heatmaps to ensure fresh heatmap is included
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            
-                            # Check if this was actually a new addition
-                            existing_ids = [h.get('id') for h in (st.session_state.stored_heatmaps or [])]
-                            if stored_heatmap_id and stored_heatmap_id not in existing_ids:
-                                print(f"AUTO-STORED NEW: {heatmap_name} with {len(heatmap_data)} points and {len(geojson_data.get('features', []))} features")
-                                # Mark that a new heatmap was actually added
-                                st.session_state.new_heatmap_added = True
-                            else:
-                                print(f"REUSING EXISTING: {heatmap_name} already exists in database")
-                                # Still mark as new for display purposes
-                                st.session_state.new_heatmap_added = True
-                        except Exception as e:
-                            print(f"Error auto-storing heatmap: {e}")
-
-                    # Add UNIFIED colormap legend using global min/max values
-                    if st.session_state.interpolation_method == 'indicator_kriging':
-                        # Three-tier indicator kriging legend
-                        colormap = folium.StepColormap(
-                            colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
-                            vmin=0,
-                            vmax=1.0,
-                            index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
-                            caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
-                        )
-                    else:
-                        # UNIFIED legend using GLOBAL min/max for all interpolation types
-                        colormap = folium.LinearColormap(
-                            colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
-                                    '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
-                                    '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
-                            vmin=float(global_min_value),
-                            vmax=float(global_max_value),
-                            caption=f'UNIFIED Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s (All Heatmaps)'
-                        )
-                    colormap.add_to(m)
-
-                    # Analysis complete
-
-                    # Add tooltips to show appropriate values on hover
-                    style_function = lambda x: {'fillColor': 'transparent', 'color': 'transparent'}
-                    highlight_function = lambda x: {'fillOpacity': 0.8}
-
-                    # Determine tooltip label based on visualization type
-                    if st.session_state.interpolation_method == 'depth_kriging':
-                        tooltip_field = 'yield'
-                        tooltip_label = 'Depth (m):'
-                    elif st.session_state.interpolation_method == 'ground_water_level_kriging':
-                        tooltip_field = 'yield'
-                        tooltip_label = 'Ground Water Level (m):'
-                    elif st.session_state.interpolation_method == 'indicator_kriging':
-                        tooltip_field = 'yield'
-                        tooltip_label = 'Probability:'
-                    else:
-                        tooltip_field = 'yield'
-                        tooltip_label = 'Yield (L/s):'
-
-                    # Add GeoJSON overlay for tooltips
-                    folium.GeoJson(
-                        geojson_data,
-                        style_function=style_function,
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=[tooltip_field],
-                            aliases=[tooltip_label],
-                            labels=True,
-                            sticky=False
-                        )
-                    ).add_to(m)
-
-                    # RECALCULATE GLOBAL RANGE including fresh heatmap values
-                    # Now that we have both stored and fresh heatmap data, recalculate the unified range
-                    updated_global_min = float('inf')
-                    updated_global_max = float('-inf')
-                    
-                    # Include fresh heatmap values
-                    if geojson_data and 'features' in geojson_data:
-                        for feature in geojson_data['features']:
-                            value = feature['properties'].get('yield', feature['properties'].get('value', 0))
-                            if value > 0:
-                                updated_global_min = min(updated_global_min, value)
-                                updated_global_max = max(updated_global_max, value)
-                    
-                    # Include stored heatmap values
-                    if st.session_state.stored_heatmaps:
-                        for stored_heatmap in st.session_state.stored_heatmaps:
-                            stored_geojson = stored_heatmap.get('geojson_data')
-                            if stored_geojson and 'features' in stored_geojson:
-                                for feature in stored_geojson['features']:
-                                    value = feature['properties'].get('yield', feature['properties'].get('value', 0))
-                                    if value > 0:
-                                        updated_global_min = min(updated_global_min, value)
-                                        updated_global_max = max(updated_global_max, value)
-                    
-                    # Update global variables for consistent coloring ONLY if a new heatmap was added
-                    if updated_global_min != float('inf') and st.session_state.get('new_heatmap_added', False):
-                        global_min_value = updated_global_min
-                        global_max_value = updated_global_max
-                        print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f} (including fresh heatmap)")
-                        
-                        # Mark that colormap has been updated for this session
-                        st.session_state.colormap_updated = True
-                        st.session_state.new_heatmap_added = False  # Reset the flag
-                        print("Colormap range updated - will apply to all displayed heatmaps")
-
-    # This section is now replaced by the simplified approach above
-    print("Using simplified stored heatmap display logic")
+                # OLD HEATMAP DISPLAY CODE REMOVED - using simplified approach instead
+                pass
 
     # Show wells within the radius when a point is selected (for local context)
     if st.session_state.well_markers_visibility and st.session_state.selected_point:
@@ -977,13 +772,28 @@ with main_col1:
             if geojson_data:
                 # Store immediately in database
                 heatmap_name = f"{interpolation_method}_{clicked_lat:.3f}_{clicked_lng:.3f}"
+                
+                # Convert GeoJSON to simple heatmap data for storage
+                heatmap_data = []
+                for feature in geojson_data.get('features', []):
+                    if 'geometry' in feature and 'properties' in feature:
+                        geom = feature['geometry']
+                        if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
+                            # Get centroid of polygon
+                            coords = geom['coordinates'][0]
+                            if len(coords) >= 3:
+                                lat = sum(coord[1] for coord in coords) / len(coords)
+                                lon = sum(coord[0] for coord in coords) / len(coords)
+                                value = feature['properties'].get('yield', 0)
+                                heatmap_data.append([lat, lon, value])
+                
                 st.session_state.polygon_db.store_heatmap(
                     heatmap_name=heatmap_name,
                     center_lat=clicked_lat,
                     center_lon=clicked_lng,
                     radius_km=search_radius,
                     interpolation_method=interpolation_method,
-                    heatmap_data=[],
+                    heatmap_data=heatmap_data,
                     geojson_data=geojson_data,
                     well_count=len(wells_df)
                 )
@@ -1025,6 +835,18 @@ with main_col1:
     
     # Add layer control to let users toggle individual heatmaps
     folium.LayerControl().add_to(m)
+    
+    # Add unified colormap legend for indicator kriging
+    if all_stored_heatmaps:
+        # Three-tier indicator kriging legend
+        colormap = folium.StepColormap(
+            colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
+            vmin=0,
+            vmax=1.0,
+            index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
+            caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
+        )
+        colormap.add_to(m)
 
     # Add cache clearing and reset buttons
     col1, col2 = st.columns(2)

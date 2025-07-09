@@ -1046,14 +1046,27 @@ with main_col1:
         clicked_lng = map_data["last_clicked"]["lng"]
 
         # ALWAYS update for any new click to ensure every click generates a heatmap
-        current_point = st.session_state.selected_point
-        if not current_point or (abs(current_point[0] - clicked_lat) > 0.001 or abs(current_point[1] - clicked_lng) > 0.001):
+        current_point = st.session_state.get('selected_point')
+        coordinate_threshold = 0.001
+        
+        # More robust coordinate comparison
+        is_new_location = True
+        if current_point and len(current_point) >= 2:
+            lat_diff = abs(current_point[0] - clicked_lat)
+            lng_diff = abs(current_point[1] - clicked_lng)
+            if lat_diff <= coordinate_threshold and lng_diff <= coordinate_threshold:
+                is_new_location = False
+                print(f"MAP CLICK: Same location detected - skipping duplicate")
+        
+        if is_new_location:
             print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.6f}, {clicked_lng:.6f})")
             if current_point:
                 print(f"Previous coordinates: ({current_point[0]:.6f}, {current_point[1]:.6f})")
                 lat_diff = abs(current_point[0] - clicked_lat)
                 lng_diff = abs(current_point[1] - clicked_lng)
                 print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
+            else:
+                print("No previous coordinates - this is the first click")
             
             # Update session state with the new coordinates
             st.session_state.selected_point = [clicked_lat, clicked_lng]
@@ -1066,6 +1079,8 @@ with main_col1:
             
             # Immediate rerun to process new location
             st.rerun()
+        else:
+            print(f"Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")
 
     # Add cache clearing and reset buttons
     col1, col2 = st.columns(2)

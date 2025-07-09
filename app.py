@@ -756,7 +756,7 @@ with main_col1:
         
         # Generate heatmap immediately and store it
         search_radius = getattr(st.session_state, 'search_radius', 20)
-        interpolation_method = getattr(st.session_state, 'interpolation_method', 'indicator_kriging')
+        interpolation_method = getattr(st.session_state, 'interpolation_method', 'kriging')
         
         wells_df = load_nz_govt_data(search_center=(clicked_lat, clicked_lng), search_radius_km=search_radius)
         
@@ -814,8 +814,21 @@ with main_col1:
                 # Fix the lambda function scope issue by using a closure
                 def create_style_function(method):
                     def style_function(feature):
+                        value = feature['properties'].get('yield', 0)
+                        if method == 'indicator_kriging':
+                            # Three-tier indicator kriging colors
+                            if value < 0.4:
+                                color = '#FF0000'  # Red
+                            elif value < 0.7:
+                                color = '#FF8000'  # Orange  
+                            else:
+                                color = '#00FF00'  # Green
+                        else:
+                            # Standard continuous color mapping for other methods
+                            color = get_global_unified_color(value, method)
+                        
                         return {
-                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                            'fillColor': color,
                             'color': 'none',
                             'weight': 0,
                             'fillOpacity': 0.6  # Slightly lower opacity for better layering
@@ -836,16 +849,30 @@ with main_col1:
     # Add layer control to let users toggle individual heatmaps
     folium.LayerControl().add_to(m)
     
-    # Add unified colormap legend for indicator kriging
+    # Add appropriate colormap legend based on interpolation method
     if all_stored_heatmaps:
-        # Three-tier indicator kriging legend
-        colormap = folium.StepColormap(
-            colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
-            vmin=0,
-            vmax=1.0,
-            index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
-            caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
-        )
+        # Check if any stored heatmaps use indicator kriging
+        has_indicator = any(hm.get('interpolation_method') == 'indicator_kriging' for hm in all_stored_heatmaps)
+        
+        if has_indicator:
+            # Three-tier indicator kriging legend
+            colormap = folium.StepColormap(
+                colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
+                vmin=0,
+                vmax=1.0,
+                index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
+                caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
+            )
+        else:
+            # Standard continuous colormap for other methods
+            colormap = folium.LinearColormap(
+                colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
+                        '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
+                        '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
+                vmin=0,
+                vmax=50,  # Reasonable max for yield
+                caption='Well Yield (L/s): Continuous Scale'
+            )
         colormap.add_to(m)
 
     # Add cache clearing and reset buttons

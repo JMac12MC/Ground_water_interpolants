@@ -960,26 +960,29 @@ with main_col1:
         st.session_state.selected_point = [clicked_lat, clicked_lng]
         
         # Generate heatmap immediately and store it
-        wells_df = load_nz_govt_data(search_center=(clicked_lat, clicked_lng), search_radius_km=st.session_state.search_radius)
+        search_radius = getattr(st.session_state, 'search_radius', 20)
+        interpolation_method = getattr(st.session_state, 'interpolation_method', 'indicator_kriging')
+        
+        wells_df = load_nz_govt_data(search_center=(clicked_lat, clicked_lng), search_radius_km=search_radius)
         
         if not wells_df.empty:
             geojson_data = generate_geo_json_grid(
                 wells_df, 
                 (clicked_lat, clicked_lng), 
-                st.session_state.search_radius,
-                resolution=st.session_state.grid_resolution,
-                method=st.session_state.interpolation_method
+                search_radius,
+                resolution=50,  # Fixed resolution
+                method=interpolation_method
             )
             
             if geojson_data:
                 # Store immediately in database
-                heatmap_name = f"{st.session_state.interpolation_method}_{clicked_lat:.3f}_{clicked_lng:.3f}"
+                heatmap_name = f"{interpolation_method}_{clicked_lat:.3f}_{clicked_lng:.3f}"
                 st.session_state.polygon_db.store_heatmap(
                     heatmap_name=heatmap_name,
                     center_lat=clicked_lat,
                     center_lon=clicked_lng,
-                    radius_km=st.session_state.search_radius,
-                    interpolation_method=st.session_state.interpolation_method,
+                    radius_km=search_radius,
+                    interpolation_method=interpolation_method,
                     heatmap_data=[],
                     geojson_data=geojson_data,
                     well_count=len(wells_df)

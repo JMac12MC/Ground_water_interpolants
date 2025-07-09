@@ -1000,16 +1000,31 @@ with main_col1:
             geojson_data = heatmap.get('geojson_data')
             if geojson_data and geojson_data.get('features'):
                 print(f"Adding heatmap {i+1}: {heatmap['heatmap_name']}")
+                
+                # Fix the lambda function scope issue by using a closure
+                def create_style_function(method):
+                    def style_function(feature):
+                        return {
+                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                            'color': 'none',
+                            'weight': 0,
+                            'fillOpacity': 0.6  # Slightly lower opacity for better layering
+                        }
+                    return style_function
+                
                 folium.GeoJson(
                     geojson_data,
-                    name=f"Heatmap {i+1}",
-                    style_function=lambda feature: {
-                        'fillColor': get_global_unified_color(feature['properties'].get('yield', 0)),
-                        'color': 'none',
-                        'weight': 0,
-                        'fillOpacity': 0.7
-                    }
+                    name=f"Heatmap {i+1}: {heatmap['heatmap_name']}",
+                    style_function=create_style_function(heatmap.get('interpolation_method', 'indicator_kriging')),
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=['yield'],
+                        aliases=['Probability:'],
+                        localize=True
+                    )
                 ).add_to(m)
+    
+    # Add layer control to let users toggle individual heatmaps
+    folium.LayerControl().add_to(m)
 
     # Add cache clearing and reset buttons
     col1, col2 = st.columns(2)

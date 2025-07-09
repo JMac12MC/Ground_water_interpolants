@@ -1044,19 +1044,29 @@ with main_col1:
         # Get the coordinates from the click
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
+        
+        print(f"RAW CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
 
         # ALWAYS update for any new click to ensure every click generates a heatmap
         current_point = st.session_state.get('selected_point')
         coordinate_threshold = 0.001
+        
+        print(f"Current stored point: {current_point}")
+        print(f"Coordinate threshold: {coordinate_threshold}")
         
         # More robust coordinate comparison
         is_new_location = True
         if current_point and len(current_point) >= 2:
             lat_diff = abs(current_point[0] - clicked_lat)
             lng_diff = abs(current_point[1] - clicked_lng)
+            print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
             if lat_diff <= coordinate_threshold and lng_diff <= coordinate_threshold:
                 is_new_location = False
-                print(f"MAP CLICK: Same location detected - skipping duplicate")
+                print(f"MAP CLICK: Same location detected - skipping duplicate (lat_diff={lat_diff:.6f}, lng_diff={lng_diff:.6f})")
+            else:
+                print(f"MAP CLICK: Different location detected - will process (lat_diff={lat_diff:.6f}, lng_diff={lng_diff:.6f})")
+        else:
+            print("MAP CLICK: No previous point or invalid previous point - will process")
         
         if is_new_location:
             print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.6f}, {clicked_lng:.6f})")
@@ -1078,9 +1088,15 @@ with main_col1:
                     print(f"Cleared cached {key}")
             
             # Immediate rerun to process new location
+            print("TRIGGERING RERUN for new location")
             st.rerun()
         else:
-            print(f"Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")
+            if 'lat_diff' in locals() and 'lng_diff' in locals():
+                print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")
+            else:
+                print("SKIPPING CLICK: Location comparison failed")
+    else:
+        print("NO CLICK DATA: map_data or last_clicked is missing or empty")
 
     # Add cache clearing and reset buttons
     col1, col2 = st.columns(2)

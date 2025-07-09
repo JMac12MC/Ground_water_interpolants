@@ -1039,62 +1039,26 @@ with main_col1:
         returned_objects=["last_clicked"]
     )
 
-    # Process clicks from the map with better stability
+    # Simple click processing - every click creates a heatmap
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         # Get the coordinates from the click
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lng = map_data["last_clicked"]["lng"]
         
-        print(f"RAW CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
-
-        # ALWAYS update for any new click to ensure every click generates a heatmap
-        current_point = st.session_state.get('selected_point')
-        coordinate_threshold = 0.001
+        print(f"MAP CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
         
-        print(f"Current stored point: {current_point}")
-        print(f"Coordinate threshold: {coordinate_threshold}")
+        # Always update coordinates for every click
+        st.session_state.selected_point = [clicked_lat, clicked_lng]
         
-        # More robust coordinate comparison
-        is_new_location = True
-        if current_point and len(current_point) >= 2:
-            lat_diff = abs(current_point[0] - clicked_lat)
-            lng_diff = abs(current_point[1] - clicked_lng)
-            print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
-            if lat_diff <= coordinate_threshold and lng_diff <= coordinate_threshold:
-                is_new_location = False
-                print(f"MAP CLICK: Same location detected - skipping duplicate (lat_diff={lat_diff:.6f}, lng_diff={lng_diff:.6f})")
-            else:
-                print(f"MAP CLICK: Different location detected - will process (lat_diff={lat_diff:.6f}, lng_diff={lng_diff:.6f})")
-        else:
-            print("MAP CLICK: No previous point or invalid previous point - will process")
+        # Clear all cached data to ensure fresh heatmap generation
+        for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
+            if key in st.session_state:
+                del st.session_state[key]
+                print(f"Cleared cached {key}")
         
-        if is_new_location:
-            print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.6f}, {clicked_lng:.6f})")
-            if current_point:
-                print(f"Previous coordinates: ({current_point[0]:.6f}, {current_point[1]:.6f})")
-                lat_diff = abs(current_point[0] - clicked_lat)
-                lng_diff = abs(current_point[1] - clicked_lng)
-                print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
-            else:
-                print("No previous coordinates - this is the first click")
-            
-            # Update session state with the new coordinates
-            st.session_state.selected_point = [clicked_lat, clicked_lng]
-            
-            # FORCE clear all cached data to ensure fresh heatmap generation
-            for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
-                if key in st.session_state:
-                    del st.session_state[key]
-                    print(f"Cleared cached {key}")
-            
-            # Immediate rerun to process new location
-            print("TRIGGERING RERUN for new location")
-            st.rerun()
-        else:
-            if 'lat_diff' in locals() and 'lng_diff' in locals():
-                print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")
-            else:
-                print("SKIPPING CLICK: Location comparison failed")
+        # Immediate rerun to process new location
+        print("PROCESSING NEW HEATMAP - triggering rerun")
+        st.rerun()
     else:
         print("NO CLICK DATA: map_data or last_clicked is missing or empty")
 

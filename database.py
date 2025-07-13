@@ -504,12 +504,16 @@ class PolygonDatabase:
         list
             List of heatmap dictionaries
         """
+        print("📊 FETCH OPERATION START: Retrieving all stored heatmaps from database")
+        
         try:
             # Recreate engine connection if needed
             if not hasattr(self, 'engine') or self.engine is None:
+                print("🔄 Creating new database engine connection")
                 self.engine = create_engine(self.database_url)
             
             with self.engine.connect() as conn:
+                print("🔍 QUERYING DATABASE: Executing SELECT query for all heatmaps")
                 result = conn.execute(text("""
                     SELECT id, heatmap_name, center_lat, center_lon, radius_km,
                            interpolation_method, heatmap_data, geojson_data, well_count, created_at
@@ -518,13 +522,19 @@ class PolygonDatabase:
                 """))
                 
                 heatmaps = []
-                for row in result:
+                raw_rows = result.fetchall()
+                print(f"📋 RAW QUERY RESULT: Found {len(raw_rows)} rows in database")
+                
+                for i, row in enumerate(raw_rows):
+                    print(f"📄 PROCESSING ROW {i+1}: ID {row[0]} - {row[1]}")
+                    
                     # Handle JSON data that might already be parsed
                     heatmap_data = row[6]
                     if isinstance(heatmap_data, str):
                         try:
                             heatmap_data = json.loads(heatmap_data)
                         except json.JSONDecodeError:
+                            print(f"⚠️  JSON decode error for heatmap_data in ID {row[0]}")
                             heatmap_data = []
                     elif not isinstance(heatmap_data, list):
                         heatmap_data = []
@@ -534,6 +544,7 @@ class PolygonDatabase:
                         try:
                             geojson_data = json.loads(geojson_data)
                         except json.JSONDecodeError:
+                            print(f"⚠️  JSON decode error for geojson_data in ID {row[0]}")
                             geojson_data = None
                     
                     heatmap = {
@@ -549,12 +560,16 @@ class PolygonDatabase:
                         'created_at': row[9]
                     }
                     heatmaps.append(heatmap)
+                    print(f"✅ PROCESSED: Heatmap ID {row[0]} added to result list")
                 
-                print(f"Successfully retrieved {len(heatmaps)} stored heatmaps")
+                print(f"📊 FETCH RESULT: Successfully retrieved {len(heatmaps)} stored heatmaps")
+                print(f"📋 HEATMAP IDS: {[h['id'] for h in heatmaps]}")
                 return heatmaps
 
         except Exception as e:
-            print(f"Error retrieving stored heatmaps: {e}")
+            print(f"❌ FETCH ERROR: Error retrieving stored heatmaps: {e}")
+            import traceback
+            print(f"📍 STACK TRACE: {traceback.format_exc()}")
             return []
 
     def delete_all_stored_heatmaps(self):
@@ -606,38 +621,74 @@ class PolygonDatabase:
         bool
             True if deletion was successful
         """
+        print(f"🗑️ DELETE OPERATION START: Attempting to delete heatmap ID {heatmap_id}")
+        
         try:
             # Ensure engine connection is available
             if not hasattr(self, 'engine') or self.engine is None:
                 if not self.database_url:
-                    print("Error: No database URL available for deletion")
+                    print("❌ ERROR: No database URL available for deletion")
                     return False
+                print("🔄 Recreating database engine connection")
                 self.engine = create_engine(self.database_url)
             
             with self.engine.connect() as conn:
-                # First verify the heatmap exists
+                print(f"📋 PRE-DELETE CHECK: Verifying heatmap {heatmap_id} exists")
+                
+                # Get all heatmaps before deletion for logging
+                pre_delete_result = conn.execute(text("SELECT id, heatmap_name FROM stored_heatmaps ORDER BY id"))
+                pre_delete_heatmaps = pre_delete_result.fetchall()
+                print(f"📊 PRE-DELETE STATE: Found {len(pre_delete_heatmaps)} total heatmaps in database:")
+                for hm in pre_delete_heatmaps:
+                    print(f"   - ID {hm[0]}: {hm[1]}")
+                
+                # First verify the target heatmap exists
                 check_result = conn.execute(text("""
-                    SELECT id FROM stored_heatmaps WHERE id = :heatmap_id
+                    SELECT id, heatmap_name FROM stored_heatmaps WHERE id = :heatmap_id
                 """), {'heatmap_id': heatmap_id})
                 
-                if not check_result.fetchone():
-                    print(f"Heatmap with ID {heatmap_id} not found in database")
+                target_heatmap = check_result.fetchone()
+                if not target_heatmap:
+                    print(f"❌ TARGET NOT FOUND: Heatmap with ID {heatmap_id} not found in database")
                     return False
                 
+                print(f"✅ TARGET FOUND: Heatmap ID {heatmap_id} ('{target_heatmap[1]}') exists and will be deleted")
+                
                 # Perform the deletion
+                print(f"🗑️ EXECUTING DELETE: Removing heatmap ID {heatmap_id} from database")
                 result = conn.execute(text("""
                     DELETE FROM stored_heatmaps WHERE id = :heatmap_id
                 """), {'heatmap_id': heatmap_id})
                 conn.commit()
                 
                 deleted_count = result.rowcount
-                print(f"Deletion result: {deleted_count} row(s) deleted for heatmap ID {heatmap_id}")
-                return deleted_count > 0
+                print(f"📊 DELETE RESULT: {deleted_count} row(s) deleted for heatmap ID {heatmap_id}")
+                
+                # Verify deletion by checking post-delete state
+                post_delete_result = conn.execute(text("SELECT id, heatmap_name FROM stored_heatmaps ORDER BY id"))
+                post_delete_heatmaps = post_delete_result.fetchall()
+                print(f"📊 POST-DELETE STATE: {len(post_delete_heatmaps)} heatmaps remaining in database:")
+                for hm in post_delete_heatmaps:
+                    print(f"   - ID {hm[0]}: {hm[1]}")
+                
+                # Double-check that the target is actually gone
+                verify_result = conn.execute(text("""
+                    SELECT id FROM stored_heatmaps WHERE id = :heatmap_id
+                """), {'heatmap_id': heatmap_id})
+                still_exists = verify_result.fetchone()
+                
+                if still_exists:
+                    print(f"❌ DELETE FAILED: Heatmap ID {heatmap_id} still exists after deletion!")
+                    return False
+                else:
+                    print(f"✅ DELETE CONFIRMED: Heatmap ID {heatmap_id} successfully removed from database")
+                    return deleted_count > 0
 
         except Exception as e:
-            print(f"Error deleting heatmap ID {heatmap_id}: {e}")
+            print(f"❌ DELETE ERROR: Exception during deletion of heatmap ID {heatmap_id}: {e}")
             # Try to reconnect and retry once
             try:
+                print("🔄 RETRY: Attempting to reconnect and retry deletion")
                 self.engine = create_engine(self.database_url)
                 with self.engine.connect() as conn:
                     result = conn.execute(text("""
@@ -645,8 +696,8 @@ class PolygonDatabase:
                     """), {'heatmap_id': heatmap_id})
                     conn.commit()
                     deleted_count = result.rowcount
-                    print(f"Retry deletion successful: {deleted_count} row(s) deleted")
+                    print(f"✅ RETRY SUCCESS: {deleted_count} row(s) deleted on retry")
                     return deleted_count > 0
             except Exception as retry_error:
-                print(f"Retry deletion also failed: {retry_error}")
+                print(f"❌ RETRY FAILED: {retry_error}")
                 return False

@@ -67,20 +67,31 @@ if 'stored_heatmaps' not in st.session_state:
     st.session_state.stored_heatmaps = []
 
 # Load stored heatmaps from database on every app refresh with better error handling
+print("\n🚀 APP STARTUP: Loading stored heatmaps from database")
 if st.session_state.polygon_db:
     try:
+        print("📊 INITIAL LOAD: Fetching all stored heatmaps from database")
         st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-        print(f"Loaded {len(st.session_state.stored_heatmaps)} stored heatmaps from database")
+        print(f"✅ INITIAL LOAD SUCCESS: Loaded {len(st.session_state.stored_heatmaps)} stored heatmaps from database")
+        if st.session_state.stored_heatmaps:
+            loaded_ids = [h['id'] for h in st.session_state.stored_heatmaps]
+            print(f"📋 LOADED HEATMAP IDS: {loaded_ids}")
     except Exception as e:
-        print(f"Error loading stored heatmaps: {e}")
+        print(f"❌ INITIAL LOAD ERROR: Error loading stored heatmaps: {e}")
+        import traceback
+        print(f"📍 STACK TRACE: {traceback.format_exc()}")
         # Try to reconnect to database
         try:
+            print("🔄 RECONNECT ATTEMPT: Trying to reconnect to database")
             st.session_state.polygon_db = PolygonDatabase()
             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-            print(f"Database reconnected - loaded {len(st.session_state.stored_heatmaps)} stored heatmaps")
-        except:
-            print("Database reconnection failed - clearing stored heatmaps")
+            print(f"✅ RECONNECT SUCCESS: Database reconnected - loaded {len(st.session_state.stored_heatmaps)} stored heatmaps")
+        except Exception as reconnect_error:
+            print(f"❌ RECONNECT FAILED: Database reconnection failed: {reconnect_error}")
+            print("🧹 CLEARING STATE: Setting stored heatmaps to empty list")
             st.session_state.stored_heatmaps = []
+else:
+    print("❌ NO DATABASE: polygon_db is None, cannot load heatmaps")
 # Regional heatmap session state removed per user request
 
 # Add banner
@@ -296,29 +307,53 @@ with st.sidebar:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 Refresh List", help="Reload stored heatmaps from database"):
+                print(f"\n🔄 REFRESH BUTTON CLICKED: User requested manual refresh of heatmap list")
+                
                 if st.session_state.polygon_db:
                     try:
+                        # Log current state before refresh
+                        current_count = len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 0
+                        current_ids = [h['id'] for h in st.session_state.stored_heatmaps] if st.session_state.stored_heatmaps else []
+                        print(f"📊 PRE-REFRESH STATE: {current_count} heatmaps in session: {current_ids}")
+                        
                         # Clear session state first to avoid stale data
+                        print(f"🧹 CLEARING SESSION: Emptying stored_heatmaps before refresh")
                         st.session_state.stored_heatmaps = []
                         
                         # Try to reconnect to database if needed
+                        print(f"📊 FETCHING FRESH DATA: Calling get_all_stored_heatmaps()")
                         stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        fresh_count = len(stored_heatmaps)
+                        fresh_ids = [h['id'] for h in stored_heatmaps]
+                        print(f"📊 REFRESH RESULT: Found {fresh_count} heatmaps in database: {fresh_ids}")
+                        
                         st.session_state.stored_heatmaps = stored_heatmaps
                         st.success(f"Refreshed: {len(stored_heatmaps)} heatmaps found")
+                        print(f"✅ REFRESH SUCCESS: Session state updated with {len(stored_heatmaps)} heatmaps")
                         st.rerun()
                     except Exception as e:
+                        print(f"❌ REFRESH ERROR: Error during refresh: {e}")
+                        import traceback
+                        print(f"📍 STACK TRACE: {traceback.format_exc()}")
                         st.error(f"Error refreshing: {e}")
                         # Try reconnecting database
                         try:
+                            print(f"🔄 RECONNECT ATTEMPT: Trying to recreate database connection")
                             st.session_state.polygon_db = PolygonDatabase()
                             stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            reconnect_count = len(stored_heatmaps)
+                            reconnect_ids = [h['id'] for h in stored_heatmaps]
+                            print(f"✅ RECONNECT SUCCESS: Found {reconnect_count} heatmaps after reconnect: {reconnect_ids}")
                             st.session_state.stored_heatmaps = stored_heatmaps
                             st.success(f"Database reconnected - {len(stored_heatmaps)} heatmaps found")
                             st.rerun()
                         except Exception as reconnect_error:
+                            print(f"❌ RECONNECT FAILED: Database reconnection failed: {reconnect_error}")
                             st.error(f"Database reconnection failed: {reconnect_error}")
                             st.session_state.stored_heatmaps = []
                             st.rerun()
+                else:
+                    print(f"❌ NO DATABASE: polygon_db is None during refresh")
         
         with col2:
             if st.button("🗑️ Clear All", type="secondary"):
@@ -352,33 +387,77 @@ with st.sidebar:
                 st.write(f"**Created:** {heatmap['created_at']}")
                 
                 if st.button(f"🗑️ Delete", key=f"delete_{heatmap['id']}"):
+                    print(f"\n🗑️ DELETE BUTTON CLICKED: User wants to delete heatmap ID {heatmap['id']} ('{heatmap['heatmap_name']}')")
+                    
+                    # Log current session state before deletion
+                    current_session_count = len(st.session_state.stored_heatmaps)
+                    current_session_ids = [h['id'] for h in st.session_state.stored_heatmaps]
+                    print(f"📊 PRE-DELETE SESSION STATE: {current_session_count} heatmaps in session: {current_session_ids}")
+                    
                     try:
                         # Attempt deletion from database
+                        print(f"🗑️ CALLING DATABASE DELETE: Attempting to delete heatmap ID {heatmap['id']}")
                         deletion_success = st.session_state.polygon_db.delete_stored_heatmap(heatmap['id'])
+                        print(f"📊 DATABASE DELETE RESULT: Success = {deletion_success}")
                         
                         if deletion_success:
-                            # Remove from session state immediately
+                            print(f"✅ DATABASE DELETE SUCCESS: Heatmap ID {heatmap['id']} deleted from database")
+                            
+                            # Remove from session state immediately (optimistic update)
+                            print(f"🔄 UPDATING SESSION STATE: Removing heatmap ID {heatmap['id']} from session")
+                            original_count = len(st.session_state.stored_heatmaps)
                             st.session_state.stored_heatmaps = [h for h in st.session_state.stored_heatmaps if h['id'] != heatmap['id']]
+                            new_count = len(st.session_state.stored_heatmaps)
+                            print(f"📊 SESSION UPDATE RESULT: {original_count} → {new_count} heatmaps in session")
+                            print(f"📋 NEW SESSION IDS: {[h['id'] for h in st.session_state.stored_heatmaps]}")
+                            
                             st.success(f"Deleted heatmap: {heatmap['heatmap_name']}")
                         else:
+                            print(f"❌ DATABASE DELETE FAILED: Could not delete heatmap ID {heatmap['id']}")
                             st.error(f"Failed to delete heatmap: {heatmap['heatmap_name']}")
                         
                         # Force reload from database to ensure consistency
+                        print(f"🔄 RELOADING FROM DATABASE: Fetching fresh data to verify deletion")
                         try:
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            fresh_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            fresh_count = len(fresh_heatmaps)
+                            fresh_ids = [h['id'] for h in fresh_heatmaps]
+                            print(f"📊 FRESH DATABASE STATE: {fresh_count} heatmaps found: {fresh_ids}")
+                            
+                            # Check if the deleted heatmap is still in the fresh data
+                            if any(h['id'] == heatmap['id'] for h in fresh_heatmaps):
+                                print(f"⚠️  INCONSISTENCY DETECTED: Deleted heatmap ID {heatmap['id']} still appears in fresh database data!")
+                                st.error(f"Warning: Heatmap may not have been properly deleted from database")
+                            else:
+                                print(f"✅ DELETION VERIFIED: Heatmap ID {heatmap['id']} confirmed absent from fresh database data")
+                            
+                            # Update session state with fresh data
+                            st.session_state.stored_heatmaps = fresh_heatmaps
+                            print(f"🔄 SESSION STATE UPDATED: Now contains {len(st.session_state.stored_heatmaps)} heatmaps")
+                            
                             st.rerun()
                         except Exception as reload_error:
+                            print(f"❌ RELOAD ERROR: Database connection issue during reload: {reload_error}")
                             st.error(f"Database connection issue during reload: {reload_error}")
                             # If database fails, clear the session state to avoid showing stale data
+                            print(f"🧹 CLEARING SESSION STATE: Due to reload error, clearing all stored heatmaps from session")
                             st.session_state.stored_heatmaps = []
                             st.rerun()
                             
                     except Exception as e:
+                        print(f"❌ DELETE OPERATION ERROR: Unexpected error during deletion: {e}")
+                        import traceback
+                        print(f"📍 STACK TRACE: {traceback.format_exc()}")
                         st.error(f"Error deleting heatmap: {e}")
+                        
                         # Reload from database to check actual state
+                        print(f"🔄 ERROR RECOVERY: Attempting to reload from database after error")
                         try:
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                        except:
+                            recovery_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            st.session_state.stored_heatmaps = recovery_heatmaps
+                            print(f"✅ ERROR RECOVERY SUCCESS: Loaded {len(recovery_heatmaps)} heatmaps from database")
+                        except Exception as recovery_error:
+                            print(f"❌ ERROR RECOVERY FAILED: {recovery_error}")
                             st.session_state.stored_heatmaps = []
                         st.rerun()
     else:

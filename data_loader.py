@@ -87,46 +87,7 @@ def load_sample_data():
 
         return df
 
-def load_custom_data(uploaded_file):
-    """
-    Load custom data from an uploaded CSV file
 
-    Parameters:
-    -----------
-    uploaded_file : UploadedFile
-        The uploaded CSV file
-
-    Returns:
-    --------
-    DataFrame
-        Pandas DataFrame with the well data
-    """
-    try:
-        df = pd.read_csv(uploaded_file)
-
-        # Check if required columns exist
-        required_columns = ['latitude', 'longitude', 'yield_rate']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-
-        if missing_columns:
-            st.error(f"Missing required columns: {', '.join(missing_columns)}")
-            st.error("Your CSV must have columns for latitude, longitude, and yield_rate at minimum.")
-            return None
-
-        # Add missing optional columns with default values if they don't exist
-        if 'well_id' not in df.columns:
-            df['well_id'] = [f"C-{i+1}" for i in range(len(df))]
-
-        if 'depth' not in df.columns:
-            df['depth'] = np.nan
-
-        if 'status' not in df.columns:
-            df['status'] = "Unknown"
-
-        return df
-    except Exception as e:
-        st.error(f"Error loading CSV file: {e}")
-        return None
 
 def categorize_wells(wells_df):
     """

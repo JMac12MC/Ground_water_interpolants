@@ -9,7 +9,7 @@ import base64
 import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
-from data_loader import load_sample_data, load_custom_data, load_nz_govt_data, load_api_data
+from data_loader import load_sample_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data
 from database import PolygonDatabase
 # Regional heatmap removed per user request
@@ -154,12 +154,7 @@ with st.sidebar:
 
 
 
-    # Advanced option for uploading custom data (hidden in expander)
-    with st.expander("Upload Custom Data (Optional)"):
-        uploaded_file = st.file_uploader("Upload a CSV file with well data", type=["csv"])
-        if uploaded_file is not None:
-            with st.spinner("Loading custom data..."):
-                st.session_state.wells_data = load_custom_data(uploaded_file)
+
 
     st.header("Filters")
     

@@ -656,6 +656,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     final_clip_geometry = ShapelyPolygon(final_clip_polygon_coords)
     
     print(f"Final clipping: {radius_km}km -> {final_radius_km:.1f}km square ({final_clip_factor*100:.0f}% of original)")
+    print(f"Final clipping geometry bounds: {final_clip_geometry.bounds}")
 
     # Create polygons only where needed - use a Delaunay triangulation approach
     # for a more organic-looking interpolation surface
@@ -738,39 +739,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         if was_included and not include_triangle:
                             print(f"Triangulation indicator clipping: excluded triangle at ({centroid_lat:.3f}, {centroid_lon:.3f}) with value {avg_yield:.2f}")
 
-                    # Apply final square clipping
                     if include_triangle:
-                        # Check if triangle centroid is within the final clipping square
-                        centroid_lon = float(np.mean(vertices[:, 0]))
-                        centroid_lat = float(np.mean(vertices[:, 1]))
-                        centroid_point = Point(centroid_lon, centroid_lat)
-                        
-                        # Final clipping check - triangle must be within smaller square
-                        within_final_clip = final_clip_geometry.contains(centroid_point)
-                        
-                        if within_final_clip:
-                            # Create polygon for this triangle
-                            poly = {
-                                "type": "Feature",
-                                "geometry": {
-                                    "type": "Polygon",
-                                    "coordinates": [[
-                                        [float(vertices[0,0]), float(vertices[0,1])],
-                                        [float(vertices[1,0]), float(vertices[1,1])],
-                                        [float(vertices[2,0]), float(vertices[2,1])],
-                                        [float(vertices[0,0]), float(vertices[0,1])]
-                                    ]]
-                                },
-                                "properties": {
-                                    "value": avg_yield,
-                                    "yield": avg_yield
-                                }
+                        # Create polygon for this triangle
+                        poly = {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [[
+                                    [float(vertices[0,0]), float(vertices[0,1])],
+                                    [float(vertices[1,0]), float(vertices[1,1])],
+                                    [float(vertices[2,0]), float(vertices[2,1])],
+                                    [float(vertices[0,0]), float(vertices[0,1])]
+                                ]]
+                            },
+                            "properties": {
+                                "value": avg_yield,
+                                "yield": avg_yield
                             }
-                            features.append(poly)
-                        else:
-                            # Triangle excluded by final square clipping
-                            if include_triangle:  # Only log if it would have been included otherwise
-                                pass  # Removed debug logging for cleaner output
+                        }
+                        features.append(poly)
     except Exception as e:
         # If triangulation fails, fall back to the simpler grid method
         print(f"Triangulation error: {e}, using grid method")
@@ -816,43 +803,58 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     if was_included and not include_point:
                         print(f"Indicator clipping: excluded point at ({grid_lats[i]:.3f}, {grid_lons[i]:.3f}) with value {interpolated_z[i]:.2f}")
 
-                # Apply final square clipping
                 if include_point:
-                    # Check if point is within the final clipping square
-                    point_geom = Point(grid_lons[i], grid_lats[i])
-                    within_final_clip = final_clip_geometry.contains(point_geom)
-                    
-                    if within_final_clip:
-                        # Create a small circle as a polygon (approximated with 8 points)
-                        radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])
-                        radius_deg_lon = 0.5 * (lon_vals[1] - lon_vals[0])
+                    # Create a small circle as a polygon (approximated with 8 points)
+                    radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])
+                    radius_deg_lon = 0.5 * (lon_vals[1] - lon_vals[0])
 
-                        # Create the polygon coordinates
-                        coords = []
-                        for angle in np.linspace(0, 2*np.pi, 9):
-                            x = grid_lons[i] + radius_deg_lon * np.cos(angle)
-                            y = grid_lats[i] + radius_deg_lat * np.sin(angle)
-                            coords.append([float(x), float(y)])
+                    # Create the polygon coordinates
+                    coords = []
+                    for angle in np.linspace(0, 2*np.pi, 9):
+                        x = grid_lons[i] + radius_deg_lon * np.cos(angle)
+                        y = grid_lats[i] + radius_deg_lat * np.sin(angle)
+                        coords.append([float(x), float(y)])
 
-                        # Create the polygon feature
-                        poly = {
-                            "type": "Feature",
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [coords]
-                            },
-                            "properties": {
-                                "value": float(interpolated_z[i]),
-                                "yield": float(interpolated_z[i])
-                            }
+                    # Create the polygon feature
+                    poly = {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [coords]
+                        },
+                        "properties": {
+                            "value": float(interpolated_z[i]),
+                            "yield": float(interpolated_z[i])
                         }
-                        features.append(poly)
+                    }
+                    features.append(poly)
 
     # Log filtering results
     if merged_soil_geometry is not None:
         print(f"GeoJSON features filtered by soil drainage areas: {len(features)} polygons displayed")
     
-    print(f"Final square clipping applied: {final_radius_km:.1f}km sides, {len(features)} features remain")
+    # Apply final square clipping to existing features (triangle removal, not re-interpolation)
+    features_before_final_clip = len(features)
+    final_clipped_features = []
+    
+    for feature in features:
+        try:
+            # Get polygon centroid
+            coords = feature['geometry']['coordinates'][0]
+            if len(coords) >= 3:
+                centroid_lon = sum(coord[0] for coord in coords) / len(coords)
+                centroid_lat = sum(coord[1] for coord in coords) / len(coords)
+                centroid_point = Point(centroid_lon, centroid_lat)
+                
+                # Only keep features whose centroid is within the smaller square
+                if final_clip_geometry.contains(centroid_point):
+                    final_clipped_features.append(feature)
+        except Exception as e:
+            # If centroid calculation fails, keep the feature
+            final_clipped_features.append(feature)
+    
+    features = final_clipped_features
+    print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
 
     # Create the full GeoJSON object
     geojson = {

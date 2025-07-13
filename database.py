@@ -607,13 +607,46 @@ class PolygonDatabase:
             True if deletion was successful
         """
         try:
+            # Ensure engine connection is available
+            if not hasattr(self, 'engine') or self.engine is None:
+                if not self.database_url:
+                    print("Error: No database URL available for deletion")
+                    return False
+                self.engine = create_engine(self.database_url)
+            
             with self.engine.connect() as conn:
+                # First verify the heatmap exists
+                check_result = conn.execute(text("""
+                    SELECT id FROM stored_heatmaps WHERE id = :heatmap_id
+                """), {'heatmap_id': heatmap_id})
+                
+                if not check_result.fetchone():
+                    print(f"Heatmap with ID {heatmap_id} not found in database")
+                    return False
+                
+                # Perform the deletion
                 result = conn.execute(text("""
                     DELETE FROM stored_heatmaps WHERE id = :heatmap_id
                 """), {'heatmap_id': heatmap_id})
                 conn.commit()
-                return result.rowcount > 0
+                
+                deleted_count = result.rowcount
+                print(f"Deletion result: {deleted_count} row(s) deleted for heatmap ID {heatmap_id}")
+                return deleted_count > 0
 
         except Exception as e:
-            print(f"Error deleting heatmap: {e}")
-            return False
+            print(f"Error deleting heatmap ID {heatmap_id}: {e}")
+            # Try to reconnect and retry once
+            try:
+                self.engine = create_engine(self.database_url)
+                with self.engine.connect() as conn:
+                    result = conn.execute(text("""
+                        DELETE FROM stored_heatmaps WHERE id = :heatmap_id
+                    """), {'heatmap_id': heatmap_id})
+                    conn.commit()
+                    deleted_count = result.rowcount
+                    print(f"Retry deletion successful: {deleted_count} row(s) deleted")
+                    return deleted_count > 0
+            except Exception as retry_error:
+                print(f"Retry deletion also failed: {retry_error}")
+                return False

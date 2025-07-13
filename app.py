@@ -330,16 +330,16 @@ with st.sidebar:
                 st.write(f"**Created:** {heatmap['created_at']}")
                 
                 # Heatmap clipping functionality
-                st.markdown("**Clip to Smaller Area:**")
+                st.markdown("**Clip to Smaller Rectangle:**")
                 col_clip1, col_clip2 = st.columns([2, 1])
                 with col_clip1:
                     clip_radius = st.slider(
-                        "New radius (km)", 
+                        "New rectangle size (km)", 
                         min_value=1, 
                         max_value=int(heatmap['radius_km'] - 1),
                         value=max(1, int(heatmap['radius_km'] * 0.75)),
                         key=f"clip_radius_{heatmap['id']}",
-                        help=f"Clip {heatmap['heatmap_name']} to a smaller area"
+                        help=f"Remove triangles outside smaller rectangle. Example: clip 20km to 15km"
                     )
                 with col_clip2:
                     if st.button(f"✂️ Clip", key=f"clip_{heatmap['id']}"):

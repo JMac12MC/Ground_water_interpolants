@@ -620,14 +620,15 @@ class PolygonDatabase:
 
     def clip_stored_heatmap(self, heatmap_id, new_radius_km, new_heatmap_name=None):
         """
-        Clip an existing stored heatmap to a smaller radius and save as new heatmap
+        Clip an existing stored heatmap to a smaller RECTANGULAR area and save as new heatmap
+        This removes triangular features outside the smaller rectangle boundary.
 
         Parameters:
         -----------
         heatmap_id : int
             ID of the heatmap to clip
         new_radius_km : float
-            New smaller radius in km
+            New smaller radius in km (defines rectangle bounds)
         new_heatmap_name : str, optional
             Name for the clipped heatmap (auto-generated if None)
 
@@ -667,34 +668,47 @@ class PolygonDatabase:
                 if new_heatmap_name is None:
                     new_heatmap_name = f"{original_heatmap[1]}_clipped_{new_radius_km}km"
 
-                # Calculate distance conversion factors
+                # Calculate RECTANGULAR bounds for clipping (not circular)
                 km_per_degree_lat = 111.0
                 km_per_degree_lon = 111.0 * np.cos(np.radians(original_center_lat))
+                
+                # Define the smaller rectangle bounds
+                lat_range = new_radius_km / km_per_degree_lat
+                lon_range = new_radius_km / km_per_degree_lon
+                
+                min_lat = original_center_lat - lat_range
+                max_lat = original_center_lat + lat_range
+                min_lon = original_center_lon - lon_range
+                max_lon = original_center_lon + lon_range
 
-                # Clip the GeoJSON features
+                print(f"Clipping rectangle: lat {min_lat:.4f} to {max_lat:.4f}, lon {min_lon:.4f} to {max_lon:.4f}")
+
+                # Clip the GeoJSON features by RECTANGULAR boundary
                 if original_geojson_data and isinstance(original_geojson_data, dict):
                     clipped_features = []
                     clipped_heat_data = []
 
                     for feature in original_geojson_data.get('features', []):
                         if feature.get('geometry', {}).get('type') == 'Polygon':
-                            # Extract center point of polygon
+                            # Check if ALL vertices of the triangle are within the rectangle
                             coords = feature['geometry']['coordinates'][0]
                             if len(coords) > 0:
-                                center_lon = sum(coord[0] for coord in coords) / len(coords)
-                                center_lat = sum(coord[1] for coord in coords) / len(coords)
+                                # Check if triangle is entirely within rectangle bounds
+                                triangle_within_bounds = True
                                 
-                                # Calculate distance from original center
-                                dist_from_center_km = np.sqrt(
-                                    ((center_lat - original_center_lat) * km_per_degree_lat)**2 +
-                                    ((center_lon - original_center_lon) * km_per_degree_lon)**2
-                                )
+                                for coord in coords[:-1]:  # Skip last coordinate (same as first)
+                                    lon, lat = coord[0], coord[1]
+                                    if not (min_lat <= lat <= max_lat and min_lon <= lon <= max_lon):
+                                        triangle_within_bounds = False
+                                        break
                                 
-                                # Only include features within new radius
-                                if dist_from_center_km <= new_radius_km:
+                                # Only include triangles that are completely within the rectangle
+                                if triangle_within_bounds:
                                     clipped_features.append(feature)
-                                    # Also add to heat data format
-                                    value = feature.get('properties', {}).get('value', 0)
+                                    # Also add to heat data format using center point
+                                    center_lon = sum(coord[0] for coord in coords[:-1]) / len(coords[:-1])
+                                    center_lat = sum(coord[1] for coord in coords[:-1]) / len(coords[:-1])
+                                    value = feature.get('properties', {}).get('value', feature.get('properties', {}).get('yield', 0))
                                     clipped_heat_data.append([center_lat, center_lon, value])
 
                     # Create clipped GeoJSON
@@ -703,7 +717,7 @@ class PolygonDatabase:
                         "features": clipped_features
                     }
 
-                    print(f"Clipped heatmap: {len(clipped_features)} features remain (from {len(original_geojson_data.get('features', []))} original)")
+                    print(f"RECTANGULAR CLIPPING: {len(clipped_features)} triangles remain within {new_radius_km}km rectangle (from {len(original_geojson_data.get('features', []))} original)")
 
                     # Store the clipped heatmap
                     new_heatmap_id = self.store_heatmap(

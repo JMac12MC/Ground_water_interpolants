@@ -153,7 +153,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, buffer_factor=0.2):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, buffer_factor=0.0):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -223,16 +223,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     km_per_degree_lat = 111.0  # ~111km per degree of latitude
     km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # Longitude degrees vary with latitude
 
-    # Create EXPANDED grid in lat/lon space with buffer zone for interpolation
-    # Calculate expanded interpolation radius (buffer zone)
-    interpolation_radius = radius_km * (1.0 + buffer_factor)
-    print(f"GeoJSON buffer zone: interpolating over {interpolation_radius:.1f}km (original {radius_km}km + {buffer_factor*100:.0f}% buffer)")
+    # Create standard rectangular grid in lat/lon space (no buffer zone)
+    # Buffer zone disabled - user wants standard rectangular heatmaps with post-generation clipping
+    # interpolation_radius = radius_km * (1.0 + buffer_factor)
+    # print(f"GeoJSON buffer zone: interpolating over {interpolation_radius:.1f}km (original {radius_km}km + {buffer_factor*100:.0f}% buffer)")
     
-    # Use expanded radius for interpolation grid
-    min_lat = center_lat - (interpolation_radius / km_per_degree_lat)
-    max_lat = center_lat + (interpolation_radius / km_per_degree_lat)
-    min_lon = center_lon - (interpolation_radius / km_per_degree_lon)
-    max_lon = center_lon + (interpolation_radius / km_per_degree_lon)
+    # Use standard radius for rectangular interpolation grid
+    min_lat = center_lat - (radius_km / km_per_degree_lat)
+    max_lat = center_lat + (radius_km / km_per_degree_lat)
+    min_lon = center_lon - (radius_km / km_per_degree_lon)
+    max_lon = center_lon + (radius_km / km_per_degree_lon)
 
     # High resolution grid for smooth professional visualization
     # Increase resolution significantly for smoother appearance like kriging software
@@ -810,28 +810,29 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     }
                     features.append(poly)
 
+    # Buffer zone clipping disabled - user wants standard rectangular heatmaps with post-generation clipping
     # BUFFER ZONE CLIPPING: Remove features outside original search radius (clip back from expanded interpolation)
-    if buffer_factor > 0:
-        original_features = []
-        for feature in features:
-            # Extract center point of polygon (first coordinate)
-            coords = feature["geometry"]["coordinates"][0]
-            if len(coords) > 0:
-                center_lon = sum(coord[0] for coord in coords) / len(coords)
-                center_lat = sum(coord[1] for coord in coords) / len(coords)
-                
-                # Calculate distance from center to this feature
-                dist_from_center_km = np.sqrt(
-                    ((center_lat - center_point[0]) * km_per_degree_lat)**2 +
-                    ((center_lon - center_point[1]) * km_per_degree_lon)**2
-                )
-                
-                # Only include features within original search radius (remove buffer zone)
-                if dist_from_center_km <= radius_km:
-                    original_features.append(feature)
-        
-        features = original_features
-        print(f"GeoJSON buffer zone clipping: {len(features)} features remain after removing {buffer_factor*100:.0f}% buffer zone")
+    # if buffer_factor > 0:
+    #     original_features = []
+    #     for feature in features:
+    #         # Extract center point of polygon (first coordinate)
+    #         coords = feature["geometry"]["coordinates"][0]
+    #         if len(coords) > 0:
+    #             center_lon = sum(coord[0] for coord in coords) / len(coords)
+    #             center_lat = sum(coord[1] for coord in coords) / len(coords)
+    #             
+    #             # Calculate distance from center to this feature
+    #             dist_from_center_km = np.sqrt(
+    #                 ((center_lat - center_point[0]) * km_per_degree_lat)**2 +
+    #                 ((center_lon - center_point[1]) * km_per_degree_lon)**2
+    #             )
+    #             
+    #             # Only include features within original search radius (remove buffer zone)
+    #             if dist_from_center_km <= radius_km:
+    #                 original_features.append(feature)
+    #     
+    #     features = original_features
+    #     print(f"GeoJSON buffer zone clipping: {len(features)} features remain after removing {buffer_factor*100:.0f}% buffer zone")
 
     # Log filtering results
     if merged_soil_geometry is not None:
@@ -845,7 +846,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     return geojson
 
-def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging', soil_polygons=None, buffer_factor=0.2):
+def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging', soil_polygons=None, buffer_factor=0.0):
     """
     Generate heat map data using various interpolation techniques with buffer zone to minimize boundary effects
 
@@ -1430,22 +1431,23 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         ])
                         well_points_added += 1
 
+        # Buffer zone clipping disabled - user wants standard rectangular heatmaps
         # BUFFER ZONE CLIPPING: Remove points outside original search radius (clip back from expanded interpolation)
-        if buffer_factor > 0:
-            original_heat_data = []
-            for heat_point in heat_data:
-                point_lat, point_lon, value = heat_point
-                # Calculate distance from center to this point
-                dist_from_center_km = np.sqrt(
-                    ((point_lat - center_lat) * km_per_degree_lat)**2 +
-                    ((point_lon - center_lon) * km_per_degree_lon)**2
-                )
-                # Only include points within original search radius (remove buffer zone)
-                if dist_from_center_km <= radius_km:
-                    original_heat_data.append(heat_point)
-            
-            heat_data = original_heat_data
-            print(f"Buffer zone clipping: {len(heat_data)} points remain after removing {buffer_factor*100:.0f}% buffer zone")
+        # if buffer_factor > 0:
+        #     original_heat_data = []
+        #     for heat_point in heat_data:
+        #         point_lat, point_lon, value = heat_point
+        #         # Calculate distance from center to this point
+        #         dist_from_center_km = np.sqrt(
+        #             ((point_lat - center_lat) * km_per_degree_lat)**2 +
+        #             ((point_lon - center_lon) * km_per_degree_lon)**2
+        #         )
+        #         # Only include points within original search radius (remove buffer zone)
+        #         if dist_from_center_km <= radius_km:
+        #             original_heat_data.append(heat_point)
+        #     
+        #     heat_data = original_heat_data
+        #     print(f"Buffer zone clipping: {len(heat_data)} points remain after removing {buffer_factor*100:.0f}% buffer zone")
 
         # Log filtering results
         if merged_soil_geometry is not None:

@@ -617,3 +617,112 @@ class PolygonDatabase:
         except Exception as e:
             print(f"Error deleting heatmap: {e}")
             return False
+
+    def clip_stored_heatmap(self, heatmap_id, new_radius_km, new_heatmap_name=None):
+        """
+        Clip an existing stored heatmap to a smaller radius and save as new heatmap
+
+        Parameters:
+        -----------
+        heatmap_id : int
+            ID of the heatmap to clip
+        new_radius_km : float
+            New smaller radius in km
+        new_heatmap_name : str, optional
+            Name for the clipped heatmap (auto-generated if None)
+
+        Returns:
+        --------
+        int or None
+            ID of the new clipped heatmap, or None if failed
+        """
+        try:
+            import numpy as np
+            
+            # Get the original heatmap
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT * FROM stored_heatmaps WHERE id = :heatmap_id
+                """), {'heatmap_id': heatmap_id})
+                
+                original_heatmap = result.fetchone()
+                if not original_heatmap:
+                    print(f"Heatmap {heatmap_id} not found")
+                    return None
+
+                # Extract original heatmap data
+                original_center_lat = original_heatmap[2]
+                original_center_lon = original_heatmap[3]
+                original_radius_km = original_heatmap[4]
+                original_method = original_heatmap[5]
+                original_geojson_data = original_heatmap[7]
+                original_well_count = original_heatmap[8]
+
+                # Check if new radius is smaller than original
+                if new_radius_km >= original_radius_km:
+                    print(f"New radius {new_radius_km}km must be smaller than original {original_radius_km}km")
+                    return None
+
+                # Generate new heatmap name if not provided
+                if new_heatmap_name is None:
+                    new_heatmap_name = f"{original_heatmap[1]}_clipped_{new_radius_km}km"
+
+                # Calculate distance conversion factors
+                km_per_degree_lat = 111.0
+                km_per_degree_lon = 111.0 * np.cos(np.radians(original_center_lat))
+
+                # Clip the GeoJSON features
+                if original_geojson_data and isinstance(original_geojson_data, dict):
+                    clipped_features = []
+                    clipped_heat_data = []
+
+                    for feature in original_geojson_data.get('features', []):
+                        if feature.get('geometry', {}).get('type') == 'Polygon':
+                            # Extract center point of polygon
+                            coords = feature['geometry']['coordinates'][0]
+                            if len(coords) > 0:
+                                center_lon = sum(coord[0] for coord in coords) / len(coords)
+                                center_lat = sum(coord[1] for coord in coords) / len(coords)
+                                
+                                # Calculate distance from original center
+                                dist_from_center_km = np.sqrt(
+                                    ((center_lat - original_center_lat) * km_per_degree_lat)**2 +
+                                    ((center_lon - original_center_lon) * km_per_degree_lon)**2
+                                )
+                                
+                                # Only include features within new radius
+                                if dist_from_center_km <= new_radius_km:
+                                    clipped_features.append(feature)
+                                    # Also add to heat data format
+                                    value = feature.get('properties', {}).get('value', 0)
+                                    clipped_heat_data.append([center_lat, center_lon, value])
+
+                    # Create clipped GeoJSON
+                    clipped_geojson = {
+                        "type": "FeatureCollection",
+                        "features": clipped_features
+                    }
+
+                    print(f"Clipped heatmap: {len(clipped_features)} features remain (from {len(original_geojson_data.get('features', []))} original)")
+
+                    # Store the clipped heatmap
+                    new_heatmap_id = self.store_heatmap(
+                        heatmap_name=new_heatmap_name,
+                        center_lat=original_center_lat,
+                        center_lon=original_center_lon,
+                        radius_km=new_radius_km,
+                        interpolation_method=f"{original_method}_clipped",
+                        heatmap_data=clipped_heat_data,
+                        geojson_data=clipped_geojson,
+                        well_count=original_well_count
+                    )
+
+                    return new_heatmap_id
+
+                else:
+                    print("No GeoJSON data found in original heatmap")
+                    return None
+
+        except Exception as e:
+            print(f"Error clipping heatmap: {e}")
+            return None

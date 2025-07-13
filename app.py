@@ -773,6 +773,8 @@ with main_col1:
                                 print(f"AUTO-STORED NEW: {heatmap_name} with {len(heatmap_data)} points and {len(geojson_data.get('features', []))} features")
                                 # Mark that a new heatmap was actually added
                                 st.session_state.new_heatmap_added = True
+                                # Force immediate UI refresh to show new heatmap in sidebar
+                                st.rerun()
                             else:
                                 print(f"REUSING EXISTING: {heatmap_name} already exists in database")
                                 # Still mark as new for display purposes

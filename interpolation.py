@@ -228,7 +228,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     interpolation_radius = radius_km * (1.0 + buffer_factor)
     print(f"GeoJSON buffer zone: interpolating over {interpolation_radius:.1f}km (original {radius_km}km + {buffer_factor*100:.0f}% buffer)")
     
-    # Use expanded radius for interpolation grid (SQUARE bounds, not circular)
+    # Use expanded radius for interpolation grid
     min_lat = center_lat - (interpolation_radius / km_per_degree_lat)
     max_lat = center_lat + (interpolation_radius / km_per_degree_lat)
     min_lon = center_lon - (interpolation_radius / km_per_degree_lon)
@@ -810,14 +810,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     }
                     features.append(poly)
 
-    # BUFFER ZONE CLIPPING: Remove features outside original SQUARE bounds (maintain rectangular shape)
+    # BUFFER ZONE CLIPPING: Remove features outside original search radius (clip back from expanded interpolation)
     if buffer_factor > 0:
-        # Calculate original square bounds (smaller rectangle to clip to)
-        original_min_lat = center_point[0] - (radius_km / km_per_degree_lat)
-        original_max_lat = center_point[0] + (radius_km / km_per_degree_lat)
-        original_min_lon = center_point[1] - (radius_km / km_per_degree_lon)
-        original_max_lon = center_point[1] + (radius_km / km_per_degree_lon)
-        
         original_features = []
         for feature in features:
             # Extract center point of polygon (first coordinate)
@@ -826,13 +820,18 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 center_lon = sum(coord[0] for coord in coords) / len(coords)
                 center_lat = sum(coord[1] for coord in coords) / len(coords)
                 
-                # Use SQUARE bounds clipping - keep only features inside the original rectangle
-                if (original_min_lat <= center_lat <= original_max_lat and 
-                    original_min_lon <= center_lon <= original_max_lon):
+                # Calculate distance from center to this feature
+                dist_from_center_km = np.sqrt(
+                    ((center_lat - center_point[0]) * km_per_degree_lat)**2 +
+                    ((center_lon - center_point[1]) * km_per_degree_lon)**2
+                )
+                
+                # Only include features within original search radius (remove buffer zone)
+                if dist_from_center_km <= radius_km:
                     original_features.append(feature)
         
         features = original_features
-        print(f"GeoJSON buffer zone clipping: {len(features)} features remain after clipping to original rectangle (removing {buffer_factor*100:.0f}% buffer zone)")
+        print(f"GeoJSON buffer zone clipping: {len(features)} features remain after removing {buffer_factor*100:.0f}% buffer zone")
 
     # Log filtering results
     if merged_soil_geometry is not None:
@@ -1431,24 +1430,22 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         ])
                         well_points_added += 1
 
-        # BUFFER ZONE CLIPPING: Remove points outside original SQUARE bounds (maintain rectangular shape)
+        # BUFFER ZONE CLIPPING: Remove points outside original search radius (clip back from expanded interpolation)
         if buffer_factor > 0:
-            # Calculate original square bounds (not circular)
-            original_min_lat = center_lat - (radius_km / km_per_degree_lat)
-            original_max_lat = center_lat + (radius_km / km_per_degree_lat)
-            original_min_lon = center_lon - (radius_km / km_per_degree_lon)
-            original_max_lon = center_lon + (radius_km / km_per_degree_lon)
-            
             original_heat_data = []
             for heat_point in heat_data:
                 point_lat, point_lon, value = heat_point
-                # Use SQUARE bounds clipping instead of circular distance
-                if (original_min_lat <= point_lat <= original_max_lat and 
-                    original_min_lon <= point_lon <= original_max_lon):
+                # Calculate distance from center to this point
+                dist_from_center_km = np.sqrt(
+                    ((point_lat - center_lat) * km_per_degree_lat)**2 +
+                    ((point_lon - center_lon) * km_per_degree_lon)**2
+                )
+                # Only include points within original search radius (remove buffer zone)
+                if dist_from_center_km <= radius_km:
                     original_heat_data.append(heat_point)
             
             heat_data = original_heat_data
-            print(f"Buffer zone clipping: {len(heat_data)} points remain after removing {buffer_factor*100:.0f}% buffer zone (square bounds)")
+            print(f"Buffer zone clipping: {len(heat_data)} points remain after removing {buffer_factor*100:.0f}% buffer zone")
 
         # Log filtering results
         if merged_soil_geometry is not None:

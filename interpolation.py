@@ -228,7 +228,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     interpolation_radius = radius_km * (1.0 + buffer_factor)
     print(f"GeoJSON buffer zone: interpolating over {interpolation_radius:.1f}km (original {radius_km}km + {buffer_factor*100:.0f}% buffer)")
     
-    # Use expanded radius for interpolation grid
+    # Use expanded radius for interpolation grid (SQUARE bounds, not circular)
     min_lat = center_lat - (interpolation_radius / km_per_degree_lat)
     max_lat = center_lat + (interpolation_radius / km_per_degree_lat)
     min_lon = center_lon - (interpolation_radius / km_per_degree_lon)
@@ -812,7 +812,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     # BUFFER ZONE CLIPPING: Remove features outside original SQUARE bounds (maintain rectangular shape)
     if buffer_factor > 0:
-        # Calculate original square bounds (not circular)
+        # Calculate original square bounds (smaller rectangle to clip to)
         original_min_lat = center_point[0] - (radius_km / km_per_degree_lat)
         original_max_lat = center_point[0] + (radius_km / km_per_degree_lat)
         original_min_lon = center_point[1] - (radius_km / km_per_degree_lon)
@@ -826,13 +826,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 center_lon = sum(coord[0] for coord in coords) / len(coords)
                 center_lat = sum(coord[1] for coord in coords) / len(coords)
                 
-                # Use SQUARE bounds clipping instead of circular distance
+                # Use SQUARE bounds clipping - keep only features inside the original rectangle
                 if (original_min_lat <= center_lat <= original_max_lat and 
                     original_min_lon <= center_lon <= original_max_lon):
                     original_features.append(feature)
         
         features = original_features
-        print(f"GeoJSON buffer zone clipping: {len(features)} features remain after removing {buffer_factor*100:.0f}% buffer zone (square bounds)")
+        print(f"GeoJSON buffer zone clipping: {len(features)} features remain after clipping to original rectangle (removing {buffer_factor*100:.0f}% buffer zone)")
 
     # Log filtering results
     if merged_soil_geometry is not None:

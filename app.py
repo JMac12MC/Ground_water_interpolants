@@ -329,39 +329,6 @@ with st.sidebar:
                 st.write(f"**Wells:** {heatmap['well_count']}")
                 st.write(f"**Created:** {heatmap['created_at']}")
                 
-                # Heatmap clipping functionality
-                st.markdown("**Clip to Smaller Rectangle:**")
-                col_clip1, col_clip2 = st.columns([2, 1])
-                with col_clip1:
-                    clip_radius = st.slider(
-                        "New rectangle size (km)", 
-                        min_value=1, 
-                        max_value=int(heatmap['radius_km'] - 1),
-                        value=max(1, int(heatmap['radius_km'] * 0.75)),
-                        key=f"clip_radius_{heatmap['id']}",
-                        help=f"Remove triangles outside smaller rectangle. Example: clip 20km to 15km"
-                    )
-                with col_clip2:
-                    if st.button(f"✂️ Clip", key=f"clip_{heatmap['id']}"):
-                        if clip_radius < heatmap['radius_km']:
-                            try:
-                                with st.spinner("Clipping heatmap..."):
-                                    new_heatmap_id = st.session_state.polygon_db.clip_stored_heatmap(
-                                        heatmap['id'], 
-                                        clip_radius
-                                    )
-                                    if new_heatmap_id:
-                                        # Refresh stored heatmaps list
-                                        st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                                        st.success(f"Clipped heatmap saved! New radius: {clip_radius}km")
-                                        st.rerun()
-                                    else:
-                                        st.error("Failed to clip heatmap")
-                            except Exception as e:
-                                st.error(f"Error clipping heatmap: {e}")
-                        else:
-                            st.error("New radius must be smaller than original")
-                
                 if st.button(f"🗑️ Delete", key=f"delete_{heatmap['id']}"):
                     if st.session_state.polygon_db.delete_stored_heatmap(heatmap['id']):
                         st.session_state.stored_heatmaps = [h for h in st.session_state.stored_heatmaps if h['id'] != heatmap['id']]

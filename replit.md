@@ -121,12 +121,6 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **July 13, 2025**: Implemented heatmap clipping functionality and buffer zone optimization
-  - Added `clip_stored_heatmap()` method to database class for post-generation clipping
-  - Integrated buffer zone interpolation (20% expansion) to minimize boundary effects
-  - Added heatmap clipping UI controls in sidebar for reducing stored heatmap areas
-  - Enhanced interpolation functions with configurable buffer_factor parameter
-  - Automatic clipping of interpolated results back to original search radius
 - **July 06, 2025**: Completed PostgreSQL database integration for merged polygon storage
   - Created PolygonDatabase class with full CRUD operations
   - Added database management interface to sidebar

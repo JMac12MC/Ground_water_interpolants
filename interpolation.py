@@ -153,7 +153,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, buffer_factor=0.2):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -223,11 +223,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     km_per_degree_lat = 111.0  # ~111km per degree of latitude
     km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # Longitude degrees vary with latitude
 
-    # Create grid in lat/lon space
-    min_lat = center_lat - (radius_km / km_per_degree_lat)
-    max_lat = center_lat + (radius_km / km_per_degree_lat)
-    min_lon = center_lon - (radius_km / km_per_degree_lon)
-    max_lon = center_lon + (radius_km / km_per_degree_lon)
+    # Create EXPANDED grid in lat/lon space with buffer zone for interpolation
+    # Calculate expanded interpolation radius (buffer zone)
+    interpolation_radius = radius_km * (1.0 + buffer_factor)
+    print(f"GeoJSON buffer zone: interpolating over {interpolation_radius:.1f}km (original {radius_km}km + {buffer_factor*100:.0f}% buffer)")
+    
+    # Use expanded radius for interpolation grid
+    min_lat = center_lat - (interpolation_radius / km_per_degree_lat)
+    max_lat = center_lat + (interpolation_radius / km_per_degree_lat)
+    min_lon = center_lon - (interpolation_radius / km_per_degree_lon)
+    max_lon = center_lon + (interpolation_radius / km_per_degree_lon)
 
     # High resolution grid for smooth professional visualization
     # Increase resolution significantly for smoother appearance like kriging software
@@ -805,6 +810,29 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     }
                     features.append(poly)
 
+    # BUFFER ZONE CLIPPING: Remove features outside original search radius (clip back from expanded interpolation)
+    if buffer_factor > 0:
+        original_features = []
+        for feature in features:
+            # Extract center point of polygon (first coordinate)
+            coords = feature["geometry"]["coordinates"][0]
+            if len(coords) > 0:
+                center_lon = sum(coord[0] for coord in coords) / len(coords)
+                center_lat = sum(coord[1] for coord in coords) / len(coords)
+                
+                # Calculate distance from center to this feature
+                dist_from_center_km = np.sqrt(
+                    ((center_lat - center_point[0]) * km_per_degree_lat)**2 +
+                    ((center_lon - center_point[1]) * km_per_degree_lon)**2
+                )
+                
+                # Only include features within original search radius (remove buffer zone)
+                if dist_from_center_km <= radius_km:
+                    original_features.append(feature)
+        
+        features = original_features
+        print(f"GeoJSON buffer zone clipping: {len(features)} features remain after removing {buffer_factor*100:.0f}% buffer zone")
+
     # Log filtering results
     if merged_soil_geometry is not None:
         print(f"GeoJSON features filtered by soil drainage areas: {len(features)} polygons displayed")
@@ -817,9 +845,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     return geojson
 
-def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging', soil_polygons=None):
+def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging', soil_polygons=None, buffer_factor=0.2):
     """
-    Generate heat map data using various interpolation techniques
+    Generate heat map data using various interpolation techniques with buffer zone to minimize boundary effects
 
     Parameters:
     -----------
@@ -828,11 +856,15 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     center_point : tuple
         Tuple containing (latitude, longitude) of the center point
     radius_km : float
-        Radius in kilometers to generate heat map data for
+        Radius in kilometers to generate heat map data for (final output size)
     resolution : int
         Number of points to generate in each dimension
     method : str
         Interpolation method to use ('kriging', 'idw', 'rf_kriging')
+    soil_polygons : GeoDataFrame, optional
+        Soil polygon data for clipping
+    buffer_factor : float
+        Factor to expand interpolation area beyond final output (default 0.2 = 20% larger)
 
     Returns:
     --------
@@ -841,9 +873,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
     Notes:
     ------
-    This function is called each time a new location is selected to create an
-    entirely fresh interpolation. The results should always be specific to the
-    current center_point and never reuse old interpolation data.
+    This function creates a buffer zone around the interpolation area to minimize boundary effects.
+    The interpolation is performed over a larger area (buffer_factor * radius_km larger) and then
+    clipped back to the original search radius for the final output.
     """
     # Handle empty datasets
     if isinstance(wells_df, pd.DataFrame) and wells_df.empty:
@@ -963,7 +995,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             heat_data.append([float(lat), float(lon), float(yield_val)])
         return heat_data
 
-    # Create simplified grid for interpolation
+    # Create simplified grid for interpolation with buffer zone to minimize boundary effects
     center_lat, center_lon = center_point
     grid_size = min(50, max(30, resolution))
 
@@ -977,21 +1009,25 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         x_coords = (lons - center_lon) * km_per_degree_lon
         y_coords = (lats - center_lat) * km_per_degree_lat
 
-        # Create grid in km space (square bounds)
-        grid_x = np.linspace(-radius_km, radius_km, grid_size)
-        grid_y = np.linspace(-radius_km, radius_km, grid_size)
+        # Calculate expanded interpolation radius (buffer zone)
+        interpolation_radius = radius_km * (1.0 + buffer_factor)
+        print(f"Buffer zone: interpolating over {interpolation_radius:.1f}km (original {radius_km}km + {buffer_factor*100:.0f}% buffer)")
+
+        # Create EXPANDED grid in km space for interpolation (larger than final output)
+        grid_x = np.linspace(-interpolation_radius, interpolation_radius, grid_size)
+        grid_y = np.linspace(-interpolation_radius, interpolation_radius, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
 
         # Flatten for interpolation
         points = np.vstack([x_coords, y_coords]).T  # Well points in km
-        xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
+        xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km (expanded)
 
-        # Filter points outside the square bounds
-        mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
-        xi_inside = xi[mask]
+        # Filter points outside the EXPANDED square bounds for interpolation
+        expanded_mask = (np.abs(xi[:,0]) <= interpolation_radius) & (np.abs(xi[:,1]) <= interpolation_radius)
+        xi_expanded = xi[expanded_mask]
 
-        # Define grid_points for compatibility
-        grid_points = xi_inside
+        # Define grid_points for compatibility (expanded for interpolation)
+        grid_points = xi_expanded
 
         # Choose interpolation method based on parameter and dataset size
         if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging') and len(wells_df) >= 5:
@@ -1393,6 +1429,23 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                             float(yields[j])
                         ])
                         well_points_added += 1
+
+        # BUFFER ZONE CLIPPING: Remove points outside original search radius (clip back from expanded interpolation)
+        if buffer_factor > 0:
+            original_heat_data = []
+            for heat_point in heat_data:
+                point_lat, point_lon, value = heat_point
+                # Calculate distance from center to this point
+                dist_from_center_km = np.sqrt(
+                    ((point_lat - center_lat) * km_per_degree_lat)**2 +
+                    ((point_lon - center_lon) * km_per_degree_lon)**2
+                )
+                # Only include points within original search radius (remove buffer zone)
+                if dist_from_center_km <= radius_km:
+                    original_heat_data.append(heat_point)
+            
+            heat_data = original_heat_data
+            print(f"Buffer zone clipping: {len(heat_data)} points remain after removing {buffer_factor*100:.0f}% buffer zone")
 
         # Log filtering results
         if merged_soil_geometry is not None:

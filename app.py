@@ -12,6 +12,7 @@ from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data
 from database import PolygonDatabase
+import time
 # Regional heatmap removed per user request
 
 # Set page configuration with stability settings
@@ -175,7 +176,7 @@ with st.sidebar:
 
 
     st.header("Filters")
-    
+
     # Manual refresh button for when hot reload isn't working
     if st.button("🔄 Refresh App", help="Click if the app doesn't update automatically"):
         # Clear session state to force fresh start
@@ -282,11 +283,11 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
-    
+
     # Stored Heatmaps Management Section
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
-    
+
     # Load stored heatmaps from database (only if not already loaded or cleared)
     if not hasattr(st.session_state, 'stored_heatmaps') or st.session_state.stored_heatmaps is None:
         if st.session_state.polygon_db:
@@ -305,34 +306,34 @@ with st.sidebar:
                 st.session_state.stored_heatmaps = []
         else:
             st.session_state.stored_heatmaps = []
-    
+
     if st.session_state.stored_heatmaps:
         st.write(f"**{len(st.session_state.stored_heatmaps)} stored heatmaps available**")
-        
+
         # Refresh and Clear buttons
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 Refresh List", help="Reload stored heatmaps from database"):
                 print(f"\n🔄 REFRESH BUTTON CLICKED: User requested manual refresh of heatmap list")
-                
+
                 if st.session_state.polygon_db:
                     try:
                         # Log current state before refresh
                         current_count = len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 0
                         current_ids = [h['id'] for h in st.session_state.stored_heatmaps] if st.session_state.stored_heatmaps else []
                         print(f"📊 PRE-REFRESH STATE: {current_count} heatmaps in session: {current_ids}")
-                        
+
                         # Clear session state first to avoid stale data
                         print(f"🧹 CLEARING SESSION: Emptying stored_heatmaps before refresh")
                         st.session_state.stored_heatmaps = []
-                        
+
                         # Try to reconnect to database if needed
                         print(f"📊 FETCHING FRESH DATA: Calling get_all_stored_heatmaps()")
                         stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
                         fresh_count = len(stored_heatmaps)
                         fresh_ids = [h['id'] for h in stored_heatmaps]
                         print(f"📊 REFRESH RESULT: Found {fresh_count} heatmaps in database: {fresh_ids}")
-                        
+
                         st.session_state.stored_heatmaps = stored_heatmaps
                         st.success(f"Refreshed: {len(stored_heatmaps)} heatmaps found")
                         print(f"✅ REFRESH SUCCESS: Session state updated with {len(stored_heatmaps)} heatmaps")
@@ -360,7 +361,7 @@ with st.sidebar:
                             st.rerun()
                 else:
                     print(f"❌ NO DATABASE: polygon_db is None during refresh")
-        
+
         with col2:
             if st.button("🗑️ Clear All", type="secondary"):
                 if st.session_state.polygon_db:
@@ -382,7 +383,7 @@ with st.sidebar:
                         st.error(f"Error clearing heatmaps: {e}")
                 else:
                     st.error("Database not available")
-        
+
         # Display each stored heatmap with details
         for heatmap in st.session_state.stored_heatmaps:
             with st.expander(f"📍 {heatmap['heatmap_name']}"):
@@ -391,24 +392,24 @@ with st.sidebar:
                 st.write(f"**Radius:** {heatmap['radius_km']} km")
                 st.write(f"**Wells:** {heatmap['well_count']}")
                 st.write(f"**Created:** {heatmap['created_at']}")
-                
+
                 if st.button(f"🗑️ Delete", key=f"delete_{heatmap['id']}"):
                     print(f"\n🗑️ DELETE BUTTON CLICKED: User wants to delete heatmap ID {heatmap['id']} ('{heatmap['heatmap_name']}')")
-                    
+
                     # Log current session state before deletion
                     current_session_count = len(st.session_state.stored_heatmaps)
                     current_session_ids = [h['id'] for h in st.session_state.stored_heatmaps]
                     print(f"📊 PRE-DELETE SESSION STATE: {current_session_count} heatmaps in session: {current_session_ids}")
-                    
+
                     try:
                         # Attempt deletion from database
                         print(f"🗑️ CALLING DATABASE DELETE: Attempting to delete heatmap ID {heatmap['id']}")
                         deletion_success = st.session_state.polygon_db.delete_stored_heatmap(heatmap['id'])
                         print(f"📊 DATABASE DELETE RESULT: Success = {deletion_success}")
-                        
+
                         if deletion_success:
                             print(f"✅ DATABASE DELETE SUCCESS: Heatmap ID {heatmap['id']} deleted from database")
-                            
+
                             # Remove from session state immediately (optimistic update)
                             print(f"🔄 UPDATING SESSION STATE: Removing heatmap ID {heatmap['id']} from session")
                             original_count = len(st.session_state.stored_heatmaps)
@@ -416,12 +417,12 @@ with st.sidebar:
                             new_count = len(st.session_state.stored_heatmaps)
                             print(f"📊 SESSION UPDATE RESULT: {original_count} → {new_count} heatmaps in session")
                             print(f"📋 NEW SESSION IDS: {[h['id'] for h in st.session_state.stored_heatmaps]}")
-                            
+
                             st.success(f"Deleted heatmap: {heatmap['heatmap_name']}")
                         else:
                             print(f"❌ DATABASE DELETE FAILED: Could not delete heatmap ID {heatmap['id']}")
                             st.error(f"Failed to delete heatmap: {heatmap['heatmap_name']}")
-                        
+
                         # Force reload from database to ensure consistency
                         print(f"🔄 RELOADING FROM DATABASE: Fetching fresh data to verify deletion")
                         try:
@@ -429,18 +430,18 @@ with st.sidebar:
                             fresh_count = len(fresh_heatmaps)
                             fresh_ids = [h['id'] for h in fresh_heatmaps]
                             print(f"📊 FRESH DATABASE STATE: {fresh_count} heatmaps found: {fresh_ids}")
-                            
+
                             # Check if the deleted heatmap is still in the fresh data
                             if any(h['id'] == heatmap['id'] for h in fresh_heatmaps):
                                 print(f"⚠️  INCONSISTENCY DETECTED: Deleted heatmap ID {heatmap['id']} still appears in fresh database data!")
                                 st.error(f"Warning: Heatmap may not have been properly deleted from database")
                             else:
                                 print(f"✅ DELETION VERIFIED: Heatmap ID {heatmap['id']} confirmed absent from fresh database data")
-                            
+
                             # Update session state with fresh data
                             st.session_state.stored_heatmaps = fresh_heatmaps
                             print(f"🔄 SESSION STATE UPDATED: Now contains {len(st.session_state.stored_heatmaps)} heatmaps")
-                            
+
                             st.rerun()
                         except Exception as reload_error:
                             print(f"❌ RELOAD ERROR: Database connection issue during reload: {reload_error}")
@@ -449,13 +450,13 @@ with st.sidebar:
                             print(f"🧹 CLEARING SESSION STATE: Due to reload error, clearing all stored heatmaps from session")
                             st.session_state.stored_heatmaps = []
                             st.rerun()
-                            
+
                     except Exception as e:
                         print(f"❌ DELETE OPERATION ERROR: Unexpected error during deletion: {e}")
                         import traceback
                         print(f"📍 STACK TRACE: {traceback.format_exc()}")
                         st.error(f"Error deleting heatmap: {e}")
-                        
+
                         # Reload from database to check actual state
                         print(f"🔄 ERROR RECOVERY: Attempting to reload from database after error")
                         try:
@@ -512,7 +513,7 @@ with main_col1:
     global_min_value = float('inf')
     global_max_value = float('-inf')
     all_heatmap_values = []
-    
+
     # Collect values from stored heatmaps for global color scaling
     if st.session_state.stored_heatmaps:
         for stored_heatmap in st.session_state.stored_heatmaps:
@@ -524,7 +525,7 @@ with main_col1:
                         all_heatmap_values.append(value)
                         global_min_value = min(global_min_value, value)
                         global_max_value = max(global_max_value, value)
-    
+
     # Include current fresh heatmap values if available
     if 'geojson_data' in st.session_state and st.session_state.geojson_data:
         for feature in st.session_state.geojson_data.get('features', []):
@@ -533,12 +534,12 @@ with main_col1:
                 all_heatmap_values.append(value)
                 global_min_value = min(global_min_value, value)
                 global_max_value = max(global_max_value, value)
-    
+
     # Fallback to reasonable defaults if no data
     if global_min_value == float('inf'):
         global_min_value = 0
         global_max_value = 25
-    
+
     print(f"UNIFIED COLORMAP: Global value range {global_min_value:.2f} to {global_max_value:.2f} across all displayed heatmaps")
 
     # DEFINE GLOBAL UNIFIED COLOR FUNCTION OUTSIDE THE LOOP
@@ -556,11 +557,11 @@ with main_col1:
             # Use GLOBAL min/max for consistent color scaling across ALL heatmaps
             if global_max_value <= global_min_value:
                 return '#000080'  # Default blue if no range
-            
+
             # Normalize value to 0-1 range using global min/max
             normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
             normalized_value = max(0, min(1, normalized_value))  # Clamp to 0-1
-            
+
             # Use 15-band color system with normalized value
             colors = [
                 '#000080',  # Band 1: Dark blue
@@ -598,7 +599,7 @@ with main_col1:
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('depth')
             elif visualization_method == "Ground Water Level (Spherical Kriging)":
                 heatmap_data = st.session_state.polygon_db.get_heatmap_data('ground_water_level')
-                
+
                 # Debug ground water level data availability
                 if st.session_state.wells_data is not None:
                     gwl_column_exists = 'ground water level' in st.session_state.wells_data.columns
@@ -624,7 +625,7 @@ with main_col1:
         # If we have a selected point, show local context
         if st.session_state.selected_point:
             from utils import is_within_square
-            
+
             # Filter wells using square bounds instead of circular distance
             center_lat, center_lon = st.session_state.selected_point
             wells_df['within_square'] = wells_df.apply(
@@ -637,7 +638,7 @@ with main_col1:
                 ), 
                 axis=1
             )
-            
+
             # Calculate distances for display purposes (still useful for tooltips)
             wells_df['distance'] = wells_df.apply(
                 lambda row: get_distance(
@@ -668,11 +669,11 @@ with main_col1:
             # Draw square for search area (now just for local context)
             center_lat, center_lon = st.session_state.selected_point
             radius_km = st.session_state.search_radius
-            
+
             # Calculate square bounds
             lat_radius_deg = radius_km / 111.0  # ~111km per degree latitude
             lon_radius_deg = radius_km / (111.0 * np.cos(np.radians(center_lat)))  # adjust for longitude
-            
+
             # Create square coordinates
             square_bounds = [
                 [center_lat - lat_radius_deg, center_lon - lon_radius_deg],  # SW corner
@@ -681,7 +682,7 @@ with main_col1:
                 [center_lat + lat_radius_deg, center_lon - lon_radius_deg],  # NW corner
                 [center_lat - lat_radius_deg, center_lon - lon_radius_deg]   # Close square
             ]
-            
+
             # Draw square
             folium.Polygon(
                 locations=square_bounds,
@@ -749,7 +750,7 @@ with main_col1:
                             geojson_data["features"].append(poly)
             else:
                 # Fallback to on-demand generation if no pre-computed data
-                if st.session_state.selected_point and st.session_state.filtered_wells is not None:
+                if st.session_state.selected_point and 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
                     with st.spinner("🔄 Generating interpolation (consider running preprocessing for faster performance)..."):
                         pass
 
@@ -760,7 +761,7 @@ with main_col1:
                             'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
                             'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
                         ]
-                        
+
                         if st.session_state.interpolation_method in methods_requiring_mask:
                             # Generate indicator kriging mask for high-probability zones (≥0.7)
                             indicator_mask = generate_indicator_kriging_mask(
@@ -775,7 +776,7 @@ with main_col1:
                         # Debug: Check if mask is being passed
                         print(f"App.py: About to call generate_geo_json_grid with method='{st.session_state.interpolation_method}'")
                         print(f"App.py: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
-                        
+
                         # Generate regular interpolation visualization
                         geojson_data = generate_geo_json_grid(
                             st.session_state.filtered_wells.copy(), 
@@ -795,7 +796,7 @@ with main_col1:
                 print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
                 if geojson_data:
                     print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")
-                
+
                 if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
                     max_value = 0
@@ -813,7 +814,7 @@ with main_col1:
 
                     # Add the new heatmap to the map (in addition to stored heatmaps)
                     # This ensures both stored and newly generated heatmaps display together
-                    
+
                     # Instead of choropleth, use direct GeoJSON styling for more control
                     # This allows us to precisely map values to colors
 
@@ -839,7 +840,7 @@ with main_col1:
                     if st.session_state.selected_point:
                         lat, lon = st.session_state.selected_point
                         new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
-                    
+
                     # Add the fresh heatmap to the map
                     fresh_geojson = folium.GeoJson(
                         data=geojson_data,
@@ -858,10 +859,10 @@ with main_col1:
                         )
                     )
                     fresh_geojson.add_to(m)
-                    
+
                     # Mark that we have a fresh heatmap displayed
                     st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
-                    
+
                     print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
                     # AUTO-STORE: Automatically save every generated heatmap
@@ -869,7 +870,7 @@ with main_col1:
                         try:
                             center_lat, center_lon = st.session_state.selected_point
                             heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
-                            
+
                             # Convert GeoJSON to simple heatmap data for storage
                             heatmap_data = []
                             for feature in geojson_data.get('features', []):
@@ -883,7 +884,7 @@ with main_col1:
                                             lon = sum(coord[0] for coord in coords) / len(coords)
                                             value = feature['properties'].get('yield', 0)
                                             heatmap_data.append([lat, lon, value])
-                            
+
                             # Store in database and check if it's actually new
                             stored_heatmap_id = st.session_state.polygon_db.store_heatmap(
                                 heatmap_name=heatmap_name,
@@ -895,10 +896,10 @@ with main_col1:
                                 geojson_data=geojson_data,
                                 well_count=len(st.session_state.filtered_wells) if st.session_state.filtered_wells is not None else 0
                             )
-                            
+
                             # Always reload stored heatmaps to ensure fresh heatmap is included
                             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            
+
                             # Check if this was actually a new addition
                             existing_ids = [h.get('id') for h in (st.session_state.stored_heatmaps or [])]
                             if stored_heatmap_id and stored_heatmap_id not in existing_ids:
@@ -972,7 +973,7 @@ with main_col1:
                     # Now that we have both stored and fresh heatmap data, recalculate the unified range
                     updated_global_min = float('inf')
                     updated_global_max = float('-inf')
-                    
+
                     # Include fresh heatmap values
                     if geojson_data and 'features' in geojson_data:
                         for feature in geojson_data['features']:
@@ -980,7 +981,7 @@ with main_col1:
                             if value > 0:
                                 updated_global_min = min(updated_global_min, value)
                                 updated_global_max = max(updated_global_max, value)
-                    
+
                     # Include stored heatmap values
                     if st.session_state.stored_heatmaps:
                         for stored_heatmap in st.session_state.stored_heatmaps:
@@ -991,13 +992,13 @@ with main_col1:
                                     if value > 0:
                                         updated_global_min = min(updated_global_min, value)
                                         updated_global_max = max(updated_global_max, value)
-                    
+
                     # Update global variables for consistent coloring ONLY if a new heatmap was added
                     if updated_global_min != float('inf') and st.session_state.get('new_heatmap_added', False):
                         global_min_value = updated_global_min
                         global_max_value = updated_global_max
                         print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f} (including fresh heatmap)")
-                        
+
                         # Mark that colormap has been updated for this session
                         st.session_state.colormap_updated = True
                         st.session_state.new_heatmap_added = False  # Reset the flag
@@ -1010,7 +1011,7 @@ with main_col1:
     if st.session_state.selected_point:
         center_lat, center_lon = st.session_state.selected_point
         fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
-    
+
     if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
         print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
@@ -1021,14 +1022,14 @@ with main_col1:
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
                 # All stored heatmaps should display
-                    
+
                 # Prefer GeoJSON data for triangular mesh visualization
                 geojson_data = stored_heatmap.get('geojson_data')
                 heatmap_data = stored_heatmap.get('heatmap_data', [])
-                
+
                 if geojson_data and geojson_data.get('features'):
                     print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
-                    
+
                     # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
                     for feature in geojson_data['features']:
                         if 'properties' in feature:
@@ -1038,10 +1039,10 @@ with main_col1:
                             # If 'yield' doesn't exist but 'value' does, copy it
                             elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
                                 feature['properties']['yield'] = feature['properties']['value']
-                    
+
                     # Use the UPDATED global unified color function with method info
                     method = stored_heatmap.get('interpolation_method', 'kriging')
-                    
+
                     # Add GeoJSON layer for triangular mesh visualization with UPDATED UNIFIED coloring
                     folium.GeoJson(
                         geojson_data,
@@ -1059,10 +1060,10 @@ with main_col1:
                         )
                     ).add_to(m)
                     stored_heatmap_count += 1
-                    
+
                 elif heatmap_data and len(heatmap_data) > 0:
                     print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
-                    
+
                     # Fallback to HeatMap if no GeoJSON
                     HeatMap(heatmap_data, 
                            radius=20, 
@@ -1074,7 +1075,7 @@ with main_col1:
                     stored_heatmap_count += 1
                 else:
                     print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
-                
+
                 # Add a marker showing the center point of the stored heatmap
                 folium.Marker(
                     location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
@@ -1085,14 +1086,14 @@ with main_col1:
                           f"Created: {stored_heatmap['created_at']}",
                     icon=folium.Icon(color='purple', icon='info-sign')
                 ).add_to(m)
-                    
+
             except Exception as e:
                 print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
-        
+
         print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
     else:
         print("No stored heatmaps to display - list is empty or cleared")
-        
+
     # Show summary of displayed heatmaps
     total_displayed = stored_heatmap_count
     print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (All via stored heatmaps)")
@@ -1174,16 +1175,16 @@ with main_col1:
             # Get the coordinates from the click
             clicked_lat = map_data["last_clicked"]["lat"]
             clicked_lng = map_data["last_clicked"]["lng"]
-            
+
             print(f"RAW CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
 
             # ALWAYS update for any new click to ensure every click generates a heatmap
             current_point = st.session_state.get('selected_point')
             coordinate_threshold = 0.001
-            
+
             print(f"Current stored point: {current_point}")
             print(f"Coordinate threshold: {coordinate_threshold}")
-            
+
             # More robust coordinate comparison
             is_new_location = True
             if current_point and len(current_point) >= 2:
@@ -1197,7 +1198,7 @@ with main_col1:
                     print(f"MAP CLICK: Different location detected - will process (lat_diff={lat_diff:.6f}, lng_diff={lng_diff:.6f})")
             else:
                 print("MAP CLICK: No previous point or invalid previous point - will process")
-            
+
             if is_new_location:
                 print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.6f}, {clicked_lng:.6f})")
                 if current_point:
@@ -1207,16 +1208,16 @@ with main_col1:
                     print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
                 else:
                     print("No previous coordinates - this is the first click")
-                
+
                 # Update session state with the new coordinates
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
-                
+
                 # FORCE clear all cached data to ensure fresh heatmap generation
                 for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
                     if key in st.session_state:
                         del st.session_state[key]
                         print(f"Cleared cached {key}")
-                
+
                 # Add throttling to prevent rapid rerun cycles that cause crashes
                 if 'last_rerun_time' not in st.session_state or (time.time() - st.session_state.last_rerun_time) > 3:
                     st.session_state.last_rerun_time = time.time()
@@ -1244,7 +1245,7 @@ with main_col1:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
-    
+
     with col2:
         if st.button("🔄 Refresh App", use_container_width=True):
             # Clear all caches and reset session state
@@ -1257,7 +1258,7 @@ with main_col1:
 with main_col2:
     st.subheader("Analysis Results")
 
-    if st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
+    if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
         # Add export data option
         st.subheader("Export Data")
         if st.button("Download Wells Data"):
@@ -1274,7 +1275,7 @@ with main_col2:
         st.info("Click on the map to select a location and view nearby wells")
 
     # Heatmaps are automatically saved - no manual action needed
-    
+
     # Add information about water well drilling - always display
     st.subheader("Finding Groundwater")
     st.write("""
@@ -1289,7 +1290,7 @@ with main_col2:
 # Add footer
 st.markdown("""
 <div style="text-align: center; margin-top: 40px; padding: 20px; background-color: #f0f2f6; border-radius: 10px;">
-    <p>© 2023 Groundwater Finder | Data sourced from public well databases</p>
+    <p>© 2023 Groundwater Finder |Data sourced from public well databases</p>
     <p>This tool is designed to assist farmers in locating potential groundwater sources. Results are based on existing data and interpolation techniques.</p>
 </div>
 """, unsafe_allow_html=True)

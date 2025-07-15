@@ -288,22 +288,24 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
 
-    # Load stored heatmaps from database (only if not already loaded or cleared)
+    # Load stored heatmaps from database with aggressive caching to prevent crashes
     if not hasattr(st.session_state, 'stored_heatmaps') or st.session_state.stored_heatmaps is None:
         if st.session_state.polygon_db:
             try:
-                # Use caching to prevent repeated database calls
+                # Use aggressive caching to prevent repeated database calls that cause crashes
                 if 'heatmaps_cache_timestamp' not in st.session_state or \
-                   (time.time() - st.session_state.heatmaps_cache_timestamp) > 30:  # Cache for 30 seconds
+                   (time.time() - st.session_state.heatmaps_cache_timestamp) > 60:  # Cache for 60 seconds
                     stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
                     st.session_state.stored_heatmaps = stored_heatmaps
                     st.session_state.heatmaps_cache_timestamp = time.time()
                     print(f"Loaded {len(stored_heatmaps)} stored heatmaps from database")
                 else:
-                    print("Using cached heatmaps data")
+                    print("Using cached heatmaps data to prevent crashes")
             except Exception as e:
                 print(f"Error loading stored heatmaps: {e}")
                 st.session_state.stored_heatmaps = []
+                # Set a longer cooldown on errors
+                st.session_state.heatmaps_cache_timestamp = time.time()
         else:
             st.session_state.stored_heatmaps = []
 
@@ -1160,14 +1162,18 @@ with main_col1:
 
     # Layer control removed - all heatmaps display simultaneously
 
-    # Use st_folium with stable key and minimal returned objects
-    map_data = st_folium(
-        m,
-        use_container_width=True,
-        height=600,
-        key="main_map",
-        returned_objects=["last_clicked"]
-    )
+    # Use st_folium with stability optimizations
+    try:
+        map_data = st_folium(
+            m,
+            use_container_width=True,
+            height=600,
+            key="main_map",
+            returned_objects=["last_clicked"]
+        )
+    except Exception as e:
+        print(f"Map rendering error: {e}")
+        map_data = None
 
     # Process clicks from the map with better stability and error handling
     try:
@@ -1218,13 +1224,16 @@ with main_col1:
                         del st.session_state[key]
                         print(f"Cleared cached {key}")
 
-                # Add throttling to prevent rapid rerun cycles that cause crashes
-                if 'last_rerun_time' not in st.session_state or (time.time() - st.session_state.last_rerun_time) > 3:
+                # Add aggressive throttling to prevent rapid rerun cycles that cause crashes
+                if 'last_rerun_time' not in st.session_state or (time.time() - st.session_state.last_rerun_time) > 5:
                     st.session_state.last_rerun_time = time.time()
                     print("TRIGGERING RERUN for new location")
+                    # Use sleep to prevent immediate crash
+                    time.sleep(0.5)
                     st.rerun()
                 else:
-                    print("RERUN THROTTLED: Too soon since last rerun")
+                    time_since_last = time.time() - st.session_state.last_rerun_time
+                    print(f"RERUN THROTTLED: Too soon since last rerun ({time_since_last:.1f}s ago, need 5s)")
             else:
                 if 'lat_diff' in locals() and 'lng_diff' in locals():
                     print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")

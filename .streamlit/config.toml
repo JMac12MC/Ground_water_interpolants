@@ -2,11 +2,26 @@
 headless = true
 address = "0.0.0.0"
 port = 5000
-fileWatcherType = "poll"
-runOnSave = true
-
-[client]
-showSidebarNavigation = false
+maxUploadSize = 200
+enableXsrfProtection = false
+enableCORS = false
 
 [browser]
 gatherUsageStats = false
+
+[client]
+caching = true
+displayEnabled = true
+showErrorDetails = true
+
+[runner]
+magicEnabled = true
+installTracer = false
+fixMatplotlib = true
+
+[logger]
+level = "error"
+messageFormat = "%(asctime)s %(message)s"
+
+[theme]
+base = "light"

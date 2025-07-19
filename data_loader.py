@@ -314,8 +314,8 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
     # Create the sample_data directory if it doesn't exist
     os.makedirs("sample_data", exist_ok=True)
 
-    # Path for the attached Wells and Bores dataset
-    wells_30k_file = "attached_assets/2_07_2025 - Wells_and_Bores_-_All (4)_modified_modified_1751451995416.csv"
+    # Path for the new attached Wells and Bores dataset
+    wells_30k_file = "attached_assets/19_07_2025 - Wells_and_Bores_1752906389250.csv"
 
     if os.path.exists(wells_30k_file):
         with st.spinner("Loading well database..."):
@@ -372,7 +372,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
                 wells_df['nztm_x'] = nztmx
                 wells_df['nztm_y'] = nztmy
 
-            # If NZTM coordinates not available or invalid, try X,Y coordinates  
+            # Try X,Y coordinates (these appear to be in a projected coordinate system)
             elif 'X' in raw_df.columns and 'Y' in raw_df.columns:
                 # Convert to numeric, handling any non-numeric values
                 x_coords = pd.to_numeric(raw_df['X'], errors='coerce')
@@ -482,7 +482,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             wells_df['depth'] = wells_df['display_depth']
             wells_df['depth_m'] = wells_df['display_depth']
 
-            # Add yield information - ONLY use MAX_YIELD from the Wells_30k dataset
+            # Add yield information - ONLY use MAX_YIELD from the new dataset
             if 'MAX_YIELD' in raw_df.columns:
                 # Replace only empty strings with NaN, keep '0' as legitimate zero values
                 max_yield_series = raw_df['MAX_YIELD'].astype(str).replace(['', 'nan'], np.nan)
@@ -508,7 +508,7 @@ def load_nz_govt_data(search_center=None, search_radius_km=None):
             else:
                 wells_df['ground water level'] = pd.Series([np.nan] * len(wells_df))
 
-            # Add well type and status information using Wells_30k columns
+            # Add well type and status information using new dataset columns
             wells_df['well_type'] = raw_df['WELL_TYPE_DESC'].fillna('Unknown')
             wells_df['status'] = raw_df['WELL_STATUS_DESC'].fillna('Unknown')
 

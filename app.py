@@ -681,7 +681,13 @@ with main_col1:
                             geojson_data["features"].append(poly)
             else:
                 # Fallback to on-demand generation if no pre-computed data
-                if st.session_state.selected_point and 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
+                has_selected_point = st.session_state.selected_point is not None
+                has_filtered_wells = 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None
+                wells_count = len(st.session_state.filtered_wells) if has_filtered_wells else 0
+                
+                print(f"HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
+                
+                if has_selected_point and has_filtered_wells and wells_count > 0:
                     with st.spinner("🔄 Generating dual interpolation (original + 10km east)..."):
                         # Generate heatmap for original location
                         indicator_mask = None
@@ -1193,9 +1199,9 @@ with main_col1:
 
             print(f"RAW CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
 
-            # ALWAYS update for any new click to ensure every click generates a heatmap
+            # Allow all clicks to generate heatmaps (reduce threshold for more sensitive detection)
             current_point = st.session_state.get('selected_point')
-            coordinate_threshold = 0.001
+            coordinate_threshold = 0.0001  # Very small threshold - almost any new click will generate heatmap
 
             print(f"Current stored point: {current_point}")
             print(f"Coordinate threshold: {coordinate_threshold}")
@@ -1288,6 +1294,9 @@ with main_col1:
                 
                 print(f"COORDINATES UPDATED: Original wells={len(filtered_wells)}, East wells={len(filtered_wells_east)}")
                 print("WELLS FILTERED: Ready for heatmap generation")
+                
+                # Force session state flag to ensure heatmap generation triggers
+                st.session_state.force_heatmap_generation = True
             else:
                 if 'lat_diff' in locals() and 'lng_diff' in locals():
                     print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")

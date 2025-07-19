@@ -69,25 +69,9 @@ if 'polygon_db' not in st.session_state:
 if 'stored_heatmaps' not in st.session_state:
     st.session_state.stored_heatmaps = []
 
-# Load stored heatmaps from database only once per session to prevent restart loops
-if 'heatmaps_loaded' not in st.session_state:
-    print("\n🚀 APP STARTUP: Loading stored heatmaps from database (first time only)")
-    if st.session_state.polygon_db:
-        try:
-            print("📊 INITIAL LOAD: Fetching all stored heatmaps from database")
-            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-            st.session_state.heatmaps_loaded = True
-            print(f"✅ INITIAL LOAD SUCCESS: Loaded {len(st.session_state.stored_heatmaps)} stored heatmaps from database")
-        except Exception as e:
-            print(f"❌ INITIAL LOAD ERROR: Error loading stored heatmaps: {e}")
-            st.session_state.stored_heatmaps = []
-            st.session_state.heatmaps_loaded = True
-    else:
-        print("❌ NO DATABASE: polygon_db is None, cannot load heatmaps")
-        st.session_state.stored_heatmaps = []
-        st.session_state.heatmaps_loaded = True
-else:
-    print("📊 HEATMAPS ALREADY LOADED: Skipping database load to prevent restart loops")
+# Initialize stored heatmaps if not already done
+if 'stored_heatmaps' not in st.session_state:
+    st.session_state.stored_heatmaps = []
 # Regional heatmap session state removed per user request
 
 # Add banner
@@ -283,20 +267,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
 
-    # Only load if not already loaded to prevent restart loops
-    if not hasattr(st.session_state, 'stored_heatmaps') or st.session_state.stored_heatmaps is None:
-        if st.session_state.polygon_db and not st.session_state.get('heatmaps_loaded', False):
-            try:
-                stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                st.session_state.stored_heatmaps = stored_heatmaps
-                print(f"Loaded {len(stored_heatmaps)} stored heatmaps from database")
-            except Exception as e:
-                print(f"Error loading stored heatmaps: {e}")
-                st.session_state.stored_heatmaps = []
-        else:
-            if not hasattr(st.session_state, 'stored_heatmaps'):
-                st.session_state.stored_heatmaps = []
-
     if st.session_state.stored_heatmaps:
         st.write(f"**{len(st.session_state.stored_heatmaps)} stored heatmaps available**")
 
@@ -309,7 +279,6 @@ with st.sidebar:
                         stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
                         st.session_state.stored_heatmaps = stored_heatmaps
                         st.success(f"Refreshed: {len(stored_heatmaps)} heatmaps found")
-                        # Let natural Streamlit flow handle the update
                     except Exception as e:
                         st.error(f"Error refreshing: {e}")
                         st.session_state.stored_heatmaps = []
@@ -322,17 +291,7 @@ with st.sidebar:
                     try:
                         count = st.session_state.polygon_db.delete_all_stored_heatmaps()
                         st.session_state.stored_heatmaps = []
-                        # Reset all flags and cache
-                        st.session_state.new_heatmap_added = False
-                        st.session_state.colormap_updated = False
-                        st.session_state.fresh_heatmap_displayed = False
-                        # Clear all session data to force complete refresh
-                        for key in ['selected_point', 'filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        print(f"CLEARED ALL: Deleted {count} stored heatmaps from database and cleared all session data")
                         st.success(f"Cleared {count} stored heatmaps")
-                        # Let natural Streamlit flow handle the update
                     except Exception as e:
                         st.error(f"Error clearing heatmaps: {e}")
                 else:
@@ -377,33 +336,8 @@ with st.sidebar:
                             print(f"❌ DATABASE DELETE FAILED: Could not delete heatmap ID {heatmap['id']}")
                             st.error(f"Failed to delete heatmap: {heatmap['heatmap_name']}")
 
-                        # Force reload from database to ensure consistency
-                        print(f"🔄 RELOADING FROM DATABASE: Fetching fresh data to verify deletion")
-                        try:
-                            fresh_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            fresh_count = len(fresh_heatmaps)
-                            fresh_ids = [h['id'] for h in fresh_heatmaps]
-                            print(f"📊 FRESH DATABASE STATE: {fresh_count} heatmaps found: {fresh_ids}")
-
-                            # Check if the deleted heatmap is still in the fresh data
-                            if any(h['id'] == heatmap['id'] for h in fresh_heatmaps):
-                                print(f"⚠️  INCONSISTENCY DETECTED: Deleted heatmap ID {heatmap['id']} still appears in fresh database data!")
-                                st.error(f"Warning: Heatmap may not have been properly deleted from database")
-                            else:
-                                print(f"✅ DELETION VERIFIED: Heatmap ID {heatmap['id']} confirmed absent from fresh database data")
-
-                            # Update session state with fresh data
-                            st.session_state.stored_heatmaps = fresh_heatmaps
-                            print(f"🔄 SESSION STATE UPDATED: Now contains {len(st.session_state.stored_heatmaps)} heatmaps")
-
-                            # Let natural Streamlit flow handle the update instead of forcing rerun
-                        except Exception as reload_error:
-                            print(f"❌ RELOAD ERROR: Database connection issue during reload: {reload_error}")
-                            st.error(f"Database connection issue during reload: {reload_error}")
-                            # If database fails, clear the session state to avoid showing stale data
-                            print(f"🧹 CLEARING SESSION STATE: Due to reload error, clearing all stored heatmaps from session")
-                            st.session_state.stored_heatmaps = []
-                            st.rerun()
+                        # Update session state
+                        st.session_state.stored_heatmaps = [h for h in st.session_state.stored_heatmaps if h['id'] != heatmap['id']]
 
                     except Exception as e:
                         print(f"❌ DELETE OPERATION ERROR: Unexpected error during deletion: {e}")
@@ -411,16 +345,9 @@ with st.sidebar:
                         print(f"📍 STACK TRACE: {traceback.format_exc()}")
                         st.error(f"Error deleting heatmap: {e}")
 
-                        # Reload from database to check actual state
-                        print(f"🔄 ERROR RECOVERY: Attempting to reload from database after error")
-                        try:
-                            recovery_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            st.session_state.stored_heatmaps = recovery_heatmaps
-                            print(f"✅ ERROR RECOVERY SUCCESS: Loaded {len(recovery_heatmaps)} heatmaps from database")
-                        except Exception as recovery_error:
-                            print(f"❌ ERROR RECOVERY FAILED: {recovery_error}")
-                            st.session_state.stored_heatmaps = []
-                        # Let natural Streamlit flow handle the update
+                        # Simple error handling without rerun
+                        print(f"Error in delete operation: {e}")
+                        st.session_state.stored_heatmaps = [h for h in st.session_state.stored_heatmaps if h['id'] != heatmap['id']]
     else:
         st.write("*No stored heatmaps available*")
         st.write("Generate a heatmap and use the 'Save Heatmap' button to store it permanently.")
@@ -1317,8 +1244,6 @@ with main_col1:
                         del st.session_state[key]
                         print(f"Cleared cached {key}")
 
-                # Mark that coordinates have been updated - let natural Streamlit flow handle the update
-                st.session_state.coordinates_updated = True
                 print("COORDINATES UPDATED: Dual heatmap will generate on next natural render cycle")
             else:
                 if 'lat_diff' in locals() and 'lng_diff' in locals():
@@ -1339,7 +1264,6 @@ with main_col1:
             for key in ['selected_point', 'selected_point_east', 'filtered_wells', 'filtered_wells_east']:
                 if key in st.session_state:
                     del st.session_state[key]
-            # Let natural Streamlit flow handle the update
 
     with col2:
         if st.button("🔄 Refresh App", use_container_width=True):

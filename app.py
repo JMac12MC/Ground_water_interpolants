@@ -265,6 +265,14 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
 
+    # Always ensure stored heatmaps are loaded from database for sidebar display
+    if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
+        try:
+            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+        except Exception as e:
+            print(f"Failed to load stored heatmaps for sidebar: {e}")
+            st.session_state.stored_heatmaps = []
+
     if st.session_state.stored_heatmaps:
         st.write(f"**{len(st.session_state.stored_heatmaps)} stored heatmaps available**")
 

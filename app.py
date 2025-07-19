@@ -1224,16 +1224,16 @@ with main_col1:
                 else:
                     print("No previous coordinates - this is the first click")
 
-                # Calculate 10km east point
+                # Calculate 20km east point
                 # 1 degree longitude ≈ 111km * cos(latitude)
                 km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-                east_offset_degrees = 10.0 / km_per_degree_lon  # 10km east
+                east_offset_degrees = 20.0 / km_per_degree_lon  # 20km east
                 
                 clicked_east_lat = clicked_lat
                 clicked_east_lng = clicked_lng + east_offset_degrees
                 
                 print(f"DUAL HEATMAP: Original point ({clicked_lat:.6f}, {clicked_lng:.6f})")
-                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - 10km east")
+                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - 20km east")
 
                 # Store both points for dual heatmap generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
@@ -1304,9 +1304,9 @@ with main_col2:
         # Show information about dual heatmap generation
         st.subheader("Dual Heatmap Analysis")
         if st.session_state.selected_point_east:
-            st.success("✅ Dual heatmaps generated: Original location + 10km East")
+            st.success("✅ Dual heatmaps generated: Original location + 20km East")
             st.write(f"**Original:** {st.session_state.selected_point[0]:.4f}, {st.session_state.selected_point[1]:.4f}")
-            st.write(f"**East (10km):** {st.session_state.selected_point_east[0]:.4f}, {st.session_state.selected_point_east[1]:.4f}")
+            st.write(f"**East (20km):** {st.session_state.selected_point_east[0]:.4f}, {st.session_state.selected_point_east[1]:.4f}")
         
         # Add export data option
         st.subheader("Export Data")

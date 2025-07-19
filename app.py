@@ -35,44 +35,42 @@ def add_banner():
         unsafe_allow_html=True
     )
 
-# Initialize session state variables
-if 'selected_point' not in st.session_state:
-    st.session_state.selected_point = None
-if 'selected_point_east' not in st.session_state:
-    st.session_state.selected_point_east = None
-if 'zoom_level' not in st.session_state:
-    st.session_state.zoom_level = 10
-if 'wells_data' not in st.session_state:
-    st.session_state.wells_data = None
-if 'filtered_wells' not in st.session_state:
-    st.session_state.filtered_wells = None
-# No more yield filtering - removed
+# Initialize ALL session state variables first - order matters for Streamlit stability
+session_defaults = {
+    'selected_point': None,
+    'selected_point_east': None,
+    'zoom_level': 10,
+    'wells_data': None,
+    'filtered_wells': None,
+    'filtered_wells_east': None,
+    'heat_map_visibility': True,
+    'well_markers_visibility': True,
+    'search_radius': 20,
+    'soil_polygons': None,
+    'show_soil_polygons': True,
+    'stored_heatmaps': [],
+    'interpolation_method': 'kriging',
+    'show_kriging_variance': False,
+    'auto_fit_variogram': False,
+    'variogram_model': 'spherical',
+    'geojson_data': None,
+    'fresh_heatmap_displayed': False,
+    'new_heatmap_added': False,
+    'colormap_updated': False
+}
 
-if 'heat_map_visibility' not in st.session_state:
-    st.session_state.heat_map_visibility = True
-if 'well_markers_visibility' not in st.session_state:
-    st.session_state.well_markers_visibility = True
-if 'search_radius' not in st.session_state:
-    st.session_state.search_radius = 20
+# Initialize all session state variables
+for key, default_value in session_defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = default_value
 
-if 'soil_polygons' not in st.session_state:
-    st.session_state.soil_polygons = None
-if 'show_soil_polygons' not in st.session_state:
-    st.session_state.show_soil_polygons = True
+# Initialize database connection after other session state
 if 'polygon_db' not in st.session_state:
     try:
         st.session_state.polygon_db = PolygonDatabase()
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         st.session_state.polygon_db = None
-
-if 'stored_heatmaps' not in st.session_state:
-    st.session_state.stored_heatmaps = []
-
-# Initialize stored heatmaps if not already done
-if 'stored_heatmaps' not in st.session_state:
-    st.session_state.stored_heatmaps = []
-# Regional heatmap session state removed per user request
 
 # Add banner
 add_banner()
@@ -887,6 +885,9 @@ with main_col1:
                             # Store east heatmap if it exists
                             if geojson_data_east and st.session_state.selected_point_east:
                                 center_lat_east, center_lon_east = st.session_state.selected_point_east
+                                # Ensure coordinates are float, not numpy types
+                                center_lat_east = float(center_lat_east)
+                                center_lon_east = float(center_lon_east)
                                 heatmap_name_east = f"{st.session_state.interpolation_method}_east_{center_lat_east:.3f}_{center_lon_east:.3f}"
 
                                 # Convert east GeoJSON to simple heatmap data for storage
@@ -1260,10 +1261,32 @@ with main_col1:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Clear Results", use_container_width=True):
-            # Reset the session state safely
-            for key in ['selected_point', 'selected_point_east', 'filtered_wells', 'filtered_wells_east']:
+            print("🗑️ CLEAR RESULTS: User clicked Clear Results button")
+            
+            # Clear stored heatmaps from database
+            if st.session_state.polygon_db:
+                try:
+                    deleted_count = st.session_state.polygon_db.delete_all_stored_heatmaps()
+                    print(f"🗑️ DATABASE CLEAR: Deleted {deleted_count} stored heatmaps from database")
+                    st.success(f"Cleared {deleted_count} stored heatmaps from database")
+                except Exception as e:
+                    print(f"❌ DATABASE CLEAR ERROR: {e}")
+                    st.error(f"Error clearing stored heatmaps: {e}")
+            
+            # Reset session state for map and heatmaps
+            keys_to_clear = [
+                'selected_point', 'selected_point_east', 
+                'filtered_wells', 'filtered_wells_east',
+                'stored_heatmaps', 'geojson_data',
+                'fresh_heatmap_displayed', 'new_heatmap_added'
+            ]
+            
+            for key in keys_to_clear:
                 if key in st.session_state:
-                    del st.session_state[key]
+                    st.session_state[key] = session_defaults.get(key, None)
+                    print(f"🔄 SESSION CLEAR: Reset {key}")
+            
+            st.success("Cleared all results and stored heatmaps")
 
     with col2:
         if st.button("🔄 Refresh App", use_container_width=True):
@@ -1271,7 +1294,11 @@ with main_col1:
             st.cache_data.clear()
             st.cache_resource.clear()
             for key in list(st.session_state.keys()):
-                del st.session_state[key]
+                if key in session_defaults:
+                    st.session_state[key] = session_defaults[key]
+                else:
+                    del st.session_state[key]
+            print("🔄 REFRESH: App refreshed, session state reset")
             # Removed rerun to prevent restart loops - page will refresh automatically
 
 with main_col2:
@@ -1306,7 +1333,7 @@ with main_col2:
                     file_name="nearby_wells_east.csv",
                     mime="text/csv"
                 )
-    elif st.session_state.selected_point:
+    elif st.session_state.get('selected_point'):
         st.info("Location selected. View the dual interpolated heatmaps on the left.")
     else:
         st.info("Click on the map to generate dual heatmaps: one at your location and one 10km to the east")

@@ -443,6 +443,10 @@ class PolygonDatabase:
             
             with self.engine.connect() as conn:
                 # Check for existing heatmap with same name AND location to prevent TRUE duplicates
+                # Ensure coordinates are Python float types, not numpy types
+                center_lat_float = float(center_lat)
+                center_lon_float = float(center_lon)
+                
                 existing_check = conn.execute(text("""
                     SELECT id FROM stored_heatmaps 
                     WHERE heatmap_name = :heatmap_name 
@@ -450,8 +454,8 @@ class PolygonDatabase:
                     AND ABS(center_lon - :center_lon) < 0.001
                 """), {
                     'heatmap_name': heatmap_name,
-                    'center_lat': center_lat,
-                    'center_lon': center_lon
+                    'center_lat': center_lat_float,
+                    'center_lon': center_lon_float
                 })
                 
                 existing_row = existing_check.fetchone()
@@ -471,13 +475,13 @@ class PolygonDatabase:
                     ) RETURNING id
                 """), {
                     'heatmap_name': heatmap_name,
-                    'center_lat': center_lat,
-                    'center_lon': center_lon,
-                    'radius_km': radius_km,
+                    'center_lat': center_lat_float,
+                    'center_lon': center_lon_float,
+                    'radius_km': float(radius_km),
                     'interpolation_method': interpolation_method,
                     'heatmap_data': json.dumps(heatmap_data),
                     'geojson_data': json.dumps(geojson_data) if geojson_data else None,
-                    'well_count': well_count
+                    'well_count': int(well_count)
                 })
                 conn.commit()
                 row = result.fetchone()

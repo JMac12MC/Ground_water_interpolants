@@ -309,7 +309,7 @@ with st.sidebar:
                         stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
                         st.session_state.stored_heatmaps = stored_heatmaps
                         st.success(f"Refreshed: {len(stored_heatmaps)} heatmaps found")
-                        st.rerun()
+                        # Let natural Streamlit flow handle the update
                     except Exception as e:
                         st.error(f"Error refreshing: {e}")
                         st.session_state.stored_heatmaps = []
@@ -332,7 +332,7 @@ with st.sidebar:
                                 del st.session_state[key]
                         print(f"CLEARED ALL: Deleted {count} stored heatmaps from database and cleared all session data")
                         st.success(f"Cleared {count} stored heatmaps")
-                        st.rerun()
+                        # Let natural Streamlit flow handle the update
                     except Exception as e:
                         st.error(f"Error clearing heatmaps: {e}")
                 else:
@@ -396,7 +396,7 @@ with st.sidebar:
                             st.session_state.stored_heatmaps = fresh_heatmaps
                             print(f"🔄 SESSION STATE UPDATED: Now contains {len(st.session_state.stored_heatmaps)} heatmaps")
 
-                            st.rerun()
+                            # Let natural Streamlit flow handle the update instead of forcing rerun
                         except Exception as reload_error:
                             print(f"❌ RELOAD ERROR: Database connection issue during reload: {reload_error}")
                             st.error(f"Database connection issue during reload: {reload_error}")
@@ -420,7 +420,7 @@ with st.sidebar:
                         except Exception as recovery_error:
                             print(f"❌ ERROR RECOVERY FAILED: {recovery_error}")
                             st.session_state.stored_heatmaps = []
-                        st.rerun()
+                        # Let natural Streamlit flow handle the update
     else:
         st.write("*No stored heatmaps available*")
         st.write("Generate a heatmap and use the 'Save Heatmap' button to store it permanently.")
@@ -994,8 +994,7 @@ with main_col1:
                             # Mark that new heatmaps were added
                             st.session_state.new_heatmap_added = True
                             print(f"AUTO-STORED DUAL HEATMAPS: {heatmap_name} and {heatmap_name_east if geojson_data_east else 'east failed'}")
-                            # Force immediate UI refresh to show new heatmaps in sidebar
-                            st.rerun()
+                            # Let natural Streamlit flow handle the update
                         except Exception as e:
                             print(f"Error auto-storing dual heatmaps: {e}")
 
@@ -1318,15 +1317,9 @@ with main_col1:
                         del st.session_state[key]
                         print(f"Cleared cached {key}")
 
-                # Add aggressive throttling to prevent rapid rerun cycles that cause crashes
-                if 'last_rerun_time' not in st.session_state or (time.time() - st.session_state.last_rerun_time) > 10:
-                    st.session_state.last_rerun_time = time.time()
-                    print("TRIGGERING RERUN for dual heatmap generation")
-                    # Don't use sleep as it can cause issues
-                    st.rerun()
-                else:
-                    time_since_last = time.time() - st.session_state.last_rerun_time
-                    print(f"RERUN THROTTLED: Too soon since last rerun ({time_since_last:.1f}s ago, need 10s)")
+                # Mark that coordinates have been updated - let natural Streamlit flow handle the update
+                st.session_state.coordinates_updated = True
+                print("COORDINATES UPDATED: Dual heatmap will generate on next natural render cycle")
             else:
                 if 'lat_diff' in locals() and 'lng_diff' in locals():
                     print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")
@@ -1346,7 +1339,7 @@ with main_col1:
             for key in ['selected_point', 'selected_point_east', 'filtered_wells', 'filtered_wells_east']:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.rerun()
+            # Let natural Streamlit flow handle the update
 
     with col2:
         if st.button("🔄 Refresh App", use_container_width=True):

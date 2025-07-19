@@ -1239,9 +1239,55 @@ with main_col1:
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
                 st.session_state.selected_point_east = [clicked_east_lat, clicked_east_lng]
 
-                # Mark that coordinates have been updated for heatmap generation
-                st.session_state.coordinates_updated = True
-                print("COORDINATES UPDATED: Ready for heatmap generation")
+                # Immediately regenerate filtered wells for both locations
+                from utils import is_within_square
+                wells_df = st.session_state.wells_data
+                
+                # Filter wells for original location
+                wells_df['within_square'] = wells_df.apply(
+                    lambda row: is_within_square(
+                        row['latitude'], 
+                        row['longitude'],
+                        clicked_lat,
+                        clicked_lng,
+                        st.session_state.search_radius
+                    ), 
+                    axis=1
+                )
+                
+                # Calculate distances for display purposes
+                wells_df['distance'] = wells_df.apply(
+                    lambda row: get_distance(
+                        clicked_lat, 
+                        clicked_lng, 
+                        row['latitude'], 
+                        row['longitude']
+                    ), 
+                    axis=1
+                )
+                
+                # Store filtered wells for original location
+                filtered_wells = wells_df[wells_df['within_square']]
+                st.session_state.filtered_wells = filtered_wells.copy()
+                
+                # Filter wells for east location
+                wells_df['within_square_east'] = wells_df.apply(
+                    lambda row: is_within_square(
+                        row['latitude'], 
+                        row['longitude'],
+                        clicked_east_lat,
+                        clicked_east_lng,
+                        st.session_state.search_radius
+                    ), 
+                    axis=1
+                )
+                
+                # Store filtered wells for east location
+                filtered_wells_east = wells_df[wells_df['within_square_east']]
+                st.session_state.filtered_wells_east = filtered_wells_east.copy()
+                
+                print(f"COORDINATES UPDATED: Original wells={len(filtered_wells)}, East wells={len(filtered_wells_east)}")
+                print("WELLS FILTERED: Ready for heatmap generation")
             else:
                 if 'lat_diff' in locals() and 'lng_diff' in locals():
                     print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")

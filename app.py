@@ -142,7 +142,7 @@ with st.sidebar:
                 stored_polygons = st.session_state.polygon_db.get_all_polygons()
                 if stored_polygons:
                     st.success("Database reconnected successfully")
-                    st.rerun()
+                    # Removed automatic rerun to prevent restart loops
             except:
                 st.info("Fallback: Run the polygon processing script to merge and store soil polygons.")
                 st.session_state.soil_polygons = None
@@ -162,7 +162,7 @@ with st.sidebar:
         for key in list(st.session_state.keys()):
             if key.startswith('regional_heatmap'):
                 del st.session_state[key]
-        st.rerun()
+        # Removed automatic rerun to prevent restart loops
 
     # Radius filter (now used for local context when pre-computed heatmaps are available)
     st.session_state.search_radius = st.slider(
@@ -1272,7 +1272,7 @@ with main_col1:
             st.cache_resource.clear()
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
-            st.rerun()
+            # Removed rerun to prevent restart loops - page will refresh automatically
 
 with main_col2:
     st.subheader("Analysis Results")

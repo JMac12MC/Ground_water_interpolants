@@ -38,6 +38,8 @@ def add_banner():
 # Initialize session state variables
 if 'selected_point' not in st.session_state:
     st.session_state.selected_point = None
+if 'selected_point_east' not in st.session_state:
+    st.session_state.selected_point_east = None
 if 'zoom_level' not in st.session_state:
     st.session_state.zoom_level = 10
 if 'wells_data' not in st.session_state:
@@ -574,11 +576,11 @@ with main_col1:
     if st.session_state.wells_data is not None:
         wells_df = st.session_state.wells_data
 
-        # If we have a selected point, show local context
+        # If we have selected points, show local context for both
         if st.session_state.selected_point:
             from utils import is_within_square
 
-            # Filter wells using square bounds instead of circular distance
+            # Process original location
             center_lat, center_lon = st.session_state.selected_point
             wells_df['within_square'] = wells_df.apply(
                 lambda row: is_within_square(
@@ -604,29 +606,52 @@ with main_col1:
 
             # Filter wells for local display using square bounds
             filtered_wells = wells_df[wells_df['within_square']]
-
-            # Keep yield values as-is - NaN values should remain NaN for proper filtering
-            # Do not convert NaN to 0 as this creates false dry wells
-
             st.session_state.filtered_wells = filtered_wells.copy()
+
+            # Process east location if it exists
+            if st.session_state.selected_point_east:
+                center_lat_east, center_lon_east = st.session_state.selected_point_east
+                wells_df['within_square_east'] = wells_df.apply(
+                    lambda row: is_within_square(
+                        row['latitude'], 
+                        row['longitude'],
+                        center_lat_east,
+                        center_lon_east,
+                        st.session_state.search_radius
+                    ), 
+                    axis=1
+                )
+
+                # Filter wells for east location
+                filtered_wells_east = wells_df[wells_df['within_square_east']]
+                st.session_state.filtered_wells_east = filtered_wells_east.copy()
 
             # Create marker for selected point
             folium.Marker(
                 location=st.session_state.selected_point,
-                popup="Selected Location",
+                popup="Selected Location (Original)",
                 icon=folium.Icon(color='red', icon='crosshairs', prefix='fa'),
-                tooltip="Your Selected Point"
+                tooltip="Your Selected Point (Original)"
             ).add_to(m)
 
-            # Draw square for search area (now just for local context)
+            # Create marker for east point if it exists
+            if st.session_state.selected_point_east:
+                folium.Marker(
+                    location=st.session_state.selected_point_east,
+                    popup="Selected Location (10km East)",
+                    icon=folium.Icon(color='blue', icon='crosshairs', prefix='fa'),
+                    tooltip="Auto-Generated Point (10km East)"
+                ).add_to(m)
+
+            # Draw square for original search area
             center_lat, center_lon = st.session_state.selected_point
             radius_km = st.session_state.search_radius
 
-            # Calculate square bounds
+            # Calculate square bounds for original location
             lat_radius_deg = radius_km / 111.0  # ~111km per degree latitude
             lon_radius_deg = radius_km / (111.0 * np.cos(np.radians(center_lat)))  # adjust for longitude
 
-            # Create square coordinates
+            # Create square coordinates for original location
             square_bounds = [
                 [center_lat - lat_radius_deg, center_lon - lon_radius_deg],  # SW corner
                 [center_lat - lat_radius_deg, center_lon + lon_radius_deg],  # SE corner
@@ -635,15 +660,44 @@ with main_col1:
                 [center_lat - lat_radius_deg, center_lon - lon_radius_deg]   # Close square
             ]
 
-            # Draw square
+            # Draw square for original location
             folium.Polygon(
                 locations=square_bounds,
                 color="#3186cc",
                 fill=True,
                 fill_color="#3186cc",
                 fill_opacity=0.1,
-                weight=2
+                weight=2,
+                popup="Original Search Area"
             ).add_to(m)
+
+            # Draw square for east location if it exists
+            if st.session_state.selected_point_east:
+                center_lat_east, center_lon_east = st.session_state.selected_point_east
+                
+                # Calculate square bounds for east location
+                lat_radius_deg_east = radius_km / 111.0
+                lon_radius_deg_east = radius_km / (111.0 * np.cos(np.radians(center_lat_east)))
+
+                # Create square coordinates for east location
+                square_bounds_east = [
+                    [center_lat_east - lat_radius_deg_east, center_lon_east - lon_radius_deg_east],  # SW corner
+                    [center_lat_east - lat_radius_deg_east, center_lon_east + lon_radius_deg_east],  # SE corner
+                    [center_lat_east + lat_radius_deg_east, center_lon_east + lon_radius_deg_east],  # NE corner
+                    [center_lat_east + lat_radius_deg_east, center_lon_east - lon_radius_deg_east],  # NW corner
+                    [center_lat_east - lat_radius_deg_east, center_lon_east - lon_radius_deg_east]   # Close square
+                ]
+
+                # Draw square for east location
+                folium.Polygon(
+                    locations=square_bounds_east,
+                    color="#cc8631",  # Different color for east area
+                    fill=True,
+                    fill_color="#cc8631",
+                    fill_opacity=0.1,
+                    weight=2,
+                    popup="East Search Area (10km East)"
+                ).add_to(m)
 
         # Display heatmap - use pre-computed if available, otherwise generate on-demand
         if st.session_state.heat_map_visibility:
@@ -703,11 +757,8 @@ with main_col1:
             else:
                 # Fallback to on-demand generation if no pre-computed data
                 if st.session_state.selected_point and 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
-                    with st.spinner("🔄 Generating interpolation (consider running preprocessing for faster performance)..."):
-                        pass
-
-
-                        # Check if we need to generate indicator kriging mask for clipping
+                    with st.spinner("🔄 Generating dual interpolation (original + 10km east)..."):
+                        # Generate heatmap for original location
                         indicator_mask = None
                         methods_requiring_mask = [
                             'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
@@ -725,11 +776,10 @@ with main_col1:
                                 threshold=0.7
                             )
 
-                        # Debug: Check if mask is being passed
-                        print(f"App.py: About to call generate_geo_json_grid with method='{st.session_state.interpolation_method}'")
+                        print(f"App.py: Generating original heatmap with method='{st.session_state.interpolation_method}'")
                         print(f"App.py: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
 
-                        # Generate regular interpolation visualization
+                        # Generate interpolation for original location
                         geojson_data = generate_geo_json_grid(
                             st.session_state.filtered_wells.copy(), 
                             st.session_state.selected_point, 
@@ -742,6 +792,37 @@ with main_col1:
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                             indicator_mask=indicator_mask
                         )
+
+                        # Generate heatmap for east location if it exists
+                        geojson_data_east = None
+                        if st.session_state.selected_point_east and 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None:
+                            print(f"App.py: Generating east heatmap (10km east)")
+                            
+                            # Generate indicator mask for east location if needed
+                            indicator_mask_east = None
+                            if st.session_state.interpolation_method in methods_requiring_mask:
+                                indicator_mask_east = generate_indicator_kriging_mask(
+                                    st.session_state.filtered_wells_east.copy(),
+                                    st.session_state.selected_point_east,
+                                    st.session_state.search_radius,
+                                    resolution=100,
+                                    soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                                    threshold=0.7
+                                )
+
+                            # Generate interpolation for east location
+                            geojson_data_east = generate_geo_json_grid(
+                                st.session_state.filtered_wells_east.copy(), 
+                                st.session_state.selected_point_east, 
+                                st.session_state.search_radius,
+                                resolution=100,
+                                method=st.session_state.interpolation_method,
+                                show_variance=False,
+                                auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
+                                variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                                indicator_mask=indicator_mask_east
+                            )
                 else:
                     geojson_data = {"type": "FeatureCollection", "features": []}
 
@@ -812,14 +893,41 @@ with main_col1:
                     )
                     fresh_geojson.add_to(m)
 
+                    # Add the east heatmap to the map if it exists
+                    if geojson_data_east and len(geojson_data_east['features']) > 0:
+                        east_heatmap_name = f"East: {st.session_state.interpolation_method.replace('_', ' ').title()}"
+                        if st.session_state.selected_point_east:
+                            lat_east, lon_east = st.session_state.selected_point_east
+                            east_heatmap_name += f" ({lat_east:.3f}, {lon_east:.3f})"
+
+                        fresh_geojson_east = folium.GeoJson(
+                            data=geojson_data_east,
+                            name=east_heatmap_name,
+                            style_function=lambda feature: {
+                                'fillColor': get_color(feature['properties'][display_field]),
+                                'color': 'none',
+                                'weight': 0,
+                                'fillOpacity': 0.7
+                            },
+                            tooltip=folium.GeoJsonTooltip(
+                                fields=[display_field],
+                                aliases=[f'{display_field.title()}:'],
+                                labels=True,
+                                sticky=False
+                            )
+                        )
+                        fresh_geojson_east.add_to(m)
+                        print(f"EAST HEATMAP ADDED TO MAP: {east_heatmap_name} with {len(geojson_data_east.get('features', []))} features")
+
                     # Mark that we have a fresh heatmap displayed
                     st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
 
                     print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
-                    # AUTO-STORE: Automatically save every generated heatmap
+                    # AUTO-STORE: Automatically save both generated heatmaps
                     if st.session_state.polygon_db and st.session_state.selected_point:
                         try:
+                            # Store original heatmap
                             center_lat, center_lon = st.session_state.selected_point
                             heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
@@ -837,7 +945,7 @@ with main_col1:
                                             value = feature['properties'].get('yield', 0)
                                             heatmap_data.append([lat, lon, value])
 
-                            # Store in database and check if it's actually new
+                            # Store original heatmap in database
                             stored_heatmap_id = st.session_state.polygon_db.store_heatmap(
                                 heatmap_name=heatmap_name,
                                 center_lat=center_lat,
@@ -849,23 +957,47 @@ with main_col1:
                                 well_count=len(st.session_state.filtered_wells) if st.session_state.filtered_wells is not None else 0
                             )
 
-                            # Always reload stored heatmaps to ensure fresh heatmap is included
+                            # Store east heatmap if it exists
+                            if geojson_data_east and st.session_state.selected_point_east:
+                                center_lat_east, center_lon_east = st.session_state.selected_point_east
+                                heatmap_name_east = f"{st.session_state.interpolation_method}_east_{center_lat_east:.3f}_{center_lon_east:.3f}"
+
+                                # Convert east GeoJSON to simple heatmap data for storage
+                                heatmap_data_east = []
+                                for feature in geojson_data_east.get('features', []):
+                                    if 'geometry' in feature and 'properties' in feature:
+                                        geom = feature['geometry']
+                                        if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
+                                            # Get centroid of polygon
+                                            coords = geom['coordinates'][0]
+                                            if len(coords) >= 3:
+                                                lat = sum(coord[1] for coord in coords) / len(coords)
+                                                lon = sum(coord[0] for coord in coords) / len(coords)
+                                                value = feature['properties'].get('yield', 0)
+                                                heatmap_data_east.append([lat, lon, value])
+
+                                # Store east heatmap in database
+                                stored_heatmap_id_east = st.session_state.polygon_db.store_heatmap(
+                                    heatmap_name=heatmap_name_east,
+                                    center_lat=center_lat_east,
+                                    center_lon=center_lon_east,
+                                    radius_km=st.session_state.search_radius,
+                                    interpolation_method=st.session_state.interpolation_method,
+                                    heatmap_data=heatmap_data_east,
+                                    geojson_data=geojson_data_east,
+                                    well_count=len(st.session_state.filtered_wells_east) if st.session_state.filtered_wells_east is not None else 0
+                                )
+
+                            # Always reload stored heatmaps to ensure fresh heatmaps are included
                             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
 
-                            # Check if this was actually a new addition
-                            existing_ids = [h.get('id') for h in (st.session_state.stored_heatmaps or [])]
-                            if stored_heatmap_id and stored_heatmap_id not in existing_ids:
-                                print(f"AUTO-STORED NEW: {heatmap_name} with {len(heatmap_data)} points and {len(geojson_data.get('features', []))} features")
-                                # Mark that a new heatmap was actually added
-                                st.session_state.new_heatmap_added = True
-                                # Force immediate UI refresh to show new heatmap in sidebar
-                                st.rerun()
-                            else:
-                                print(f"REUSING EXISTING: {heatmap_name} already exists in database")
-                                # Still mark as new for display purposes
-                                st.session_state.new_heatmap_added = True
+                            # Mark that new heatmaps were added
+                            st.session_state.new_heatmap_added = True
+                            print(f"AUTO-STORED DUAL HEATMAPS: {heatmap_name} and {heatmap_name_east if geojson_data_east else 'east failed'}")
+                            # Force immediate UI refresh to show new heatmaps in sidebar
+                            st.rerun()
                         except Exception as e:
-                            print(f"Error auto-storing heatmap: {e}")
+                            print(f"Error auto-storing dual heatmaps: {e}")
 
                     # Add UNIFIED colormap legend using global min/max values
                     if st.session_state.interpolation_method == 'indicator_kriging':
@@ -1165,11 +1297,23 @@ with main_col1:
                 else:
                     print("No previous coordinates - this is the first click")
 
-                # Update session state with the new coordinates
+                # Calculate 10km east point
+                # 1 degree longitude ≈ 111km * cos(latitude)
+                km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
+                east_offset_degrees = 10.0 / km_per_degree_lon  # 10km east
+                
+                clicked_east_lat = clicked_lat
+                clicked_east_lng = clicked_lng + east_offset_degrees
+                
+                print(f"DUAL HEATMAP: Original point ({clicked_lat:.6f}, {clicked_lng:.6f})")
+                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - 10km east")
+
+                # Store both points for dual heatmap generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
+                st.session_state.selected_point_east = [clicked_east_lat, clicked_east_lng]
 
                 # FORCE clear all cached data to ensure fresh heatmap generation
-                for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask']:
+                for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask', 'filtered_wells_east', 'geojson_data_east']:
                     if key in st.session_state:
                         del st.session_state[key]
                         print(f"Cleared cached {key}")
@@ -1177,7 +1321,7 @@ with main_col1:
                 # Add aggressive throttling to prevent rapid rerun cycles that cause crashes
                 if 'last_rerun_time' not in st.session_state or (time.time() - st.session_state.last_rerun_time) > 10:
                     st.session_state.last_rerun_time = time.time()
-                    print("TRIGGERING RERUN for new location")
+                    print("TRIGGERING RERUN for dual heatmap generation")
                     # Don't use sleep as it can cause issues
                     st.rerun()
                 else:
@@ -1199,7 +1343,7 @@ with main_col1:
     with col1:
         if st.button("Clear Results", use_container_width=True):
             # Reset the session state safely
-            for key in ['selected_point', 'filtered_wells']:
+            for key in ['selected_point', 'selected_point_east', 'filtered_wells', 'filtered_wells_east']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
@@ -1217,20 +1361,38 @@ with main_col2:
     st.subheader("Analysis Results")
 
     if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
+        # Show information about dual heatmap generation
+        st.subheader("Dual Heatmap Analysis")
+        if st.session_state.selected_point_east:
+            st.success("✅ Dual heatmaps generated: Original location + 10km East")
+            st.write(f"**Original:** {st.session_state.selected_point[0]:.4f}, {st.session_state.selected_point[1]:.4f}")
+            st.write(f"**East (10km):** {st.session_state.selected_point_east[0]:.4f}, {st.session_state.selected_point_east[1]:.4f}")
+        
         # Add export data option
         st.subheader("Export Data")
-        if st.button("Download Wells Data"):
+        if st.button("Download Wells Data (Original)"):
             csv_data = download_as_csv(st.session_state.filtered_wells)
             st.download_button(
-                label="Download CSV",
+                label="Download CSV (Original)",
                 data=csv_data,
-                file_name="nearby_wells.csv",
+                file_name="nearby_wells_original.csv",
                 mime="text/csv"
             )
+        
+        # Export east wells data if available
+        if 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None and len(st.session_state.filtered_wells_east) > 0:
+            if st.button("Download Wells Data (East)"):
+                csv_data_east = download_as_csv(st.session_state.filtered_wells_east)
+                st.download_button(
+                    label="Download CSV (East)",
+                    data=csv_data_east,
+                    file_name="nearby_wells_east.csv",
+                    mime="text/csv"
+                )
     elif st.session_state.selected_point:
-        st.info("Location selected. View the interpolated heatmap on the left.")
+        st.info("Location selected. View the dual interpolated heatmaps on the left.")
     else:
-        st.info("Click on the map to select a location and view nearby wells")
+        st.info("Click on the map to generate dual heatmaps: one at your location and one 10km to the east")
 
     # Heatmaps are automatically saved - no manual action needed
 

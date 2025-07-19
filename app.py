@@ -818,7 +818,7 @@ with main_col1:
                         data=geojson_data,
                         name=new_heatmap_name,
                         style_function=lambda feature: {
-                            'fillColor': get_color(feature['properties'][display_field]),
+                            'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
                             'color': 'none',
                             'weight': 0,
                             'fillOpacity': 0.7
@@ -843,7 +843,7 @@ with main_col1:
                             data=geojson_data_east,
                             name=east_heatmap_name,
                             style_function=lambda feature: {
-                                'fillColor': get_color(feature['properties'][display_field]),
+                                'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
                                 'color': 'none',
                                 'weight': 0,
                                 'fillOpacity': 0.7

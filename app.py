@@ -1239,13 +1239,9 @@ with main_col1:
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
                 st.session_state.selected_point_east = [clicked_east_lat, clicked_east_lng]
 
-                # FORCE clear all cached data to ensure fresh heatmap generation
-                for key in ['filtered_wells', 'geojson_data', 'heat_map_data', 'indicator_mask', 'filtered_wells_east', 'geojson_data_east']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                        print(f"Cleared cached {key}")
-
-                print("COORDINATES UPDATED: Dual heatmap will generate on next natural render cycle")
+                # Mark that coordinates have been updated for heatmap generation
+                st.session_state.coordinates_updated = True
+                print("COORDINATES UPDATED: Ready for heatmap generation")
             else:
                 if 'lat_diff' in locals() and 'lng_diff' in locals():
                     print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")
@@ -1283,8 +1279,8 @@ with main_col1:
             
             for key in keys_to_clear:
                 if key in st.session_state:
-                    st.session_state[key] = session_defaults.get(key, None)
-                    print(f"🔄 SESSION CLEAR: Reset {key}")
+                    del st.session_state[key]
+                    print(f"🔄 SESSION CLEAR: Deleted {key}")
             
             st.success("Cleared all results and stored heatmaps")
 
@@ -1293,10 +1289,10 @@ with main_col1:
             # Clear all caches and reset session state
             st.cache_data.clear()
             st.cache_resource.clear()
+            # Only clear non-essential keys to prevent restart loops
+            essential_keys = ['wells_data', 'soil_polygons', 'polygon_db']
             for key in list(st.session_state.keys()):
-                if key in session_defaults:
-                    st.session_state[key] = session_defaults[key]
-                else:
+                if key not in essential_keys:
                     del st.session_state[key]
             print("🔄 REFRESH: App refreshed, session state reset")
             # Removed rerun to prevent restart loops - page will refresh automatically

@@ -573,7 +573,7 @@ with main_col1:
                     location=st.session_state.selected_point_east,
                     popup="Selected Location (10km East)",
                     icon=folium.Icon(color='blue', icon='crosshairs', prefix='fa'),
-                    tooltip=f"Auto-Generated Point ({st.session_state.search_radius * 2.0:.0f}km East - Seamless Join)"
+                    tooltip=f"Auto-Generated Point ({st.session_state.search_radius:.0f}km East - Seamless Join)"
                 ).add_to(m)
 
             # Draw square for original search area
@@ -629,7 +629,7 @@ with main_col1:
                     fill_color="#cc8631",
                     fill_opacity=0.1,
                     weight=2,
-                    popup=f"East Search Area ({st.session_state.search_radius * 2.0:.0f}km East - Seamless)"
+                    popup=f"East Search Area ({st.session_state.search_radius:.0f}km East - Seamless)"
                 ).add_to(m)
 
         # Display heatmap - use pre-computed if available, otherwise generate on-demand
@@ -1240,15 +1240,15 @@ with main_col1:
 
                 # Calculate seamless east point for joining heatmaps
                 # Position the east heatmap so it connects seamlessly with the original
-                # Use the search radius to determine the offset (search radius * 2 for seamless join)
+                # Use exactly the search radius to place the centers next to each other
                 km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-                east_offset_degrees = (st.session_state.search_radius * 2.0) / km_per_degree_lon  # Seamless join
+                east_offset_degrees = st.session_state.search_radius / km_per_degree_lon  # Direct adjacency
                 
                 clicked_east_lat = clicked_lat
                 clicked_east_lng = clicked_lng + east_offset_degrees
                 
                 print(f"DUAL HEATMAP: Original point ({clicked_lat:.6f}, {clicked_lng:.6f})")
-                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - {st.session_state.search_radius * 2.0:.1f}km east (seamless)")
+                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - {st.session_state.search_radius:.1f}km east (seamless)")
 
                 # Store both points for dual heatmap generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]

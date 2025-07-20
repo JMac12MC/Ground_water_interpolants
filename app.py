@@ -573,7 +573,7 @@ with main_col1:
                     location=st.session_state.selected_point_east,
                     popup="Selected Location (10km East)",
                     icon=folium.Icon(color='blue', icon='crosshairs', prefix='fa'),
-                    tooltip="Auto-Generated Point (10km East)"
+                    tooltip=f"Auto-Generated Point ({st.session_state.search_radius * 2.0:.0f}km East - Seamless Join)"
                 ).add_to(m)
 
             # Draw square for original search area
@@ -629,7 +629,7 @@ with main_col1:
                     fill_color="#cc8631",
                     fill_opacity=0.1,
                     weight=2,
-                    popup="East Search Area (10km East)"
+                    popup=f"East Search Area ({st.session_state.search_radius * 2.0:.0f}km East - Seamless)"
                 ).add_to(m)
 
         # Display heatmap - use pre-computed if available, otherwise generate on-demand
@@ -1238,16 +1238,17 @@ with main_col1:
                 else:
                     print("No previous coordinates - this is the first click")
 
-                # Calculate 20km east point
-                # 1 degree longitude ≈ 111km * cos(latitude)
+                # Calculate seamless east point for joining heatmaps
+                # Position the east heatmap so it connects seamlessly with the original
+                # Use the search radius to determine the offset (search radius * 2 for seamless join)
                 km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-                east_offset_degrees = 20.0 / km_per_degree_lon  # 20km east
+                east_offset_degrees = (st.session_state.search_radius * 2.0) / km_per_degree_lon  # Seamless join
                 
                 clicked_east_lat = clicked_lat
                 clicked_east_lng = clicked_lng + east_offset_degrees
                 
                 print(f"DUAL HEATMAP: Original point ({clicked_lat:.6f}, {clicked_lng:.6f})")
-                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - 20km east")
+                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - {st.session_state.search_radius * 2.0:.1f}km east (seamless)")
 
                 # Store both points for dual heatmap generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
@@ -1395,7 +1396,7 @@ with main_col2:
     elif st.session_state.get('selected_point'):
         st.info("Location selected. View the dual interpolated heatmaps on the left.")
     else:
-        st.info("Click on the map to generate dual heatmaps: one at your location and one 10km to the east")
+        st.info("Click on the map to generate dual heatmaps: one at your location and one seamlessly connected to the east")
 
     # Heatmaps are automatically saved - no manual action needed
 

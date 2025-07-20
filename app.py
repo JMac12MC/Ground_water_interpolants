@@ -1263,15 +1263,17 @@ with main_col1:
 
                 # Calculate seamless east point for joining heatmaps
                 # Position the east heatmap so it connects seamlessly with the original
-                # Use exactly the search radius to place the centers next to each other
+                # Each heatmap is clipped to 50% of search radius (10km wide for 20km search radius)
+                # Each extends 5km from center, so for seamless connection, centers should be 10km apart
+                clipped_width_km = st.session_state.search_radius * 0.5  # 10km for 20km search radius  
                 km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-                east_offset_degrees = st.session_state.search_radius / km_per_degree_lon  # Direct adjacency
+                east_offset_degrees = clipped_width_km / km_per_degree_lon  # 10km for seamless adjacency
                 
                 clicked_east_lat = clicked_lat
                 clicked_east_lng = clicked_lng + east_offset_degrees
                 
                 print(f"DUAL HEATMAP: Original point ({clicked_lat:.6f}, {clicked_lng:.6f})")
-                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - {st.session_state.search_radius:.1f}km east (seamless)")
+                print(f"DUAL HEATMAP: East point ({clicked_east_lat:.6f}, {clicked_east_lng:.6f}) - {clipped_width_km:.1f}km east (seamless adjacency)")
 
                 # Store both points for dual heatmap generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]

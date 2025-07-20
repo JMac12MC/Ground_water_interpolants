@@ -697,13 +697,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     include_triangle = True
 
                     if merged_soil_geometry is not None:
-                        # For non-SWL methods, apply soil polygon filtering
-                        centroid_lon = float(np.mean(vertices[:, 0]))
-                        centroid_lat = float(np.mean(vertices[:, 1]))
-                        centroid_point = Point(centroid_lon, centroid_lat)
-
-                        # Only include if centroid is within soil drainage areas
-                        include_triangle = merged_soil_geometry.contains(centroid_point) or merged_soil_geometry.intersects(centroid_point)
+                        # Apply proper geometric intersection clipping
+                        triangle_coords = [(float(v[0]), float(v[1])) for v in vertices]
+                        triangle_coords.append(triangle_coords[0])  # Close the polygon
+                        triangle_polygon = ShapelyPolygon(triangle_coords)
+                        
+                        # Only include if triangle is completely within soil drainage areas
+                        include_triangle = merged_soil_geometry.contains(triangle_polygon)
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
                     if include_triangle and indicator_geometry is not None and indicator_mask is not None:
@@ -846,8 +846,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 centroid_lat = sum(coord[1] for coord in coords) / len(coords)
                 centroid_point = Point(centroid_lon, centroid_lat)
                 
-                # Only keep features whose centroid is within the smaller square
-                if final_clip_geometry.contains(centroid_point):
+                # Create triangle polygon for proper intersection clipping
+                triangle_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
+                if len(triangle_coords) >= 3:
+                    triangle_polygon = ShapelyPolygon(triangle_coords)
+                    # Only keep features that are completely within the smaller square
+                    if final_clip_geometry.contains(triangle_polygon):
+                        final_clipped_features.append(feature)
+                else:
+                    # If we can't create a proper triangle, keep the feature
                     final_clipped_features.append(feature)
         except Exception as e:
             # If centroid calculation fails, keep the feature

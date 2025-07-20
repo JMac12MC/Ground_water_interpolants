@@ -900,7 +900,8 @@ with main_col1:
                         
                         # Calculate actual gap distance
                         gap_degrees = east_min_lng - original_max_lng
-                        gap_meters = gap_degrees * (111000 * np.cos(np.radians(clicked_lat)))
+                        center_lat = st.session_state.selected_point[0] if st.session_state.selected_point else -43.5
+                        gap_meters = gap_degrees * (111000 * np.cos(np.radians(center_lat)))
                         
                         print(f"ACTUAL HEATMAP GAP MEASUREMENT:")
                         print(f"  Original heatmap easternmost edge: {original_max_lng:.6f}")

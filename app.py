@@ -1261,10 +1261,16 @@ with main_col1:
                 else:
                     print("No previous coordinates - this is the first click")
 
-                # Calculate east point for dual heatmaps (back to original 20km offset)
-                # Using original offset with detailed logging to understand positioning
+                # Calculate east point for dual heatmaps (adjusted to close small gap)
+                # The gap exists because soil polygon clipping reduces effective heatmap width
                 km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-                east_offset_km = 20.0  # Original 20km offset
+                
+                # Theoretical gap with 20km offset and 10km clipped width is 10km
+                # But actual clipped polygons are smaller due to soil boundaries
+                # Reduce offset to close the gap
+                theoretical_gap_km = 10.0  # 20km centers - 10km total width = 10km gap
+                gap_reduction_km = 9.5  # Close most of the gap, leaving tiny buffer
+                east_offset_km = 20.0 - gap_reduction_km  # 10.5km offset
                 east_offset_degrees = east_offset_km / km_per_degree_lon
                 
                 clicked_east_lat = clicked_lat
@@ -1277,16 +1283,17 @@ with main_col1:
                 print(f"DUAL HEATMAP POSITIONING ANALYSIS:")
                 print(f"  Original center: ({clicked_lat:.6f}, {clicked_lng:.6f})")
                 print(f"  East center: ({clicked_east_lat:.6f}, {clicked_east_lng:.6f})")
-                print(f"  Distance between centers: {east_offset_km:.1f}km")
+                print(f"  Distance between centers: {east_offset_km:.1f}km (adjusted from 20km)")
                 print(f"  Search radius: {search_radius_km:.1f}km")
                 print(f"  Clipped heatmap width: {clipped_width_km:.1f}km")
                 print(f"  Each heatmap extends: ±{clipped_width_km/2:.1f}km from center")
+                print(f"  Theoretical gap reduction: {gap_reduction_km:.1f}km")
                 print(f"  Original heatmap east edge: {clicked_lng:.6f} + {(clipped_width_km/2)/km_per_degree_lon:.6f} = {clicked_lng + (clipped_width_km/2)/km_per_degree_lon:.6f}")
                 print(f"  East heatmap west edge: {clicked_east_lng:.6f} - {(clipped_width_km/2)/km_per_degree_lon:.6f} = {clicked_east_lng - (clipped_width_km/2)/km_per_degree_lon:.6f}")
                 
                 gap_degrees = (clicked_east_lng - (clipped_width_km/2)/km_per_degree_lon) - (clicked_lng + (clipped_width_km/2)/km_per_degree_lon)
                 gap_km = gap_degrees * km_per_degree_lon
-                print(f"  Theoretical gap between heatmaps: {gap_km:.2f}km ({gap_degrees:.6f} degrees)")
+                print(f"  Adjusted theoretical gap: {gap_km:.2f}km ({gap_degrees:.6f} degrees)")
 
                 # Store both points for dual heatmap generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]

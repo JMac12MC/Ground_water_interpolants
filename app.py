@@ -880,6 +880,33 @@ with main_col1:
                         )
                         fresh_geojson_east.add_to(m)
                         print(f"EAST HEATMAP ADDED TO MAP: {east_heatmap_name} with {len(geojson_data_east.get('features', []))} features")
+                        
+                        # MEASURE GAP: Find actual edges of heatmap polygons
+                        # Find easternmost longitude of original heatmap triangles
+                        original_max_lng = -999
+                        for feature in geojson_data.get('features', []):
+                            coords = feature.get('geometry', {}).get('coordinates', [[]])[0]
+                            for coord in coords:
+                                if len(coord) >= 2:
+                                    original_max_lng = max(original_max_lng, coord[0])
+                        
+                        # Find westernmost longitude of east heatmap triangles  
+                        east_min_lng = 999
+                        for feature in geojson_data_east.get('features', []):
+                            coords = feature.get('geometry', {}).get('coordinates', [[]])[0]
+                            for coord in coords:
+                                if len(coord) >= 2:
+                                    east_min_lng = min(east_min_lng, coord[0])
+                        
+                        # Calculate actual gap distance
+                        gap_degrees = east_min_lng - original_max_lng
+                        gap_meters = gap_degrees * (111000 * np.cos(np.radians(clicked_lat)))
+                        
+                        print(f"ACTUAL HEATMAP GAP MEASUREMENT:")
+                        print(f"  Original heatmap easternmost edge: {original_max_lng:.6f}")
+                        print(f"  East heatmap westernmost edge: {east_min_lng:.6f}")
+                        print(f"  Actual gap: {gap_degrees:.6f} degrees = {gap_meters:.1f} meters")
+                        print(f"  Gap distance: {gap_meters/1000:.3f} km")
 
                     # Mark that we have a fresh heatmap displayed
                     st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps

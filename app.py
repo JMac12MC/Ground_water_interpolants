@@ -64,13 +64,18 @@ for key, default_value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = default_value
 
-# Initialize database connection after other session state
-if 'polygon_db' not in st.session_state:
+# Initialize database connection only once with caching
+@st.cache_resource
+def get_database_connection():
+    """Cached database connection to prevent repeated initializations"""
     try:
-        st.session_state.polygon_db = PolygonDatabase()
+        return PolygonDatabase()
     except Exception as e:
         st.error(f"Database connection failed: {e}")
-        st.session_state.polygon_db = None
+        return None
+
+if 'polygon_db' not in st.session_state:
+    st.session_state.polygon_db = get_database_connection()
 
 # Add banner
 add_banner()
@@ -265,7 +270,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
 
-    # Always ensure stored heatmaps are loaded from database for sidebar display
+    # Load stored heatmaps only if not already loaded
     if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
         try:
             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()

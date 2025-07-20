@@ -717,7 +717,7 @@ with main_col1:
                                         st.session_state.filtered_wells.copy(),
                                         st.session_state.selected_point,
                                         st.session_state.search_radius,
-                                        resolution=80,  # Reduced resolution for stability
+                                        resolution=100,  # High resolution for precise clipping
                                         soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                                         threshold=0.7
                                     )
@@ -728,12 +728,12 @@ with main_col1:
                             print(f"App.py: Generating original heatmap with method='{st.session_state.interpolation_method}'")
                             print(f"App.py: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
 
-                            # Generate interpolation for original location with reduced resolution for stability
+                            # Generate interpolation for original location with high resolution for precise clipping
                             geojson_data = generate_geo_json_grid(
                                 st.session_state.filtered_wells.copy(), 
                                 st.session_state.selected_point, 
                                 st.session_state.search_radius,
-                                resolution=80,  # Reduced resolution for stability
+                                resolution=100,  # High resolution for precise clipping
                                 method=st.session_state.interpolation_method,
                                 show_variance=False,
                                 auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
@@ -756,7 +756,7 @@ with main_col1:
                                                 st.session_state.filtered_wells_east.copy(),
                                                 st.session_state.selected_point_east,
                                                 st.session_state.search_radius,
-                                                resolution=80,  # Reduced resolution for stability
+                                                resolution=100,  # High resolution for precise clipping
                                                 soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                                                 threshold=0.7
                                             )
@@ -764,12 +764,12 @@ with main_col1:
                                             print(f"Error generating east indicator mask: {e}")
                                             indicator_mask_east = None
 
-                                    # Generate interpolation for east location with reduced resolution for stability
+                                    # Generate interpolation for east location with high resolution for precise clipping
                                     geojson_data_east = generate_geo_json_grid(
                                         st.session_state.filtered_wells_east.copy(), 
                                         st.session_state.selected_point_east, 
                                         st.session_state.search_radius,
-                                        resolution=80,  # Reduced resolution for stability
+                                        resolution=100,  # High resolution for precise clipping
                                         method=st.session_state.interpolation_method,
                                         show_variance=False,
                                         auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),

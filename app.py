@@ -696,72 +696,90 @@ with main_col1:
                 print(f"HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
                 
                 if has_selected_point and has_filtered_wells and wells_count > 0:
-                    with st.spinner("🔄 Generating dual interpolation (original + 10km east)..."):
-                        # Generate heatmap for original location
-                        indicator_mask = None
-                        methods_requiring_mask = [
-                            'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
-                            'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
-                        ]
+                    try:
+                        with st.spinner("🔄 Generating dual interpolation (original + 20km east)..."):
+                            # Generate heatmap for original location
+                            indicator_mask = None
+                            methods_requiring_mask = [
+                                'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
+                                'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
+                            ]
 
-                        if st.session_state.interpolation_method in methods_requiring_mask:
-                            # Generate indicator kriging mask for high-probability zones (≥0.7)
-                            indicator_mask = generate_indicator_kriging_mask(
-                                st.session_state.filtered_wells.copy(),
-                                st.session_state.selected_point,
-                                st.session_state.search_radius,
-                                resolution=100,
-                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                threshold=0.7
-                            )
-
-                        print(f"App.py: Generating original heatmap with method='{st.session_state.interpolation_method}'")
-                        print(f"App.py: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
-
-                        # Generate interpolation for original location
-                        geojson_data = generate_geo_json_grid(
-                            st.session_state.filtered_wells.copy(), 
-                            st.session_state.selected_point, 
-                            st.session_state.search_radius,
-                            resolution=100,
-                            method=st.session_state.interpolation_method,
-                            show_variance=False,
-                            auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                            variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            indicator_mask=indicator_mask
-                        )
-
-                        # Generate heatmap for east location if it exists
-                        geojson_data_east = None
-                        if st.session_state.selected_point_east and 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None:
-                            print(f"App.py: Generating east heatmap (10km east)")
-                            
-                            # Generate indicator mask for east location if needed
-                            indicator_mask_east = None
                             if st.session_state.interpolation_method in methods_requiring_mask:
-                                indicator_mask_east = generate_indicator_kriging_mask(
-                                    st.session_state.filtered_wells_east.copy(),
-                                    st.session_state.selected_point_east,
-                                    st.session_state.search_radius,
-                                    resolution=100,
-                                    soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                    threshold=0.7
-                                )
+                                # Generate indicator kriging mask for high-probability zones (≥0.7)
+                                try:
+                                    indicator_mask = generate_indicator_kriging_mask(
+                                        st.session_state.filtered_wells.copy(),
+                                        st.session_state.selected_point,
+                                        st.session_state.search_radius,
+                                        resolution=80,  # Reduced resolution for stability
+                                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                                        threshold=0.7
+                                    )
+                                except Exception as e:
+                                    print(f"Error generating indicator mask: {e}")
+                                    indicator_mask = None
 
-                            # Generate interpolation for east location
-                            geojson_data_east = generate_geo_json_grid(
-                                st.session_state.filtered_wells_east.copy(), 
-                                st.session_state.selected_point_east, 
+                            print(f"App.py: Generating original heatmap with method='{st.session_state.interpolation_method}'")
+                            print(f"App.py: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
+
+                            # Generate interpolation for original location with reduced resolution for stability
+                            geojson_data = generate_geo_json_grid(
+                                st.session_state.filtered_wells.copy(), 
+                                st.session_state.selected_point, 
                                 st.session_state.search_radius,
-                                resolution=100,
+                                resolution=80,  # Reduced resolution for stability
                                 method=st.session_state.interpolation_method,
                                 show_variance=False,
                                 auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
                                 variogram_model=st.session_state.get('variogram_model', 'spherical'),
                                 soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                indicator_mask=indicator_mask_east
+                                indicator_mask=indicator_mask
                             )
+
+                            # Generate heatmap for east location if it exists
+                            geojson_data_east = None
+                            if st.session_state.selected_point_east and 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None:
+                                try:
+                                    print(f"App.py: Generating east heatmap (20km east)")
+                                    
+                                    # Generate indicator mask for east location if needed
+                                    indicator_mask_east = None
+                                    if st.session_state.interpolation_method in methods_requiring_mask:
+                                        try:
+                                            indicator_mask_east = generate_indicator_kriging_mask(
+                                                st.session_state.filtered_wells_east.copy(),
+                                                st.session_state.selected_point_east,
+                                                st.session_state.search_radius,
+                                                resolution=80,  # Reduced resolution for stability
+                                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                                                threshold=0.7
+                                            )
+                                        except Exception as e:
+                                            print(f"Error generating east indicator mask: {e}")
+                                            indicator_mask_east = None
+
+                                    # Generate interpolation for east location with reduced resolution for stability
+                                    geojson_data_east = generate_geo_json_grid(
+                                        st.session_state.filtered_wells_east.copy(), 
+                                        st.session_state.selected_point_east, 
+                                        st.session_state.search_radius,
+                                        resolution=80,  # Reduced resolution for stability
+                                        method=st.session_state.interpolation_method,
+                                        show_variance=False,
+                                        auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
+                                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
+                                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                                        indicator_mask=indicator_mask_east
+                                    )
+                                except Exception as e:
+                                    print(f"Error generating east heatmap: {e}")
+                                    geojson_data_east = None
+                    except Exception as e:
+                        print(f"CRITICAL ERROR in heatmap generation: {e}")
+                        st.error(f"Error generating heatmaps: {e}")
+                        geojson_data = {"type": "FeatureCollection", "features": []}
+                        geojson_data_east = None
                 else:
                     geojson_data = {"type": "FeatureCollection", "features": []}
 

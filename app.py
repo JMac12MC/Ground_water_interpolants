@@ -702,73 +702,56 @@ with main_col1:
                 
                 if has_selected_point and has_filtered_wells and wells_count > 0:
                     try:
-                        with st.spinner("🔄 Generating quad interpolation (2x2 grid: original + east + south + southeast)..."):
-                            # Generate heatmap for original location
-                            indicator_mask = None
-                            methods_requiring_mask = [
-                                'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
-                                'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
-                            ]
+                        # Sequential generation to prevent crashes
+                        heatmaps_to_generate = []
+                        
+                        # Queue all available heatmaps for sequential processing
+                        if st.session_state.selected_point and 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
+                            heatmaps_to_generate.append(('original', st.session_state.selected_point, st.session_state.filtered_wells))
+                        
+                        if st.session_state.selected_point_east and 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None:
+                            heatmaps_to_generate.append(('east', st.session_state.selected_point_east, st.session_state.filtered_wells_east))
+                            
+                        if st.session_state.selected_point_south and 'filtered_wells_south' in st.session_state and st.session_state.filtered_wells_south is not None:
+                            heatmaps_to_generate.append(('south', st.session_state.selected_point_south, st.session_state.filtered_wells_south))
+                            
+                        if st.session_state.selected_point_southeast and 'filtered_wells_southeast' in st.session_state and st.session_state.filtered_wells_southeast is not None:
+                            heatmaps_to_generate.append(('southeast', st.session_state.selected_point_southeast, st.session_state.filtered_wells_southeast))
 
-                            if st.session_state.interpolation_method in methods_requiring_mask:
-                                # Generate indicator kriging mask for high-probability zones (≥0.7)
+                        print(f"SEQUENTIAL PROCESSING: {len(heatmaps_to_generate)} heatmaps queued for generation")
+
+                        # Process each heatmap individually
+                        generated_heatmaps = []
+                        for i, (location_name, center_point, filtered_wells) in enumerate(heatmaps_to_generate):
+                            with st.spinner(f"🔄 Building heatmap {i+1}/{len(heatmaps_to_generate)}: {location_name.title()} location..."):
                                 try:
-                                    indicator_mask = generate_indicator_kriging_mask(
-                                        st.session_state.filtered_wells.copy(),
-                                        st.session_state.selected_point,
-                                        st.session_state.search_radius,
-                                        resolution=100,  # High resolution for precise clipping
-                                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                        threshold=0.7
-                                    )
-                                except Exception as e:
-                                    print(f"Error generating indicator mask: {e}")
+                                    # Generate indicator mask if needed
                                     indicator_mask = None
+                                    methods_requiring_mask = [
+                                        'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
+                                        'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
+                                    ]
 
-                            print(f"App.py: Generating original heatmap with method='{st.session_state.interpolation_method}'")
-                            print(f"App.py: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
-
-                            # Generate interpolation for original location with high resolution for precise clipping
-                            geojson_data = generate_geo_json_grid(
-                                st.session_state.filtered_wells.copy(), 
-                                st.session_state.selected_point, 
-                                st.session_state.search_radius,
-                                resolution=100,  # High resolution for precise clipping
-                                method=st.session_state.interpolation_method,
-                                show_variance=False,
-                                auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                                variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                indicator_mask=indicator_mask
-                            )
-
-                            # Generate heatmaps for all four locations (quad grid)
-                            geojson_data_east = None
-                            geojson_data_south = None
-                            geojson_data_southeast = None
-
-                            # Generate east heatmap
-                            if st.session_state.selected_point_east and 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None:
-                                try:
-                                    print(f"App.py: Generating east heatmap")
-                                    indicator_mask_east = None
                                     if st.session_state.interpolation_method in methods_requiring_mask:
                                         try:
-                                            indicator_mask_east = generate_indicator_kriging_mask(
-                                                st.session_state.filtered_wells_east.copy(),
-                                                st.session_state.selected_point_east,
+                                            indicator_mask = generate_indicator_kriging_mask(
+                                                filtered_wells.copy(),
+                                                center_point,
                                                 st.session_state.search_radius,
                                                 resolution=100,
                                                 soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                                                 threshold=0.7
                                             )
                                         except Exception as e:
-                                            print(f"Error generating east indicator mask: {e}")
-                                            indicator_mask_east = None
+                                            print(f"Error generating {location_name} indicator mask: {e}")
+                                            indicator_mask = None
 
-                                    geojson_data_east = generate_geo_json_grid(
-                                        st.session_state.filtered_wells_east.copy(), 
-                                        st.session_state.selected_point_east, 
+                                    print(f"App.py: Generating {location_name} heatmap with method='{st.session_state.interpolation_method}'")
+
+                                    # Generate interpolation for this location
+                                    geojson_data = generate_geo_json_grid(
+                                        filtered_wells.copy(), 
+                                        center_point, 
                                         st.session_state.search_radius,
                                         resolution=100,
                                         method=st.session_state.interpolation_method,
@@ -776,81 +759,80 @@ with main_col1:
                                         auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
                                         variogram_model=st.session_state.get('variogram_model', 'spherical'),
                                         soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                        indicator_mask=indicator_mask_east
+                                        indicator_mask=indicator_mask
                                     )
+                                    
+                                    if geojson_data and len(geojson_data.get('features', [])) > 0:
+                                        print(f"✅ {location_name.upper()} HEATMAP GENERATED: {len(geojson_data.get('features', []))} features")
+                                        generated_heatmaps.append((location_name, center_point, geojson_data, len(filtered_wells)))
+                                    else:
+                                        print(f"❌ {location_name.upper()} HEATMAP FAILED: No features generated")
+                                        
                                 except Exception as e:
-                                    print(f"Error generating east heatmap: {e}")
-                                    geojson_data_east = None
+                                    print(f"❌ Error generating {location_name} heatmap: {e}")
+                                    continue
 
-                            # Generate south heatmap
-                            if st.session_state.selected_point_south and 'filtered_wells_south' in st.session_state and st.session_state.filtered_wells_south is not None:
+                        # Now store each generated heatmap sequentially in the database
+                        print(f"SEQUENTIAL STORAGE: Storing {len(generated_heatmaps)} heatmaps in database...")
+                        stored_heatmap_ids = []
+                        
+                        for j, (location_name, center_point, geojson_data, well_count) in enumerate(generated_heatmaps):
+                            with st.spinner(f"💾 Storing heatmap {j+1}/{len(generated_heatmaps)}: {location_name.title()} in database..."):
                                 try:
-                                    print(f"App.py: Generating south heatmap")
-                                    indicator_mask_south = None
-                                    if st.session_state.interpolation_method in methods_requiring_mask:
-                                        try:
-                                            indicator_mask_south = generate_indicator_kriging_mask(
-                                                st.session_state.filtered_wells_south.copy(),
-                                                st.session_state.selected_point_south,
-                                                st.session_state.search_radius,
-                                                resolution=100,
-                                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                                threshold=0.7
-                                            )
-                                        except Exception as e:
-                                            print(f"Error generating south indicator mask: {e}")
-                                            indicator_mask_south = None
-
-                                    geojson_data_south = generate_geo_json_grid(
-                                        st.session_state.filtered_wells_south.copy(), 
-                                        st.session_state.selected_point_south, 
-                                        st.session_state.search_radius,
-                                        resolution=100,
-                                        method=st.session_state.interpolation_method,
-                                        show_variance=False,
-                                        auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                        indicator_mask=indicator_mask_south
-                                    )
+                                    if st.session_state.polygon_db:
+                                        center_lat, center_lon = center_point
+                                        center_lat = float(center_lat)
+                                        center_lon = float(center_lon)
+                                        
+                                        # Create unique name for each location
+                                        if location_name == 'original':
+                                            heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
+                                        else:
+                                            heatmap_name = f"{st.session_state.interpolation_method}_{location_name}_{center_lat:.3f}_{center_lon:.3f}"
+                                        
+                                        # Convert GeoJSON to heatmap data for storage
+                                        heatmap_data = []
+                                        for feature in geojson_data.get('features', []):
+                                            if 'geometry' in feature and 'properties' in feature:
+                                                geom = feature['geometry']
+                                                if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
+                                                    coords = geom['coordinates'][0]
+                                                    if len(coords) >= 3:
+                                                        lat = sum(coord[1] for coord in coords) / len(coords)
+                                                        lon = sum(coord[0] for coord in coords) / len(coords)
+                                                        value = feature['properties'].get('yield', 0)
+                                                        heatmap_data.append([lat, lon, value])
+                                        
+                                        # Store heatmap in database
+                                        stored_heatmap_id = st.session_state.polygon_db.store_heatmap(
+                                            heatmap_name=heatmap_name,
+                                            center_lat=center_lat,
+                                            center_lon=center_lon,
+                                            radius_km=st.session_state.search_radius,
+                                            interpolation_method=st.session_state.interpolation_method,
+                                            heatmap_data=heatmap_data,
+                                            geojson_data=geojson_data,
+                                            well_count=well_count
+                                        )
+                                        
+                                        if stored_heatmap_id:
+                                            stored_heatmap_ids.append((location_name, stored_heatmap_id))
+                                            print(f"✅ {location_name.upper()} HEATMAP STORED: ID {stored_heatmap_id}")
+                                        else:
+                                            print(f"⚠️  {location_name.upper()} HEATMAP: Already exists, skipped duplicate")
+                                            
                                 except Exception as e:
-                                    print(f"Error generating south heatmap: {e}")
-                                    geojson_data_south = None
-
-                            # Generate southeast heatmap
-                            if st.session_state.selected_point_southeast and 'filtered_wells_southeast' in st.session_state and st.session_state.filtered_wells_southeast is not None:
-                                try:
-                                    print(f"App.py: Generating southeast heatmap")
-                                    indicator_mask_southeast = None
-                                    if st.session_state.interpolation_method in methods_requiring_mask:
-                                        try:
-                                            indicator_mask_southeast = generate_indicator_kriging_mask(
-                                                st.session_state.filtered_wells_southeast.copy(),
-                                                st.session_state.selected_point_southeast,
-                                                st.session_state.search_radius,
-                                                resolution=100,
-                                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                                threshold=0.7
-                                            )
-                                        except Exception as e:
-                                            print(f"Error generating southeast indicator mask: {e}")
-                                            indicator_mask_southeast = None
-
-                                    geojson_data_southeast = generate_geo_json_grid(
-                                        st.session_state.filtered_wells_southeast.copy(), 
-                                        st.session_state.selected_point_southeast, 
-                                        st.session_state.search_radius,
-                                        resolution=100,
-                                        method=st.session_state.interpolation_method,
-                                        show_variance=False,
-                                        auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                        indicator_mask=indicator_mask_southeast
-                                    )
-                                except Exception as e:
-                                    print(f"Error generating southeast heatmap: {e}")
-                                    geojson_data_southeast = None
+                                    print(f"❌ Error storing {location_name} heatmap: {e}")
+                                    continue
+                        
+                        # Reload stored heatmaps to ensure all are available for display
+                        st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        
+                        print(f"SEQUENTIAL PROCESSING COMPLETE: {len(stored_heatmap_ids)} heatmaps stored successfully")
+                        
+                        # Set the first generated heatmap as primary for display purposes
+                        if generated_heatmaps:
+                            geojson_data = generated_heatmaps[0][2]  # Get the original heatmap data for legacy compatibility
                     except Exception as e:
                         print(f"CRITICAL ERROR in heatmap generation: {e}")
                         st.error(f"Error generating heatmaps: {e}")
@@ -980,152 +962,19 @@ with main_col1:
                         print(f"  Actual gap: {gap_degrees:.6f} degrees = {gap_meters:.1f} meters")
                         print(f"  Gap distance: {gap_meters/1000:.3f} km")
 
-                    # Mark that we have a fresh heatmap displayed
+                    # Mark that we have fresh heatmaps displayed
                     st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
+                    
+                    # Create a unique name for the primary heatmap based on location
+                    new_heatmap_name = f"New: {st.session_state.interpolation_method.replace('_', ' ').title()}"
+                    if generated_heatmaps and generated_heatmaps[0][1]:  # If we have original location
+                        lat, lon = generated_heatmaps[0][1]
+                        new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
 
-                    print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
+                    print(f"SEQUENTIAL QUAD HEATMAPS ADDED TO MAP: {len(generated_heatmaps)} heatmaps with {sum(len(hm[2].get('features', [])) for hm in generated_heatmaps)} total features")
 
-                    # AUTO-STORE: Automatically save both generated heatmaps
-                    if st.session_state.polygon_db and st.session_state.selected_point:
-                        try:
-                            # Store original heatmap
-                            center_lat, center_lon = st.session_state.selected_point
-                            heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
-
-                            # Convert GeoJSON to simple heatmap data for storage
-                            heatmap_data = []
-                            for feature in geojson_data.get('features', []):
-                                if 'geometry' in feature and 'properties' in feature:
-                                    geom = feature['geometry']
-                                    if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                        # Get centroid of polygon
-                                        coords = geom['coordinates'][0]
-                                        if len(coords) >= 3:
-                                            lat = sum(coord[1] for coord in coords) / len(coords)
-                                            lon = sum(coord[0] for coord in coords) / len(coords)
-                                            value = feature['properties'].get('yield', 0)
-                                            heatmap_data.append([lat, lon, value])
-
-                            # Store original heatmap in database
-                            stored_heatmap_id = st.session_state.polygon_db.store_heatmap(
-                                heatmap_name=heatmap_name,
-                                center_lat=center_lat,
-                                center_lon=center_lon,
-                                radius_km=st.session_state.search_radius,
-                                interpolation_method=st.session_state.interpolation_method,
-                                heatmap_data=heatmap_data,
-                                geojson_data=geojson_data,
-                                well_count=len(st.session_state.filtered_wells) if st.session_state.filtered_wells is not None else 0
-                            )
-
-                            # Store east heatmap if it exists
-                            if geojson_data_east and st.session_state.selected_point_east:
-                                center_lat_east, center_lon_east = st.session_state.selected_point_east
-                                # Ensure coordinates are float, not numpy types
-                                center_lat_east = float(center_lat_east)
-                                center_lon_east = float(center_lon_east)
-                                heatmap_name_east = f"{st.session_state.interpolation_method}_east_{center_lat_east:.3f}_{center_lon_east:.3f}"
-
-                                # Convert east GeoJSON to simple heatmap data for storage
-                                heatmap_data_east = []
-                                for feature in geojson_data_east.get('features', []):
-                                    if 'geometry' in feature and 'properties' in feature:
-                                        geom = feature['geometry']
-                                        if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                            # Get centroid of polygon
-                                            coords = geom['coordinates'][0]
-                                            if len(coords) >= 3:
-                                                lat = sum(coord[1] for coord in coords) / len(coords)
-                                                lon = sum(coord[0] for coord in coords) / len(coords)
-                                                value = feature['properties'].get('yield', 0)
-                                                heatmap_data_east.append([lat, lon, value])
-
-                                # Store east heatmap in database
-                                stored_heatmap_id_east = st.session_state.polygon_db.store_heatmap(
-                                    heatmap_name=heatmap_name_east,
-                                    center_lat=center_lat_east,
-                                    center_lon=center_lon_east,
-                                    radius_km=st.session_state.search_radius,
-                                    interpolation_method=st.session_state.interpolation_method,
-                                    heatmap_data=heatmap_data_east,
-                                    geojson_data=geojson_data_east,
-                                    well_count=len(st.session_state.filtered_wells_east) if st.session_state.filtered_wells_east is not None else 0
-                                )
-
-                            # Store south heatmap if it exists
-                            if geojson_data_south and st.session_state.selected_point_south:
-                                center_lat_south, center_lon_south = st.session_state.selected_point_south
-                                center_lat_south = float(center_lat_south)
-                                center_lon_south = float(center_lon_south)
-                                heatmap_name_south = f"{st.session_state.interpolation_method}_south_{center_lat_south:.3f}_{center_lon_south:.3f}"
-
-                                # Convert south GeoJSON to simple heatmap data for storage
-                                heatmap_data_south = []
-                                for feature in geojson_data_south.get('features', []):
-                                    if 'geometry' in feature and 'properties' in feature:
-                                        geom = feature['geometry']
-                                        if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                            coords = geom['coordinates'][0]
-                                            if len(coords) >= 3:
-                                                lat = sum(coord[1] for coord in coords) / len(coords)
-                                                lon = sum(coord[0] for coord in coords) / len(coords)
-                                                value = feature['properties'].get('yield', 0)
-                                                heatmap_data_south.append([lat, lon, value])
-
-                                # Store south heatmap in database
-                                stored_heatmap_id_south = st.session_state.polygon_db.store_heatmap(
-                                    heatmap_name=heatmap_name_south,
-                                    center_lat=center_lat_south,
-                                    center_lon=center_lon_south,
-                                    radius_km=st.session_state.search_radius,
-                                    interpolation_method=st.session_state.interpolation_method,
-                                    heatmap_data=heatmap_data_south,
-                                    geojson_data=geojson_data_south,
-                                    well_count=len(st.session_state.filtered_wells_south) if st.session_state.filtered_wells_south is not None else 0
-                                )
-
-                            # Store southeast heatmap if it exists
-                            if geojson_data_southeast and st.session_state.selected_point_southeast:
-                                center_lat_southeast, center_lon_southeast = st.session_state.selected_point_southeast
-                                center_lat_southeast = float(center_lat_southeast)
-                                center_lon_southeast = float(center_lon_southeast)
-                                heatmap_name_southeast = f"{st.session_state.interpolation_method}_southeast_{center_lat_southeast:.3f}_{center_lon_southeast:.3f}"
-
-                                # Convert southeast GeoJSON to simple heatmap data for storage
-                                heatmap_data_southeast = []
-                                for feature in geojson_data_southeast.get('features', []):
-                                    if 'geometry' in feature and 'properties' in feature:
-                                        geom = feature['geometry']
-                                        if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                            coords = geom['coordinates'][0]
-                                            if len(coords) >= 3:
-                                                lat = sum(coord[1] for coord in coords) / len(coords)
-                                                lon = sum(coord[0] for coord in coords) / len(coords)
-                                                value = feature['properties'].get('yield', 0)
-                                                heatmap_data_southeast.append([lat, lon, value])
-
-                                # Store southeast heatmap in database
-                                stored_heatmap_id_southeast = st.session_state.polygon_db.store_heatmap(
-                                    heatmap_name=heatmap_name_southeast,
-                                    center_lat=center_lat_southeast,
-                                    center_lon=center_lon_southeast,
-                                    radius_km=st.session_state.search_radius,
-                                    interpolation_method=st.session_state.interpolation_method,
-                                    heatmap_data=heatmap_data_southeast,
-                                    geojson_data=geojson_data_southeast,
-                                    well_count=len(st.session_state.filtered_wells_southeast) if st.session_state.filtered_wells_southeast is not None else 0
-                                )
-
-                            # Always reload stored heatmaps to ensure fresh heatmaps are included
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-
-                            # Mark that new heatmaps were added
-                            st.session_state.new_heatmap_added = True
-                            heatmap_count = sum([1 for data in [geojson_data, geojson_data_east, geojson_data_south, geojson_data_southeast] if data])
-                            print(f"AUTO-STORED {heatmap_count} QUAD HEATMAPS: {heatmap_name}")
-                            # Let natural Streamlit flow handle the update
-                        except Exception as e:
-                            print(f"Error auto-storing dual heatmaps: {e}")
+                    # Storage handled by sequential processing above
+                    st.session_state.new_heatmap_added = True
 
                     # Add UNIFIED colormap legend using global min/max values
                     if st.session_state.interpolation_method == 'indicator_kriging':

@@ -1293,11 +1293,12 @@ with main_col1:
                 # Gap measurement showed 9.3km overlap, so increase offset to eliminate it
                 km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
                 
-                # Previous measurement showed -9.3km gap (overlap)
-                # Need to increase offset by this amount plus small buffer
-                overlap_correction_km = 9.5  # Measured overlap + small buffer
-                base_offset_km = 10.5  # Previous offset that caused overlap
-                east_offset_km = base_offset_km + overlap_correction_km  # 20km total
+                # Latest measurement shows 0.211km gap - need to reduce offset slightly
+                # Previous: 20km offset gave 0.211km gap
+                # Reduce offset by gap amount to achieve seamless connection
+                gap_to_close_km = 0.21  # Measured gap from logs
+                base_offset_km = 20.0  # Current offset
+                east_offset_km = base_offset_km - gap_to_close_km  # 19.79km for seamless join
                 east_offset_degrees = east_offset_km / km_per_degree_lon
                 
                 clicked_east_lat = clicked_lat
@@ -1310,11 +1311,11 @@ with main_col1:
                 print(f"DUAL HEATMAP POSITIONING ANALYSIS:")
                 print(f"  Original center: ({clicked_lat:.6f}, {clicked_lng:.6f})")
                 print(f"  East center: ({clicked_east_lat:.6f}, {clicked_east_lng:.6f})")
-                print(f"  Distance between centers: {east_offset_km:.1f}km (corrected for overlap)")
+                print(f"  Distance between centers: {east_offset_km:.2f}km (final gap closure)")
                 print(f"  Search radius: {search_radius_km:.1f}km")
                 print(f"  Clipped heatmap width: {clipped_width_km:.1f}km")
-                print(f"  Previous overlap measured: 9.3km")
-                print(f"  Overlap correction applied: {overlap_correction_km:.1f}km")
+                print(f"  Previous gap measured: 0.211km")
+                print(f"  Gap closure applied: {gap_to_close_km:.2f}km")
                 print(f"  Original heatmap east edge: {clicked_lng:.6f} + {(clipped_width_km/2)/km_per_degree_lon:.6f} = {clicked_lng + (clipped_width_km/2)/km_per_degree_lon:.6f}")
                 print(f"  East heatmap west edge: {clicked_east_lng:.6f} - {(clipped_width_km/2)/km_per_degree_lon:.6f} = {clicked_east_lng - (clipped_width_km/2)/km_per_degree_lon:.6f}")
                 

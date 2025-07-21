@@ -702,137 +702,37 @@ with main_col1:
                 
                 if has_selected_point and has_filtered_wells and wells_count > 0:
                     try:
-                        # Sequential generation to prevent crashes
-                        heatmaps_to_generate = []
+                        print(f"AUTOMATIC SEQUENTIAL GENERATION: Triggering quad heatmap generation on click")
                         
-                        # Queue all available heatmaps for sequential processing
-                        if st.session_state.selected_point and 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
-                            heatmaps_to_generate.append(('original', st.session_state.selected_point, st.session_state.filtered_wells))
+                        # Use the dedicated sequential processing module for automatic generation
+                        from sequential_heatmap import generate_quad_heatmaps_sequential
                         
-                        if st.session_state.selected_point_east and 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None:
-                            heatmaps_to_generate.append(('east', st.session_state.selected_point_east, st.session_state.filtered_wells_east))
+                        # Generate all four heatmaps sequentially
+                        success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
+                            wells_data=st.session_state.wells_data,
+                            click_point=st.session_state.selected_point,
+                            search_radius=st.session_state.search_radius,
+                            interpolation_method=st.session_state.interpolation_method,
+                            polygon_db=st.session_state.polygon_db,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                        )
+                        
+                        print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
+                        
+                        if success_count > 0:
+                            # Reload stored heatmaps to display the new ones
+                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            st.session_state.new_heatmap_added = True
+                            st.session_state.fresh_heatmap_displayed = False
                             
-                        if st.session_state.selected_point_south and 'filtered_wells_south' in st.session_state and st.session_state.filtered_wells_south is not None:
-                            heatmaps_to_generate.append(('south', st.session_state.selected_point_south, st.session_state.filtered_wells_south))
-                            
-                        if st.session_state.selected_point_southeast and 'filtered_wells_southeast' in st.session_state and st.session_state.filtered_wells_southeast is not None:
-                            heatmaps_to_generate.append(('southeast', st.session_state.selected_point_southeast, st.session_state.filtered_wells_southeast))
-
-                        print(f"SEQUENTIAL PROCESSING: {len(heatmaps_to_generate)} heatmaps queued for generation")
-
-                        # Process each heatmap individually
-                        generated_heatmaps = []
-                        for i, (location_name, center_point, filtered_wells) in enumerate(heatmaps_to_generate):
-                            with st.spinner(f"🔄 Building heatmap {i+1}/{len(heatmaps_to_generate)}: {location_name.title()} location..."):
-                                try:
-                                    # Generate indicator mask if needed
-                                    indicator_mask = None
-                                    methods_requiring_mask = [
-                                        'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
-                                        'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
-                                    ]
-
-                                    if st.session_state.interpolation_method in methods_requiring_mask:
-                                        try:
-                                            indicator_mask = generate_indicator_kriging_mask(
-                                                filtered_wells.copy(),
-                                                center_point,
-                                                st.session_state.search_radius,
-                                                resolution=100,
-                                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                                threshold=0.7
-                                            )
-                                        except Exception as e:
-                                            print(f"Error generating {location_name} indicator mask: {e}")
-                                            indicator_mask = None
-
-                                    print(f"App.py: Generating {location_name} heatmap with method='{st.session_state.interpolation_method}'")
-
-                                    # Generate interpolation for this location
-                                    geojson_data = generate_geo_json_grid(
-                                        filtered_wells.copy(), 
-                                        center_point, 
-                                        st.session_state.search_radius,
-                                        resolution=100,
-                                        method=st.session_state.interpolation_method,
-                                        show_variance=False,
-                                        auto_fit_variogram=st.session_state.get('auto_fit_variogram', False),
-                                        variogram_model=st.session_state.get('variogram_model', 'spherical'),
-                                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                        indicator_mask=indicator_mask
-                                    )
-                                    
-                                    if geojson_data and len(geojson_data.get('features', [])) > 0:
-                                        print(f"✅ {location_name.upper()} HEATMAP GENERATED: {len(geojson_data.get('features', []))} features")
-                                        generated_heatmaps.append((location_name, center_point, geojson_data, len(filtered_wells)))
-                                    else:
-                                        print(f"❌ {location_name.upper()} HEATMAP FAILED: No features generated")
-                                        
-                                except Exception as e:
-                                    print(f"❌ Error generating {location_name} heatmap: {e}")
-                                    continue
-
-                        # Now store each generated heatmap sequentially in the database
-                        print(f"SEQUENTIAL STORAGE: Storing {len(generated_heatmaps)} heatmaps in database...")
-                        stored_heatmap_ids = []
+                            # For display purposes, get the first generated heatmap
+                            if stored_heatmap_ids:
+                                primary_heatmap = st.session_state.stored_heatmaps[0] if st.session_state.stored_heatmaps else None
+                                if primary_heatmap and primary_heatmap.get('geojson_data'):
+                                    geojson_data = primary_heatmap['geojson_data']
+                                    print(f"AUTOMATIC GENERATION: Using stored heatmap for display")
                         
-                        for j, (location_name, center_point, geojson_data, well_count) in enumerate(generated_heatmaps):
-                            with st.spinner(f"💾 Storing heatmap {j+1}/{len(generated_heatmaps)}: {location_name.title()} in database..."):
-                                try:
-                                    if st.session_state.polygon_db:
-                                        center_lat, center_lon = center_point
-                                        center_lat = float(center_lat)
-                                        center_lon = float(center_lon)
-                                        
-                                        # Create unique name for each location
-                                        if location_name == 'original':
-                                            heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
-                                        else:
-                                            heatmap_name = f"{st.session_state.interpolation_method}_{location_name}_{center_lat:.3f}_{center_lon:.3f}"
-                                        
-                                        # Convert GeoJSON to heatmap data for storage
-                                        heatmap_data = []
-                                        for feature in geojson_data.get('features', []):
-                                            if 'geometry' in feature and 'properties' in feature:
-                                                geom = feature['geometry']
-                                                if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                                    coords = geom['coordinates'][0]
-                                                    if len(coords) >= 3:
-                                                        lat = sum(coord[1] for coord in coords) / len(coords)
-                                                        lon = sum(coord[0] for coord in coords) / len(coords)
-                                                        value = feature['properties'].get('yield', 0)
-                                                        heatmap_data.append([lat, lon, value])
-                                        
-                                        # Store heatmap in database
-                                        stored_heatmap_id = st.session_state.polygon_db.store_heatmap(
-                                            heatmap_name=heatmap_name,
-                                            center_lat=center_lat,
-                                            center_lon=center_lon,
-                                            radius_km=st.session_state.search_radius,
-                                            interpolation_method=st.session_state.interpolation_method,
-                                            heatmap_data=heatmap_data,
-                                            geojson_data=geojson_data,
-                                            well_count=well_count
-                                        )
-                                        
-                                        if stored_heatmap_id:
-                                            stored_heatmap_ids.append((location_name, stored_heatmap_id))
-                                            print(f"✅ {location_name.upper()} HEATMAP STORED: ID {stored_heatmap_id}")
-                                        else:
-                                            print(f"⚠️  {location_name.upper()} HEATMAP: Already exists, skipped duplicate")
-                                            
-                                except Exception as e:
-                                    print(f"❌ Error storing {location_name} heatmap: {e}")
-                                    continue
-                        
-                        # Reload stored heatmaps to ensure all are available for display
-                        st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                        
-                        print(f"SEQUENTIAL PROCESSING COMPLETE: {len(stored_heatmap_ids)} heatmaps stored successfully")
-                        
-                        # Set the first generated heatmap as primary for display purposes
-                        if generated_heatmaps:
-                            geojson_data = generated_heatmaps[0][2]  # Get the original heatmap data for legacy compatibility
+                        # Sequential processing and storage handled by the dedicated module
                     except Exception as e:
                         print(f"CRITICAL ERROR in heatmap generation: {e}")
                         st.error(f"Error generating heatmaps: {e}")

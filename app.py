@@ -908,73 +908,11 @@ with main_col1:
                     )
                     fresh_geojson.add_to(m)
 
-                    # Add the east heatmap to the map if it exists
-                    if geojson_data_east and len(geojson_data_east['features']) > 0:
-                        east_heatmap_name = f"East: {st.session_state.interpolation_method.replace('_', ' ').title()}"
-                        if st.session_state.selected_point_east:
-                            lat_east, lon_east = st.session_state.selected_point_east
-                            east_heatmap_name += f" ({lat_east:.3f}, {lon_east:.3f})"
-
-                        fresh_geojson_east = folium.GeoJson(
-                            data=geojson_data_east,
-                            name=east_heatmap_name,
-                            style_function=lambda feature: {
-                                'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
-                                'color': 'none',
-                                'weight': 0,
-                                'fillOpacity': 0.7
-                            },
-                            tooltip=folium.GeoJsonTooltip(
-                                fields=[display_field],
-                                aliases=[f'{display_field.title()}:'],
-                                labels=True,
-                                sticky=False
-                            )
-                        )
-                        fresh_geojson_east.add_to(m)
-                        print(f"EAST HEATMAP ADDED TO MAP: {east_heatmap_name} with {len(geojson_data_east.get('features', []))} features")
-                        
-                        # MEASURE GAP: Find actual edges of heatmap polygons
-                        # Find easternmost longitude of original heatmap triangles
-                        original_max_lng = -999
-                        for feature in geojson_data.get('features', []):
-                            coords = feature.get('geometry', {}).get('coordinates', [[]])[0]
-                            for coord in coords:
-                                if len(coord) >= 2:
-                                    original_max_lng = max(original_max_lng, coord[0])
-                        
-                        # Find westernmost longitude of east heatmap triangles  
-                        east_min_lng = 999
-                        for feature in geojson_data_east.get('features', []):
-                            coords = feature.get('geometry', {}).get('coordinates', [[]])[0]
-                            for coord in coords:
-                                if len(coord) >= 2:
-                                    east_min_lng = min(east_min_lng, coord[0])
-                        
-                        # Calculate actual gap distance
-                        gap_degrees = east_min_lng - original_max_lng
-                        center_lat = st.session_state.selected_point[0] if st.session_state.selected_point else -43.5
-                        gap_meters = gap_degrees * (111000 * np.cos(np.radians(center_lat)))
-                        
-                        print(f"ACTUAL HEATMAP GAP MEASUREMENT:")
-                        print(f"  Original heatmap easternmost edge: {original_max_lng:.6f}")
-                        print(f"  East heatmap westernmost edge: {east_min_lng:.6f}")
-                        print(f"  Actual gap: {gap_degrees:.6f} degrees = {gap_meters:.1f} meters")
-                        print(f"  Gap distance: {gap_meters/1000:.3f} km")
-
-                    # Mark that we have fresh heatmaps displayed
+                    # Mark that we have a fresh heatmap displayed
                     st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
-                    
-                    # Create a unique name for the primary heatmap based on location
-                    new_heatmap_name = f"New: {st.session_state.interpolation_method.replace('_', ' ').title()}"
-                    if generated_heatmaps and generated_heatmaps[0][1]:  # If we have original location
-                        lat, lon = generated_heatmaps[0][1]
-                        new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
-
-                    print(f"SEQUENTIAL QUAD HEATMAPS ADDED TO MAP: {len(generated_heatmaps)} heatmaps with {sum(len(hm[2].get('features', [])) for hm in generated_heatmaps)} total features")
-
-                    # Storage handled by sequential processing above
                     st.session_state.new_heatmap_added = True
+                    
+                    print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
                     # Add UNIFIED colormap legend using global min/max values
                     if st.session_state.interpolation_method == 'indicator_kriging':

@@ -121,6 +121,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 22, 2025**: Expanded sequential heatmap system to 6-heatmap grid (2x3 layout)
+  - Extended sequential_heatmap.py to generate 6 heatmaps instead of 4
+  - Added Northeast (5th) and Far Southeast (6th) heatmap positions
+  - Updated coordinate calculation for 39.58km extended grid coverage
+  - Maintained 19.79km offset between adjacent heatmaps for seamless connection
+  - Updated app.py sidebar to display all 6 heatmap coordinates
+  - All heatmaps generated automatically on single map click with full wells filtering
+
 - **July 06, 2025**: Completed PostgreSQL database integration for merged polygon storage
   - Created PolygonDatabase class with full CRUD operations
   - Added database management interface to sidebar

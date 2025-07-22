@@ -1142,20 +1142,30 @@ with main_col1:
                 search_radius_km = st.session_state.search_radius
                 clipped_width_km = search_radius_km * 0.5  # Each heatmap is clipped to 50% of search radius
                 
-                print(f"QUAD HEATMAP POSITIONING ANALYSIS:")
+                # Calculate additional positions for 6-heatmap grid
+                clicked_northeast_lat = clicked_lat
+                clicked_northeast_lng = clicked_lng + (2 * east_offset_degrees)
+                clicked_far_southeast_lat = clicked_south_lat
+                clicked_far_southeast_lng = clicked_south_lng + (2 * east_offset_degrees)
+                
+                print(f"6-HEATMAP GRID POSITIONING ANALYSIS:")
                 print(f"  Original center: ({clicked_lat:.6f}, {clicked_lng:.6f})")
                 print(f"  East center: ({clicked_east_lat:.6f}, {clicked_east_lng:.6f})")
+                print(f"  Northeast center: ({clicked_northeast_lat:.6f}, {clicked_northeast_lng:.6f})")
                 print(f"  South center: ({clicked_south_lat:.6f}, {clicked_south_lng:.6f})")
                 print(f"  Southeast center: ({clicked_southeast_lat:.6f}, {clicked_southeast_lng:.6f})")
+                print(f"  Far Southeast center: ({clicked_far_southeast_lat:.6f}, {clicked_far_southeast_lng:.6f})")
                 print(f"  Distance between centers: {east_offset_km:.2f}km (seamless connection)")
                 print(f"  Search radius: {search_radius_km:.1f}km")
                 print(f"  Clipped heatmap width: {clipped_width_km:.1f}km")
 
-                # Store all four points for quad heatmap generation
+                # Store all six points for 6-heatmap grid generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
                 st.session_state.selected_point_east = [clicked_east_lat, clicked_east_lng]
+                st.session_state.selected_point_northeast = [clicked_northeast_lat, clicked_northeast_lng]
                 st.session_state.selected_point_south = [clicked_south_lat, clicked_south_lng]
                 st.session_state.selected_point_southeast = [clicked_southeast_lat, clicked_southeast_lng]
+                st.session_state.selected_point_far_southeast = [clicked_far_southeast_lat, clicked_far_southeast_lng]
 
                 # Immediately regenerate filtered wells for both locations
                 from utils import is_within_square
@@ -1231,9 +1241,37 @@ with main_col1:
                 )
                 filtered_wells_southeast = wells_df[wells_df['within_square_southeast']]
                 st.session_state.filtered_wells_southeast = filtered_wells_southeast.copy()
+
+                # Filter wells for northeast location
+                wells_df['within_square_northeast'] = wells_df.apply(
+                    lambda row: is_within_square(
+                        row['latitude'], 
+                        row['longitude'],
+                        clicked_northeast_lat,
+                        clicked_northeast_lng,
+                        st.session_state.search_radius
+                    ), 
+                    axis=1
+                )
+                filtered_wells_northeast = wells_df[wells_df['within_square_northeast']]
+                st.session_state.filtered_wells_northeast = filtered_wells_northeast.copy()
+
+                # Filter wells for far_southeast location
+                wells_df['within_square_far_southeast'] = wells_df.apply(
+                    lambda row: is_within_square(
+                        row['latitude'], 
+                        row['longitude'],
+                        clicked_far_southeast_lat,
+                        clicked_far_southeast_lng,
+                        st.session_state.search_radius
+                    ), 
+                    axis=1
+                )
+                filtered_wells_far_southeast = wells_df[wells_df['within_square_far_southeast']]
+                st.session_state.filtered_wells_far_southeast = filtered_wells_far_southeast.copy()
                 
-                print(f"COORDINATES UPDATED: Original wells={len(filtered_wells)}, East wells={len(filtered_wells_east)}, South wells={len(filtered_wells_south)}, Southeast wells={len(filtered_wells_southeast)}")
-                print("WELLS FILTERED: Ready for quad heatmap generation")
+                print(f"COORDINATES UPDATED: Original wells={len(filtered_wells)}, East wells={len(filtered_wells_east)}, Northeast wells={len(filtered_wells_northeast)}, South wells={len(filtered_wells_south)}, Southeast wells={len(filtered_wells_southeast)}, Far Southeast wells={len(filtered_wells_far_southeast)}")
+                print("WELLS FILTERED: Ready for 6-heatmap grid generation")
                 
                 # Force session state flag to ensure heatmap generation triggers
                 st.session_state.force_heatmap_generation = True
@@ -1266,8 +1304,8 @@ with main_col1:
             
             # Reset session state for map and heatmaps
             keys_to_clear = [
-                'selected_point', 'selected_point_east', 'selected_point_south', 'selected_point_southeast',
-                'filtered_wells', 'filtered_wells_east', 'filtered_wells_south', 'filtered_wells_southeast',
+                'selected_point', 'selected_point_east', 'selected_point_northeast', 'selected_point_south', 'selected_point_southeast', 'selected_point_far_southeast',
+                'filtered_wells', 'filtered_wells_east', 'filtered_wells_northeast', 'filtered_wells_south', 'filtered_wells_southeast', 'filtered_wells_far_southeast',
                 'stored_heatmaps', 'geojson_data',
                 'fresh_heatmap_displayed', 'new_heatmap_added'
             ]
@@ -1296,27 +1334,52 @@ with main_col2:
     st.subheader("Analysis Results")
 
     if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
-        # Show information about quad heatmap generation
-        st.subheader("Quad Heatmap Analysis (2x2 Grid)")
+        # Show information about 6-heatmap generation
+        st.subheader("Heatmap Grid Analysis (2x3 Grid)")
         
-        # Show all four heatmap locations
-        quad_count = 1  # Always have original
+        # Show all six heatmap locations
+        grid_count = 1  # Always have original
         if st.session_state.selected_point:
             st.write(f"**Original:** {st.session_state.selected_point[0]:.4f}, {st.session_state.selected_point[1]:.4f}")
         
         if st.session_state.selected_point_east:
-            quad_count += 1
+            grid_count += 1
             st.write(f"**East (19.79km):** {st.session_state.selected_point_east[0]:.4f}, {st.session_state.selected_point_east[1]:.4f}")
             
+        # Calculate northeast position (would be generated automatically)
+        if st.session_state.selected_point:
+            import numpy as np
+            clicked_lat, clicked_lng = st.session_state.selected_point
+            km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
+            east_offset_km = 19.79
+            east_offset_degrees = east_offset_km / km_per_degree_lon
+            northeast_lat = clicked_lat
+            northeast_lng = clicked_lng + (2 * east_offset_degrees)
+            grid_count += 1
+            st.write(f"**Northeast (39.58km):** {northeast_lat:.4f}, {northeast_lng:.4f}")
+            
         if st.session_state.selected_point_south:
-            quad_count += 1
+            grid_count += 1
             st.write(f"**South (19.79km):** {st.session_state.selected_point_south[0]:.4f}, {st.session_state.selected_point_south[1]:.4f}")
             
         if st.session_state.selected_point_southeast:
-            quad_count += 1
+            grid_count += 1
             st.write(f"**Southeast (19.79km E of S):** {st.session_state.selected_point_southeast[0]:.4f}, {st.session_state.selected_point_southeast[1]:.4f}")
         
-        st.success(f"✅ {quad_count} heatmaps generated in seamless 2x2 grid")
+        # Calculate far_southeast position (would be generated automatically)
+        if st.session_state.selected_point_south:
+            import numpy as np
+            clicked_lat, clicked_lng = st.session_state.selected_point
+            km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
+            east_offset_km = 19.79
+            south_offset_degrees = east_offset_km / 111.0
+            east_offset_degrees = east_offset_km / km_per_degree_lon
+            far_southeast_lat = clicked_lat - south_offset_degrees
+            far_southeast_lng = clicked_lng + (2 * east_offset_degrees)
+            grid_count += 1
+            st.write(f"**Far Southeast (39.58km E):** {far_southeast_lat:.4f}, {far_southeast_lng:.4f}")
+        
+        st.success(f"✅ {grid_count} heatmaps generated in seamless 2x3 grid")
         
         # Add export data option
         st.subheader("Export Data")

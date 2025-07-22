@@ -3,7 +3,11 @@
 
 def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None):
     """
-    Generate four heatmaps sequentially (original, east, south, southeast) to avoid memory issues.
+    Generate six heatmaps sequentially (original, east, south, southeast, northeast, far_southeast) to avoid memory issues.
+    
+    Layout:
+    [Original] [East] [Northeast]
+    [South] [Southeast] [Far_Southeast]
     
     Returns:
         tuple: (success_count, stored_heatmap_ids, error_messages)
@@ -27,15 +31,17 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     km_per_degree_lat = 111.0
     south_offset_degrees = east_offset_km / km_per_degree_lat
     
-    # Define all four locations
+    # Define all six locations in 2x3 grid
     locations = [
         ('original', [clicked_lat, clicked_lng]),
         ('east', [clicked_lat, clicked_lng + east_offset_degrees]),
+        ('northeast', [clicked_lat, clicked_lng + (2 * east_offset_degrees)]),  # 5th heatmap: 19.79km east of northeast
         ('south', [clicked_lat - south_offset_degrees, clicked_lng]),
-        ('southeast', [clicked_lat - south_offset_degrees, clicked_lng + east_offset_degrees])
+        ('southeast', [clicked_lat - south_offset_degrees, clicked_lng + east_offset_degrees]),
+        ('far_southeast', [clicked_lat - south_offset_degrees, clicked_lng + (2 * east_offset_degrees)])  # 6th heatmap: 19.79km south of northeast
     ]
     
-    print(f"SEQUENTIAL QUAD GENERATION: Starting {len(locations)} heatmaps")
+    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in 2x3 grid")
     for i, (name, coords) in enumerate(locations):
         print(f"  {i+1}. {name.upper()}: ({coords[0]:.6f}, {coords[1]:.6f})")
     
@@ -46,7 +52,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     
     for i, (location_name, center_point) in enumerate(locations):
         try:
-            st.write(f"🔄 Building heatmap {i+1}/4: {location_name.title()} location...")
+            st.write(f"🔄 Building heatmap {i+1}/6: {location_name.title()} location...")
             
             # Filter wells for this location
             wells_df = wells_data.copy()

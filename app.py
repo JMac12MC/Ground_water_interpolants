@@ -434,9 +434,50 @@ with main_col1:
 
     print(f"UNIFIED COLORMAP: Global value range {global_min_value:.2f} to {global_max_value:.2f} across all displayed heatmaps")
 
-    # DEFINE GLOBAL UNIFIED COLOR FUNCTION OUTSIDE THE LOOP
+    # GLOBAL PERCENTILE-BASED COLOR MAPPING
+    global_percentiles = None
+    global_all_values = []
+    
+    def calculate_global_percentiles():
+        """Calculate percentile-based color bins from all heatmap data"""
+        global global_percentiles, global_all_values
+        
+        # Collect all values from fresh and stored heatmaps
+        all_values = []
+        
+        # Include fresh heatmap values
+        if 'geojson_data' in locals() and geojson_data and 'features' in geojson_data:
+            for feature in geojson_data['features']:
+                value = feature['properties'].get('yield', feature['properties'].get('value', 0))
+                if value > 0:
+                    all_values.append(value)
+        
+        # Include stored heatmap values
+        if st.session_state.stored_heatmaps:
+            for stored_heatmap in st.session_state.stored_heatmaps:
+                stored_geojson = stored_heatmap.get('geojson_data')
+                if stored_geojson and 'features' in stored_geojson:
+                    for feature in stored_geojson['features']:
+                        value = feature['properties'].get('yield', feature['properties'].get('value', 0))
+                        if value > 0:
+                            all_values.append(value)
+        
+        if len(all_values) > 0:
+            # Calculate percentiles for 256 color bins (higher resolution where data is dense)
+            global_percentiles = np.percentile(all_values, np.linspace(0, 100, num=256))
+            global_all_values = all_values
+            print(f"PERCENTILE COLORMAP: Calculated from {len(all_values)} data points")
+            print(f"PERCENTILE RANGE: {global_percentiles[0]:.2f} to {global_percentiles[-1]:.2f}")
+            return True
+        return False
+    
+    # Calculate percentiles when needed
+    if global_percentiles is None:
+        calculate_global_percentiles()
+
+    # DEFINE GLOBAL UNIFIED COLOR FUNCTION WITH PERCENTILE MAPPING
     def get_global_unified_color(value, method='kriging'):
-        """Global unified color function for consistent visualization across ALL heatmaps"""
+        """Global unified color function with percentile-based mapping for data density awareness"""
         if method == 'indicator_kriging':
             # Three-tier classification: red (poor), orange (moderate), green (good)
             if value <= 0.4:
@@ -446,12 +487,33 @@ with main_col1:
             else:
                 return '#00FF00'    # Green for good
         else:
-            # Use GLOBAL min/max for consistent color scaling across ALL heatmaps
-            if global_max_value <= global_min_value:
-                return '#000080'  # Default blue if no range
-
-            # Normalize value to 0-1 range using global min/max
-            normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+            # Use percentile-based mapping for better data density visualization
+            if global_percentiles is not None and len(global_percentiles) > 1:
+                # Find which percentile bin this value falls into
+                bin_index = np.searchsorted(global_percentiles, value, side='left')
+                bin_index = min(bin_index, len(global_percentiles) - 1)
+                
+                # Map percentile bin to 0-1 range (even spacing in color space)
+                normalized_value = bin_index / (len(global_percentiles) - 1)
+            else:
+                # Fallback to linear mapping if percentiles not available
+                if global_max_value <= global_min_value:
+                    return '#000080'  # Default blue if no range
+                normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+            
+            # Apply improved color gradient with more transitions in dense data areas
+            # Enhanced 15-color gradient for better visual discrimination
+            colors = [
+                '#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF',  # Deep blues
+                '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66',  # Blue-green transitions
+                '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'   # Green-yellow-red
+            ]
+            
+            # Map normalized value to color index
+            color_index = int(normalized_value * (len(colors) - 1))
+            color_index = min(color_index, len(colors) - 1)
+            
+            return colors[color_index]
             normalized_value = max(0, min(1, normalized_value))  # Clamp to 0-1
 
             # Use 15-band color system with normalized value
@@ -825,14 +887,22 @@ with main_col1:
                             caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
                         )
                     else:
-                        # UNIFIED legend using GLOBAL min/max for all interpolation types
+                        # Enhanced PERCENTILE-based colormap legend
+                        caption_text = f'Percentile-Based Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s'
+                        if global_percentiles is not None:
+                            # Show key percentiles for reference
+                            p25 = np.percentile(global_all_values, 25) if len(global_all_values) > 0 else 0
+                            p50 = np.percentile(global_all_values, 50) if len(global_all_values) > 0 else 0
+                            p75 = np.percentile(global_all_values, 75) if len(global_all_values) > 0 else 0
+                            caption_text = f'Data-Density Optimized: {global_min_value:.1f} → {p25:.1f} (25%) → {p50:.1f} (50%) → {p75:.1f} (75%) → {global_max_value:.1f} L/s'
+                        
                         colormap = folium.LinearColormap(
                             colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
                                     '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
                                     '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
                             vmin=float(global_min_value),
                             vmax=float(global_max_value),
-                            caption=f'UNIFIED Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s (All Heatmaps)'
+                            caption=caption_text
                         )
                     colormap.add_to(m)
 

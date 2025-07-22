@@ -121,6 +121,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 22, 2025**: Enhanced colormap system with percentile-based data density mapping
+  - Implemented quantile-based color mapping using 256 percentile bins
+  - Improved visual discrimination in areas with high data density
+  - Added percentile statistics (25th, 50th, 75th percentiles) to colormap legend
+  - Colors now distributed based on data histogram rather than linear value range
+  - Enhanced 15-color gradient for better visual transitions
+
 - **July 22, 2025**: Expanded sequential heatmap system to 6-heatmap grid (2x3 layout)
   - Extended sequential_heatmap.py to generate 6 heatmaps instead of 4
   - Added Northeast (5th) and Far Southeast (6th) heatmap positions

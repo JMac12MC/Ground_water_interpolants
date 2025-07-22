@@ -501,12 +501,19 @@ with main_col1:
                     return '#000080'  # Default blue if no range
                 normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
             
-            # Apply improved color gradient with more transitions in dense data areas
-            # Enhanced 15-color gradient for better visual discrimination
+            # Apply enhanced color gradient with 25 color bands for maximum detail
+            # Extended color palette for superior visual discrimination in data-dense areas
             colors = [
-                '#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF',  # Deep blues
-                '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66',  # Blue-green transitions
-                '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'   # Green-yellow-red
+                # Deep blues (low values)
+                '#000033', '#000066', '#000099', '#0000CC', '#0000FF',
+                # Blue transitions
+                '#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF',
+                # Cyan to green transitions
+                '#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00',
+                # Green to yellow transitions  
+                '#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00',
+                # Yellow to red transitions (high values)
+                '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000'
             ]
             
             # Map normalized value to color index
@@ -897,9 +904,11 @@ with main_col1:
                             caption_text = f'Data-Density Optimized: {global_min_value:.1f} → {p25:.1f} (25%) → {p50:.1f} (50%) → {p75:.1f} (75%) → {global_max_value:.1f} L/s'
                         
                         colormap = folium.LinearColormap(
-                            colors=['#000080', '#0000B3', '#0000E6', '#0033FF', '#0066FF', 
-                                    '#0099FF', '#00CCFF', '#00FFCC', '#00FF99', '#00FF66', 
-                                    '#33FF33', '#99FF00', '#FFFF00', '#FF9900', '#FF0000'],
+                            colors=['#000033', '#000066', '#000099', '#0000CC', '#0000FF',
+                                    '#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF',
+                                    '#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00',
+                                    '#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00',
+                                    '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000'],
                             vmin=float(global_min_value),
                             vmax=float(global_max_value),
                             caption=caption_text

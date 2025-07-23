@@ -344,24 +344,62 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
 
-        # Convert yields to BINARY indicator values for kriging input
-        # 0 for wells with yield < 0.1 L/s (not viable)
-        # 1 for wells with yield ≥ 0.1 L/s (viable)
+        # Convert to BINARY indicator values for kriging input using COMBINED criteria
+        # A well is viable (indicator = 1) if EITHER:
+        # - yield_rate ≥ 0.1 L/s, OR  
+        # - ground water level > 0.1 (shallow groundwater)
+        # Otherwise indicator = 0 (not viable)
+        
         yield_threshold = 0.1
+        gwl_threshold = 0.1
+        
         raw_yields = wells_df['yield_rate'].values.astype(float)
-        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
+        
+        # Check if ground water level data is available
+        has_gwl_data = 'ground water level' in wells_df.columns
+        if has_gwl_data:
+            gwl_values = wells_df['ground water level'].values.astype(float)
+            # Handle NaN values in ground water level
+            gwl_valid = ~np.isnan(gwl_values)
+            gwl_viable = np.zeros_like(gwl_values, dtype=bool)
+            gwl_viable[gwl_valid] = gwl_values[gwl_valid] > gwl_threshold
+        else:
+            gwl_values = np.full_like(raw_yields, np.nan)
+            gwl_viable = np.zeros_like(raw_yields, dtype=bool)
+        
+        # Combined viability logic: viable if EITHER condition is met
+        yield_viable = raw_yields >= yield_threshold
+        combined_viable = yield_viable | gwl_viable
+        yields = combined_viable.astype(float)  # Binary: 1 or 0
 
-        # Count wells in each category for logging
+        # Count wells in each category for detailed logging
         viable_count = np.sum(yields == 1)
         non_viable_count = np.sum(yields == 0)
+        yield_only_viable = np.sum(yield_viable & ~gwl_viable)
+        gwl_only_viable = np.sum(gwl_viable & ~yield_viable) if has_gwl_data else 0
+        both_viable = np.sum(yield_viable & gwl_viable) if has_gwl_data else 0
 
-        print(f"GeoJSON indicator kriging: using {len(yields)} wells with binary classification")
-        print(f"Non-viable (<{yield_threshold} L/s): {non_viable_count} wells ({100*non_viable_count/len(yields):.1f}%)")
-        print(f"Viable (≥{yield_threshold} L/s): {viable_count} wells ({100*viable_count/len(yields):.1f}%)")
-        print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
-        print(f"Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
-        print(f"Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
-        print(f"Total wells excluded for quality: {len(wells_df_original) - len(wells_df)}")
+        print(f"GeoJSON indicator kriging: using {len(yields)} wells with COMBINED binary classification")
+        print(f"COMBINED RESULTS:")
+        print(f"  Total viable: {viable_count} wells ({100*viable_count/len(yields):.1f}%)")
+        print(f"  Total non-viable: {non_viable_count} wells ({100*non_viable_count/len(yields):.1f}%)")
+        print(f"BREAKDOWN BY CRITERIA:")
+        print(f"  Viable by yield only (≥{yield_threshold} L/s): {yield_only_viable} wells")
+        if has_gwl_data:
+            print(f"  Viable by ground water level only (>{gwl_threshold}): {gwl_only_viable} wells") 
+            print(f"  Viable by both criteria: {both_viable} wells")
+            valid_gwl_count = np.sum(~np.isnan(gwl_values))
+            print(f"  Wells with ground water level data: {valid_gwl_count}/{len(wells_df)}")
+        else:
+            print(f"  No ground water level data available - using yield criteria only")
+        print(f"RAW DATA RANGES:")
+        print(f"  Yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
+        if has_gwl_data and valid_gwl_count > 0:
+            valid_gwl = gwl_values[~np.isnan(gwl_values)]
+            print(f"  Ground water level range: {valid_gwl.min():.3f} to {valid_gwl.max():.3f}")
+        print(f"  Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
+        print(f"  Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
+        print(f"  Total wells excluded for quality: {len(wells_df_original) - len(wells_df)}")
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')

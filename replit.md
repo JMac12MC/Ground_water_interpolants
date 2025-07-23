@@ -121,6 +121,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 23, 2025**: Enhanced indicator kriging with combined viability criteria
+  - Extended indicator kriging logic to include ground water level assessment
+  - Wells now viable (indicator = 1) if EITHER yield_rate ≥ 0.1 L/s OR ground water level > 0.1
+  - Combined viability approach increases well coverage and accuracy
+  - Added detailed logging showing breakdown by individual and combined criteria
+  - Maintains backward compatibility when ground water level data unavailable
+
 - **July 22, 2025**: Enhanced colormap system with percentile-based data density mapping
   - Implemented quantile-based color mapping using 256 percentile bins
   - Improved visual discrimination in areas with high data density

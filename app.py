@@ -1098,11 +1098,11 @@ with main_col1:
                         
                         if wells_df is not None and not wells_df.empty:
                             # Filter wells within this heatmap's radius
-                            from utils import haversine_distance
+                            from utils import get_distance
                             wells_in_area = []
                             
                             for idx, well in wells_df.iterrows():
-                                distance = haversine_distance(
+                                distance = get_distance(
                                     center_lat, center_lon,
                                     well['latitude'], well['longitude']
                                 )

@@ -347,11 +347,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # Convert to BINARY indicator values for kriging input using COMBINED criteria
         # A well is viable (indicator = 1) if EITHER:
         # - yield_rate ≥ 0.1 L/s, OR  
-        # - ground water level > 0.1 (shallow groundwater)
+        # - ground water level > -3 (groundwater within 3 meters depth)
         # Otherwise indicator = 0 (not viable)
         
         yield_threshold = 0.1
-        gwl_threshold = 0.1
+        gwl_threshold = -3
         
         raw_yields = wells_df['yield_rate'].values.astype(float)
         
@@ -386,7 +386,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         print(f"BREAKDOWN BY CRITERIA:")
         print(f"  Viable by yield only (≥{yield_threshold} L/s): {yield_only_viable} wells")
         if has_gwl_data:
-            print(f"  Viable by ground water level only (>{gwl_threshold}): {gwl_only_viable} wells") 
+            print(f"  Viable by ground water level only (>{gwl_threshold}m depth): {gwl_only_viable} wells") 
             print(f"  Viable by both criteria: {both_viable} wells")
             valid_gwl_count = np.sum(~np.isnan(gwl_values))
             print(f"  Wells with ground water level data: {valid_gwl_count}/{len(wells_df)}")

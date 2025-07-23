@@ -1092,10 +1092,9 @@ with main_col1:
                 radius_km = stored_heatmap.get('radius_km', 20)
                 
                 if center_lat and center_lon:
-                    # Load wells data for this heatmap area
+                    # Use existing wells data from session state
                     try:
-                        from data_loader import load_wells_data
-                        wells_df = load_wells_data()
+                        wells_df = st.session_state.wells_data
                         
                         if wells_df is not None and not wells_df.empty:
                             # Filter wells within this heatmap's radius
@@ -1108,9 +1107,10 @@ with main_col1:
                                     well['latitude'], well['longitude']
                                 )
                                 if distance <= radius_km:
-                                    wells_in_area.append(well)
+                                    wells_in_area.append(well.to_dict())
                             
                             all_heatmap_wells.extend(wells_in_area)
+                            print(f"Found {len(wells_in_area)} wells in heatmap area: {stored_heatmap['heatmap_name']}")
                     except Exception as e:
                         print(f"Error loading wells for heatmap area: {e}")
         

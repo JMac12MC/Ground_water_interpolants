@@ -1076,40 +1076,92 @@ with main_col1:
     total_displayed = stored_heatmap_count
     print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (All via stored heatmaps)")
 
-    # Show wells within the radius when a point is selected (for local context)
-    if st.session_state.well_markers_visibility and st.session_state.selected_point:
+    # Show wells that overlap with displayed heatmap areas
+    if st.session_state.well_markers_visibility:
+        wells_layer = folium.FeatureGroup(name="Heatmap Area Wells").add_to(m)
+        
+        # Collect all wells from stored heatmaps
+        all_heatmap_wells = []
+        
+        # Get wells from stored heatmaps
+        if st.session_state.stored_heatmaps:
+            for stored_heatmap in st.session_state.stored_heatmaps:
+                # Extract center coordinates and radius from stored heatmap
+                center_lat = stored_heatmap.get('center_lat')
+                center_lon = stored_heatmap.get('center_lon') 
+                radius_km = stored_heatmap.get('radius_km', 20)
+                
+                if center_lat and center_lon:
+                    # Load wells data for this heatmap area
+                    try:
+                        from data_loader import load_wells_data
+                        wells_df = load_wells_data()
+                        
+                        if wells_df is not None and not wells_df.empty:
+                            # Filter wells within this heatmap's radius
+                            from utils import haversine_distance
+                            wells_in_area = []
+                            
+                            for idx, well in wells_df.iterrows():
+                                distance = haversine_distance(
+                                    center_lat, center_lon,
+                                    well['latitude'], well['longitude']
+                                )
+                                if distance <= radius_km:
+                                    wells_in_area.append(well)
+                            
+                            all_heatmap_wells.extend(wells_in_area)
+                    except Exception as e:
+                        print(f"Error loading wells for heatmap area: {e}")
+        
+        # Get wells from current filtered wells if available
         if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
-            radius_wells_layer = folium.FeatureGroup(name="Local Wells").add_to(m)
-
-            # Filter out geotechnical/geological investigation wells and wells with no depth value from well markers
-            display_wells = st.session_state.filtered_wells.copy()
-            if 'well_use' in display_wells.columns:
-                geotechnical_mask = display_wells['well_use'].str.contains(
+            current_wells = st.session_state.filtered_wells.to_dict('records')
+            all_heatmap_wells.extend(current_wells)
+        
+        # Remove duplicates based on well_id and create display wells
+        if all_heatmap_wells:
+            import pandas as pd
+            display_wells_df = pd.DataFrame(all_heatmap_wells)
+            
+            # Remove duplicates by well_id if column exists
+            if 'well_id' in display_wells_df.columns:
+                display_wells_df = display_wells_df.drop_duplicates(subset=['well_id'])
+            else:
+                # Fallback: remove duplicates by coordinates
+                display_wells_df = display_wells_df.drop_duplicates(subset=['latitude', 'longitude'])
+            
+            # Filter out geotechnical/geological investigation wells
+            if 'well_use' in display_wells_df.columns:
+                geotechnical_mask = display_wells_df['well_use'].str.contains(
                     'Geotechnical.*Investigation|Geological.*Investigation', 
                     case=False, 
                     na=False, 
                     regex=True
                 )
-                display_wells = display_wells[~geotechnical_mask]
+                display_wells_df = display_wells_df[~geotechnical_mask]
 
             # Filter out wells with no depth value (NaN or empty depth)
-            if 'depth' in display_wells.columns:
-                display_wells = display_wells[display_wells['depth'].notna() & (display_wells['depth'] > 0)]
+            if 'depth' in display_wells_df.columns:
+                display_wells_df = display_wells_df[display_wells_df['depth'].notna() & (display_wells_df['depth'] > 0)]
 
-            # Note: Active well status filtering removed to show all wells with depth data
-            # This ensures wells with valid depth and yield data are displayed
-
-            # Create small dot markers for wells within the radius (excluding geotechnical wells)
-            for idx, row in display_wells.iterrows():
-                folium.CircleMarker(
-                    location=(float(row['latitude']), float(row['longitude'])),
-                    radius=3,
-                    color='gray',
-                    fill=True,
-                    fill_color='darkblue',
-                    fill_opacity=0.7,
-                    tooltip=f"Well {row['well_id']} - {row['yield_rate']} L/s - Groundwater: {row['depth']:.1f}m{'(Dry)' if row.get('is_dry_well', False) else ''}"
-                ).add_to(radius_wells_layer)
+            # Create well markers for all wells in heatmap areas
+            print(f"Displaying {len(display_wells_df)} wells in heatmap areas")
+            for idx, row in display_wells_df.iterrows():
+                try:
+                    folium.CircleMarker(
+                        location=(float(row['latitude']), float(row['longitude'])),
+                        radius=3,
+                        color='gray',
+                        fill=True,
+                        fill_color='darkblue',
+                        fill_opacity=0.7,
+                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m"
+                    ).add_to(wells_layer)
+                except Exception as e:
+                    print(f"Error creating marker for well: {e}")
+        else:
+            print("No wells found in heatmap areas")
 
     # Add click event to capture coordinates (only need this once)
     folium.LatLngPopup().add_to(m)

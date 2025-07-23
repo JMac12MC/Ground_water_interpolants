@@ -397,6 +397,30 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if has_gwl_data and valid_gwl_count > 0:
             valid_gwl = gwl_values[~np.isnan(gwl_values)]
             print(f"  Ground water level range: {valid_gwl.min():.3f} to {valid_gwl.max():.3f}")
+            
+            # Debug specific well M35/4191 if present
+            if 'well_id' in wells_df.columns:
+                test_well_mask = wells_df['well_id'].str.contains('M35/4191', na=False)
+                if test_well_mask.any():
+                    test_well = wells_df[test_well_mask].iloc[0]
+                    test_yield = test_well['yield_rate']
+                    test_gwl = test_well['ground water level'] if not pd.isna(test_well['ground water level']) else 'NaN'
+                    test_yield_viable = test_yield >= yield_threshold
+                    test_gwl_viable = not pd.isna(test_well['ground water level']) and test_well['ground water level'] > gwl_threshold
+                    test_combined = test_yield_viable or test_gwl_viable
+                    print(f"DEBUG WELL M35/4191:")
+                    print(f"    Yield: {test_yield} L/s (viable: {test_yield_viable})")
+                    print(f"    Ground water level: {test_gwl} (viable: {test_gwl_viable})")
+                    print(f"    Combined viable: {test_combined}")
+                    print(f"    Threshold checks: yield>={yield_threshold}, gwl>{gwl_threshold}")
+                    
+            # Sample of ground water level values around the threshold
+            gwl_near_threshold = valid_gwl[(valid_gwl > -5) & (valid_gwl < 2)]
+            if len(gwl_near_threshold) > 0:
+                print(f"  Sample GWL values near threshold {gwl_threshold}: {gwl_near_threshold[:10]}")
+                gwl_viable_sample = gwl_near_threshold > gwl_threshold
+                print(f"  Which are viable (>{gwl_threshold}): {gwl_near_threshold[gwl_viable_sample][:5]}")
+                
         print(f"  Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
         print(f"  Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
         print(f"  Total wells excluded for quality: {len(wells_df_original) - len(wells_df)}")

@@ -424,85 +424,41 @@ with main_col1:
                     print(f"🎨 USING STORED COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (from metadata)")
                     break
         
-        # If no stored metadata found, calculate from actual values (fallback)
+        # If no stored metadata found, this means heatmaps were generated with old system
         if stored_colormap_metadata is None:
-            print(f"🎨 NO STORED METADATA FOUND: Calculating from heatmap values")
-            stored_heatmap_count = 0
-            for stored_heatmap in st.session_state.stored_heatmaps:
-                heatmap_name = stored_heatmap.get('heatmap_name', 'unknown')
-                geojson_data = stored_heatmap.get('geojson_data')
-                if geojson_data and 'features' in geojson_data:
-                    heatmap_values = []
-                    for feature in geojson_data['features']:
-                        value = feature['properties'].get('yield', feature['properties'].get('value', 0))
-                        if value > 0:  # Only consider meaningful values
-                            all_heatmap_values.append(value)
-                            heatmap_values.append(value)
-                            global_min_value = min(global_min_value, value)
-                            global_max_value = max(global_max_value, value)
-                    
-                    if heatmap_values:
-                        heatmap_min = min(heatmap_values)
-                        heatmap_max = max(heatmap_values)
-                        print(f"  {heatmap_name}: {len(heatmap_values)} values, range {heatmap_min:.2f} to {heatmap_max:.2f}")
-                        stored_heatmap_count += 1
-                    else:
-                        print(f"  {heatmap_name}: No valid values found")
-                else:
-                    print(f"  {heatmap_name}: No GeoJSON data available")
-            
-            colormap_source = "calculated_from_values"
-            print(f"🎨 CALCULATED COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} from {len(all_heatmap_values)} values")
+            print(f"🎨 NO STORED METADATA FOUND: Old heatmaps detected - need regeneration for consistency")
+            # Don't recalculate here - this creates inconsistency
+            # Instead, use fallback and suggest regeneration
+            colormap_source = "needs_regeneration"
 
-    # Fallback to reasonable defaults if no data
-    if global_min_value == float('inf'):
+    # Fallback to reasonable defaults if no data or inconsistent data
+    if global_min_value == float('inf') or colormap_source == "needs_regeneration":
         if st.session_state.interpolation_method == 'indicator_kriging':
             global_min_value, global_max_value = 0.0, 1.0
         else:
             global_min_value, global_max_value = 0.0, 25.0
+        if colormap_source == "needs_regeneration":
+            print(f"🎨 OLD HEATMAPS DETECTED: Using fallback range {global_min_value:.2f} to {global_max_value:.2f} - regenerate for consistency")
+        else:
+            print(f"🎨 USING FALLBACK COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f}")
         colormap_source = "fallback_defaults"
-        print(f"🎨 USING FALLBACK COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f}")
 
     print(f"🎨 FINAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (source: {colormap_source})")
 
-    # GLOBAL PERCENTILE-BASED COLOR MAPPING
-    global_percentiles = None
-    global_all_values = []
+    # PERCENTILE-BASED COLOR ENHANCEMENT: Now handled during generation for consistency
+    # Extract percentile information from stored metadata if available
+    percentile_info = ""
+    if stored_colormap_metadata and 'percentiles' in stored_colormap_metadata:
+        percentiles = stored_colormap_metadata['percentiles']
+        if percentiles:
+            p25 = percentiles.get('25th', 'N/A')
+            p50 = percentiles.get('50th', 'N/A') 
+            p75 = percentiles.get('75th', 'N/A')
+            total_values = stored_colormap_metadata.get('total_values', 0)
+            percentile_info = f" | Percentiles: 25th={p25:.2f}, 50th={p50:.2f}, 75th={p75:.2f} (from {total_values} values)"
+            print(f"🎨 PERCENTILE DATA AVAILABLE: {percentile_info}")
     
-    def calculate_global_percentiles():
-        """Calculate percentile-based color bins from all heatmap data"""
-        global global_percentiles, global_all_values
-        
-        # Collect all values from fresh and stored heatmaps
-        all_values = []
-        
-        # Include fresh heatmap values
-        if 'geojson_data' in locals() and geojson_data and 'features' in geojson_data:
-            for feature in geojson_data['features']:
-                value = feature['properties'].get('yield', feature['properties'].get('value', 0))
-                if value > 0:
-                    all_values.append(value)
-        
-        # Include stored heatmap values
-        if st.session_state.stored_heatmaps:
-            for stored_heatmap in st.session_state.stored_heatmaps:
-                stored_geojson = stored_heatmap.get('geojson_data')
-                if stored_geojson and 'features' in stored_geojson:
-                    for feature in stored_geojson['features']:
-                        value = feature['properties'].get('yield', feature['properties'].get('value', 0))
-                        if value > 0:
-                            all_values.append(value)
-        
-        if len(all_values) > 0:
-            # Calculate percentiles for 256 color bins (higher resolution where data is dense)
-            global_percentiles = np.percentile(all_values, np.linspace(0, 100, num=256))
-            global_all_values = all_values
-            print(f"PERCENTILE COLORMAP: Calculated from {len(all_values)} data points")
-            print(f"PERCENTILE RANGE: {global_percentiles[0]:.2f} to {global_percentiles[-1]:.2f}")
-            return True
-        return False
-    
-    # Calculate percentiles when needed
+    print(f"🎨 COLORMAP READY: Range {global_min_value:.2f} to {global_max_value:.2f}{percentile_info}")
     if global_percentiles is None:
         calculate_global_percentiles()
 

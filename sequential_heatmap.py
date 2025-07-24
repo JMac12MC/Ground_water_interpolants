@@ -82,25 +82,44 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 if len(yield_values) > 0:
                     global_values.extend(yield_values.tolist())
     
-    # Calculate final global range
+    # Calculate final global range AND percentile-based color enhancement
     if global_values:
         global_min_value = min(global_values)
         global_max_value = max(global_values)
         print(f"🎨 GLOBAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (from {len(global_values)} values across all areas)")
+        
+        # Calculate percentile-based color mapping for enhanced data discrimination
+        import numpy as np
+        global_percentiles = np.percentile(global_values, np.linspace(0, 100, num=256))
+        percentile_25 = np.percentile(global_values, 25)
+        percentile_50 = np.percentile(global_values, 50)
+        percentile_75 = np.percentile(global_values, 75)
+        
+        print(f"🎨 PERCENTILE ENHANCEMENT: 25th={percentile_25:.2f}, 50th={percentile_50:.2f}, 75th={percentile_75:.2f}")
+        print(f"🎨 PERCENTILE COLORMAP: 256 bins for high-density data discrimination")
+        
     else:
         # Fallback defaults
         if interpolation_method == 'indicator_kriging':
             global_min_value, global_max_value = 0.0, 1.0
         else:
             global_min_value, global_max_value = 0.0, 25.0
+        global_percentiles = None
+        percentile_25 = percentile_50 = percentile_75 = None
         print(f"🎨 GLOBAL COLORMAP RANGE: Using fallback {global_min_value:.2f} to {global_max_value:.2f}")
     
-    # Store the global colormap range for consistent application
+    # Store the global colormap range AND percentile data for consistent application
     colormap_metadata = {
         'global_min': global_min_value,
         'global_max': global_max_value,
         'method': interpolation_method,
-        'generated_at': str(np.datetime64('now'))
+        'generated_at': str(np.datetime64('now')),
+        'percentiles': {
+            '25th': percentile_25,
+            '50th': percentile_50, 
+            '75th': percentile_75
+        } if global_values else None,
+        'total_values': len(global_values) if global_values else 0
     }
     
     for i, (location_name, center_point) in enumerate(locations):

@@ -848,14 +848,15 @@ with main_col1:
                             caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
                         )
                     else:
-                        # Enhanced PERCENTILE-based colormap legend
+                        # Enhanced PERCENTILE-based colormap legend using stored metadata
                         caption_text = f'Percentile-Based Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s'
-                        if global_percentiles is not None:
-                            # Show key percentiles for reference
-                            p25 = np.percentile(global_all_values, 25) if len(global_all_values) > 0 else 0
-                            p50 = np.percentile(global_all_values, 50) if len(global_all_values) > 0 else 0
-                            p75 = np.percentile(global_all_values, 75) if len(global_all_values) > 0 else 0
-                            caption_text = f'Data-Density Optimized: {global_min_value:.1f} → {p25:.1f} (25%) → {p50:.1f} (50%) → {p75:.1f} (75%) → {global_max_value:.1f} L/s'
+                        if stored_colormap_metadata and 'percentiles' in stored_colormap_metadata:
+                            percentiles = stored_colormap_metadata['percentiles']
+                            if percentiles:
+                                p25 = percentiles.get('25th', 0)
+                                p50 = percentiles.get('50th', 0)
+                                p75 = percentiles.get('75th', 0)
+                                caption_text = f'Data-Density Optimized: {global_min_value:.1f} → {p25:.1f} (25%) → {p50:.1f} (50%) → {p75:.1f} (75%) → {global_max_value:.1f} L/s'
                         
                         colormap = folium.LinearColormap(
                             colors=['#000033', '#000066', '#000099', '#0000CC', '#0000FF',

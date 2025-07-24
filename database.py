@@ -428,76 +428,88 @@ class PolygonDatabase:
         int
             The ID of the stored heatmap
         """
-        try:
-            print(f"Attempting to store heatmap: {heatmap_name}")
-            print(f"GeoJSON data present: {bool(geojson_data)}")
-            if geojson_data:
-                print(f"GeoJSON features count: {len(geojson_data.get('features', []))}")
-            
-            # Ensure engine connection is available
-            if not hasattr(self, 'engine') or self.engine is None:
+        import time
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"Attempting to store heatmap: {heatmap_name} (attempt {attempt + 1}/{max_retries})")
+                print(f"GeoJSON data present: {bool(geojson_data)}")
+                if geojson_data:
+                    print(f"GeoJSON features count: {len(geojson_data.get('features', []))}")
+                
+                # Ensure fresh engine connection for each attempt
                 if not self.database_url:
                     print("Error: No database URL available")
                     return None
+                
+                # Create fresh connection for each retry attempt
                 self.engine = create_engine(self.database_url)
-            
-            with self.engine.connect() as conn:
-                # Check for existing heatmap with same name AND location to prevent TRUE duplicates
-                # Ensure coordinates are Python float types, not numpy types
-                center_lat_float = float(center_lat)
-                center_lon_float = float(center_lon)
                 
-                existing_check = conn.execute(text("""
-                    SELECT id FROM stored_heatmaps 
-                    WHERE heatmap_name = :heatmap_name 
-                    AND ABS(center_lat - :center_lat) < 0.001 
-                    AND ABS(center_lon - :center_lon) < 0.001
-                """), {
-                    'heatmap_name': heatmap_name,
-                    'center_lat': center_lat_float,
-                    'center_lon': center_lon_float
-                })
-                
-                existing_row = existing_check.fetchone()
-                if existing_row:
-                    existing_id = existing_row[0]
-                    print(f"Heatmap '{heatmap_name}' already exists with ID {existing_id} at same location, skipping duplicate")
-                    return existing_id
-                
-                # Insert new heatmap if no duplicate found
-                result = conn.execute(text("""
-                    INSERT INTO stored_heatmaps (
-                        heatmap_name, center_lat, center_lon, radius_km, 
-                        interpolation_method, heatmap_data, geojson_data, well_count
-                    ) VALUES (
-                        :heatmap_name, :center_lat, :center_lon, :radius_km,
-                        :interpolation_method, :heatmap_data, :geojson_data, :well_count
-                    ) RETURNING id
-                """), {
-                    'heatmap_name': heatmap_name,
-                    'center_lat': center_lat_float,
-                    'center_lon': center_lon_float,
-                    'radius_km': float(radius_km),
-                    'interpolation_method': interpolation_method,
-                    'heatmap_data': json.dumps(heatmap_data),
-                    'geojson_data': json.dumps(geojson_data) if geojson_data else None,
-                    'well_count': int(well_count)
-                })
-                conn.commit()
-                row = result.fetchone()
-                if row:
-                    heatmap_id = row[0]
-                    print(f"Successfully stored NEW heatmap '{heatmap_name}' with ID {heatmap_id}")
-                    if geojson_data:
-                        print(f"Stored GeoJSON with {len(geojson_data.get('features', []))} triangular features")
-                    return heatmap_id
-                else:
-                    print("Failed to get heatmap ID after insert")
-                    return None
+                with self.engine.connect() as conn:
+                    # Check for existing heatmap with same name AND location to prevent TRUE duplicates
+                    # Ensure coordinates are Python float types, not numpy types
+                    center_lat_float = float(center_lat)
+                    center_lon_float = float(center_lon)
+                    
+                    existing_check = conn.execute(text("""
+                        SELECT id FROM stored_heatmaps 
+                        WHERE heatmap_name = :heatmap_name 
+                        AND ABS(center_lat - :center_lat) < 0.001 
+                        AND ABS(center_lon - :center_lon) < 0.001
+                    """), {
+                        'heatmap_name': heatmap_name,
+                        'center_lat': center_lat_float,
+                        'center_lon': center_lon_float
+                    })
+                    
+                    existing_row = existing_check.fetchone()
+                    if existing_row:
+                        existing_id = existing_row[0]
+                        print(f"Heatmap '{heatmap_name}' already exists with ID {existing_id} at same location, skipping duplicate")
+                        return existing_id
+                    
+                    # Insert new heatmap if no duplicate found
+                    result = conn.execute(text("""
+                        INSERT INTO stored_heatmaps (
+                            heatmap_name, center_lat, center_lon, radius_km, 
+                            interpolation_method, heatmap_data, geojson_data, well_count
+                        ) VALUES (
+                            :heatmap_name, :center_lat, :center_lon, :radius_km,
+                            :interpolation_method, :heatmap_data, :geojson_data, :well_count
+                        ) RETURNING id
+                    """), {
+                        'heatmap_name': heatmap_name,
+                        'center_lat': center_lat_float,
+                        'center_lon': center_lon_float,
+                        'radius_km': float(radius_km),
+                        'interpolation_method': interpolation_method,
+                        'heatmap_data': json.dumps(heatmap_data),
+                        'geojson_data': json.dumps(geojson_data) if geojson_data else None,
+                        'well_count': int(well_count)
+                    })
+                    conn.commit()
+                    row = result.fetchone()
+                    if row:
+                        heatmap_id = row[0]
+                        print(f"Successfully stored NEW heatmap '{heatmap_name}' with ID {heatmap_id}")
+                        if geojson_data:
+                            print(f"Stored GeoJSON with {len(geojson_data.get('features', []))} triangular features")
+                        return heatmap_id
+                    else:
+                        print("Failed to get heatmap ID after insert")
+                        return None
 
-        except Exception as e:
-            print(f"Error storing heatmap: {e}")
-            return None
+            except Exception as e:
+                print(f"Error storing heatmap on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    print(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    print(f"Failed to store heatmap after {max_retries} attempts")
+                    return None
 
     def get_all_stored_heatmaps(self):
         """

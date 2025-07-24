@@ -407,32 +407,55 @@ with main_col1:
     all_heatmap_values = []
 
     # Collect values from stored heatmaps for global color scaling
+    stored_heatmap_count = 0
     if st.session_state.stored_heatmaps:
+        print(f"COLORMAP DEBUG: Analyzing {len(st.session_state.stored_heatmaps)} stored heatmaps for unified scaling")
         for stored_heatmap in st.session_state.stored_heatmaps:
+            heatmap_name = stored_heatmap.get('heatmap_name', 'unknown')
             geojson_data = stored_heatmap.get('geojson_data')
             if geojson_data and 'features' in geojson_data:
+                heatmap_values = []
                 for feature in geojson_data['features']:
                     value = feature['properties'].get('yield', feature['properties'].get('value', 0))
                     if value > 0:  # Only consider meaningful values
                         all_heatmap_values.append(value)
+                        heatmap_values.append(value)
                         global_min_value = min(global_min_value, value)
                         global_max_value = max(global_max_value, value)
+                
+                if heatmap_values:
+                    heatmap_min = min(heatmap_values)
+                    heatmap_max = max(heatmap_values)
+                    print(f"  {heatmap_name}: {len(heatmap_values)} values, range {heatmap_min:.2f} to {heatmap_max:.2f}")
+                    stored_heatmap_count += 1
+                else:
+                    print(f"  {heatmap_name}: No valid values found")
+            else:
+                print(f"  {heatmap_name}: No GeoJSON data available")
 
     # Include current fresh heatmap values if available
     if 'geojson_data' in st.session_state and st.session_state.geojson_data:
+        fresh_values = []
         for feature in st.session_state.geojson_data.get('features', []):
             value = feature['properties'].get('yield', feature['properties'].get('value', 0))
             if value > 0:
                 all_heatmap_values.append(value)
+                fresh_values.append(value)
                 global_min_value = min(global_min_value, value)
                 global_max_value = max(global_max_value, value)
+        if fresh_values:
+            fresh_min = min(fresh_values)
+            fresh_max = max(fresh_values)
+            print(f"  FRESH HEATMAP: {len(fresh_values)} values, range {fresh_min:.2f} to {fresh_max:.2f}")
 
     # Fallback to reasonable defaults if no data
     if global_min_value == float('inf'):
         global_min_value = 0
         global_max_value = 25
+        print(f"COLORMAP DEBUG: No data found, using fallback range")
 
     print(f"UNIFIED COLORMAP: Global value range {global_min_value:.2f} to {global_max_value:.2f} across all displayed heatmaps")
+    print(f"COLORMAP DEBUG: Total values analyzed: {len(all_heatmap_values)} from {stored_heatmap_count} stored heatmaps")
 
     # GLOBAL PERCENTILE-BASED COLOR MAPPING
     global_percentiles = None
@@ -521,29 +544,6 @@ with main_col1:
             color_index = min(color_index, len(colors) - 1)
             
             return colors[color_index]
-            normalized_value = max(0, min(1, normalized_value))  # Clamp to 0-1
-
-            # Use 15-band color system with normalized value
-            colors = [
-                '#000080',  # Band 1: Dark blue
-                '#0000B3',  # Band 2: Blue
-                '#0000E6',  # Band 3: Bright blue
-                '#0033FF',  # Band 4: Blue-cyan
-                '#0066FF',  # Band 5: Light blue
-                '#0099FF',  # Band 6: Sky blue
-                '#00CCFF',  # Band 7: Cyan
-                '#00FFCC',  # Band 8: Cyan-green
-                '#00FF99',  # Band 9: Aqua green
-                '#00FF66',  # Band 10: Green-yellow
-                '#33FF33',  # Band 11: Green
-                '#99FF00',  # Band 12: Yellow-green
-                '#FFFF00',  # Band 13: Yellow
-                '#FF9900',  # Band 14: Orange
-                '#FF0000'   # Band 15: Red
-            ]
-            # Determine which band the normalized value falls into
-            band_index = min(14, int(normalized_value * 15))
-            return colors[band_index]
 
     # Stored heatmaps will be displayed after fresh heatmap generation and global range calculation
 
@@ -1020,6 +1020,14 @@ with main_col1:
 
                     # Use the UPDATED global unified color function with method info
                     method = stored_heatmap.get('interpolation_method', 'kriging')
+                    
+                    # Debug individual heatmap color mapping
+                    sample_values = []
+                    for feature in geojson_data['features'][:5]:  # Sample first 5 features
+                        value = feature['properties'].get('yield', 0)
+                        color = get_global_unified_color(value, method)
+                        sample_values.append(f"{value:.2f}→{color}")
+                    print(f"  COLORMAP SAMPLE for {stored_heatmap['heatmap_name']}: {', '.join(sample_values)}")
 
                     # Add GeoJSON layer for triangular mesh visualization with UPDATED UNIFIED coloring
                     folium.GeoJson(

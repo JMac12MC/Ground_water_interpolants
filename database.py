@@ -400,7 +400,7 @@ class PolygonDatabase:
                 'overall_avg_yield': 0
             }
 
-    def store_heatmap(self, heatmap_name, center_lat, center_lon, radius_km, interpolation_method, heatmap_data, geojson_data=None, well_count=0):
+    def store_heatmap(self, heatmap_name, center_lat, center_lon, radius_km, interpolation_method, heatmap_data, geojson_data=None, well_count=0, colormap_metadata=None):
         """
         Store a heatmap in the database for persistent display
 
@@ -422,6 +422,8 @@ class PolygonDatabase:
             GeoJSON data for more detailed visualization
         well_count : int
             Number of wells used in the interpolation
+        colormap_metadata : dict, optional
+            Metadata for consistent colormap application including global min/max values
 
         Returns:
         --------
@@ -470,14 +472,17 @@ class PolygonDatabase:
                         print(f"Heatmap '{heatmap_name}' already exists with ID {existing_id} at same location, skipping duplicate")
                         return existing_id
                     
-                    # Insert new heatmap if no duplicate found
+                    # Insert new heatmap if no duplicate found - include colormap metadata for consistency
+                    colormap_json = json.dumps(colormap_metadata) if colormap_metadata else None
+                    print(f"💾 STORING COLORMAP METADATA: {colormap_metadata}")
+                    
                     result = conn.execute(text("""
                         INSERT INTO stored_heatmaps (
                             heatmap_name, center_lat, center_lon, radius_km, 
-                            interpolation_method, heatmap_data, geojson_data, well_count
+                            interpolation_method, heatmap_data, geojson_data, well_count, colormap_metadata
                         ) VALUES (
                             :heatmap_name, :center_lat, :center_lon, :radius_km,
-                            :interpolation_method, :heatmap_data, :geojson_data, :well_count
+                            :interpolation_method, :heatmap_data, :geojson_data, :well_count, :colormap_metadata
                         ) RETURNING id
                     """), {
                         'heatmap_name': heatmap_name,
@@ -487,7 +492,8 @@ class PolygonDatabase:
                         'interpolation_method': interpolation_method,
                         'heatmap_data': json.dumps(heatmap_data),
                         'geojson_data': json.dumps(geojson_data) if geojson_data else None,
-                        'well_count': int(well_count)
+                        'well_count': int(well_count),
+                        'colormap_metadata': colormap_json
                     })
                     conn.commit()
                     row = result.fetchone()
@@ -532,7 +538,7 @@ class PolygonDatabase:
                 print("🔍 QUERYING DATABASE: Executing SELECT query for all heatmaps")
                 result = conn.execute(text("""
                     SELECT id, heatmap_name, center_lat, center_lon, radius_km,
-                           interpolation_method, heatmap_data, geojson_data, well_count, created_at
+                           interpolation_method, heatmap_data, geojson_data, well_count, created_at, colormap_metadata
                     FROM stored_heatmaps
                     ORDER BY created_at DESC
                 """))
@@ -563,6 +569,18 @@ class PolygonDatabase:
                             print(f"⚠️  JSON decode error for geojson_data in ID {row[0]}")
                             geojson_data = None
                     
+                    # Parse colormap metadata if available
+                    colormap_metadata = None
+                    try:
+                        if len(row) > 10 and row[10]:  # colormap_metadata column
+                            if isinstance(row[10], str):
+                                colormap_metadata = json.loads(row[10])
+                            else:
+                                colormap_metadata = row[10]
+                            print(f"  🎨 LOADED COLORMAP METADATA: {colormap_metadata}")
+                    except (json.JSONDecodeError, IndexError) as e:
+                        print(f"  ⚠️ WARNING: Could not parse colormap_metadata for {row[1]}: {e}")
+                    
                     heatmap = {
                         'id': row[0],
                         'heatmap_name': row[1],
@@ -573,7 +591,8 @@ class PolygonDatabase:
                         'heatmap_data': heatmap_data,
                         'geojson_data': geojson_data,
                         'well_count': row[8],
-                        'created_at': row[9]
+                        'created_at': row[9],
+                        'colormap_metadata': colormap_metadata
                     }
                     heatmaps.append(heatmap)
                     print(f"✅ PROCESSED: Heatmap ID {row[0]} added to result list")

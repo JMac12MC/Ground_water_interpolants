@@ -50,6 +50,59 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     stored_heatmap_ids = []
     error_messages = []
     
+    # Calculate GLOBAL colormap range ONCE for ALL heatmaps to ensure consistency
+    print("🎨 CALCULATING GLOBAL COLORMAP RANGE for all 6 heatmaps...")
+    global_values = []
+    
+    # Pre-scan all locations to get global value range
+    for location_name, center_point in locations:
+        # Filter wells for this location
+        wells_df_temp = wells_data.copy()
+        wells_df_temp['within_square'] = wells_df_temp.apply(
+            lambda row: is_within_square(
+                row['latitude'], 
+                row['longitude'],
+                center_point[0],
+                center_point[1],
+                search_radius
+            ), 
+            axis=1
+        )
+        
+        filtered_wells_temp = wells_df_temp[wells_df_temp['within_square']]
+        
+        if len(filtered_wells_temp) > 0:
+            # Get values from this area's wells for global range calculation
+            if interpolation_method == 'indicator_kriging':
+                # For indicator kriging, values are always 0-1
+                global_values.extend([0.0, 1.0])
+            else:
+                # For yield kriging, use actual yield values
+                yield_values = filtered_wells_temp['yield_rate'].dropna()
+                if len(yield_values) > 0:
+                    global_values.extend(yield_values.tolist())
+    
+    # Calculate final global range
+    if global_values:
+        global_min_value = min(global_values)
+        global_max_value = max(global_values)
+        print(f"🎨 GLOBAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (from {len(global_values)} values across all areas)")
+    else:
+        # Fallback defaults
+        if interpolation_method == 'indicator_kriging':
+            global_min_value, global_max_value = 0.0, 1.0
+        else:
+            global_min_value, global_max_value = 0.0, 25.0
+        print(f"🎨 GLOBAL COLORMAP RANGE: Using fallback {global_min_value:.2f} to {global_max_value:.2f}")
+    
+    # Store the global colormap range for consistent application
+    colormap_metadata = {
+        'global_min': global_min_value,
+        'global_max': global_max_value,
+        'method': interpolation_method,
+        'generated_at': str(np.datetime64('now'))
+    }
+    
     for i, (location_name, center_point) in enumerate(locations):
         try:
             st.write(f"🔄 Building heatmap {i+1}/6: {location_name.title()} location...")
@@ -140,7 +193,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                                     value = feature['properties'].get('yield', 0)
                                     heatmap_data.append([lat, lon, value])
                     
-                    # Store in database
+                    # Store in database WITH CONSISTENT COLORMAP METADATA
                     stored_heatmap_id = polygon_db.store_heatmap(
                         heatmap_name=heatmap_name,
                         center_lat=center_lat,
@@ -149,7 +202,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         interpolation_method=interpolation_method,
                         heatmap_data=heatmap_data,
                         geojson_data=geojson_data,
-                        well_count=len(filtered_wells)
+                        well_count=len(filtered_wells),
+                        colormap_metadata=colormap_metadata
                     )
                     
                     if stored_heatmap_id:

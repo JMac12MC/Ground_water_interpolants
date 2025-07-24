@@ -401,61 +401,69 @@ with main_col1:
             )
         ).add_to(m)
 
-    # UNIFIED COLORMAP PROCESSING: Calculate global min/max across all heatmaps for consistent coloring
+    # UNIFIED COLORMAP PROCESSING: Use stored colormap metadata for consistent coloring
     global_min_value = float('inf')
     global_max_value = float('-inf')
     all_heatmap_values = []
+    colormap_source = "calculated"
 
-    # Collect values from stored heatmaps for global color scaling
-    stored_heatmap_count = 0
+    # First, check if we have stored colormap metadata from generated heatmaps
+    stored_colormap_metadata = None
     if st.session_state.stored_heatmaps:
-        print(f"COLORMAP DEBUG: Analyzing {len(st.session_state.stored_heatmaps)} stored heatmaps for unified scaling")
+        print(f"🎨 COLORMAP CONSISTENCY CHECK: Analyzing {len(st.session_state.stored_heatmaps)} stored heatmaps")
+        
+        # Look for colormap metadata in stored heatmaps (all should have the same range)
         for stored_heatmap in st.session_state.stored_heatmaps:
-            heatmap_name = stored_heatmap.get('heatmap_name', 'unknown')
-            geojson_data = stored_heatmap.get('geojson_data')
-            if geojson_data and 'features' in geojson_data:
-                heatmap_values = []
-                for feature in geojson_data['features']:
-                    value = feature['properties'].get('yield', feature['properties'].get('value', 0))
-                    if value > 0:  # Only consider meaningful values
-                        all_heatmap_values.append(value)
-                        heatmap_values.append(value)
-                        global_min_value = min(global_min_value, value)
-                        global_max_value = max(global_max_value, value)
-                
-                if heatmap_values:
-                    heatmap_min = min(heatmap_values)
-                    heatmap_max = max(heatmap_values)
-                    print(f"  {heatmap_name}: {len(heatmap_values)} values, range {heatmap_min:.2f} to {heatmap_max:.2f}")
-                    stored_heatmap_count += 1
+            colormap_metadata = stored_heatmap.get('colormap_metadata')
+            if colormap_metadata and isinstance(colormap_metadata, dict):
+                if 'global_min' in colormap_metadata and 'global_max' in colormap_metadata:
+                    stored_colormap_metadata = colormap_metadata
+                    global_min_value = colormap_metadata['global_min']
+                    global_max_value = colormap_metadata['global_max']
+                    colormap_source = "stored_metadata"
+                    print(f"🎨 USING STORED COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (from metadata)")
+                    break
+        
+        # If no stored metadata found, calculate from actual values (fallback)
+        if stored_colormap_metadata is None:
+            print(f"🎨 NO STORED METADATA FOUND: Calculating from heatmap values")
+            stored_heatmap_count = 0
+            for stored_heatmap in st.session_state.stored_heatmaps:
+                heatmap_name = stored_heatmap.get('heatmap_name', 'unknown')
+                geojson_data = stored_heatmap.get('geojson_data')
+                if geojson_data and 'features' in geojson_data:
+                    heatmap_values = []
+                    for feature in geojson_data['features']:
+                        value = feature['properties'].get('yield', feature['properties'].get('value', 0))
+                        if value > 0:  # Only consider meaningful values
+                            all_heatmap_values.append(value)
+                            heatmap_values.append(value)
+                            global_min_value = min(global_min_value, value)
+                            global_max_value = max(global_max_value, value)
+                    
+                    if heatmap_values:
+                        heatmap_min = min(heatmap_values)
+                        heatmap_max = max(heatmap_values)
+                        print(f"  {heatmap_name}: {len(heatmap_values)} values, range {heatmap_min:.2f} to {heatmap_max:.2f}")
+                        stored_heatmap_count += 1
+                    else:
+                        print(f"  {heatmap_name}: No valid values found")
                 else:
-                    print(f"  {heatmap_name}: No valid values found")
-            else:
-                print(f"  {heatmap_name}: No GeoJSON data available")
-
-    # Include current fresh heatmap values if available
-    if 'geojson_data' in st.session_state and st.session_state.geojson_data:
-        fresh_values = []
-        for feature in st.session_state.geojson_data.get('features', []):
-            value = feature['properties'].get('yield', feature['properties'].get('value', 0))
-            if value > 0:
-                all_heatmap_values.append(value)
-                fresh_values.append(value)
-                global_min_value = min(global_min_value, value)
-                global_max_value = max(global_max_value, value)
-        if fresh_values:
-            fresh_min = min(fresh_values)
-            fresh_max = max(fresh_values)
-            print(f"  FRESH HEATMAP: {len(fresh_values)} values, range {fresh_min:.2f} to {fresh_max:.2f}")
+                    print(f"  {heatmap_name}: No GeoJSON data available")
+            
+            colormap_source = "calculated_from_values"
+            print(f"🎨 CALCULATED COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} from {len(all_heatmap_values)} values")
 
     # Fallback to reasonable defaults if no data
     if global_min_value == float('inf'):
-        global_min_value = 0
-        global_max_value = 25
-        print(f"COLORMAP DEBUG: No data found, using fallback range")
+        if st.session_state.interpolation_method == 'indicator_kriging':
+            global_min_value, global_max_value = 0.0, 1.0
+        else:
+            global_min_value, global_max_value = 0.0, 25.0
+        colormap_source = "fallback_defaults"
+        print(f"🎨 USING FALLBACK COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f}")
 
-    print(f"UNIFIED COLORMAP: Global value range {global_min_value:.2f} to {global_max_value:.2f} across all displayed heatmaps")
-    print(f"COLORMAP DEBUG: Total values analyzed: {len(all_heatmap_values)} from {stored_heatmap_count} stored heatmaps")
+    print(f"🎨 FINAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (source: {colormap_source})")
 
     # GLOBAL PERCENTILE-BASED COLOR MAPPING
     global_percentiles = None

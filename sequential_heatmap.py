@@ -17,28 +17,46 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     from utils import is_within_square, get_distance
     import numpy as np
     
-    # Calculate positions for all four heatmaps using proven 19.79km offset
+    # Calculate positions for all heatmaps using PERFECT 19.82km spacing
     clicked_lat, clicked_lng = click_point
     
-    # Calculate offset using spherical distance
-    km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-    gap_to_close_km = 0.21  # Measured gap from previous testing
-    base_offset_km = 20.0
-    east_offset_km = base_offset_km - gap_to_close_km  # 19.79km
-    east_offset_degrees = east_offset_km / km_per_degree_lon
+    # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
+    target_offset_km = 19.82
     
-    # South offset (same distance)
+    # Step 1: Calculate precise south offset
     km_per_degree_lat = 111.0
-    south_offset_degrees = east_offset_km / km_per_degree_lat
+    initial_south_degrees = target_offset_km / km_per_degree_lat
+    test_south_point = [clicked_lat - initial_south_degrees, clicked_lng]
+    actual_south_distance = get_distance(clicked_lat, clicked_lng, test_south_point[0], test_south_point[1])
+    south_correction = target_offset_km / actual_south_distance
+    south_offset_degrees = initial_south_degrees * south_correction
     
-    # Define all six locations in 2x3 grid
+    # Step 2: Calculate east offset for TOP ROW (original latitude)
+    top_lat = clicked_lat
+    km_per_degree_lon_top = 111.0 * np.cos(np.radians(top_lat))
+    initial_east_degrees_top = target_offset_km / km_per_degree_lon_top
+    test_east_point_top = [top_lat, clicked_lng + initial_east_degrees_top]
+    actual_east_distance_top = get_distance(top_lat, clicked_lng, test_east_point_top[0], test_east_point_top[1])
+    east_correction_top = target_offset_km / actual_east_distance_top
+    east_offset_degrees_top = initial_east_degrees_top * east_correction_top
+    
+    # Step 3: Calculate east offset for BOTTOM ROW
+    bottom_lat = clicked_lat - south_offset_degrees
+    km_per_degree_lon_bottom = 111.0 * np.cos(np.radians(bottom_lat))
+    initial_east_degrees_bottom = target_offset_km / km_per_degree_lon_bottom
+    test_east_point_bottom = [bottom_lat, clicked_lng + initial_east_degrees_bottom]
+    actual_east_distance_bottom = get_distance(bottom_lat, clicked_lng, test_east_point_bottom[0], test_east_point_bottom[1])
+    east_correction_bottom = target_offset_km / actual_east_distance_bottom
+    east_offset_degrees_bottom = initial_east_degrees_bottom * east_correction_bottom
+    
+    # Define all six locations in 2x3 grid using row-specific east offsets for perfect spacing
     locations = [
         ('original', [clicked_lat, clicked_lng]),
-        ('east', [clicked_lat, clicked_lng + east_offset_degrees]),
-        ('northeast', [clicked_lat, clicked_lng + (2 * east_offset_degrees)]),  # 5th heatmap: 19.79km east of northeast
+        ('east', [clicked_lat, clicked_lng + east_offset_degrees_top]),
+        ('northeast', [clicked_lat, clicked_lng + (2 * east_offset_degrees_top)]),
         ('south', [clicked_lat - south_offset_degrees, clicked_lng]),
-        ('southeast', [clicked_lat - south_offset_degrees, clicked_lng + east_offset_degrees]),
-        ('far_southeast', [clicked_lat - south_offset_degrees, clicked_lng + (2 * east_offset_degrees)])  # 6th heatmap: 19.79km south of northeast
+        ('southeast', [clicked_lat - south_offset_degrees, clicked_lng + east_offset_degrees_bottom]),
+        ('far_southeast', [clicked_lat - south_offset_degrees, clicked_lng + (2 * east_offset_degrees_bottom)])
     ]
     
     print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in 2x3 grid")

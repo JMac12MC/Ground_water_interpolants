@@ -17,16 +17,22 @@ def calculate_heatmap_distances(click_point):
     
     clicked_lat, clicked_lng = click_point
     
-    # Calculate offset using spherical distance (same as sequential_heatmap.py)
-    km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-    gap_to_close_km = 0.21  # Measured gap from previous testing
-    base_offset_km = 20.0
-    east_offset_km = base_offset_km - gap_to_close_km  # 19.79km
-    east_offset_degrees = east_offset_km / km_per_degree_lon
+    # Use precise 19.82km offset for perfect grid alignment (same as sequential_heatmap.py)
+    target_offset_km = 19.82
     
-    # South offset (same distance)
+    # Calculate south offset first (constant for latitude)
     km_per_degree_lat = 111.0
-    south_offset_degrees = east_offset_km / km_per_degree_lat
+    south_offset_degrees = target_offset_km / km_per_degree_lat
+    
+    # Calculate longitude offset using AVERAGE latitude of the grid (center of 2x3 grid)
+    grid_center_lat = clicked_lat - (south_offset_degrees / 2)  # Halfway between top and bottom rows
+    km_per_degree_lon = 111.0 * np.cos(np.radians(grid_center_lat))
+    
+    # Iteratively refine east offset to get exactly 19.82km spacing
+    initial_east_degrees = target_offset_km / km_per_degree_lon
+    test_distance = get_distance(clicked_lat, clicked_lng, clicked_lat, clicked_lng + initial_east_degrees)
+    correction_factor = target_offset_km / test_distance
+    east_offset_degrees = initial_east_degrees * correction_factor
     
     # Define all six locations in 2x3 grid (same as sequential_heatmap.py)
     locations = {
@@ -41,7 +47,7 @@ def calculate_heatmap_distances(click_point):
     print("HEATMAP DISTANCE ANALYSIS")
     print("=" * 50)
     print(f"Click point: ({clicked_lat:.6f}, {clicked_lng:.6f})")
-    print(f"Calculated offset: {east_offset_km:.2f} km")
+    print(f"Target offset: {target_offset_km:.2f} km")
     print()
     
     # Show all heatmap centers

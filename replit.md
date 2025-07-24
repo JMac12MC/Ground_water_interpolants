@@ -121,6 +121,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 24, 2025**: Fixed heatmap spacing inconsistency for perfect grid alignment
+  - Resolved issue where adjacent heatmaps had slightly different distances (19.77km vs 19.82km)
+  - Implemented row-specific east offset calculations to account for latitude-dependent longitude spacing
+  - All adjacent heatmaps now precisely 19.82km apart with perfect grid consistency
+  - Enhanced sequential heatmap generation with latitude-aware distance calculations
+  - Verified perfect spacing using iterative refinement with actual distance measurements
+
 - **July 23, 2025**: Enhanced indicator kriging with combined viability criteria
   - Extended indicator kriging logic to include ground water level assessment
   - Wells now viable (indicator = 1) if EITHER yield_rate ≥ 0.1 L/s OR ground water level > -10m depth

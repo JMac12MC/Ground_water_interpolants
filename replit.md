@@ -123,8 +123,8 @@ Preferred communication style: Simple, everyday language.
 
 - **July 23, 2025**: Enhanced indicator kriging with combined viability criteria
   - Extended indicator kriging logic to include ground water level assessment
-  - Wells now viable (indicator = 1) if EITHER yield_rate ≥ 0.1 L/s OR ground water level > -3m depth
-  - Ground water level threshold set to -3m to capture wells with accessible groundwater within 3 meters
+  - Wells now viable (indicator = 1) if EITHER yield_rate ≥ 0.1 L/s OR ground water level > -10m depth
+  - Ground water level threshold set to -10m to capture wells with accessible groundwater within 10 meters
   - Combined viability approach increases well coverage and accuracy
   - Added detailed logging showing breakdown by individual and combined criteria
   - Maintains backward compatibility when ground water level data unavailable

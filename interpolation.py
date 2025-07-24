@@ -347,11 +347,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # Convert to BINARY indicator values for kriging input using COMBINED criteria
         # A well is viable (indicator = 1) if EITHER:
         # - yield_rate ≥ 0.1 L/s, OR  
-        # - ground water level > -3 (groundwater within 3 meters depth)
+        # - ground water level > -10 (groundwater within 10 meters depth)
         # Otherwise indicator = 0 (not viable)
         
         yield_threshold = 0.1
-        gwl_threshold = -3
+        gwl_threshold = -10
         
         raw_yields = wells_df['yield_rate'].values.astype(float)
         

@@ -459,12 +459,10 @@ with main_col1:
             print(f"🎨 PERCENTILE DATA AVAILABLE: {percentile_info}")
     
     print(f"🎨 COLORMAP READY: Range {global_min_value:.2f} to {global_max_value:.2f}{percentile_info}")
-    if global_percentiles is None:
-        calculate_global_percentiles()
 
-    # DEFINE GLOBAL UNIFIED COLOR FUNCTION WITH PERCENTILE MAPPING
+    # DEFINE GLOBAL UNIFIED COLOR FUNCTION 
     def get_global_unified_color(value, method='kriging'):
-        """Global unified color function with percentile-based mapping for data density awareness"""
+        """Global unified color function using stored global range for consistency"""
         if method == 'indicator_kriging':
             # Three-tier classification: red (poor), orange (moderate), green (good)
             if value <= 0.4:
@@ -474,19 +472,11 @@ with main_col1:
             else:
                 return '#00FF00'    # Green for good
         else:
-            # Use percentile-based mapping for better data density visualization
-            if global_percentiles is not None and len(global_percentiles) > 1:
-                # Find which percentile bin this value falls into
-                bin_index = np.searchsorted(global_percentiles, value, side='left')
-                bin_index = min(bin_index, len(global_percentiles) - 1)
-                
-                # Map percentile bin to 0-1 range (even spacing in color space)
-                normalized_value = bin_index / (len(global_percentiles) - 1)
-            else:
-                # Fallback to linear mapping if percentiles not available
-                if global_max_value <= global_min_value:
-                    return '#000080'  # Default blue if no range
-                normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+            # Use linear mapping with stored global range for consistency
+            if global_max_value <= global_min_value:
+                return '#000080'  # Default blue if no range
+            normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+            normalized_value = max(0.0, min(1.0, normalized_value))  # Clamp to 0-1
             
             # Apply enhanced color gradient with 25 color bands for maximum detail
             # Extended color palette for superior visual discrimination in data-dense areas

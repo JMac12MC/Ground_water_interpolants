@@ -17,31 +17,43 @@ def calculate_heatmap_distances(click_point):
     
     clicked_lat, clicked_lng = click_point
     
-    # Use precise 19.82km offset for perfect grid alignment (same as sequential_heatmap.py)
+    # Use PERFECT 19.82km offset - exactly matching sequential_heatmap.py implementation
     target_offset_km = 19.82
     
-    # Calculate south offset first (constant for latitude)
+    # Step 1: Calculate precise south offset
     km_per_degree_lat = 111.0
-    south_offset_degrees = target_offset_km / km_per_degree_lat
+    initial_south_degrees = target_offset_km / km_per_degree_lat
+    test_south_point = [clicked_lat - initial_south_degrees, clicked_lng]
+    actual_south_distance = get_distance(clicked_lat, clicked_lng, test_south_point[0], test_south_point[1])
+    south_correction = target_offset_km / actual_south_distance
+    south_offset_degrees = initial_south_degrees * south_correction
     
-    # Calculate longitude offset using AVERAGE latitude of the grid (center of 2x3 grid)
-    grid_center_lat = clicked_lat - (south_offset_degrees / 2)  # Halfway between top and bottom rows
-    km_per_degree_lon = 111.0 * np.cos(np.radians(grid_center_lat))
+    # Step 2: Calculate east offset for TOP ROW (original latitude)
+    top_lat = clicked_lat
+    km_per_degree_lon_top = 111.0 * np.cos(np.radians(top_lat))
+    initial_east_degrees_top = target_offset_km / km_per_degree_lon_top
+    test_east_point_top = [top_lat, clicked_lng + initial_east_degrees_top]
+    actual_east_distance_top = get_distance(top_lat, clicked_lng, test_east_point_top[0], test_east_point_top[1])
+    east_correction_top = target_offset_km / actual_east_distance_top
+    east_offset_degrees_top = initial_east_degrees_top * east_correction_top
     
-    # Iteratively refine east offset to get exactly 19.82km spacing
-    initial_east_degrees = target_offset_km / km_per_degree_lon
-    test_distance = get_distance(clicked_lat, clicked_lng, clicked_lat, clicked_lng + initial_east_degrees)
-    correction_factor = target_offset_km / test_distance
-    east_offset_degrees = initial_east_degrees * correction_factor
+    # Step 3: Calculate east offset for BOTTOM ROW
+    bottom_lat = clicked_lat - south_offset_degrees
+    km_per_degree_lon_bottom = 111.0 * np.cos(np.radians(bottom_lat))
+    initial_east_degrees_bottom = target_offset_km / km_per_degree_lon_bottom
+    test_east_point_bottom = [bottom_lat, clicked_lng + initial_east_degrees_bottom]
+    actual_east_distance_bottom = get_distance(bottom_lat, clicked_lng, test_east_point_bottom[0], test_east_point_bottom[1])
+    east_correction_bottom = target_offset_km / actual_east_distance_bottom
+    east_offset_degrees_bottom = initial_east_degrees_bottom * east_correction_bottom
     
-    # Define all six locations in 2x3 grid (same as sequential_heatmap.py)
+    # Define all six locations using row-specific east offsets for perfect spacing
     locations = {
         'original': [clicked_lat, clicked_lng],
-        'east': [clicked_lat, clicked_lng + east_offset_degrees],
-        'northeast': [clicked_lat, clicked_lng + (2 * east_offset_degrees)],
+        'east': [clicked_lat, clicked_lng + east_offset_degrees_top],
+        'northeast': [clicked_lat, clicked_lng + (2 * east_offset_degrees_top)],
         'south': [clicked_lat - south_offset_degrees, clicked_lng],
-        'southeast': [clicked_lat - south_offset_degrees, clicked_lng + east_offset_degrees],
-        'far_southeast': [clicked_lat - south_offset_degrees, clicked_lng + (2 * east_offset_degrees)]
+        'southeast': [clicked_lat - south_offset_degrees, clicked_lng + east_offset_degrees_bottom],
+        'far_southeast': [clicked_lat - south_offset_degrees, clicked_lng + (2 * east_offset_degrees_bottom)]
     }
     
     print("HEATMAP DISTANCE ANALYSIS")
@@ -137,6 +149,6 @@ def calculate_heatmap_distances(click_point):
         print(f"  {from_name.upper()} ↗ {to_name.upper()}: {distance:.2f} km")
 
 if __name__ == "__main__":
-    # Use example coordinates from the recent generation
-    test_click_point = (-43.665, 171.215)  # From the recent ground water level kriging
+    # Use coordinates from the recently generated heatmaps
+    test_click_point = (-43.620, 171.197)  # From the most recent kriging generation
     calculate_heatmap_distances(test_click_point)

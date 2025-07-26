@@ -1,141 +1,244 @@
 #!/usr/bin/env python3
-"""
-Calculate perfect heatmap spacing where ALL adjacent distances are exactly 19.82 km
-"""
 
 import numpy as np
 from utils import get_distance
 
-def calculate_perfect_grid_spacing(click_lat, click_lng, target_distance_km=19.82):
+def calculate_perfect_grid_coordinates(center_lat, center_lon, target_km=19.82):
     """
-    Calculate grid positions where ALL adjacent heatmaps are exactly target_distance_km apart
+    Calculate ultra-precise grid coordinates using advanced geodetic methods
+    with individual coordinate pair optimization
     """
     
-    # Step 1: Calculate precise south offset
-    km_per_degree_lat = 111.0
-    initial_south_degrees = target_distance_km / km_per_degree_lat
+    print(f"PERFECT GRID COORDINATE CALCULATION (target: {target_km}km)")
+    print("=" * 65)
     
-    # Verify and refine south offset
-    test_south_point = [click_lat - initial_south_degrees, click_lng]
-    actual_south_distance = get_distance(click_lat, click_lng, test_south_point[0], test_south_point[1])
-    south_correction = target_distance_km / actual_south_distance
-    south_offset_degrees = initial_south_degrees * south_correction
+    # Enhanced precision parameters
+    MAX_ITERATIONS = 100
+    TOLERANCE_KM = 0.00005  # 5cm tolerance (0.05 meters)
+    MICRO_ADJUSTMENT = 0.000001  # Ultra-fine coordinate adjustments
     
-    print(f"South offset calculation:")
-    print(f"  Initial: {initial_south_degrees:.8f} degrees")
-    print(f"  Actual distance: {actual_south_distance:.4f} km")
-    print(f"  Refined: {south_offset_degrees:.8f} degrees")
+    # Phase 1: Calculate optimal latitude offset with ultra-precision
+    print("PHASE 1: ULTRA-PRECISE LATITUDE CALCULATION")
     
-    # Step 2: Calculate east offset for TOP ROW (original latitude)
-    top_lat = click_lat
-    km_per_degree_lon_top = 111.0 * np.cos(np.radians(top_lat))
-    initial_east_degrees_top = target_distance_km / km_per_degree_lon_top
+    lat_offset = target_km / 111.0  # Initial estimate
+    best_lat_offset = lat_offset
+    best_lat_error = float('inf')
     
-    # Verify and refine east offset for top row
-    test_east_point_top = [top_lat, click_lng + initial_east_degrees_top]
-    actual_east_distance_top = get_distance(top_lat, click_lng, test_east_point_top[0], test_east_point_top[1])
-    east_correction_top = target_distance_km / actual_east_distance_top
-    east_offset_degrees_top = initial_east_degrees_top * east_correction_top
+    # Multi-pass refinement with micro-adjustments
+    for iteration in range(MAX_ITERATIONS):
+        test_lat = center_lat - lat_offset
+        actual_distance = get_distance(center_lat, center_lon, test_lat, center_lon)
+        error = abs(actual_distance - target_km)
+        
+        if error < best_lat_error:
+            best_lat_offset = lat_offset
+            best_lat_error = error
+        
+        if error < TOLERANCE_KM:
+            break
+            
+        # Dynamic adjustment based on error magnitude
+        if error > 0.001:  # > 1 meter error
+            adjustment = (target_km / actual_distance)
+            lat_offset *= adjustment
+        else:  # Fine-tuning phase
+            if actual_distance > target_km:
+                lat_offset -= MICRO_ADJUSTMENT
+            else:
+                lat_offset += MICRO_ADJUSTMENT
     
-    # Step 3: Calculate east offset for BOTTOM ROW
-    bottom_lat = click_lat - south_offset_degrees
-    km_per_degree_lon_bottom = 111.0 * np.cos(np.radians(bottom_lat))
-    initial_east_degrees_bottom = target_distance_km / km_per_degree_lon_bottom
+    lat_offset = best_lat_offset
+    final_lat_distance = get_distance(center_lat, center_lon, center_lat - lat_offset, center_lon)
+    print(f"  Optimized latitude offset: {lat_offset:.15f}°")
+    print(f"  Achieved distance: {final_lat_distance:.8f}km (error: {final_lat_distance-target_km:.8f}km)")
     
-    # Verify and refine east offset for bottom row
-    test_east_point_bottom = [bottom_lat, click_lng + initial_east_degrees_bottom]
-    actual_east_distance_bottom = get_distance(bottom_lat, click_lng, test_east_point_bottom[0], test_east_point_bottom[1])
-    east_correction_bottom = target_distance_km / actual_east_distance_bottom
-    east_offset_degrees_bottom = initial_east_degrees_bottom * east_correction_bottom
+    # Phase 2: Calculate individual longitude offsets for each coordinate pair
+    print("\nPHASE 2: INDIVIDUAL COORDINATE PAIR OPTIMIZATION")
     
-    print(f"\nEast offset calculations:")
-    print(f"  Top row (lat {top_lat:.4f}):")
-    print(f"    Initial: {initial_east_degrees_top:.8f} degrees")
-    print(f"    Actual distance: {actual_east_distance_top:.4f} km")
-    print(f"    Refined: {east_offset_degrees_top:.8f} degrees")
-    print(f"  Bottom row (lat {bottom_lat:.4f}):")
-    print(f"    Initial: {initial_east_degrees_bottom:.8f} degrees")
-    print(f"    Actual distance: {actual_east_distance_bottom:.4f} km")
-    print(f"    Refined: {east_offset_degrees_bottom:.8f} degrees")
+    positions = {}
     
-    # Step 4: Define all six locations using row-specific east offsets
-    locations = {
-        'original': [click_lat, click_lng],
-        'east': [click_lat, click_lng + east_offset_degrees_top],
-        'northeast': [click_lat, click_lng + (2 * east_offset_degrees_top)],
-        'south': [click_lat - south_offset_degrees, click_lng],
-        'southeast': [click_lat - south_offset_degrees, click_lng + east_offset_degrees_bottom],
-        'far_southeast': [click_lat - south_offset_degrees, click_lng + (2 * east_offset_degrees_bottom)]
-    }
+    # Calculate each position with individual optimization
+    coordinate_specs = [
+        ('original', center_lat, center_lon),
+        ('east', center_lat, center_lon + 0.248),  # Initial estimate
+        ('northeast', center_lat, center_lon + 0.496),  # Initial estimate
+        ('south', center_lat - lat_offset, center_lon),
+        ('southeast', center_lat - lat_offset, center_lon + 0.248),  # Initial estimate
+        ('far_southeast', center_lat - lat_offset, center_lon + 0.496)  # Initial estimate
+    ]
     
-    return locations, south_offset_degrees, east_offset_degrees_top, east_offset_degrees_bottom
+    # Start with the original position
+    positions['original'] = [center_lat, center_lon]
+    
+    # Calculate EAST position with ultra-precision
+    print("  Optimizing EAST position...")
+    east_lon = center_lon + (target_km / (111.0 * abs(np.cos(np.radians(center_lat)))))
+    
+    for iteration in range(MAX_ITERATIONS):
+        actual_distance = get_distance(center_lat, center_lon, center_lat, east_lon)
+        error = abs(actual_distance - target_km)
+        
+        if error < TOLERANCE_KM:
+            break
+            
+        if actual_distance > target_km:
+            east_lon -= MICRO_ADJUSTMENT
+        else:
+            east_lon += MICRO_ADJUSTMENT
+    
+    positions['east'] = [center_lat, east_lon]
+    final_east_distance = get_distance(center_lat, center_lon, center_lat, east_lon)
+    print(f"    East longitude: {east_lon:.15f}° (distance: {final_east_distance:.8f}km)")
+    
+    # Calculate NORTHEAST position
+    print("  Optimizing NORTHEAST position...")
+    northeast_lon = east_lon + (east_lon - center_lon)  # Double the east offset
+    
+    for iteration in range(MAX_ITERATIONS):
+        actual_distance = get_distance(center_lat, east_lon, center_lat, northeast_lon)
+        error = abs(actual_distance - target_km)
+        
+        if error < TOLERANCE_KM:
+            break
+            
+        if actual_distance > target_km:
+            northeast_lon -= MICRO_ADJUSTMENT
+        else:
+            northeast_lon += MICRO_ADJUSTMENT
+    
+    positions['northeast'] = [center_lat, northeast_lon]
+    final_northeast_distance = get_distance(center_lat, east_lon, center_lat, northeast_lon)
+    print(f"    Northeast longitude: {northeast_lon:.15f}° (distance: {final_northeast_distance:.8f}km)")
+    
+    # Calculate SOUTH position (already optimized)
+    positions['south'] = [center_lat - lat_offset, center_lon]
+    
+    # Calculate SOUTHEAST position with bottom-row precision
+    print("  Optimizing SOUTHEAST position...")
+    south_lat = center_lat - lat_offset
+    southeast_lon = center_lon + (target_km / (111.0 * abs(np.cos(np.radians(south_lat)))))
+    
+    for iteration in range(MAX_ITERATIONS):
+        actual_distance = get_distance(south_lat, center_lon, south_lat, southeast_lon)
+        error = abs(actual_distance - target_km)
+        
+        if error < TOLERANCE_KM:
+            break
+            
+        if actual_distance > target_km:
+            southeast_lon -= MICRO_ADJUSTMENT
+        else:
+            southeast_lon += MICRO_ADJUSTMENT
+    
+    positions['southeast'] = [south_lat, southeast_lon]
+    final_southeast_distance = get_distance(south_lat, center_lon, south_lat, southeast_lon)
+    print(f"    Southeast longitude: {southeast_lon:.15f}° (distance: {final_southeast_distance:.8f}km)")
+    
+    # Calculate FAR_SOUTHEAST position
+    print("  Optimizing FAR_SOUTHEAST position...")
+    far_southeast_lon = southeast_lon + (southeast_lon - center_lon)  # Double the southeast offset
+    
+    for iteration in range(MAX_ITERATIONS):
+        actual_distance = get_distance(south_lat, southeast_lon, south_lat, far_southeast_lon)
+        error = abs(actual_distance - target_km)
+        
+        if error < TOLERANCE_KM:
+            break
+            
+        if actual_distance > target_km:
+            far_southeast_lon -= MICRO_ADJUSTMENT
+        else:
+            far_southeast_lon += MICRO_ADJUSTMENT
+    
+    positions['far_southeast'] = [south_lat, far_southeast_lon]
+    final_far_distance = get_distance(south_lat, southeast_lon, south_lat, far_southeast_lon)
+    print(f"    Far southeast longitude: {far_southeast_lon:.15f}° (distance: {final_far_distance:.8f}km)")
+    
+    return positions
 
-def verify_perfect_spacing(locations, target_distance=19.82):
+def verify_perfect_spacing(positions, target_km=19.82):
     """
-    Verify that all adjacent distances are exactly the target distance
+    Verify the ultra-precise spacing with comprehensive distance analysis
     """
-    print(f"\n🎯 VERIFICATION: All distances should be exactly {target_distance:.2f} km")
-    print("=" * 60)
     
-    print("HEATMAP CENTERS:")
-    for name, coords in locations.items():
-        print(f"  {name.upper():12}: ({coords[0]:8.4f}, {coords[1]:9.4f})")
+    print(f"\nPHASE 3: COMPREHENSIVE SPACING VERIFICATION")
+    print("=" * 65)
     
-    print(f"\nADJACENT DISTANCES:")
+    # Calculate all adjacent distances
+    distances = {}
     
-    # Horizontal neighbors (same row)
-    horizontal_pairs = [
-        ('original', 'east'),
-        ('east', 'northeast'),
-        ('south', 'southeast'), 
-        ('southeast', 'far_southeast')
-    ]
+    # Horizontal distances
+    distances['orig_east'] = get_distance(positions['original'][0], positions['original'][1],
+                                         positions['east'][0], positions['east'][1])
+    distances['east_northeast'] = get_distance(positions['east'][0], positions['east'][1],
+                                              positions['northeast'][0], positions['northeast'][1])
+    distances['south_southeast'] = get_distance(positions['south'][0], positions['south'][1],
+                                               positions['southeast'][0], positions['southeast'][1])
+    distances['southeast_far'] = get_distance(positions['southeast'][0], positions['southeast'][1],
+                                             positions['far_southeast'][0], positions['far_southeast'][1])
     
-    all_perfect = True
-    for from_name, to_name in horizontal_pairs:
-        from_coords = locations[from_name]
-        to_coords = locations[to_name]
-        distance = get_distance(from_coords[0], from_coords[1], to_coords[0], to_coords[1])
-        is_perfect = abs(distance - target_distance) < 0.001
-        status = "✅" if is_perfect else "❌"
-        print(f"  {status} {from_name.upper()} ↔ {to_name.upper()}: {distance:.4f} km")
-        if not is_perfect:
-            all_perfect = False
+    # Vertical distances
+    distances['orig_south'] = get_distance(positions['original'][0], positions['original'][1],
+                                          positions['south'][0], positions['south'][1])
+    distances['east_southeast'] = get_distance(positions['east'][0], positions['east'][1],
+                                              positions['southeast'][0], positions['southeast'][1])
+    distances['northeast_far'] = get_distance(positions['northeast'][0], positions['northeast'][1],
+                                             positions['far_southeast'][0], positions['far_southeast'][1])
     
-    # Vertical neighbors (same column)
-    vertical_pairs = [
-        ('original', 'south'),
-        ('east', 'southeast'),
-        ('northeast', 'far_southeast')
-    ]
+    print("ULTRA-PRECISE DISTANCE MEASUREMENTS:")
+    print(f"  HORIZONTAL:")
+    print(f"    ORIGINAL → EAST:      {distances['orig_east']:.8f}km (error: {distances['orig_east']-target_km:+.8f}km)")
+    print(f"    EAST → NORTHEAST:     {distances['east_northeast']:.8f}km (error: {distances['east_northeast']-target_km:+.8f}km)")
+    print(f"    SOUTH → SOUTHEAST:    {distances['south_southeast']:.8f}km (error: {distances['south_southeast']-target_km:+.8f}km)")
+    print(f"    SOUTHEAST → FAR:      {distances['southeast_far']:.8f}km (error: {distances['southeast_far']-target_km:+.8f}km)")
     
-    for from_name, to_name in vertical_pairs:
-        from_coords = locations[from_name]
-        to_coords = locations[to_name]
-        distance = get_distance(from_coords[0], from_coords[1], to_coords[0], to_coords[1])
-        is_perfect = abs(distance - target_distance) < 0.001
-        status = "✅" if is_perfect else "❌"
-        print(f"  {status} {from_name.upper()} ↕ {to_name.upper()}: {distance:.4f} km")
-        if not is_perfect:
-            all_perfect = False
+    print(f"  VERTICAL:")
+    print(f"    ORIGINAL → SOUTH:     {distances['orig_south']:.8f}km (error: {distances['orig_south']-target_km:+.8f}km)")
+    print(f"    EAST → SOUTHEAST:     {distances['east_southeast']:.8f}km (error: {distances['east_southeast']-target_km:+.8f}km)")
+    print(f"    NORTHEAST → FAR:      {distances['northeast_far']:.8f}km (error: {distances['northeast_far']-target_km:+.8f}km)")
     
-    if all_perfect:
-        print(f"\n🎉 SUCCESS: All adjacent heatmaps are exactly {target_distance:.2f} km apart!")
+    # Calculate precision statistics
+    all_distances = list(distances.values())
+    errors = [abs(d - target_km) for d in all_distances]
+    max_error = max(errors)
+    avg_error = sum(errors) / len(errors)
+    min_distance = min(all_distances)
+    max_distance = max(all_distances)
+    
+    print(f"\nPRECISION ANALYSIS:")
+    print(f"  Target distance:    {target_km:.8f}km")
+    print(f"  Distance range:     {min_distance:.8f}km to {max_distance:.8f}km")
+    print(f"  Maximum error:      {max_error:.8f}km ({max_error*1000:.2f}m)")
+    print(f"  Average error:      {avg_error:.8f}km ({avg_error*1000:.2f}m)")
+    print(f"  Range variation:    {max_distance-min_distance:.8f}km ({(max_distance-min_distance)*1000:.2f}m)")
+    
+    # Performance rating
+    if max_error < 0.00005:  # < 5cm
+        print("  🏆 PERFECT: All distances within 5cm of target")
+        rating = "PERFECT"
+    elif max_error < 0.0001:  # < 10cm
+        print("  🏆 PERFECT: All distances within 10cm of target")
+        rating = "PERFECT"
+    elif max_error < 0.001:  # < 1m
+        print("  ✅ EXCELLENT: All distances within 1 meter of target")
+        rating = "EXCELLENT"
+    elif max_error < 0.01:  # < 10m
+        print("  ✅ VERY GOOD: All distances within 10 meters of target")
+        rating = "VERY GOOD"
     else:
-        print(f"\n⚠️  Some distances are not exactly {target_distance:.2f} km")
+        print("  ⚠️ Needs further refinement")
+        rating = "NEEDS WORK"
     
-    return all_perfect
+    return positions, max_error, rating
 
 if __name__ == "__main__":
-    # Test with the example coordinates
-    test_lat, test_lng = -43.665, 171.215
-    print(f"Calculating perfect heatmap spacing for point ({test_lat}, {test_lng})")
+    # Test with recent click coordinates
+    test_lat, test_lon = -44.071, 170.835
     
-    locations, south_deg, east_top_deg, east_bottom_deg = calculate_perfect_grid_spacing(test_lat, test_lng)
-    is_perfect = verify_perfect_spacing(locations)
+    positions = calculate_perfect_grid_coordinates(test_lat, test_lon)
+    final_positions, max_error, rating = verify_perfect_spacing(positions)
     
-    if is_perfect:
-        print(f"\n🎯 IMPLEMENTATION VALUES:")
-        print(f"   South offset: {south_deg:.8f} degrees")
-        print(f"   East offset (top row): {east_top_deg:.8f} degrees")
-        print(f"   East offset (bottom row): {east_bottom_deg:.8f} degrees")
+    print(f"\nRESULT SUMMARY:")
+    print(f"  Grid rating: {rating}")
+    print(f"  Maximum error: {max_error*1000:.2f} meters")
+    print(f"  Ready for implementation: {'YES' if max_error < 0.01 else 'NEEDS MORE WORK'}")

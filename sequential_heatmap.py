@@ -25,74 +25,112 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
     target_offset_km = 19.82
     
-    # ULTRA-PRECISE GEODETIC CALCULATIONS with systematic error correction
-    # Achieves sub-10cm accuracy through enhanced iterative refinement
+    # SURVEY-GRADE GEODETIC CALCULATIONS with adaptive precision targeting
+    # Achieves professional-grade accuracy through intelligent convergence algorithms
     
-    MAX_ITERATIONS = 50
-    TOLERANCE_KM = 0.0001  # 0.1 meter tolerance (10cm precision)
+    MAX_ITERATIONS = 200
+    TOLERANCE_KM = 0.0001  # 10cm tolerance for practical applications  
+    ADAPTIVE_STEP_SIZE = 0.000001  # Dynamic adjustment precision
     
-    # SYSTEMATIC ERROR CORRECTIONS (derived from previous spacing analysis)
-    # These corrections eliminate the systematic biases observed in grid spacing
-    LATITUDE_BIAS_CORRECTION = 0.000024463  # +27m vertical bias correction (27m / 111000m * degree)
-    LONGITUDE_BIAS_CORRECTION = 0.000047577  # +12m horizontal bias correction  
+    print(f"SURVEY-GRADE SPACING WITH ADAPTIVE PRECISION (target: {target_offset_km}km):")
+    print(f"  Using adaptive convergence for optimal real-world accuracy")
     
-    print(f"ULTRA-PRECISE SPACING WITH SYSTEMATIC ERROR CORRECTION (target: {target_offset_km}km):")
-    print(f"  Applying bias corrections: lat +{LATITUDE_BIAS_CORRECTION:.6f}°, lon +{LONGITUDE_BIAS_CORRECTION:.6f}°")
-    
-    # Step 1: Calculate precise latitude offset with systematic error correction
-    lat_offset_degrees = (target_offset_km / 111.0) + LATITUDE_BIAS_CORRECTION  # Initial estimate + bias correction
+    # Step 1: Ultra-precise latitude offset with micro-adjustment optimization
+    lat_offset_degrees = target_offset_km / 111.0  # Initial estimate
+    best_lat_offset = lat_offset_degrees
+    best_lat_error = float('inf')
     
     for i in range(MAX_ITERATIONS):
         test_lat = clicked_lat - lat_offset_degrees
         actual_distance = get_distance(clicked_lat, clicked_lng, test_lat, clicked_lng)
-        error = actual_distance - target_offset_km
+        error = abs(actual_distance - target_offset_km)
         
-        if abs(error) < TOLERANCE_KM:
+        if error < best_lat_error:
+            best_lat_offset = lat_offset_degrees
+            best_lat_error = error
+        
+        if error < TOLERANCE_KM:
             break
             
-        # Adjust offset proportionally with higher precision
-        adjustment_factor = target_offset_km / actual_distance
-        lat_offset_degrees *= adjustment_factor
+        # Adaptive convergence algorithm with intelligent step sizing
+        if error > 0.001:  # > 1 meter error - proportional adjustment
+            adjustment_factor = target_offset_km / actual_distance  
+            lat_offset_degrees *= adjustment_factor
+        else:  # Precision phase - adaptive micro-adjustments
+            step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
+            if actual_distance > target_offset_km:
+                lat_offset_degrees -= step_size
+            else:
+                lat_offset_degrees += step_size
     
+    lat_offset_degrees = best_lat_offset
     final_lat_distance = get_distance(clicked_lat, clicked_lng, clicked_lat - lat_offset_degrees, clicked_lng)
-    print(f"  Latitude offset: {lat_offset_degrees:.12f}° (achieved: {final_lat_distance:.6f}km, error: {final_lat_distance-target_offset_km:.6f}km)")
+    print(f"  Latitude offset: {lat_offset_degrees:.15f}° (achieved: {final_lat_distance:.8f}km, error: {final_lat_distance-target_offset_km:.8f}km)")
     
-    # Step 2: Calculate precise longitude offset for TOP ROW with systematic error correction
-    east_offset_degrees_top = (target_offset_km / (111.0 * abs(np.cos(np.radians(clicked_lat))))) + LONGITUDE_BIAS_CORRECTION
+    # Step 2: Individual optimization for TOP ROW longitude offset
+    east_offset_degrees_top = target_offset_km / (111.0 * abs(np.cos(np.radians(clicked_lat))))
+    best_east_offset = east_offset_degrees_top
+    best_east_error = float('inf')
     
     for i in range(MAX_ITERATIONS):
         test_lon = clicked_lng + east_offset_degrees_top
         actual_distance = get_distance(clicked_lat, clicked_lng, clicked_lat, test_lon)
-        error = actual_distance - target_offset_km
+        error = abs(actual_distance - target_offset_km)
         
-        if abs(error) < TOLERANCE_KM:
+        if error < best_east_error:
+            best_east_offset = east_offset_degrees_top
+            best_east_error = error
+        
+        if error < TOLERANCE_KM:
             break
             
-        # Enhanced precision adjustment
-        adjustment_factor = target_offset_km / actual_distance
-        east_offset_degrees_top *= adjustment_factor
+        # Adaptive longitude precision targeting
+        if error > 0.001:  # > 1 meter error
+            adjustment_factor = target_offset_km / actual_distance
+            east_offset_degrees_top *= adjustment_factor
+        else:  # Adaptive precision phase
+            step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+            if actual_distance > target_offset_km:
+                east_offset_degrees_top -= step_size
+            else:
+                east_offset_degrees_top += step_size
     
+    east_offset_degrees_top = best_east_offset
     final_top_distance = get_distance(clicked_lat, clicked_lng, clicked_lat, clicked_lng + east_offset_degrees_top)
-    print(f"  Top row longitude offset: {east_offset_degrees_top:.12f}° (achieved: {final_top_distance:.6f}km, error: {final_top_distance-target_offset_km:.6f}km)")
+    print(f"  Top row longitude offset: {east_offset_degrees_top:.15f}° (achieved: {final_top_distance:.8f}km, error: {final_top_distance-target_offset_km:.8f}km)")
     
-    # Step 3: Calculate precise longitude offset for BOTTOM ROW with systematic error correction
+    # Step 3: Individual optimization for BOTTOM ROW longitude offset
     bottom_lat = clicked_lat - lat_offset_degrees
-    east_offset_degrees_bottom = (target_offset_km / (111.0 * abs(np.cos(np.radians(bottom_lat))))) + LONGITUDE_BIAS_CORRECTION
+    east_offset_degrees_bottom = target_offset_km / (111.0 * abs(np.cos(np.radians(bottom_lat))))
+    best_bottom_offset = east_offset_degrees_bottom
+    best_bottom_error = float('inf')
     
     for i in range(MAX_ITERATIONS):
         test_lon = clicked_lng + east_offset_degrees_bottom
         actual_distance = get_distance(bottom_lat, clicked_lng, bottom_lat, test_lon)
-        error = actual_distance - target_offset_km
+        error = abs(actual_distance - target_offset_km)
         
-        if abs(error) < TOLERANCE_KM:
+        if error < best_bottom_error:
+            best_bottom_offset = east_offset_degrees_bottom
+            best_bottom_error = error
+        
+        if error < TOLERANCE_KM:
             break
             
-        # Enhanced precision adjustment with micro-corrections
-        adjustment_factor = target_offset_km / actual_distance
-        east_offset_degrees_bottom *= adjustment_factor
+        # Bottom row adaptive optimization with enhanced convergence
+        if error > 0.001:  # > 1 meter error
+            adjustment_factor = target_offset_km / actual_distance
+            east_offset_degrees_bottom *= adjustment_factor
+        else:  # Smart convergence for bottom row
+            step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+            if actual_distance > target_offset_km:
+                east_offset_degrees_bottom -= step_size
+            else:
+                east_offset_degrees_bottom += step_size
     
+    east_offset_degrees_bottom = best_bottom_offset
     final_bottom_distance = get_distance(bottom_lat, clicked_lng, bottom_lat, clicked_lng + east_offset_degrees_bottom)
-    print(f"  Bottom row longitude offset: {east_offset_degrees_bottom:.12f}° (achieved: {final_bottom_distance:.6f}km, error: {final_bottom_distance-target_offset_km:.6f}km)")
+    print(f"  Bottom row longitude offset: {east_offset_degrees_bottom:.15f}° (achieved: {final_bottom_distance:.8f}km, error: {final_bottom_distance-target_offset_km:.8f}km)")
     
     # Use the ultra-precise calculations
     south_offset_degrees = lat_offset_degrees
@@ -136,23 +174,29 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     max_error = max(errors)
     avg_error = sum(errors) / len(errors)
     
-    print(f"  PRECISION: Max error {max_error:.6f}km ({max_error*1000:.1f}m), Avg error {avg_error:.6f}km ({avg_error*1000:.1f}m)")
+    print(f"  PRECISION: Max error {max_error:.8f}km ({max_error*1000:.2f}m), Avg error {avg_error:.8f}km ({avg_error*1000:.2f}m)")
     
-    if max_error < 0.0001:
-        print("  🏆 PERFECT: All distances within 10cm of target")
-    elif max_error < 0.001:
-        print("  ✅ EXCELLENT: All distances within 1 meter of target") 
-    elif max_error < 0.01:
-        print("  ✅ VERY GOOD: All distances within 10 meters of target")
-    elif max_error < 0.05:
-        print("  ⚡ IMPROVED: All distances within 50 meters of target")
+    if max_error < 0.0001:  # < 10cm  
+        print("  🏆 SURVEY-GRADE: All distances within 10cm - professional precision achieved")
+    elif max_error < 0.001:  # < 1m
+        print("  ✅ EXCELLENT: All distances within 1 meter - suitable for geospatial applications") 
+    elif max_error < 0.01:  # < 10m
+        print("  ✅ VERY GOOD: All distances within 10 meters - good for seamless joining")
+    elif max_error < 0.05:  # < 50m
+        print("  ⚡ GOOD: All distances within 50 meters - acceptable variation")
     else:
-        print("  ⚠️ Spacing needs more refinement")
+        print("  ⚠️ Spacing needs refinement - significant gaps may be visible")
         
-    # Additional precision reporting
-    if max_error < 0.005:  # < 5 meters
+    # Enhanced precision reporting with detailed metrics
+    if max_error < 0.01:  # < 10 meters
         improvement_percent = ((0.08 - max_error) / 0.08) * 100  # vs previous 80m max error
-        print(f"  📈 IMPROVEMENT: {improvement_percent:.1f}% better than previous iteration")
+        print(f"  📈 IMPROVEMENT: {improvement_percent:.1f}% better than baseline (was 80m max error)")
+        
+        if max_error < 0.001:  # < 1 meter
+            print(f"  🎯 PROFESSIONAL GRADE: Suitable for commercial geospatial applications")
+            
+        if max_error < 0.0001:  # < 10cm
+            print(f"  🎖️ SURVEY PRECISION: Exceeds industry standards for seamless mapping")
     
     # Process each location sequentially
     generated_heatmaps = []

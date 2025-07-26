@@ -128,6 +128,12 @@ Preferred communication style: Simple, everyday language.
   - Dramatically improves indicator kriging accuracy by correctly identifying all wells with water
   - Logic now: viable if yield ≥ 0.1 L/s OR ground water level data exists (any depth)
 
+- **July 25, 2025**: Fixed ground water level interpolation to handle negative values (artesian conditions)
+  - Removed restrictive filtering that excluded wells with ground water level = 0 or small values
+  - Added conversion of negative ground water levels to 0 for depth interpolation purposes
+  - Negative values (artesian conditions) now treated as surface-level depth for visualization
+  - Ground water level heatmaps will now display properly in artesian areas
+
 - **July 24, 2025**: Fixed heatmap spacing inconsistency for perfect grid alignment
   - Resolved issue where adjacent heatmaps had slightly different distances (19.77km vs 19.82km)
   - Implemented row-specific east offset calculations to account for latitude-dependent longitude spacing

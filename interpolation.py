@@ -289,12 +289,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             return {"type": "FeatureCollection", "features": []}
 
         # Double-check that all wells have valid ground water level data
-        # Filter for non-zero, non-null values
-        valid_gwl_mask = (
-            wells_df['ground water level'].notna() & 
-            (wells_df['ground water level'] != 0) &
-            (wells_df['ground water level'].abs() > 0.1)  # Exclude very small values
-        )
+        # Only filter for non-null values, allow all numeric values (including 0 and negative)
+        valid_gwl_mask = wells_df['ground water level'].notna()
 
         wells_df = wells_df[valid_gwl_mask].copy()
 
@@ -304,7 +300,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
-        yields = wells_df['ground water level'].values.astype(float)
+        
+        # Convert negative ground water levels to 0 for interpolation
+        # Negative values indicate artesian conditions (water above surface)
+        # For depth mapping, treat these as surface level (depth = 0)
+        raw_gwl_values = wells_df['ground water level'].values.astype(float)
+        yields = np.maximum(raw_gwl_values, 0)  # Convert negative values to 0
+        
+        negative_count = np.sum(raw_gwl_values < 0)
+        if negative_count > 0:
+            print(f"Ground water level interpolation: converted {negative_count} negative values (artesian) to 0 (surface level)")
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
     elif method == 'indicator_kriging':

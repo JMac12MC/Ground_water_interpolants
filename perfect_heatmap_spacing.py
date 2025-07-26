@@ -6,7 +6,7 @@ Calculate perfect heatmap spacing where ALL adjacent distances are exactly 19.82
 import numpy as np
 from utils import get_distance
 
-def calculate_perfect_grid_spacing(click_lat, click_lng, target_distance_km=19.82):
+def calculate_perfect_grid_spacing(click_lat, click_lng, target_distance_km=40.0):
     """
     Calculate grid positions where ALL adjacent heatmaps are exactly target_distance_km apart
     """
@@ -70,7 +70,7 @@ def calculate_perfect_grid_spacing(click_lat, click_lng, target_distance_km=19.8
     
     return locations, south_offset_degrees, east_offset_degrees_top, east_offset_degrees_bottom
 
-def verify_perfect_spacing(locations, target_distance=19.82):
+def verify_perfect_spacing(locations, target_distance=40.0):
     """
     Verify that all adjacent distances are exactly the target distance
     """

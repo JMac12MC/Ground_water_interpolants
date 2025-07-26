@@ -134,6 +134,12 @@ Preferred communication style: Simple, everyday language.
   - Negative values (artesian conditions) now treated as surface-level depth for visualization
   - Ground water level heatmaps will now display properly in artesian areas
 
+- **July 25, 2025**: CRITICAL FIX: Updated heatmap spacing for seamless joining
+  - Changed from 19.82km to 40km center-to-center spacing for perfect alignment
+  - Each heatmap covers 40km × 40km, so 40km spacing ensures seamless edge-to-edge joining
+  - Eliminates gaps and overlaps between adjacent heatmaps in the 2×3 grid
+  - Added spacing verification logging to confirm exact 40.00km distances
+
 - **July 24, 2025**: Fixed heatmap spacing inconsistency for perfect grid alignment
   - Resolved issue where adjacent heatmaps had slightly different distances (19.77km vs 19.82km)
   - Implemented row-specific east offset calculations to account for latitude-dependent longitude spacing

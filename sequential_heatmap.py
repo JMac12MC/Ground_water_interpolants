@@ -17,11 +17,13 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     from utils import is_within_square, get_distance
     import numpy as np
     
-    # Calculate positions for all heatmaps using PERFECT 19.82km spacing
+    # Calculate positions for all heatmaps using SEAMLESS 40km spacing
+    # Each heatmap covers 40km × 40km (radius_km=20), so for seamless joining,
+    # center-to-center distance must be exactly 40km
     clicked_lat, clicked_lng = click_point
     
-    # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
-    target_offset_km = 19.82
+    # Use seamless 40km offset - heatmaps join perfectly with no gaps/overlaps
+    target_offset_km = 40.0
     
     # Step 1: Calculate precise south offset
     km_per_degree_lat = 111.0
@@ -59,9 +61,16 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         ('far_southeast', [clicked_lat - south_offset_degrees, clicked_lng + (2 * east_offset_degrees_bottom)])
     ]
     
-    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in 2x3 grid")
+    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in 2x3 grid (SEAMLESS 40km spacing)")
     for i, (name, coords) in enumerate(locations):
         print(f"  {i+1}. {name.upper()}: ({coords[0]:.6f}, {coords[1]:.6f})")
+    
+    # Verify actual distances for seamless joining
+    print("SPACING VERIFICATION:")
+    dist_orig_east = get_distance(locations[0][1][0], locations[0][1][1], locations[1][1][0], locations[1][1][1])
+    dist_orig_south = get_distance(locations[0][1][0], locations[0][1][1], locations[3][1][0], locations[3][1][1])
+    print(f"  ORIGINAL → EAST: {dist_orig_east:.2f}km (target: 40.00km)")
+    print(f"  ORIGINAL → SOUTH: {dist_orig_south:.2f}km (target: 40.00km)")
     
     # Process each location sequentially
     generated_heatmaps = []

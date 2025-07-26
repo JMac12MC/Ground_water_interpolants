@@ -7,12 +7,12 @@ def check_last_generated_distances():
     
     # From the logs, the last generated heatmaps had these coordinates:
     heatmaps = {
-        'original': (-44.078, 170.837),
-        'east': (-44.078, 171.086),
-        'northeast': (-44.078, 171.335),
-        'south': (-44.256, 170.837),
-        'southeast': (-44.256, 171.087),
-        'far_southeast': (-44.256, 171.336)
+        'original': (-44.056, 170.817),
+        'east': (-44.056, 171.065),
+        'northeast': (-44.056, 171.313),
+        'south': (-44.234, 170.817),
+        'southeast': (-44.234, 171.066),
+        'far_southeast': (-44.234, 171.314)
     }
     
     print("LAST GENERATED HEATMAP DISTANCES")

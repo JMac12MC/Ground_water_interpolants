@@ -121,6 +121,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 25, 2025**: CRITICAL FIX: Corrected ground water level viability logic in indicator kriging
+  - Fixed major bug where negative ground water levels were incorrectly marked as non-viable
+  - Negative values indicate artesian conditions (water above surface) = very viable wells
+  - Changed logic from `gwl > -10` to `gwl ≤ 10` to properly include artesian wells
+  - Wells now correctly viable if ground water within 10m of surface (including negative values)
+  - This dramatically improves indicator kriging accuracy for areas with artesian wells
+
 - **July 24, 2025**: Fixed heatmap spacing inconsistency for perfect grid alignment
   - Resolved issue where adjacent heatmaps had slightly different distances (19.77km vs 19.82km)
   - Implemented row-specific east offset calculations to account for latitude-dependent longitude spacing

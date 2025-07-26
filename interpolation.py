@@ -347,11 +347,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # Convert to BINARY indicator values for kriging input using COMBINED criteria
         # A well is viable (indicator = 1) if EITHER:
         # - yield_rate ≥ 0.1 L/s, OR  
-        # - ground water level > -10 (groundwater within 10 meters depth)
+        # - ground water level ≤ 10 (groundwater within 10 meters from surface, including negative values)
+        # Note: Negative ground water level = artesian conditions (very good!)
         # Otherwise indicator = 0 (not viable)
         
         yield_threshold = 0.1
-        gwl_threshold = -10
+        gwl_depth_threshold = 10  # Maximum depth in meters below surface
         
         raw_yields = wells_df['yield_rate'].values.astype(float)
         
@@ -362,7 +363,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Handle NaN values in ground water level
             gwl_valid = ~np.isnan(gwl_values)
             gwl_viable = np.zeros_like(gwl_values, dtype=bool)
-            gwl_viable[gwl_valid] = gwl_values[gwl_valid] > gwl_threshold
+            # Wells are viable if ground water is within 10m of surface (including negative = artesian)
+            gwl_viable[gwl_valid] = gwl_values[gwl_valid] <= gwl_depth_threshold
         else:
             gwl_values = np.full_like(raw_yields, np.nan)
             gwl_viable = np.zeros_like(raw_yields, dtype=bool)
@@ -386,7 +388,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         print(f"BREAKDOWN BY CRITERIA:")
         print(f"  Viable by yield only (≥{yield_threshold} L/s): {yield_only_viable} wells")
         if has_gwl_data:
-            print(f"  Viable by ground water level only (>{gwl_threshold}m depth): {gwl_only_viable} wells") 
+            print(f"  Viable by ground water level only (≤{gwl_depth_threshold}m depth): {gwl_only_viable} wells") 
             print(f"  Viable by both criteria: {both_viable} wells")
             valid_gwl_count = np.sum(~np.isnan(gwl_values))
             print(f"  Wells with ground water level data: {valid_gwl_count}/{len(wells_df)}")
@@ -406,20 +408,21 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     test_yield = test_well['yield_rate']
                     test_gwl = test_well['ground water level'] if not pd.isna(test_well['ground water level']) else 'NaN'
                     test_yield_viable = test_yield >= yield_threshold
-                    test_gwl_viable = not pd.isna(test_well['ground water level']) and test_well['ground water level'] > gwl_threshold
+                    test_gwl_viable = not pd.isna(test_well['ground water level']) and test_well['ground water level'] <= gwl_depth_threshold
                     test_combined = test_yield_viable or test_gwl_viable
                     print(f"DEBUG WELL M35/4191:")
                     print(f"    Yield: {test_yield} L/s (viable: {test_yield_viable})")
                     print(f"    Ground water level: {test_gwl} (viable: {test_gwl_viable})")
                     print(f"    Combined viable: {test_combined}")
-                    print(f"    Threshold checks: yield>={yield_threshold}, gwl>{gwl_threshold}")
+                    print(f"    Threshold checks: yield>={yield_threshold}, gwl≤{gwl_depth_threshold}")
                     
             # Sample of ground water level values around the threshold
-            gwl_near_threshold = valid_gwl[(valid_gwl > -5) & (valid_gwl < 2)]
+            gwl_near_threshold = valid_gwl[(valid_gwl > -5) & (valid_gwl < 15)]
             if len(gwl_near_threshold) > 0:
-                print(f"  Sample GWL values near threshold {gwl_threshold}: {gwl_near_threshold[:10]}")
-                gwl_viable_sample = gwl_near_threshold > gwl_threshold
-                print(f"  Which are viable (>{gwl_threshold}): {gwl_near_threshold[gwl_viable_sample][:5]}")
+                print(f"  Sample GWL values near threshold {gwl_depth_threshold}: {gwl_near_threshold[:10]}")
+                gwl_viable_sample = gwl_near_threshold <= gwl_depth_threshold
+                print(f"  Which are viable (≤{gwl_depth_threshold}): {gwl_near_threshold[gwl_viable_sample][:5]}")
+                print(f"  Note: Negative values are artesian (water above surface) = very viable!")
                 
         print(f"  Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
         print(f"  Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")

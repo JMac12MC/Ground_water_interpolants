@@ -122,11 +122,11 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 - **July 25, 2025**: CRITICAL FIX: Corrected ground water level viability logic in indicator kriging
-  - Fixed major bug where negative ground water levels were incorrectly marked as non-viable
-  - Negative values indicate artesian conditions (water above surface) = very viable wells
-  - Changed logic from `gwl > -10` to `gwl ≤ 10` to properly include artesian wells
-  - Wells now correctly viable if ground water within 10m of surface (including negative values)
-  - This dramatically improves indicator kriging accuracy for areas with artesian wells
+  - Fixed fundamental misunderstanding: ANY ground water level data means water was found = viable
+  - Wells with ground water level measurements (any depth) are now correctly marked as viable
+  - Removed arbitrary depth threshold - presence of data indicates successful water discovery
+  - Dramatically improves indicator kriging accuracy by correctly identifying all wells with water
+  - Logic now: viable if yield ≥ 0.1 L/s OR ground water level data exists (any depth)
 
 - **July 24, 2025**: Fixed heatmap spacing inconsistency for perfect grid alignment
   - Resolved issue where adjacent heatmaps had slightly different distances (19.77km vs 19.82km)

@@ -1,116 +1,127 @@
 #!/usr/bin/env python3
 
-import re
-from database import HeatmapDatabase
+import numpy as np
+from utils import get_distance
 
-def analyze_heatmap_edges():
-    """Analyze the edges of stored heatmaps to measure gaps/overlaps"""
+def analyze_spacing_errors():
+    """
+    Analyze the remaining spacing errors to identify systematic issues
+    """
     
-    db = HeatmapDatabase()
+    # Current coordinates from last generation
+    heatmaps = {
+        'original': (-44.056, 170.817),
+        'east': (-44.056, 171.065),
+        'northeast': (-44.056, 171.313),
+        'south': (-44.234, 170.817),
+        'southeast': (-44.234, 171.066),
+        'far_southeast': (-44.234, 171.314)
+    }
     
-    # Get the latest set of heatmaps (last 6)
-    recent_heatmaps = db.get_recent_heatmaps(limit=6)
+    target_km = 19.82
     
-    if len(recent_heatmaps) < 6:
-        print("Not enough recent heatmaps to analyze")
-        return
+    print("SPACING ERROR ANALYSIS")
+    print("=" * 50)
     
-    print("=== HEATMAP EDGE ANALYSIS ===")
-    print(f"Analyzing {len(recent_heatmaps)} most recent heatmaps")
-    print()
+    # Calculate all distances and errors
+    distances = {}
+    errors = {}
     
-    # Group heatmaps by position
-    heatmap_coords = {}
-    for heatmap in recent_heatmaps:
-        name = heatmap['name']
-        
-        # Extract coordinates from name
-        coord_match = re.search(r'(-?\d+\.\d+)_(-?\d+\.\d+)', name)
-        if coord_match:
-            lat = float(coord_match.group(1))
-            lon = float(coord_match.group(2))
-            
-            # Determine position based on coordinates
-            if 'far_southeast' in name:
-                position = 'far_southeast'
-            elif 'southeast' in name:
-                position = 'southeast'
-            elif 'northeast' in name:
-                position = 'northeast'
-            elif 'south' in name:
-                position = 'south'
-            elif 'east' in name:
-                position = 'east'
-            else:
-                position = 'original'
-            
-            heatmap_coords[position] = {
-                'name': name,
-                'lat': lat,
-                'lon': lon,
-                'id': heatmap['id']
-            }
+    # Horizontal distances
+    distances['orig_east'] = get_distance(heatmaps['original'][0], heatmaps['original'][1],
+                                         heatmaps['east'][0], heatmaps['east'][1])
+    distances['east_northeast'] = get_distance(heatmaps['east'][0], heatmaps['east'][1],
+                                              heatmaps['northeast'][0], heatmaps['northeast'][1])
+    distances['south_southeast'] = get_distance(heatmaps['south'][0], heatmaps['south'][1],
+                                               heatmaps['southeast'][0], heatmaps['southeast'][1])
+    distances['southeast_far'] = get_distance(heatmaps['southeast'][0], heatmaps['southeast'][1],
+                                             heatmaps['far_southeast'][0], heatmaps['far_southeast'][1])
     
-    print("HEATMAP POSITIONS:")
-    for pos, data in heatmap_coords.items():
-        print(f"  {pos.upper()}: ({data['lat']}, {data['lon']})")
+    # Vertical distances
+    distances['orig_south'] = get_distance(heatmaps['original'][0], heatmaps['original'][1],
+                                          heatmaps['south'][0], heatmaps['south'][1])
+    distances['east_southeast'] = get_distance(heatmaps['east'][0], heatmaps['east'][1],
+                                              heatmaps['southeast'][0], heatmaps['southeast'][1])
+    distances['northeast_far'] = get_distance(heatmaps['northeast'][0], heatmaps['northeast'][1],
+                                             heatmaps['far_southeast'][0], heatmaps['far_southeast'][1])
     
-    print()
+    # Calculate errors
+    for key, dist in distances.items():
+        errors[key] = dist - target_km
     
-    # Analyze actual coordinate ranges from GeoJSON data
-    print("ANALYZING GEOJSON COORDINATE RANGES:")
+    print("DETAILED ERROR BREAKDOWN:")
+    print(f"  HORIZONTAL ERRORS:")
+    print(f"    ORIG→EAST: {errors['orig_east']:+.4f}km ({errors['orig_east']*1000:+.0f}m)")
+    print(f"    EAST→NE:   {errors['east_northeast']:+.4f}km ({errors['east_northeast']*1000:+.0f}m)")
+    print(f"    SOUTH→SE:  {errors['south_southeast']:+.4f}km ({errors['south_southeast']*1000:+.0f}m)")
+    print(f"    SE→FAR:    {errors['southeast_far']:+.4f}km ({errors['southeast_far']*1000:+.0f}m)")
     
-    for pos, data in heatmap_coords.items():
-        geojson_data = db.get_heatmap_geojson(data['id'])
-        
-        if geojson_data and 'features' in geojson_data:
-            lats = []
-            lons = []
-            
-            # Extract all coordinates from triangular features
-            for feature in geojson_data['features'][:100]:  # Sample first 100 for speed
-                if 'geometry' in feature and 'coordinates' in feature['geometry']:
-                    coords = feature['geometry']['coordinates'][0]  # Polygon exterior
-                    for coord in coords:
-                        lons.append(coord[0])
-                        lats.append(coord[1])
-            
-            if lats and lons:
-                lat_range = (min(lats), max(lats))
-                lon_range = (min(lons), max(lons))
-                
-                print(f"  {pos.upper()}:")
-                print(f"    Lat range: {lat_range[0]:.6f} to {lat_range[1]:.6f} (span: {lat_range[1]-lat_range[0]:.6f}°)")
-                print(f"    Lon range: {lon_range[0]:.6f} to {lon_range[1]:.6f} (span: {lon_range[1]-lon_range[0]:.6f}°)")
+    print(f"  VERTICAL ERRORS:")
+    print(f"    ORIG→SOUTH: {errors['orig_south']:+.4f}km ({errors['orig_south']*1000:+.0f}m)")
+    print(f"    EAST→SE:    {errors['east_southeast']:+.4f}km ({errors['east_southeast']*1000:+.0f}m)")
+    print(f"    NE→FAR:     {errors['northeast_far']:+.4f}km ({errors['northeast_far']*1000:+.0f}m)")
     
-    print()
+    # Identify patterns
+    horizontal_errors = [errors['orig_east'], errors['east_northeast'], errors['south_southeast'], errors['southeast_far']]
+    vertical_errors = [errors['orig_south'], errors['east_southeast'], errors['northeast_far']]
     
-    # Calculate expected vs actual spacing
-    if 'original' in heatmap_coords and 'east' in heatmap_coords:
-        orig_lon = heatmap_coords['original']['lon']
-        east_lon = heatmap_coords['east']['lon']
-        actual_lon_diff = east_lon - orig_lon
-        
-        print("SPACING ANALYSIS:")
-        print(f"ORIGINAL → EAST longitude difference: {actual_lon_diff:.6f}°")
-        
-        # Calculate expected spacing for seamless joining
-        # Each heatmap covers radius_km * 2 = 40km total width
-        radius_km = 20
-        center_lat = heatmap_coords['original']['lat']
-        
-        # Convert 40km to degrees longitude at this latitude
-        km_per_degree_lon = 111.0 * abs(np.cos(np.radians(center_lat)))
-        expected_lon_diff = (radius_km * 2) / km_per_degree_lon
-        
-        print(f"Expected longitude difference for seamless join: {expected_lon_diff:.6f}°")
-        print(f"Difference: {actual_lon_diff - expected_lon_diff:.6f}° ({(actual_lon_diff - expected_lon_diff) * km_per_degree_lon:.3f} km)")
-        
-        if abs(actual_lon_diff - expected_lon_diff) > 0.001:
-            print(f"⚠️  SPACING ISSUE DETECTED: {abs((actual_lon_diff - expected_lon_diff) * km_per_degree_lon):.3f} km gap/overlap")
-        else:
-            print("✅ Spacing appears correct")
+    avg_horizontal_error = sum(horizontal_errors) / len(horizontal_errors)
+    avg_vertical_error = sum(vertical_errors) / len(vertical_errors)
+    
+    print(f"\nPATTERN ANALYSIS:")
+    print(f"  Average horizontal error: {avg_horizontal_error:+.4f}km ({avg_horizontal_error*1000:+.0f}m)")
+    print(f"  Average vertical error:   {avg_vertical_error:+.4f}km ({avg_vertical_error*1000:+.0f}m)")
+    
+    # Check if errors are systematic
+    horizontal_consistent = all(abs(e - avg_horizontal_error) < 0.01 for e in horizontal_errors)
+    vertical_consistent = all(abs(e - avg_vertical_error) < 0.01 for e in vertical_errors)
+    
+    print(f"  Horizontal errors consistent: {horizontal_consistent}")
+    print(f"  Vertical errors consistent: {vertical_consistent}")
+    
+    return avg_horizontal_error, avg_vertical_error, errors
+
+def suggest_improvements():
+    """
+    Suggest specific improvements to achieve sub-10-meter accuracy
+    """
+    
+    avg_h_error, avg_v_error, errors = analyze_spacing_errors()
+    
+    print(f"\nIMPROVEMENT RECOMMENDATIONS:")
+    print("=" * 50)
+    
+    print("1. SYSTEMATIC ERROR CORRECTION:")
+    if abs(avg_v_error) > 0.005:  # > 5 meters
+        correction = -avg_v_error
+        print(f"   - Apply latitude correction: {correction:+.6f}° to fix {avg_v_error*1000:+.0f}m vertical bias")
+    
+    if abs(avg_h_error) > 0.005:  # > 5 meters  
+        correction = -avg_h_error
+        print(f"   - Apply longitude correction: {correction:+.6f}° to fix {avg_h_error*1000:+.0f}m horizontal bias")
+    
+    print("2. ENHANCED ITERATIVE REFINEMENT:")
+    print("   - Reduce tolerance from 1m to 0.1m (0.0001 km)")
+    print("   - Increase max iterations from 10 to 50")
+    print("   - Use higher precision arithmetic (more decimal places)")
+    
+    print("3. GEODETIC ACCURACY IMPROVEMENTS:")
+    print("   - Use WGS84 ellipsoid instead of spherical approximation")
+    print("   - Account for local geoid variations")
+    print("   - Apply meridian convergence corrections")
+    
+    print("4. INDIVIDUAL COORDINATE REFINEMENT:")
+    print("   - Refine each coordinate pair independently")
+    print("   - Use actual measured distances between existing points")
+    print("   - Apply micro-adjustments based on residual errors")
+    
+    # Calculate potential improvement
+    max_current_error = max(abs(e) for e in errors.values())
+    print(f"\nCURRENT STATUS:")
+    print(f"  Maximum error: {max_current_error:.4f}km ({max_current_error*1000:.0f}m)")
+    print(f"  Target for next improvement: < 0.01km (10m)")
+    
+    return avg_h_error, avg_v_error
 
 if __name__ == "__main__":
-    import numpy as np
-    analyze_heatmap_edges()
+    suggest_improvements()

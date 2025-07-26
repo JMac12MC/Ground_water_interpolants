@@ -25,28 +25,65 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
     target_offset_km = 19.82
     
-    # PRECISE GEODETIC CALCULATIONS - No iterative refinement needed
+    # ULTRA-PRECISE GEODETIC CALCULATIONS using iterative refinement
+    # Achieves sub-meter accuracy (< 1 meter error) for all distances
     
-    # Step 1: Calculate precise latitude offset (constant 111.0 km per degree)
-    lat_offset_degrees = target_offset_km / 111.0
+    MAX_ITERATIONS = 10
+    TOLERANCE_KM = 0.001  # 1 meter tolerance
     
-    # Step 2: Calculate longitude offsets for BOTH rows using exact geodetic formulas
-    # Top row (original latitude)
-    top_lat = clicked_lat
-    km_per_degree_lon_top = 111.0 * abs(np.cos(np.radians(top_lat)))
-    east_offset_degrees_top = target_offset_km / km_per_degree_lon_top
+    print(f"ULTRA-PRECISE SPACING CALCULATIONS (target: {target_offset_km}km):")
     
-    # Bottom row (south latitude)
+    # Step 1: Calculate precise latitude offset using iterative refinement
+    lat_offset_degrees = target_offset_km / 111.0  # Initial estimate
+    
+    for i in range(MAX_ITERATIONS):
+        test_lat = clicked_lat - lat_offset_degrees
+        actual_distance = get_distance(clicked_lat, clicked_lng, test_lat, clicked_lng)
+        error = actual_distance - target_offset_km
+        
+        if abs(error) < TOLERANCE_KM:
+            break
+            
+        # Adjust offset proportionally
+        lat_offset_degrees *= target_offset_km / actual_distance
+    
+    final_lat_distance = get_distance(clicked_lat, clicked_lng, clicked_lat - lat_offset_degrees, clicked_lng)
+    print(f"  Latitude offset: {lat_offset_degrees:.10f}° (achieved: {final_lat_distance:.6f}km)")
+    
+    # Step 2: Calculate precise longitude offset for TOP ROW
+    east_offset_degrees_top = target_offset_km / (111.0 * abs(np.cos(np.radians(clicked_lat))))  # Initial estimate
+    
+    for i in range(MAX_ITERATIONS):
+        test_lon = clicked_lng + east_offset_degrees_top
+        actual_distance = get_distance(clicked_lat, clicked_lng, clicked_lat, test_lon)
+        error = actual_distance - target_offset_km
+        
+        if abs(error) < TOLERANCE_KM:
+            break
+            
+        east_offset_degrees_top *= target_offset_km / actual_distance
+    
+    final_top_distance = get_distance(clicked_lat, clicked_lng, clicked_lat, clicked_lng + east_offset_degrees_top)
+    print(f"  Top row longitude offset: {east_offset_degrees_top:.10f}° (achieved: {final_top_distance:.6f}km)")
+    
+    # Step 3: Calculate precise longitude offset for BOTTOM ROW
     bottom_lat = clicked_lat - lat_offset_degrees
-    km_per_degree_lon_bottom = 111.0 * abs(np.cos(np.radians(bottom_lat)))
-    east_offset_degrees_bottom = target_offset_km / km_per_degree_lon_bottom
+    east_offset_degrees_bottom = target_offset_km / (111.0 * abs(np.cos(np.radians(bottom_lat))))  # Initial estimate
     
-    print(f"PRECISE SPACING CALCULATIONS:")
-    print(f"  Latitude offset: {lat_offset_degrees:.8f}° = {target_offset_km}km")
-    print(f"  Top row longitude offset: {east_offset_degrees_top:.8f}° = {target_offset_km}km")
-    print(f"  Bottom row longitude offset: {east_offset_degrees_bottom:.8f}° = {target_offset_km}km")
+    for i in range(MAX_ITERATIONS):
+        test_lon = clicked_lng + east_offset_degrees_bottom
+        actual_distance = get_distance(bottom_lat, clicked_lng, bottom_lat, test_lon)
+        error = actual_distance - target_offset_km
+        
+        if abs(error) < TOLERANCE_KM:
+            break
+            
+        east_offset_degrees_bottom *= target_offset_km / actual_distance
     
-    # Use the precise calculations without correction factors
+    final_bottom_distance = get_distance(bottom_lat, clicked_lng, bottom_lat, clicked_lng + east_offset_degrees_bottom)
+    print(f"  Bottom row longitude offset: {east_offset_degrees_bottom:.10f}° (achieved: {final_bottom_distance:.6f}km)")
+    
+    # Use the ultra-precise calculations
     south_offset_degrees = lat_offset_degrees
     
     # Define all six locations in 2x3 grid using row-specific east offsets for perfect spacing
@@ -63,12 +100,39 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     for i, (name, coords) in enumerate(locations):
         print(f"  {i+1}. {name.upper()}: ({coords[0]:.6f}, {coords[1]:.6f})")
     
-    # Verify actual distances for perfect spacing
-    print("SPACING VERIFICATION:")
+    # ULTRA-PRECISE SPACING VERIFICATION - all distances should be within 1 meter of target
+    print("ULTRA-PRECISE SPACING VERIFICATION:")
+    
+    # Horizontal distances
     dist_orig_east = get_distance(locations[0][1][0], locations[0][1][1], locations[1][1][0], locations[1][1][1])
+    dist_east_northeast = get_distance(locations[1][1][0], locations[1][1][1], locations[2][1][0], locations[2][1][1])
+    dist_south_southeast = get_distance(locations[3][1][0], locations[3][1][1], locations[4][1][0], locations[4][1][1])
+    dist_southeast_far = get_distance(locations[4][1][0], locations[4][1][1], locations[5][1][0], locations[5][1][1])
+    
+    # Vertical distances
     dist_orig_south = get_distance(locations[0][1][0], locations[0][1][1], locations[3][1][0], locations[3][1][1])
-    print(f"  ORIGINAL → EAST: {dist_orig_east:.2f}km (target: 19.82km)")
-    print(f"  ORIGINAL → SOUTH: {dist_orig_south:.2f}km (target: 19.82km)")
+    dist_east_southeast = get_distance(locations[1][1][0], locations[1][1][1], locations[4][1][0], locations[4][1][1])
+    dist_northeast_far = get_distance(locations[2][1][0], locations[2][1][1], locations[5][1][0], locations[5][1][1])
+    
+    print(f"  HORIZONTAL: ORIG↔EAST {dist_orig_east:.4f}km, EAST↔NE {dist_east_northeast:.4f}km")
+    print(f"             SOUTH↔SE {dist_south_southeast:.4f}km, SE↔FAR {dist_southeast_far:.4f}km")
+    print(f"  VERTICAL:   ORIG↕SOUTH {dist_orig_south:.4f}km, EAST↕SE {dist_east_southeast:.4f}km, NE↕FAR {dist_northeast_far:.4f}km")
+    
+    # Calculate maximum error
+    all_distances = [dist_orig_east, dist_east_northeast, dist_south_southeast, dist_southeast_far,
+                    dist_orig_south, dist_east_southeast, dist_northeast_far]
+    errors = [abs(d - target_offset_km) for d in all_distances]
+    max_error = max(errors)
+    avg_error = sum(errors) / len(errors)
+    
+    print(f"  PRECISION: Max error {max_error:.6f}km ({max_error*1000:.1f}m), Avg error {avg_error:.6f}km ({avg_error*1000:.1f}m)")
+    
+    if max_error < 0.001:
+        print("  ✅ EXCELLENT: All distances within 1 meter of target")
+    elif max_error < 0.01:
+        print("  ✅ VERY GOOD: All distances within 10 meters of target")
+    else:
+        print("  ⚠️ Spacing could be improved")
     
     # Process each location sequentially
     generated_heatmaps = []

@@ -274,9 +274,9 @@ with st.sidebar:
             from geology_processor import GEOLOGY_AVAILABLE
             if GEOLOGY_AVAILABLE:
                 import os
-                geology_file = "attached_assets/NZ Geology_1753590503005.tif"
+                geology_file = "attached_assets/NZ Geology_1753591871374.tif"
                 if os.path.exists(geology_file):
-                    st.info("Coverage: Canterbury region (-43.92°S to -43.66°S, 171.52°E to 171.97°E)")
+                    st.info("Coverage: Most of New Zealand (-45.87°S to -42.09°S, 168.86°E to 175.63°E)")
                 else:
                     st.warning("Geology file not found")
                     show_geology_overlay = False
@@ -426,7 +426,7 @@ with main_col1:
     if show_geology_overlay:
         try:
             from geology_processor import get_geology_boundary
-            geology_path = "attached_assets/NZ Geology_1753590503005.tif"
+            geology_path = "attached_assets/NZ Geology_1753591871374.tif"
             import os
             if os.path.exists(geology_path):
                 print("Adding geology GeoTIFF overlay to map...")
@@ -457,8 +457,8 @@ with main_col1:
                     
                     print("✅ Geology overlay added successfully to map")
                     
-                    # Add bounds rectangle for visual reference
-                    geology_bounds = (-43.92, -43.66, 171.52, 171.97)  # S, N, W, E
+                    # Add bounds rectangle for visual reference  
+                    geology_bounds = (-45.87, -42.09, 168.86, 175.63)  # S, N, W, E
                     bounds_coords = [
                         [geology_bounds[0], geology_bounds[2]],  # SW
                         [geology_bounds[0], geology_bounds[3]],  # SE  

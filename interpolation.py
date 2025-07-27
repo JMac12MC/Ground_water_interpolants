@@ -153,7 +153,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -184,6 +184,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Debug indicator mask status and create polygon geometry for clipping
     print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
     indicator_geometry = None
+    
+    # Create Banks Peninsula exclusion polygon if coordinates provided
+    banks_peninsula_polygon = None
+    if banks_peninsula_coords and len(banks_peninsula_coords) > 3:
+        try:
+            from shapely.geometry import Polygon
+            # Ensure the polygon is closed (first and last points are the same)
+            coords = list(banks_peninsula_coords)
+            if coords[0] != coords[-1]:
+                coords.append(coords[0])
+            
+            # Create polygon with (longitude, latitude) order for shapely
+            # Note: banks_peninsula_coords should be in (latitude, longitude) format
+            shapely_coords = [(coord[1], coord[0]) for coord in coords]  # Convert to (lon, lat)
+            banks_peninsula_polygon = Polygon(shapely_coords)
+            print(f"Banks Peninsula exclusion polygon created with {len(coords)} points")
+        except Exception as e:
+            print(f"Error creating Banks Peninsula exclusion polygon: {e}")
+            banks_peninsula_polygon = None
     
     # Don't apply indicator clipping to indicator kriging methods themselves
     # Indicator methods should not be clipped by their own output
@@ -894,7 +913,23 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                             "yield": float(interpolated_z[i])
                         }
                     }
-                    features.append(poly)
+                    
+                    # Check if polygon should be excluded by Banks Peninsula
+                    should_exclude = False
+                    if banks_peninsula_polygon is not None:
+                        try:
+                            # Use the grid point as the center for exclusion check
+                            center_point = Point(grid_lons[i], grid_lats[i])
+                            
+                            # Exclude if the center point is inside Banks Peninsula
+                            if banks_peninsula_polygon.contains(center_point):
+                                should_exclude = True
+                        except Exception as e:
+                            print(f"Error checking Banks Peninsula exclusion: {e}")
+                    
+                    # Only add feature if it's not excluded
+                    if not should_exclude:
+                        features.append(poly)
 
     # Log filtering results
     if merged_soil_geometry is not None:

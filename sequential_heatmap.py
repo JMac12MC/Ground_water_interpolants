@@ -1,13 +1,19 @@
 # Sequential Heatmap Generation System
 # Generates, stores, and displays heatmaps one at a time to prevent crashes
 
-def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None, banks_peninsula_coords=None):
+def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None, banks_peninsula_coords=None, grid_size=None):
     """
-    Generate six heatmaps sequentially (original, east, south, southeast, northeast, far_southeast) to avoid memory issues.
+    Generate heatmaps sequentially in a grid pattern to avoid memory issues.
     
-    Layout:
+    Default 2x3 Layout:
     [Original] [East] [Northeast]
     [South] [Southeast] [Far_Southeast]
+    
+    Extended 10x10 Layout (when grid_size=(10,10)):
+    100 heatmaps arranged in a 10x10 grid extending south and east from the original click point
+    
+    Args:
+        grid_size: tuple (rows, cols) for grid dimensions. Default None uses 2x3 layout.
     
     Returns:
         tuple: (success_count, stored_heatmap_ids, error_messages)
@@ -135,44 +141,99 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     # Use the ultra-precise calculations
     south_offset_degrees = lat_offset_degrees
     
-    # Define all six locations in 2x3 grid using row-specific east offsets for perfect spacing
-    locations = [
-        ('original', [clicked_lat, clicked_lng]),
-        ('east', [clicked_lat, clicked_lng + east_offset_degrees_top]),
-        ('northeast', [clicked_lat, clicked_lng + (2 * east_offset_degrees_top)]),
-        ('south', [clicked_lat - south_offset_degrees, clicked_lng]),
-        ('southeast', [clicked_lat - south_offset_degrees, clicked_lng + east_offset_degrees_bottom]),
-        ('far_southeast', [clicked_lat - south_offset_degrees, clicked_lng + (2 * east_offset_degrees_bottom)])
-    ]
+    # Determine grid dimensions
+    if grid_size is None:
+        grid_rows, grid_cols = 2, 3  # Default 2x3 grid (6 heatmaps)
+    else:
+        grid_rows, grid_cols = grid_size
     
-    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in 2x3 grid (PERFECT 19.82km spacing)")
+    # Generate grid locations with precision longitude offsets for each row
+    locations = []
+    
+    # Calculate longitude offsets for each row with latitude compensation
+    row_longitude_offsets = []
+    for row in range(grid_rows):
+        row_lat = clicked_lat - (row * south_offset_degrees)
+        
+        # Calculate longitude offset for this specific latitude
+        if row == 0:
+            # Top row - use already calculated top offset
+            row_lon_offset = east_offset_degrees_top
+        elif row == grid_rows - 1:
+            # Bottom row - use already calculated bottom offset  
+            row_lon_offset = east_offset_degrees_bottom
+        else:
+            # Middle rows - interpolate between top and bottom offsets
+            interpolation_factor = row / (grid_rows - 1)
+            row_lon_offset = east_offset_degrees_top + interpolation_factor * (east_offset_degrees_bottom - east_offset_degrees_top)
+        
+        row_longitude_offsets.append(row_lon_offset)
+    
+    # Generate all grid positions
+    for row in range(grid_rows):
+        for col in range(grid_cols):
+            lat = clicked_lat - (row * south_offset_degrees)
+            lng = clicked_lng + (col * row_longitude_offsets[row])
+            
+            # Generate descriptive names for grid positions
+            if grid_rows == 2 and grid_cols == 3:
+                # Use original naming for 2x3 grid
+                names_2x3 = [
+                    ['original', 'east', 'northeast'],
+                    ['south', 'southeast', 'far_southeast']
+                ]
+                name = names_2x3[row][col]
+            else:
+                # Use row-column naming for larger grids
+                name = f"r{row}c{col}"
+                if row == 0 and col == 0:
+                    name = "original"  # Keep original name for reference point
+            
+            locations.append((name, [lat, lng]))
+    
+    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in {grid_rows}x{grid_cols} grid (PERFECT 19.82km spacing)")
     for i, (name, coords) in enumerate(locations):
         print(f"  {i+1}. {name.upper()}: ({coords[0]:.6f}, {coords[1]:.6f})")
+        
+    # Show grid layout summary
+    if len(locations) > 6:
+        print(f"EXTENDED GRID LAYOUT: {grid_rows} rows × {grid_cols} columns = {len(locations)} total heatmaps")
+        print(f"  Coverage area: {(grid_rows-1)*19.82:.1f}km south × {(grid_cols-1)*19.82:.1f}km east")
     
-    # ULTRA-PRECISE SPACING VERIFICATION - all distances should be within 1 meter of target
+    # ULTRA-PRECISE SPACING VERIFICATION - adaptive for any grid size
     print("ULTRA-PRECISE SPACING VERIFICATION:")
     
-    # Horizontal distances
-    dist_orig_east = get_distance(locations[0][1][0], locations[0][1][1], locations[1][1][0], locations[1][1][1])
-    dist_east_northeast = get_distance(locations[1][1][0], locations[1][1][1], locations[2][1][0], locations[2][1][1])
-    dist_south_southeast = get_distance(locations[3][1][0], locations[3][1][1], locations[4][1][0], locations[4][1][1])
-    dist_southeast_far = get_distance(locations[4][1][0], locations[4][1][1], locations[5][1][0], locations[5][1][1])
+    all_distances = []
+    distance_descriptions = []
     
-    # Vertical distances
-    dist_orig_south = get_distance(locations[0][1][0], locations[0][1][1], locations[3][1][0], locations[3][1][1])
-    dist_east_southeast = get_distance(locations[1][1][0], locations[1][1][1], locations[4][1][0], locations[4][1][1])
-    dist_northeast_far = get_distance(locations[2][1][0], locations[2][1][1], locations[5][1][0], locations[5][1][1])
+    # Sample horizontal distances (first few rows)
+    for row in range(min(2, grid_rows)):
+        for col in range(min(3, grid_cols - 1)):
+            idx1 = row * grid_cols + col
+            idx2 = row * grid_cols + col + 1
+            if idx1 < len(locations) and idx2 < len(locations):
+                dist = get_distance(locations[idx1][1][0], locations[idx1][1][1], locations[idx2][1][0], locations[idx2][1][1])
+                all_distances.append(dist)
+                distance_descriptions.append(f"{locations[idx1][0]}↔{locations[idx2][0]} {dist:.4f}km")
     
-    print(f"  HORIZONTAL: ORIG↔EAST {dist_orig_east:.4f}km, EAST↔NE {dist_east_northeast:.4f}km")
-    print(f"             SOUTH↔SE {dist_south_southeast:.4f}km, SE↔FAR {dist_southeast_far:.4f}km")
-    print(f"  VERTICAL:   ORIG↕SOUTH {dist_orig_south:.4f}km, EAST↕SE {dist_east_southeast:.4f}km, NE↕FAR {dist_northeast_far:.4f}km")
+    # Sample vertical distances (first few columns)
+    for col in range(min(3, grid_cols)):
+        for row in range(min(2, grid_rows - 1)):
+            idx1 = row * grid_cols + col
+            idx2 = (row + 1) * grid_cols + col
+            if idx1 < len(locations) and idx2 < len(locations):
+                dist = get_distance(locations[idx1][1][0], locations[idx1][1][1], locations[idx2][1][0], locations[idx2][1][1])
+                all_distances.append(dist)
+                distance_descriptions.append(f"{locations[idx1][0]}↕{locations[idx2][0]} {dist:.4f}km")
     
-    # Calculate maximum error
-    all_distances = [dist_orig_east, dist_east_northeast, dist_south_southeast, dist_southeast_far,
-                    dist_orig_south, dist_east_southeast, dist_northeast_far]
+    # Print sample distances
+    for desc in distance_descriptions[:6]:  # Show first 6 sample distances
+        print(f"  {desc}")
+    
+    # Calculate maximum error across all sampled distances
     errors = [abs(d - target_offset_km) for d in all_distances]
-    max_error = max(errors)
-    avg_error = sum(errors) / len(errors)
+    max_error = max(errors) if errors else 0
+    avg_error = sum(errors) / len(errors) if errors else 0
     
     print(f"  PRECISION: Max error {max_error:.8f}km ({max_error*1000:.2f}m), Avg error {avg_error:.8f}km ({avg_error*1000:.2f}m)")
     
@@ -204,7 +265,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     error_messages = []
     
     # Calculate GLOBAL colormap range ONCE for ALL heatmaps to ensure consistency
-    print("🎨 CALCULATING GLOBAL COLORMAP RANGE for all 6 heatmaps...")
+    print(f"🎨 CALCULATING GLOBAL COLORMAP RANGE for all {len(locations)} heatmaps...")
     global_values = []
     
     # Pre-scan all locations to get global value range

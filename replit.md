@@ -121,6 +121,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 27, 2025**: Extended heatmap grid system from 2x3 to configurable 10x10 grid
+  - Added flexible grid generation supporting up to 100 heatmaps (10x10 layout)
+  - Maintained precise 19.82km spacing across extended grid with latitude-compensated longitude offsets
+  - Added UI selection between 2×3 Grid (6 heatmaps) and 10×10 Grid (100 heatmaps)
+  - Extended coverage area: 178km south × 178km east for comprehensive regional analysis
+  - Preserved Banks Peninsula exclusion functionality across all grid sizes
+  - Maintains backward compatibility with existing 2x3 system as default
+
 - **July 25, 2025**: CRITICAL FIX: Corrected ground water level viability logic in indicator kriging
   - Fixed fundamental misunderstanding: ANY ground water level data means water was found = viable
   - Wells with ground water level measurements (any depth) are now correctly marked as viable

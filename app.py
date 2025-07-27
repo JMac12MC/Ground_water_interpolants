@@ -283,6 +283,23 @@ with st.sidebar:
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'linear'
 
+    # Grid size selection for heatmap generation
+    st.subheader("Heatmap Grid Options")
+    grid_option = st.selectbox(
+        "Heatmap Grid Size",
+        options=["2×3 Grid (6 heatmaps)", "10×10 Grid (100 heatmaps)"],
+        index=0,  # Default to 2x3
+        help="Choose the grid size for automatic heatmap generation. 10×10 creates comprehensive regional coverage but takes longer to generate."
+    )
+    
+    # Convert selection to grid_size tuple and store in session state
+    if "10×10" in grid_option:
+        st.session_state.grid_size = (10, 10)
+        st.info("📊 **Extended Mode**: Will generate 100 heatmaps covering 178km south × 178km east area")
+    else:
+        st.session_state.grid_size = (2, 3)
+        st.info("📊 **Standard Mode**: Will generate 6 heatmaps in compact 2×3 layout")
+
     # Display options
     st.header("Display Options")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
@@ -774,7 +791,7 @@ with main_col1:
                         # Use the dedicated sequential processing module for automatic generation
                         from sequential_heatmap import generate_quad_heatmaps_sequential
                         
-                        # Generate all four heatmaps sequentially with Banks Peninsula exclusion
+                        # Generate heatmaps sequentially with Banks Peninsula exclusion and selected grid size
                         success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
                             wells_data=st.session_state.wells_data,
                             click_point=st.session_state.selected_point,
@@ -782,7 +799,8 @@ with main_col1:
                             interpolation_method=st.session_state.interpolation_method,
                             polygon_db=st.session_state.polygon_db,
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            banks_peninsula_coords=st.session_state.banks_peninsula_coords
+                            banks_peninsula_coords=st.session_state.banks_peninsula_coords,
+                            grid_size=st.session_state.get('grid_size', (2, 3))
                         )
                         
                         print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")

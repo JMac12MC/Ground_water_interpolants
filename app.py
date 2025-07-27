@@ -1062,16 +1062,7 @@ with main_col1:
                 else:
                     print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
 
-                # Add a marker showing the center point of the stored heatmap
-                folium.Marker(
-                    location=[stored_heatmap['center_lat'], stored_heatmap['center_lon']],
-                    popup=f"<b>{stored_heatmap['heatmap_name']}</b><br>"
-                          f"Method: {stored_heatmap['interpolation_method']}<br>"
-                          f"Radius: {stored_heatmap['radius_km']} km<br>"
-                          f"Wells: {stored_heatmap['well_count']}<br>"
-                          f"Created: {stored_heatmap['created_at']}",
-                    icon=folium.Icon(color='purple', icon='info-sign')
-                ).add_to(m)
+                # Removed centroid marker as per user request - no purple "i" icons needed
 
             except Exception as e:
                 print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")

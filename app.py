@@ -542,69 +542,83 @@ with main_col1:
                     p50 = percentiles.get('50th', (global_min_value + global_max_value) / 2)
                     p75 = percentiles.get('75th', global_max_value)
                     
-                    # Enhanced percentile-based color mapping with more granular divisions
-                    # Create more detailed breakpoints to reduce green dominance
-                    p10 = global_min_value + 0.1 * (p25 - global_min_value)
-                    p35 = p25 + 0.4 * (p50 - p25)
-                    p60 = p50 + 0.4 * (p75 - p50)
-                    p85 = p75 + 0.4 * (global_max_value - p75)
+                    # Ultra-fine 20-zone color mapping for smooth gradual transitions
+                    # Calculate 20 evenly distributed percentile breakpoints for smooth gradations
+                    breakpoints = []
+                    for i in range(21):  # 0%, 5%, 10%, ..., 95%, 100%
+                        if i == 0:
+                            breakpoints.append(global_min_value)
+                        elif i == 20:
+                            breakpoints.append(global_max_value)
+                        else:
+                            # Interpolate between percentiles using stored metadata
+                            pct = i * 5  # 5%, 10%, 15%, etc.
+                            if pct <= 25:
+                                # Interpolate between min and p25
+                                ratio = pct / 25.0
+                                breakpoints.append(global_min_value + ratio * (p25 - global_min_value))
+                            elif pct <= 50:
+                                # Interpolate between p25 and p50
+                                ratio = (pct - 25) / 25.0
+                                breakpoints.append(p25 + ratio * (p50 - p25))
+                            elif pct <= 75:
+                                # Interpolate between p50 and p75
+                                ratio = (pct - 50) / 25.0
+                                breakpoints.append(p50 + ratio * (p75 - p50))
+                            else:
+                                # Interpolate between p75 and max
+                                ratio = (pct - 75) / 25.0
+                                breakpoints.append(p75 + ratio * (global_max_value - p75))
                     
-                    if value <= p10:
-                        # Bottom 10% - Deep blues
-                        ratio = (value - global_min_value) / (p10 - global_min_value) if p10 > global_min_value else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#000033', '#000066', '#000099']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
-                    elif value <= p25:
-                        # 10%-25% - Medium blues
-                        ratio = (value - p10) / (p25 - p10) if p25 > p10 else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#0000CC', '#0000FF', '#0033FF']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
-                    elif value <= p35:
-                        # 25%-35% - Blues to cyan
-                        ratio = (value - p25) / (p35 - p25) if p35 > p25 else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#0066FF', '#0099FF', '#00CCFF']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
-                    elif value <= p50:
-                        # 35%-50% - Cyan to turquoise
-                        ratio = (value - p35) / (p50 - p35) if p50 > p35 else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#00FFFF', '#00FFCC', '#00FF99']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
-                    elif value <= p60:
-                        # 50%-60% - Light green spectrum (breaking up the green zone)
-                        ratio = (value - p50) / (p60 - p50) if p60 > p50 else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#00FF66', '#00FF33', '#00FF00']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
-                    elif value <= p75:
-                        # 60%-75% - Green to lime
-                        ratio = (value - p60) / (p75 - p60) if p75 > p60 else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#33FF00', '#66FF00', '#99FF00']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
-                    elif value <= p85:
-                        # 75%-85% - Lime to yellow
-                        ratio = (value - p75) / (p85 - p75) if p85 > p75 else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#CCFF00', '#FFFF00', '#FFCC00']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
-                    else:
-                        # Top 15% - Orange to red (high values)
-                        ratio = (value - p85) / (global_max_value - p85) if global_max_value > p85 else 0
-                        ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#FF9900', '#FF6600', '#FF3300', '#FF0000']
-                        color_index = int(ratio * (len(colors) - 1))
-                        return colors[min(color_index, len(colors) - 1)]
+                    # 20-zone smooth gradient color palette for gradual transitions
+                    zone_colors = [
+                        '#000033',  # Zone 1: Deep navy
+                        '#000066',  # Zone 2: Dark blue
+                        '#000099',  # Zone 3: Medium dark blue
+                        '#0000CC',  # Zone 4: Medium blue
+                        '#0000FF',  # Zone 5: Pure blue
+                        '#0033FF',  # Zone 6: Light blue
+                        '#0066FF',  # Zone 7: Bright blue
+                        '#0099FF',  # Zone 8: Sky blue
+                        '#00CCFF',  # Zone 9: Light sky blue
+                        '#00FFFF',  # Zone 10: Cyan
+                        '#00FFCC',  # Zone 11: Cyan-turquoise
+                        '#00FF99',  # Zone 12: Turquoise
+                        '#00FF66',  # Zone 13: Light turquoise
+                        '#00FF33',  # Zone 14: Blue-green
+                        '#00FF00',  # Zone 15: Pure green
+                        '#33FF00',  # Zone 16: Yellow-green
+                        '#66FF00',  # Zone 17: Lime green
+                        '#99FF00',  # Zone 18: Bright lime
+                        '#CCFF00',  # Zone 19: Yellow-lime
+                        '#FFFF00',  # Zone 20: Yellow
+                        '#FFCC00',  # Zone 21: Gold
+                        '#FF9900',  # Zone 22: Orange
+                        '#FF6600',  # Zone 23: Bright orange
+                        '#FF3300',  # Zone 24: Red-orange
+                        '#FF0000'   # Zone 25: Pure red
+                    ]
+                    
+                    # Find which zone this value belongs to
+                    for i in range(20):
+                        if value <= breakpoints[i + 1]:
+                            # Calculate smooth interpolation within the zone
+                            if breakpoints[i + 1] > breakpoints[i]:
+                                zone_ratio = (value - breakpoints[i]) / (breakpoints[i + 1] - breakpoints[i])
+                            else:
+                                zone_ratio = 0
+                            zone_ratio = max(0.0, min(1.0, zone_ratio))
+                            
+                            # Smooth interpolation between adjacent colors within zone
+                            if zone_ratio < 0.5:
+                                # Closer to start of zone
+                                return zone_colors[i]
+                            else:
+                                # Closer to end of zone - blend towards next color
+                                return zone_colors[i + 1] if i + 1 < len(zone_colors) else zone_colors[i]
+                    
+                    # Fallback for highest values
+                    return zone_colors[-1]
             
             # Fallback to linear mapping if no percentile data available
             if global_max_value <= global_min_value:

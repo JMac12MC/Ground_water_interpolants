@@ -12,6 +12,7 @@ from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data
 from database import PolygonDatabase
+from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
 # Regional heatmap removed per user request
 
@@ -56,7 +57,9 @@ session_defaults = {
     'geojson_data': None,
     'fresh_heatmap_displayed': False,
     'new_heatmap_added': False,
-    'colormap_updated': False
+    'colormap_updated': False,
+    'show_banks_peninsula': True,
+    'banks_peninsula_coords': None
 }
 
 # Initialize all session state variables
@@ -74,8 +77,29 @@ def get_database_connection():
         st.error(f"Database connection failed: {e}")
         return None
 
+# Load Banks Peninsula coordinates once and cache them
+@st.cache_data
+def load_banks_peninsula_coords():
+    """Load and cache Banks Peninsula polygon coordinates"""
+    try:
+        file_path = "attached_assets/banks peninsula_1753599917298.txt"
+        coordinates = parse_coordinates_file(file_path)
+        if coordinates:
+            print(f"Loaded {len(coordinates)} Banks Peninsula coordinates")
+            return coordinates
+        else:
+            print("No valid coordinates found in Banks Peninsula file")
+            return None
+    except Exception as e:
+        print(f"Error loading Banks Peninsula coordinates: {e}")
+        return None
+
 if 'polygon_db' not in st.session_state:
     st.session_state.polygon_db = get_database_connection()
+
+# Load Banks Peninsula coordinates if not already loaded
+if st.session_state.banks_peninsula_coords is None:
+    st.session_state.banks_peninsula_coords = load_banks_peninsula_coords()
 
 # Add banner
 add_banner()
@@ -265,6 +289,9 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
+    
+    # Banks Peninsula polygon display option
+    st.session_state.show_banks_peninsula = st.checkbox("Show Banks Peninsula Boundary", value=st.session_state.show_banks_peninsula, help="Display the Banks Peninsula coastline boundary")
 
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -380,6 +407,23 @@ with main_col1:
 
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
+
+    # Add Banks Peninsula polygon if enabled and coordinates are available
+    if st.session_state.show_banks_peninsula and st.session_state.banks_peninsula_coords:
+        try:
+            # Add the polygon to the map with distinctive styling
+            m, peninsula_center = add_polygon_to_map(
+                m, 
+                st.session_state.banks_peninsula_coords,
+                name="Banks Peninsula",
+                color="#FF6B35",  # Distinctive orange-red color
+                weight=3,
+                opacity=0.8,
+                fill_opacity=0.15
+            )
+            print(f"Banks Peninsula polygon added to map (center: {peninsula_center})")
+        except Exception as e:
+            print(f"Error adding Banks Peninsula to map: {e}")
 
     # Add soil drainage polygons if available and enabled
     if st.session_state.soil_polygons is not None and st.session_state.show_soil_polygons:

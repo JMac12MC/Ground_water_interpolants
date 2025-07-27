@@ -209,7 +209,56 @@ def extract_all_river_deposits(tiff_path, target_crs='EPSG:4326'):
                     total_area = gdf[gdf['unit_type'] == unit]['area_km2'].sum()
                     print(f"   {unit}: {count} polygons ({total_area:.1f} km²)")
                 
-                return gdf
+                # MERGE AND DISSOLVE: Combine overlapping polygons by unit type
+                print("\n🔄 MERGING POLYGONS: Dissolving boundaries by unit type...")
+                merged_polygons = []
+                
+                for unit_type in gdf['unit_type'].unique():
+                    unit_gdf = gdf[gdf['unit_type'] == unit_type].copy()
+                    print(f"   Merging {len(unit_gdf)} {unit_type} polygons...")
+                    
+                    try:
+                        # Dissolve all polygons of this unit type into one
+                        dissolved = unit_gdf.dissolve(by='unit_type')
+                        
+                        # Calculate total area
+                        total_area = unit_gdf['area_km2'].sum()
+                        
+                        # Get representative description and RGB
+                        sample_row = unit_gdf.iloc[0]
+                        
+                        # Create merged polygon entry
+                        merged_polygon = {
+                            'geometry': dissolved.geometry.iloc[0],
+                            'unit_type': unit_type,
+                            'description': sample_row['description'],
+                            'rgb': sample_row['rgb'],
+                            'area_km2': round(total_area, 2),
+                            'polygon_count': len(unit_gdf)
+                        }
+                        merged_polygons.append(merged_polygon)
+                        
+                    except Exception as merge_error:
+                        print(f"     ⚠️ Error merging {unit_type}: {merge_error}")
+                        # Keep individual polygons if merging fails
+                        for _, row in unit_gdf.iterrows():
+                            merged_polygons.append(row.to_dict())
+                
+                # Create new GeoDataFrame with merged polygons
+                if merged_polygons:
+                    from shapely.geometry import shape
+                    merged_gdf = gpd.GeoDataFrame(merged_polygons, crs=gdf.crs)
+                    
+                    print(f"\n✅ MERGING COMPLETE: {len(merged_gdf)} merged polygons")
+                    for _, row in merged_gdf.iterrows():
+                        if 'polygon_count' in row:
+                            print(f"   {row['unit_type']}: 1 merged polygon ({row['area_km2']:.1f} km², from {row['polygon_count']} originals)")
+                        else:
+                            print(f"   {row['unit_type']}: 1 polygon ({row['area_km2']:.1f} km²)")
+                    
+                    return merged_gdf
+                else:
+                    return gdf
             else:
                 print("❌ No river deposit polygons found")
                 return None

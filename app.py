@@ -278,11 +278,11 @@ with st.sidebar:
                 if os.path.exists(geology_file):
                     st.info("Coverage: Most of New Zealand (-45.87°S to -42.09°S, 168.86°E to 175.63°E)")
                     st.success("✅ **River Deposit Geology Units Active**")
-                    st.write("**Map displays individual geology polygons:**")
-                    st.write("• **Fan Deposits**: 3,167 polygons (sandy/orange)")
-                    st.write("• **Formation Units**: 6,736 polygons (yellow)")  
-                    st.write("• **OIS2 River**: 38 Late Pleistocene polygons (green)")
-                    st.write("• **Interactive**: Click polygons for detailed info")
+                    st.write("**Map displays merged geology units:**")
+                    st.write("• **Fan Deposits**: Single orange polygon (merged from 3,167 pieces)")
+                    st.write("• **Formation Units**: Single yellow polygon (merged from 6,736 pieces)")  
+                    st.write("• **OIS2 River**: Single green polygon (merged from 38 pieces)")
+                    st.write("• **Clean Display**: No overlapping boundaries, simplified view")
                     st.write("• **Heatmap Clipping**: Only triangles within these units will display")
                 else:
                     st.warning("Geology file not found")
@@ -443,7 +443,7 @@ with main_col1:
                 river_deposits = extract_all_river_deposits(geology_path)
                 
                 if river_deposits is not None and len(river_deposits) > 0:
-                    print(f"Adding {len(river_deposits)} river deposit polygons to map...")
+                    print(f"Adding {len(river_deposits)} merged river deposit polygons to map...")
                     
                     # Color mapping for different unit types
                     unit_colors = {
@@ -456,53 +456,53 @@ with main_col1:
                         'unknown': '#cccccc'                       # Gray
                     }
                     
-                    # Add each polygon as a separate GeoJSON layer
-                    unit_counts = {}
+                    # Add each merged polygon as a separate GeoJSON layer
                     for idx, polygon in river_deposits.iterrows():
                         unit_type = polygon['unit_type']
                         description = polygon['description']
                         area = polygon['area_km2']
                         
-                        # Track counts
-                        unit_counts[unit_type] = unit_counts.get(unit_type, 0) + 1
-                        
                         # Get color for this unit type
                         color = unit_colors.get(unit_type, '#cccccc')
                         
                         # Create popup with detailed information
+                        polygon_count = polygon.get('polygon_count', 1)
                         popup_text = f"""
                         <b>{description}</b><br>
                         Type: {unit_type}<br>
-                        Area: {area} km²<br>
+                        Total Area: {area:,.1f} km²<br>
+                        Original Polygons: {polygon_count}<br>
                         RGB: {polygon['rgb']}
                         """
                         
-                        # Add polygon to map
+                        # Add merged polygon to map
                         folium.GeoJson(
                             polygon.geometry.__geo_interface__,
                             style_function=lambda feature, color=color: {
                                 'fillColor': color,
                                 'color': 'black',
-                                'weight': 1,
-                                'fillOpacity': 0.6,
+                                'weight': 2,
+                                'fillOpacity': 0.5,
                                 'opacity': 0.8
                             },
-                            popup=folium.Popup(popup_text, parse_html=True, max_width=250),
-                            tooltip=f"{description} ({area} km²)"
+                            popup=folium.Popup(popup_text, parse_html=True, max_width=300),
+                            tooltip=f"{description} ({area:,.0f} km²)"
                         ).add_to(m)
                     
-                    # Add legend/summary information
-                    legend_text = "<b>River Deposit Units:</b><br>"
-                    for unit_type, count in unit_counts.items():
-                        total_area = river_deposits[river_deposits['unit_type'] == unit_type]['area_km2'].sum()
+                    # Add simplified legend
+                    legend_text = "<b>Merged River Deposit Units:</b><br>"
+                    for _, polygon in river_deposits.iterrows():
+                        unit_type = polygon['unit_type']
+                        area = polygon['area_km2']
+                        polygon_count = polygon.get('polygon_count', 1)
                         color = unit_colors.get(unit_type, '#cccccc')
-                        legend_text += f'<span style="color: {color};">■</span> {unit_type}: {count} polygons ({total_area:.1f} km²)<br>'
+                        legend_text += f'<span style="color: {color};">■</span> {unit_type}: {area:,.0f} km² (from {polygon_count} polygons)<br>'
                     
-                    # Add legend marker
-                    legend_coords = river_deposits.geometry.centroid.iloc[0]
+                    # Add legend marker at map center
+                    map_center = [-43.5, 171.5]  # Canterbury region center
                     folium.Marker(
-                        [legend_coords.y, legend_coords.x],
-                        popup=folium.Popup(legend_text, parse_html=True, max_width=300),
+                        map_center,
+                        popup=folium.Popup(legend_text, parse_html=True, max_width=350),
                         icon=folium.Icon(color="blue", icon="info-sign")
                     ).add_to(m)
                     

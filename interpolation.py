@@ -10,6 +10,15 @@ from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import unary_union
 import geopandas as gpd
 
+# Import geology processing functions
+try:
+    from geology_processor import get_geology_boundary, clip_heatmap_to_geology
+    GEOLOGY_AVAILABLE = True
+    print("✅ Geology clipping system available")
+except ImportError:
+    GEOLOGY_AVAILABLE = False
+    print("⚠️ Geology processing not available")
+
 def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
     """
     Convert indicator kriging mask into polygon geometry for clipping
@@ -936,6 +945,39 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         "features": features
     }
 
+    # Apply geology clipping if available
+    if GEOLOGY_AVAILABLE and len(features) > 0:
+        try:
+            geology_path = "attached_assets/NZ Geology_1753590503005.tif"
+            import os
+            if os.path.exists(geology_path):
+                print(f"\n🗻 APPLYING GEOLOGY CLIPPING...")
+                
+                # Extract geology boundary
+                geology_boundary = get_geology_boundary(geology_path)
+                
+                if geology_boundary is not None:
+                    # Apply geology clipping to heatmap features
+                    clipped_geojson = clip_heatmap_to_geology(geojson, geology_boundary)
+                    
+                    # Update feature count statistics
+                    original_count = len(features)
+                    clipped_count = len(clipped_geojson['features'])
+                    retention_percent = (clipped_count/original_count*100) if original_count > 0 else 0
+                    
+                    print(f"✅ GEOLOGY CLIPPING COMPLETE:")
+                    print(f"   Original features: {original_count}")
+                    print(f"   Clipped features: {clipped_count}")
+                    print(f"   Retention: {retention_percent:.1f}%")
+                    
+                    return clipped_geojson
+                else:
+                    print("⚠️ Could not extract geology boundary, using original heatmap")
+            else:
+                print("⚠️ Geology file not found, using original heatmap")
+        except Exception as e:
+            print(f"⚠️ Geology clipping failed: {e}, using original heatmap")
+    
     return geojson
 
 def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, method='kriging', soil_polygons=None):

@@ -121,6 +121,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 27, 2025**: GEOLOGY CLIPPING INTEGRATION: Added GeoTIFF-based geology boundary clipping
+  - Integrated NZ Geology GeoTIFF (1280x1024 pixels, NZGD2000 projection) for heatmap boundary clipping
+  - Created geology_processor.py with automated boundary extraction and coordinate reprojection
+  - Added intelligent heatmap feature clipping to remove interpolations outside geology boundaries
+  - Supports 114 geology classes with efficient boundary dissolution and simplification
+  - Coverage area: Canterbury region (-43.92°S to -43.66°S, 171.52°E to 171.97°E)
+  - Automatic feature retention statistics and fallback handling for processing errors
+
 - **July 25, 2025**: CRITICAL FIX: Corrected ground water level viability logic in indicator kriging
   - Fixed fundamental misunderstanding: ANY ground water level data means water was found = viable
   - Wells with ground water level measurements (any depth) are now correctly marked as viable

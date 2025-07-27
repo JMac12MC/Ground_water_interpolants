@@ -744,130 +744,28 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     print(f"Final clipping: {radius_km}km -> {final_radius_km:.1f}km square ({final_clip_factor*100:.0f}% of original)")
     print(f"Final clipping geometry bounds: {final_clip_geometry.bounds}")
 
-    # Create polygons only where needed - use a Delaunay triangulation approach
-    # for a more organic-looking interpolation surface
-    from scipy.spatial import Delaunay
-
+    # Create smooth grid-based polygons for continuous heatmap visualization
+    # This provides better visual continuity than triangulation
+    
     try:
-        # Create a Delaunay triangulation of the interpolation points
-        points_2d = np.vstack([grid_lons, grid_lats]).T
-
-        # Only create triangulation if we have enough points
-        if len(points_2d) > 3:
-            tri = Delaunay(points_2d)
-
-            # Process each triangle to create a polygon
-            for simplex in tri.simplices:
-                # Get the three points of this triangle
-                vertices = points_2d[simplex]
-
-                # Get the values for these points (yield or variance)
-                if show_variance and kriging_variance is not None:
-                    vertex_values = kriging_variance[simplex]
-                    avg_value = float(np.mean(vertex_values))
-                    # For variance, show all values (including very small ones)
-                    value_threshold = 0.0001  # Show almost all variance values
-                else:
-                    vertex_values = interpolated_z[simplex]
-                    avg_value = float(np.mean(vertex_values))
-                    value_threshold = 0.01  # Only show meaningful yield values
-
-                avg_yield = avg_value  # Keep for backwards compatibility
-
-                # Adjust value threshold based on interpolation method
-                effective_threshold = value_threshold
-
-                # Only add triangles with meaningful values and within our radius
-                if avg_yield > effective_threshold:
-                    # Check if triangle should be included based on soil polygons
-                    include_triangle = True
-
-                    if merged_soil_geometry is not None:
-                        # Apply proper geometric intersection clipping
-                        triangle_coords = [(float(v[0]), float(v[1])) for v in vertices]
-                        triangle_coords.append(triangle_coords[0])  # Close the polygon
-                        triangle_polygon = ShapelyPolygon(triangle_coords)
-                        
-                        # Only include if triangle is completely within soil drainage areas
-                        include_triangle = merged_soil_geometry.contains(triangle_polygon)
-
-                    # Additional clipping by indicator kriging geometry (high-probability zones)
-                    if include_triangle and indicator_geometry is not None and indicator_mask is not None:
-                        centroid_lon = float(np.mean(vertices[:, 0]))
-                        centroid_lat = float(np.mean(vertices[:, 1]))
-                        was_included = include_triangle
-                        
-                        try:
-                            # Use distance-based approach: check if centroid is near any high-probability indicator points
-                            # Extract indicator mask data for distance checking
-                            mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
-                            
-                            # Find high-probability points (≥0.7)
-                            high_prob_mask = mask_values >= 0.7
-                            if np.any(high_prob_mask):
-                                high_prob_lats = mask_lat_grid[high_prob_mask]
-                                high_prob_lons = mask_lon_grid[high_prob_mask]
-                                
-                                # Calculate distances to all high-probability points
-                                distances = np.sqrt((high_prob_lats - centroid_lat)**2 + (high_prob_lons - centroid_lon)**2)
-                                min_distance = np.min(distances)
-                                
-                                # Include if within reasonable distance (roughly grid spacing)
-                                grid_spacing = abs(mask_lat_vals[1] - mask_lat_vals[0]) if len(mask_lat_vals) > 1 else 0.01
-                                include_triangle = min_distance <= (grid_spacing * 1.5)  # 1.5x grid spacing tolerance
-                            else:
-                                include_triangle = False
-                        except Exception as e:
-                            # Fallback: use geometry-based clipping if distance approach fails
-                            centroid_point = Point(centroid_lon, centroid_lat)
-                            include_triangle = indicator_geometry.contains(centroid_point) or indicator_geometry.intersects(centroid_point)
-                            
-                        if was_included and not include_triangle:
-                            print(f"Triangulation indicator clipping: excluded triangle at ({centroid_lat:.3f}, {centroid_lon:.3f}) with value {avg_yield:.2f}")
-
-                    if include_triangle:
-                        # Create polygon for this triangle
-                        poly = {
-                            "type": "Feature",
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [[
-                                    [float(vertices[0,0]), float(vertices[0,1])],
-                                    [float(vertices[1,0]), float(vertices[1,1])],
-                                    [float(vertices[2,0]), float(vertices[2,1])],
-                                    [float(vertices[0,0]), float(vertices[0,1])]
-                                ]]
-                            },
-                            "properties": {
-                                "value": avg_yield,
-                                "yield": avg_yield
-                            }
-                        }
-                        
-                        # Check if triangle should be excluded by Banks Peninsula
-                        should_exclude = False
-                        if banks_peninsula_polygon is not None:
-                            try:
-                                # Use the triangle centroid for exclusion check
-                                centroid_lon = np.mean([vertices[0,0], vertices[1,0], vertices[2,0]])
-                                centroid_lat = np.mean([vertices[0,1], vertices[1,1], vertices[2,1]])
-                                center_point = Point(centroid_lon, centroid_lat)
-                                
-                                # Exclude if the center point is inside Banks Peninsula
-                                if banks_peninsula_polygon.contains(center_point):
-                                    should_exclude = True
-                            except Exception as e:
-                                print(f"Error checking Banks Peninsula exclusion for triangle: {e}")
-                        
-                        # Only add feature if it's not excluded
-                        if not should_exclude:
-                            features.append(poly)
-    except Exception as e:
-        # If triangulation fails, fall back to the simpler grid method
-        print(f"Triangulation error: {e}, using grid method")
+        # Use grid-based approach for smooth, continuous heatmap visualization
         for i in range(len(grid_lats)):
-            # Only process points with meaningful values
-            if interpolated_z[i] > 0.01:
+            # Get the value for this grid point
+            if show_variance and kriging_variance is not None:
+                avg_value = float(kriging_variance[i])
+                # For variance, show all values (including very small ones)
+                value_threshold = 0.0001  # Show almost all variance values
+            else:
+                avg_value = float(interpolated_z[i])
+                value_threshold = 0.01  # Only show meaningful yield values
+
+            avg_yield = avg_value  # Keep for backwards compatibility
+
+            # Adjust value threshold based on interpolation method
+            effective_threshold = value_threshold
+
+            # Only add grid cells with meaningful values
+            if avg_yield > effective_threshold:
                 # Check if point should be included based on soil polygons
                 include_point = True
 
@@ -905,19 +803,21 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         include_point = indicator_geometry.contains(point) or indicator_geometry.intersects(point)
                         
                     if was_included and not include_point:
-                        print(f"Indicator clipping: excluded point at ({grid_lats[i]:.3f}, {grid_lons[i]:.3f}) with value {interpolated_z[i]:.2f}")
+                        print(f"Grid indicator clipping: excluded point at ({grid_lats[i]:.3f}, {grid_lons[i]:.3f}) with value {avg_yield:.2f}")
 
                 if include_point:
-                    # Create a small circle as a polygon (approximated with 8 points)
-                    radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0])
-                    radius_deg_lon = 0.5 * (lon_vals[1] - lon_vals[0])
+                    # Create a small square as a polygon for smooth grid visualization
+                    radius_deg_lat = 0.5 * (lat_vals[1] - lat_vals[0]) if len(lat_vals) > 1 else 0.01
+                    radius_deg_lon = 0.5 * (lon_vals[1] - lon_vals[0]) if len(lon_vals) > 1 else 0.01
 
-                    # Create the polygon coordinates
-                    coords = []
-                    for angle in np.linspace(0, 2*np.pi, 9):
-                        x = grid_lons[i] + radius_deg_lon * np.cos(angle)
-                        y = grid_lats[i] + radius_deg_lat * np.sin(angle)
-                        coords.append([float(x), float(y)])
+                    # Create square coordinates for smooth grid appearance
+                    coords = [
+                        [grid_lons[i] - radius_deg_lon, grid_lats[i] - radius_deg_lat],
+                        [grid_lons[i] + radius_deg_lon, grid_lats[i] - radius_deg_lat],
+                        [grid_lons[i] + radius_deg_lon, grid_lats[i] + radius_deg_lat],
+                        [grid_lons[i] - radius_deg_lon, grid_lats[i] + radius_deg_lat],
+                        [grid_lons[i] - radius_deg_lon, grid_lats[i] - radius_deg_lat]
+                    ]
 
                     # Create the polygon feature
                     poly = {
@@ -927,8 +827,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                             "coordinates": [coords]
                         },
                         "properties": {
-                            "value": float(interpolated_z[i]),
-                            "yield": float(interpolated_z[i])
+                            "value": avg_yield,
+                            "yield": avg_yield
                         }
                     }
                     
@@ -948,6 +848,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     # Only add feature if it's not excluded
                     if not should_exclude:
                         features.append(poly)
+    except Exception as e:
+        # If grid processing fails, return empty result
+        print(f"Grid processing error: {e}")
+        features = []
 
     # Log filtering results
     if merged_soil_geometry is not None:

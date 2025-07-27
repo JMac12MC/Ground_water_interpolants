@@ -752,28 +752,31 @@ with main_col1:
                             if stored_heatmap_ids:
                                 primary_heatmap = st.session_state.stored_heatmaps[0] if st.session_state.stored_heatmaps else None
                                 if primary_heatmap and primary_heatmap.get('geojson_data'):
-                                    geojson_data = primary_heatmap['geojson_data']
+                                    st.session_state.geojson_data = primary_heatmap['geojson_data']
                                     print(f"AUTOMATIC GENERATION: Using stored heatmap for display")
+                                else:
+                                    st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
+                            else:
+                                st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
                         
                         # Sequential processing and storage handled by the dedicated module
                     except Exception as e:
                         print(f"CRITICAL ERROR in heatmap generation: {e}")
                         st.error(f"Error generating heatmaps: {e}")
-                        geojson_data = {"type": "FeatureCollection", "features": []}
-                        geojson_data_east = None
+                        st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
                 else:
-                    geojson_data = {"type": "FeatureCollection", "features": []}
+                    st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
 
-                print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
-                if geojson_data:
-                    print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")
+                print(f"DEBUG: geojson_data exists: {bool(st.session_state.geojson_data)}")
+                if st.session_state.geojson_data:
+                    print(f"DEBUG: geojson_data features count: {len(st.session_state.geojson_data.get('features', []))}")
 
-                if geojson_data and len(geojson_data['features']) > 0:
+                if st.session_state.geojson_data and len(st.session_state.geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
                     max_value = 0
                     value_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
 
-                    for feature in geojson_data['features']:
+                    for feature in st.session_state.geojson_data['features']:
                         if value_field in feature['properties']:
                             max_value = max(max_value, feature['properties'][value_field])
 
@@ -892,7 +895,7 @@ with main_col1:
 
                     # Add GeoJSON overlay for tooltips
                     folium.GeoJson(
-                        geojson_data,
+                        st.session_state.geojson_data,
                         style_function=style_function,
                         tooltip=folium.GeoJsonTooltip(
                             fields=[tooltip_field],
@@ -908,8 +911,8 @@ with main_col1:
                     updated_global_max = float('-inf')
 
                     # Include fresh heatmap values
-                    if geojson_data and 'features' in geojson_data:
-                        for feature in geojson_data['features']:
+                    if st.session_state.geojson_data and 'features' in st.session_state.geojson_data:
+                        for feature in st.session_state.geojson_data['features']:
                             value = feature['properties'].get('yield', feature['properties'].get('value', 0))
                             if value > 0:
                                 updated_global_min = min(updated_global_min, value)

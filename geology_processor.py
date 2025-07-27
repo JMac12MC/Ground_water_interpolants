@@ -124,7 +124,7 @@ def extract_geology_polygons(tiff_path, target_crs='EPSG:4326'):
         traceback.print_exc()
         return None
 
-def get_geology_boundary(tiff_path, target_crs='EPSG:4326', simplify_tolerance=0.001):
+def get_geology_boundary(tiff_path, target_crs='EPSG:4326', simplify_tolerance=0.0001):
     """
     Extract a simplified geology boundary for heatmap clipping
     This is more efficient than extracting all individual polygons

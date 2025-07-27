@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 
-import rasterio
-import numpy as np
-import geopandas as gpd
-from shapely.geometry import box, Point
-from rasterio.mask import mask
-from rasterio.features import shapes
-import json
+# Check if all required dependencies are available
+try:
+    import rasterio
+    import numpy as np
+    import geopandas as gpd
+    from shapely.geometry import box, Point
+    from rasterio.mask import mask
+    from rasterio.features import shapes
+    import json
+    import pyproj
+    from shapely.ops import unary_union
+    GEOLOGY_AVAILABLE = True
+    print("✅ Geology clipping system available")
+except ImportError as e:
+    GEOLOGY_AVAILABLE = False
+    print(f"⚠️ Geology clipping not available: {e}")
+    # Create stub functions for when dependencies are missing
+    def get_geology_boundary(*args, **kwargs):
+        return None
 
 def check_geotiff_info(tiff_path):
     """

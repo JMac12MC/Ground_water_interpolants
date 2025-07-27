@@ -437,23 +437,25 @@ with main_col1:
                 if geology_boundary is not None and len(geology_boundary) > 0:
                     # Convert to GeoJSON format for Folium
                     geology_geojson = geology_boundary.__geo_interface__
+                    print(f"GeoJSON type: {geology_geojson.get('type')}")
+                    print(f"Geology boundary bounds: {geology_boundary.total_bounds}")
                     
-                    # Add geology boundary to map
+                    # Add geology boundary to map with high visibility styling
                     folium.GeoJson(
                         geology_geojson,
                         name="Geology Boundary",
                         style_function=lambda feature: {
                             'fillColor': 'yellow',
                             'color': 'red',
-                            'weight': 3,
-                            'fillOpacity': 0.2,
-                            'opacity': 0.8
+                            'weight': 4,
+                            'fillOpacity': 0.3,
+                            'opacity': 1.0
                         },
                         popup=folium.Popup("Canterbury Geology Coverage Area", parse_html=True),
                         tooltip="Canterbury Geology Boundary"
                     ).add_to(m)
                     
-                    print("✅ Geology overlay added successfully")
+                    print("✅ Geology overlay added successfully to map")
                     
                     # Add bounds rectangle for visual reference
                     geology_bounds = (-43.92, -43.66, 171.52, 171.97)  # S, N, W, E
@@ -472,6 +474,18 @@ with main_col1:
                         opacity=0.6,
                         popup="Geology Coverage Bounds"
                     ).add_to(m)
+                    
+                    # Add a simple test marker to verify the area
+                    center_lat = (geology_bounds[0] + geology_bounds[1]) / 2  # Average of S,N
+                    center_lon = (geology_bounds[2] + geology_bounds[3]) / 2  # Average of W,E
+                    folium.Marker(
+                        location=[center_lat, center_lon],
+                        popup="Geology Center",
+                        icon=folium.Icon(color='orange', icon='mountain', prefix='fa'),
+                        tooltip="Geology Coverage Center"
+                    ).add_to(m)
+                    
+                    print(f"Geology overlay center: [{center_lat:.4f}, {center_lon:.4f}]")
                 else:
                     print("⚠️ Could not extract geology boundary for overlay")
             else:

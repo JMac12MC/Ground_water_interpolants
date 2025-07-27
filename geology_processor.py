@@ -83,6 +83,143 @@ def check_geotiff_info(tiff_path):
         print(f"ERROR reading GeoTIFF: {e}")
         return None
 
+def extract_all_river_deposits(tiff_path, target_crs='EPSG:4326'):
+    """
+    Extract all river deposit geology units from the GeoTIFF based on color analysis
+    Includes: OIS1, OIS2, fan deposits, middle Pleistocene, and other river formations
+    """
+    print(f"\nEXTRACTING ALL RIVER DEPOSIT UNITS FROM: {tiff_path}")
+    print("=" * 60)
+    
+    try:
+        with rasterio.open(tiff_path) as src:
+            # Read RGB bands to analyze all colors
+            data = src.read()
+            print(f"Analyzing {src.count} bands, shape: {data.shape}")
+            
+            # Get all unique colors in the raster
+            rgb_data = data[:3]  # Take RGB bands
+            reshaped = rgb_data.reshape(3, -1).T  # Shape: (pixels, 3)
+            unique_colors = np.unique(reshaped, axis=0)
+            print(f"Found {len(unique_colors)} unique colors")
+            
+            # Analyze colors to find potential river deposits
+            river_deposit_colors = []
+            
+            for i, color in enumerate(unique_colors):
+                r, g, b = color
+                
+                # Skip obvious background colors
+                if ((r == 0 and g == 0 and b == 0) or  # Black
+                    (r == 255 and g == 255 and b == 255) or  # White
+                    (r < 5 and g < 5 and b < 5)):  # Very dark
+                    continue
+                
+                # Create mask and check pixel count
+                mask = ((data[0] == r) & (data[1] == g) & (data[2] == b))
+                pixel_count = np.sum(mask)
+                
+                # Only consider colors with reasonable polygon sizes (>50 pixels)
+                if pixel_count > 50:
+                    area_km2 = pixel_count * (410.68 ** 2) / 1e6
+                    
+                    # Classify potential river deposits based on color characteristics
+                    unit_type = 'unknown'
+                    description = 'Unknown geology unit'
+                    
+                    # River deposits are typically in earth tones, light blues, greens, sandy colors
+                    if (r < 100 and g > 200 and b > 50 and b < 150):  # Light blue-green
+                        unit_type = 'OIS1_Holocene_river'
+                        description = 'OIS1 (Holocene) river deposits'
+                    elif (r > 100 and r < 200 and g > 200 and b < 100):  # Light green-yellow
+                        unit_type = 'OIS2_Late_Pleistocene_river'  
+                        description = 'OIS2 (Late Pleistocene) river deposits'
+                    elif (r > 150 and g > 150 and b > 100 and b < 200):  # Sandy/tan colors
+                        unit_type = 'fan_deposits'
+                        description = 'Late Pleistocene to Holocene fan deposits'
+                    elif (r > 100 and r < 200 and g > 100 and g < 200 and b > 50 and b < 150):  # Earth tones
+                        unit_type = 'middle_pleistocene_river'
+                        description = 'Middle Pleistocene river deposits'
+                    elif (r > 80 and r < 180 and g > 120 and g < 220 and b > 80 and b < 180):  # Mixed earth tones
+                        unit_type = 'late_pleistocene_holocene_river'
+                        description = 'Late Pleistocene to Holocene river deposits'
+                    elif (area_km2 > 10):  # Large areas might be formations
+                        unit_type = 'potential_formation'
+                        description = 'Potential river formation (Woodlands/Hororata)'
+                    
+                    # Store promising candidates
+                    if unit_type != 'unknown' or area_km2 > 20:  # Keep large unknown areas too
+                        river_deposit_colors.append({
+                            'color': (r, g, b),
+                            'unit_type': unit_type,
+                            'description': description,
+                            'pixel_count': pixel_count,
+                            'area_km2': area_km2
+                        })
+            
+            # Sort by area (largest first) and take top candidates
+            river_deposit_colors.sort(key=lambda x: x['area_km2'], reverse=True)
+            print(f"Found {len(river_deposit_colors)} potential river deposit colors")
+            
+            # Extract polygons for the most promising colors
+            geology_polygons = []
+            max_colors = 50  # Limit to prevent overwhelming the map
+            
+            for color_info in river_deposit_colors[:max_colors]:
+                r, g, b = color_info['color']
+                print(f"Processing {color_info['unit_type']}: RGB({r},{g},{b}) - {color_info['area_km2']:.1f} km²")
+                
+                # Create mask for exact color match
+                mask = ((data[0] == r) & (data[1] == g) & (data[2] == b))
+                
+                if np.any(mask):
+                    # Convert mask to polygons
+                    for geom, value in shapes(mask.astype(rasterio.uint8), 
+                                            mask=mask, 
+                                            transform=src.transform):
+                        if value == 1:
+                            geology_polygons.append({
+                                'geometry': geom,
+                                'properties': {
+                                    'unit_type': color_info['unit_type'],
+                                    'description': color_info['description'],
+                                    'rgb': f'({r},{g},{b})',
+                                    'area_km2': round(color_info['area_km2'], 2),
+                                    'pixel_count': color_info['pixel_count']
+                                }
+                            })
+            
+            if geology_polygons:
+                # Create GeoDataFrame
+                from shapely.geometry import shape
+                shapely_geoms = [shape(poly['geometry']) for poly in geology_polygons]
+                properties = [poly['properties'] for poly in geology_polygons]
+                
+                gdf = gpd.GeoDataFrame(properties, geometry=shapely_geoms, crs=src.crs)
+                
+                # Reproject if needed
+                if str(src.crs) != target_crs:
+                    print(f"REPROJECTING: {src.crs} → {target_crs}")
+                    gdf = gdf.to_crs(target_crs)
+                
+                # Summary statistics by unit type
+                unit_counts = gdf['unit_type'].value_counts()
+                print(f"\n✅ EXTRACTION COMPLETE: {len(gdf)} polygons")
+                for unit, count in unit_counts.items():
+                    total_area = gdf[gdf['unit_type'] == unit]['area_km2'].sum()
+                    print(f"   {unit}: {count} polygons ({total_area:.1f} km²)")
+                
+                return gdf
+            else:
+                print("❌ No river deposit polygons found")
+                return None
+                
+    except Exception as e:
+        print(f"ERROR extracting river deposits: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def extract_ois_river_deposits(tiff_path, target_crs='EPSG:4326'):
     """
     Extract OIS1 (Holocene) and OIS2 (Late Pleistocene) river deposits based on identified colors

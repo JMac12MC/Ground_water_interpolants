@@ -277,11 +277,13 @@ with st.sidebar:
                 geology_file = "attached_assets/NZ Geology_1753591871374.tif"
                 if os.path.exists(geology_file):
                     st.info("Coverage: Most of New Zealand (-45.87°S to -42.09°S, 168.86°E to 175.63°E)")
-                    st.success("✅ **OIS River Deposit Clipping Active**")
-                    st.write("Heatmaps will show only triangles overlapping:")
-                    st.write("• **OIS1**: Holocene river deposits (7 polygons)")  
-                    st.write("• **OIS2**: Late Pleistocene river deposits (7 polygons)")
-                    st.write("• **Coverage**: Canterbury region geological boundaries")
+                    st.success("✅ **River Deposit Geology Units Active**")
+                    st.write("**Map displays individual geology polygons:**")
+                    st.write("• **Fan Deposits**: 3,167 polygons (sandy/orange)")
+                    st.write("• **Formation Units**: 6,736 polygons (yellow)")  
+                    st.write("• **OIS2 River**: 38 Late Pleistocene polygons (green)")
+                    st.write("• **Interactive**: Click polygons for detailed info")
+                    st.write("• **Heatmap Clipping**: Only triangles within these units will display")
                 else:
                     st.warning("Geology file not found")
                     show_geology_overlay = False
@@ -434,63 +436,80 @@ with main_col1:
             geology_path = "attached_assets/NZ Geology_1753591871374.tif"
             import os
             if os.path.exists(geology_path):
-                print("Adding geology GeoTIFF overlay to map...")
+                print("Adding geology river deposit polygons to map...")
                 
-                # Extract geology boundary
-                geology_boundary = get_geology_boundary(geology_path)
+                # Extract all river deposit polygons
+                from geology_processor import extract_all_river_deposits
+                river_deposits = extract_all_river_deposits(geology_path)
                 
-                if geology_boundary is not None and len(geology_boundary) > 0:
-                    # Convert to GeoJSON format for Folium
-                    geology_geojson = geology_boundary.__geo_interface__
-                    print(f"GeoJSON type: {geology_geojson.get('type')}")
-                    print(f"Geology boundary bounds: {geology_boundary.total_bounds}")
+                if river_deposits is not None and len(river_deposits) > 0:
+                    print(f"Adding {len(river_deposits)} river deposit polygons to map...")
                     
-                    # Add geology boundary to map with high visibility styling
-                    folium.GeoJson(
-                        geology_geojson,
-                        name="Geology Boundary",
-                        style_function=lambda feature: {
-                            'fillColor': 'yellow',
-                            'color': 'red',
-                            'weight': 4,
-                            'fillOpacity': 0.3,
-                            'opacity': 1.0
-                        },
-                        popup=folium.Popup("Canterbury Geology Coverage Area", parse_html=True),
-                        tooltip="Canterbury Geology Boundary"
-                    ).add_to(m)
+                    # Color mapping for different unit types
+                    unit_colors = {
+                        'OIS1_Holocene_river': '#1a8c66',          # Dark green
+                        'OIS2_Late_Pleistocene_river': '#99ff32',  # Light green
+                        'fan_deposits': '#ffcc99',                 # Light orange
+                        'middle_pleistocene_river': '#cc9966',     # Brown
+                        'late_pleistocene_holocene_river': '#66ccff',  # Light blue
+                        'potential_formation': '#ffff99',          # Light yellow
+                        'unknown': '#cccccc'                       # Gray
+                    }
                     
-                    print("✅ Geology overlay added successfully to map")
+                    # Add each polygon as a separate GeoJSON layer
+                    unit_counts = {}
+                    for idx, polygon in river_deposits.iterrows():
+                        unit_type = polygon['unit_type']
+                        description = polygon['description']
+                        area = polygon['area_km2']
+                        
+                        # Track counts
+                        unit_counts[unit_type] = unit_counts.get(unit_type, 0) + 1
+                        
+                        # Get color for this unit type
+                        color = unit_colors.get(unit_type, '#cccccc')
+                        
+                        # Create popup with detailed information
+                        popup_text = f"""
+                        <b>{description}</b><br>
+                        Type: {unit_type}<br>
+                        Area: {area} km²<br>
+                        RGB: {polygon['rgb']}
+                        """
+                        
+                        # Add polygon to map
+                        folium.GeoJson(
+                            polygon.geometry.__geo_interface__,
+                            style_function=lambda feature, color=color: {
+                                'fillColor': color,
+                                'color': 'black',
+                                'weight': 1,
+                                'fillOpacity': 0.6,
+                                'opacity': 0.8
+                            },
+                            popup=folium.Popup(popup_text, parse_html=True, max_width=250),
+                            tooltip=f"{description} ({area} km²)"
+                        ).add_to(m)
                     
-                    # Add bounds rectangle for visual reference  
-                    geology_bounds = (-45.87, -42.09, 168.86, 175.63)  # S, N, W, E
-                    bounds_coords = [
-                        [geology_bounds[0], geology_bounds[2]],  # SW
-                        [geology_bounds[0], geology_bounds[3]],  # SE  
-                        [geology_bounds[1], geology_bounds[3]],  # NE
-                        [geology_bounds[1], geology_bounds[2]],  # NW
-                        [geology_bounds[0], geology_bounds[2]]   # Close
-                    ]
+                    # Add legend/summary information
+                    legend_text = "<b>River Deposit Units:</b><br>"
+                    for unit_type, count in unit_counts.items():
+                        total_area = river_deposits[river_deposits['unit_type'] == unit_type]['area_km2'].sum()
+                        color = unit_colors.get(unit_type, '#cccccc')
+                        legend_text += f'<span style="color: {color};">■</span> {unit_type}: {count} polygons ({total_area:.1f} km²)<br>'
                     
-                    folium.PolyLine(
-                        bounds_coords,
-                        color='red',
-                        weight=2,
-                        opacity=0.6,
-                        popup="Geology Coverage Bounds"
-                    ).add_to(m)
-                    
-                    # Add a simple test marker to verify the area
-                    center_lat = (geology_bounds[0] + geology_bounds[1]) / 2  # Average of S,N
-                    center_lon = (geology_bounds[2] + geology_bounds[3]) / 2  # Average of W,E
+                    # Add legend marker
+                    legend_coords = river_deposits.geometry.centroid.iloc[0]
                     folium.Marker(
-                        location=[center_lat, center_lon],
-                        popup="Geology Center",
-                        icon=folium.Icon(color='orange', icon='mountain', prefix='fa'),
-                        tooltip="Geology Coverage Center"
+                        [legend_coords.y, legend_coords.x],
+                        popup=folium.Popup(legend_text, parse_html=True, max_width=300),
+                        icon=folium.Icon(color="blue", icon="info-sign")
                     ).add_to(m)
                     
-                    print(f"Geology overlay center: [{center_lat:.4f}, {center_lon:.4f}]")
+                    print("✅ River deposit polygons added successfully to map")
+                    print(f"   Unit types found: {list(unit_counts.keys())}")
+                    print(f"   Total polygons: {len(river_deposits)}")
+                    print(f"   Coverage bounds: {river_deposits.total_bounds}")
                 else:
                     print("⚠️ Could not extract geology boundary for overlay")
             else:

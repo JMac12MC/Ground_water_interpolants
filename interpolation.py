@@ -967,21 +967,22 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     geology_boundary = get_geology_boundary(geology_path)
                     
                     if geology_boundary is not None:
-                        # Apply OIS1/OIS2 river deposit clipping for precise geological boundaries
+                        # Apply comprehensive river deposit clipping for all geological units
                         try:
-                            from geology_processor import extract_ois_river_deposits
-                            print("🗻 EXTRACTING OIS1/OIS2 RIVER DEPOSITS for precise heatmap clipping...")
+                            from geology_processor import extract_all_river_deposits
+                            print("🗻 EXTRACTING ALL RIVER DEPOSITS for comprehensive heatmap clipping...")
                             
-                            river_deposits = extract_ois_river_deposits(geology_path)
+                            all_river_deposits = extract_all_river_deposits(geology_path)
                             
-                            if river_deposits is not None and len(river_deposits) > 0:
-                                ois1_count = len(river_deposits[river_deposits['unit_type'] == 'OIS1'])
-                                ois2_count = len(river_deposits[river_deposits['unit_type'] == 'OIS2'])
-                                print(f"🗻 FOUND OIS RIVER DEPOSITS: {ois1_count} Holocene + {ois2_count} Late Pleistocene polygons")
-                                print("🗻 APPLYING PRECISE RIVER DEPOSIT CLIPPING...")
-                                clipped_geojson = clip_heatmap_to_geology(geojson, river_deposits)
+                            if all_river_deposits is not None and len(all_river_deposits) > 0:
+                                unit_counts = all_river_deposits['unit_type'].value_counts()
+                                print(f"🗻 FOUND RIVER DEPOSITS: {len(all_river_deposits)} polygons across {len(unit_counts)} unit types")
+                                for unit, count in unit_counts.head().items():
+                                    print(f"   {unit}: {count} polygons")
+                                print("🗻 APPLYING COMPREHENSIVE RIVER DEPOSIT CLIPPING...")
+                                clipped_geojson = clip_heatmap_to_geology(geojson, all_river_deposits)
                             else:
-                                print("🗻 NO OIS RIVER DEPOSITS FOUND - falling back to general boundary clipping")
+                                print("🗻 NO RIVER DEPOSITS FOUND - falling back to general boundary clipping")
                                 clipped_geojson = clip_heatmap_to_geology(geojson, geology_boundary)
                         except Exception as unit_error:
                             print(f"🗻 RIVER DEPOSIT EXTRACTION ERROR: {unit_error} - using general boundary")

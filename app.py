@@ -1250,18 +1250,37 @@ with main_col1:
 
     # Layer control removed - all heatmaps display simultaneously
 
-    # Use st_folium with stability optimizations
+    # Use st_folium with error handling and fallback
     try:
+        # Try with minimal configuration first
         map_data = st_folium(
             m,
             use_container_width=True,
             height=600,
             key="main_map",
-            returned_objects=["last_clicked"]
+            returned_objects=["last_clicked"],
+            feature_group_to_add=None,
+            zoom=None
         )
     except Exception as e:
-        print(f"Map rendering error: {e}")
-        map_data = None
+        print(f"st_folium error: {e}")
+        # Fallback: Display map without interactive features
+        try:
+            st.write("**Map Display (Interactive features temporarily unavailable)**")
+            # Save map as HTML and display in iframe
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp:
+                m.save(tmp.name)
+                with open(tmp.name, 'r') as f:
+                    map_html = f.read()
+                st.components.v1.html(map_html, height=600)
+                os.unlink(tmp.name)
+            map_data = None
+        except Exception as e2:
+            print(f"Fallback map rendering error: {e2}")
+            st.error("Map rendering temporarily unavailable. Please refresh the page.")
+            map_data = None
 
     # Process clicks from the map with better stability and error handling
     try:

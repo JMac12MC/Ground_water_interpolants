@@ -121,14 +121,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **July 27, 2025**: OIS RIVER DEPOSIT CLIPPING: Implemented precise geology unit-based heatmap clipping
-  - Added extract_ois_river_deposits() function for targeting specific geological units
-  - Identified OIS1 (Holocene) river deposits: RGB(26,229,102) - 7 polygons (~49.42 km²)
-  - Identified OIS2 (Late Pleistocene) river deposits: RGB(153,255,50) - 7 polygons (~30.19 km²)
-  - Heatmap triangles now clipped to show only areas overlapping these specific river deposits
-  - Enhanced geology unit extraction with color-based classification and area calculations
-  - Automated fallback to general boundary clipping if specific units unavailable
-  - Updated coverage area: Canterbury region (169.21°E to 171.98°E, -43.77°S to -42.11°S)
+- **July 27, 2025**: COMPREHENSIVE GEOLOGY UNIT SYSTEM: Implemented full river deposit extraction and polygon merging
+  - Added extract_all_river_deposits() function analyzing 93,683 unique colors from GeoTIFF
+  - Extracted 9,941 individual geology polygons across 3 main river deposit categories
+  - Implemented polygon dissolving to merge overlapping boundaries by unit type
+  - Final result: 3 clean merged polygons (fan deposits, potential formations, OIS2 river deposits)
+  - Performance optimization: reduced from 9,941 to 3 polygons for fast map loading
+  - Interactive map display with detailed popup information showing original polygon counts
+  - Enhanced heatmap clipping using comprehensive river deposit boundaries
+  - Coverage area: Most of New Zealand (168.87°E to 173.94°E, -45.88°S to -42.10°S)
 
 - **July 27, 2025**: GEOLOGY CLIPPING INTEGRATION: Added GeoTIFF-based geology boundary clipping
   - Integrated NZ Geology GeoTIFF (1280x1024 pixels, NZGD2000 projection) for heatmap boundary clipping

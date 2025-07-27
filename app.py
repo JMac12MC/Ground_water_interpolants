@@ -265,6 +265,27 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
+    
+    # Geology overlay option
+    show_geology_overlay = st.checkbox("🗻 Show Geology GeoTIFF Overlay", value=False, help="Display the geology boundary on the map")
+    
+    if show_geology_overlay:
+        try:
+            from geology_processor import GEOLOGY_AVAILABLE
+            if GEOLOGY_AVAILABLE:
+                import os
+                geology_file = "attached_assets/NZ Geology_1753590503005.tif"
+                if os.path.exists(geology_file):
+                    st.info("Coverage: Canterbury region (-43.92°S to -43.66°S, 171.52°E to 171.97°E)")
+                else:
+                    st.warning("Geology file not found")
+                    show_geology_overlay = False
+            else:
+                st.warning("Geology processing not available")
+                show_geology_overlay = False
+        except ImportError:
+            st.warning("Geology processing not available")
+            show_geology_overlay = False
 
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -400,6 +421,65 @@ with main_col1:
                 sticky=False
             )
         ).add_to(m)
+
+    # Add geology overlay if requested
+    if show_geology_overlay:
+        try:
+            from geology_processor import get_geology_boundary
+            geology_path = "attached_assets/NZ Geology_1753590503005.tif"
+            import os
+            if os.path.exists(geology_path):
+                print("Adding geology GeoTIFF overlay to map...")
+                
+                # Extract geology boundary
+                geology_boundary = get_geology_boundary(geology_path)
+                
+                if geology_boundary is not None and len(geology_boundary) > 0:
+                    # Convert to GeoJSON format for Folium
+                    geology_geojson = geology_boundary.__geo_interface__
+                    
+                    # Add geology boundary to map
+                    folium.GeoJson(
+                        geology_geojson,
+                        name="Geology Boundary",
+                        style_function=lambda feature: {
+                            'fillColor': 'yellow',
+                            'color': 'red',
+                            'weight': 3,
+                            'fillOpacity': 0.2,
+                            'opacity': 0.8
+                        },
+                        popup=folium.Popup("Canterbury Geology Coverage Area", parse_html=True),
+                        tooltip="Canterbury Geology Boundary"
+                    ).add_to(m)
+                    
+                    print("✅ Geology overlay added successfully")
+                    
+                    # Add bounds rectangle for visual reference
+                    geology_bounds = (-43.92, -43.66, 171.52, 171.97)  # S, N, W, E
+                    bounds_coords = [
+                        [geology_bounds[0], geology_bounds[2]],  # SW
+                        [geology_bounds[0], geology_bounds[3]],  # SE  
+                        [geology_bounds[1], geology_bounds[3]],  # NE
+                        [geology_bounds[1], geology_bounds[2]],  # NW
+                        [geology_bounds[0], geology_bounds[2]]   # Close
+                    ]
+                    
+                    folium.PolyLine(
+                        bounds_coords,
+                        color='red',
+                        weight=2,
+                        opacity=0.6,
+                        popup="Geology Coverage Bounds"
+                    ).add_to(m)
+                else:
+                    print("⚠️ Could not extract geology boundary for overlay")
+            else:
+                print("⚠️ Geology file not found for overlay")
+        except Exception as e:
+            print(f"⚠️ Error adding geology overlay: {e}")
+            import traceback
+            traceback.print_exc()
 
     # UNIFIED COLORMAP PROCESSING: Use stored colormap metadata for consistent coloring
     global_min_value = float('inf')

@@ -542,37 +542,67 @@ with main_col1:
                     p50 = percentiles.get('50th', (global_min_value + global_max_value) / 2)
                     p75 = percentiles.get('75th', global_max_value)
                     
-                    # Percentile-based color mapping for enhanced data distribution
-                    if value <= p25:
-                        # Bottom 25% - Deep blues to dark blues
-                        if p25 > global_min_value:
-                            ratio = (value - global_min_value) / (p25 - global_min_value)
-                        else:
-                            ratio = 0
+                    # Enhanced percentile-based color mapping with more granular divisions
+                    # Create more detailed breakpoints to reduce green dominance
+                    p10 = global_min_value + 0.1 * (p25 - global_min_value)
+                    p35 = p25 + 0.4 * (p50 - p25)
+                    p60 = p50 + 0.4 * (p75 - p50)
+                    p85 = p75 + 0.4 * (global_max_value - p75)
+                    
+                    if value <= p10:
+                        # Bottom 10% - Deep blues
+                        ratio = (value - global_min_value) / (p10 - global_min_value) if p10 > global_min_value else 0
                         ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#000033', '#000066', '#000099', '#0000CC', '#0000FF']
+                        colors = ['#000033', '#000066', '#000099']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+                    elif value <= p25:
+                        # 10%-25% - Medium blues
+                        ratio = (value - p10) / (p25 - p10) if p25 > p10 else 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#0000CC', '#0000FF', '#0033FF']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+                    elif value <= p35:
+                        # 25%-35% - Blues to cyan
+                        ratio = (value - p25) / (p35 - p25) if p35 > p25 else 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#0066FF', '#0099FF', '#00CCFF']
                         color_index = int(ratio * (len(colors) - 1))
                         return colors[min(color_index, len(colors) - 1)]
                     elif value <= p50:
-                        # 25%-50% - Blues to cyan (showing more variety in common range)
-                        ratio = (value - p25) / (p50 - p25) if p50 > p25 else 0
+                        # 35%-50% - Cyan to turquoise
+                        ratio = (value - p35) / (p50 - p35) if p50 > p35 else 0
                         ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF']
+                        colors = ['#00FFFF', '#00FFCC', '#00FF99']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+                    elif value <= p60:
+                        # 50%-60% - Light green spectrum (breaking up the green zone)
+                        ratio = (value - p50) / (p60 - p50) if p60 > p50 else 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#00FF66', '#00FF33', '#00FF00']
                         color_index = int(ratio * (len(colors) - 1))
                         return colors[min(color_index, len(colors) - 1)]
                     elif value <= p75:
-                        # 50%-75% - Cyan to green (medium range gets green spectrum)
-                        ratio = (value - p50) / (p75 - p50) if p75 > p50 else 0
+                        # 60%-75% - Green to lime
+                        ratio = (value - p60) / (p75 - p60) if p75 > p60 else 0
                         ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00']
+                        colors = ['#33FF00', '#66FF00', '#99FF00']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+                    elif value <= p85:
+                        # 75%-85% - Lime to yellow
+                        ratio = (value - p75) / (p85 - p75) if p85 > p75 else 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#CCFF00', '#FFFF00', '#FFCC00']
                         color_index = int(ratio * (len(colors) - 1))
                         return colors[min(color_index, len(colors) - 1)]
                     else:
-                        # Top 25% - Green to red (high values get the warm spectrum)
-                        ratio = (value - p75) / (global_max_value - p75) if global_max_value > p75 else 0
+                        # Top 15% - Orange to red (high values)
+                        ratio = (value - p85) / (global_max_value - p85) if global_max_value > p85 else 0
                         ratio = max(0.0, min(1.0, ratio))
-                        colors = ['#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00', 
-                                 '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000']
+                        colors = ['#FF9900', '#FF6600', '#FF3300', '#FF0000']
                         color_index = int(ratio * (len(colors) - 1))
                         return colors[min(color_index, len(colors) - 1)]
             

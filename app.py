@@ -542,83 +542,50 @@ with main_col1:
                     p50 = percentiles.get('50th', (global_min_value + global_max_value) / 2)
                     p75 = percentiles.get('75th', global_max_value)
                     
-                    # Ultra-fine 20-zone color mapping for smooth gradual transitions
-                    # Calculate 20 evenly distributed percentile breakpoints for smooth gradations
-                    breakpoints = []
-                    for i in range(21):  # 0%, 5%, 10%, ..., 95%, 100%
-                        if i == 0:
-                            breakpoints.append(global_min_value)
-                        elif i == 20:
-                            breakpoints.append(global_max_value)
-                        else:
-                            # Interpolate between percentiles using stored metadata
-                            pct = i * 5  # 5%, 10%, 15%, etc.
-                            if pct <= 25:
-                                # Interpolate between min and p25
-                                ratio = pct / 25.0
-                                breakpoints.append(global_min_value + ratio * (p25 - global_min_value))
-                            elif pct <= 50:
-                                # Interpolate between p25 and p50
-                                ratio = (pct - 25) / 25.0
-                                breakpoints.append(p25 + ratio * (p50 - p25))
-                            elif pct <= 75:
-                                # Interpolate between p50 and p75
-                                ratio = (pct - 50) / 25.0
-                                breakpoints.append(p50 + ratio * (p75 - p50))
-                            else:
-                                # Interpolate between p75 and max
-                                ratio = (pct - 75) / 25.0
-                                breakpoints.append(p75 + ratio * (global_max_value - p75))
+                    # ENHANCED 40-BAND FULL-SPECTRUM COLOR MAPPING
+                    # Use simple linear distribution to ensure FULL color spectrum utilization
+                    if global_max_value > global_min_value:
+                        normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+                    else:
+                        normalized_value = 0.5
+                    normalized_value = max(0.0, min(1.0, normalized_value))
                     
-                    # 20-zone smooth gradient color palette for gradual transitions
-                    zone_colors = [
-                        '#000033',  # Zone 1: Deep navy
-                        '#000066',  # Zone 2: Dark blue
-                        '#000099',  # Zone 3: Medium dark blue
-                        '#0000CC',  # Zone 4: Medium blue
-                        '#0000FF',  # Zone 5: Pure blue
-                        '#0033FF',  # Zone 6: Light blue
-                        '#0066FF',  # Zone 7: Bright blue
-                        '#0099FF',  # Zone 8: Sky blue
-                        '#00CCFF',  # Zone 9: Light sky blue
-                        '#00FFFF',  # Zone 10: Cyan
-                        '#00FFCC',  # Zone 11: Cyan-turquoise
-                        '#00FF99',  # Zone 12: Turquoise
-                        '#00FF66',  # Zone 13: Light turquoise
-                        '#00FF33',  # Zone 14: Blue-green
-                        '#00FF00',  # Zone 15: Pure green
-                        '#33FF00',  # Zone 16: Yellow-green
-                        '#66FF00',  # Zone 17: Lime green
-                        '#99FF00',  # Zone 18: Bright lime
-                        '#CCFF00',  # Zone 19: Yellow-lime
-                        '#FFFF00',  # Zone 20: Yellow
-                        '#FFCC00',  # Zone 21: Gold
-                        '#FF9900',  # Zone 22: Orange
-                        '#FF6600',  # Zone 23: Bright orange
-                        '#FF3300',  # Zone 24: Red-orange
-                        '#FF0000'   # Zone 25: Pure red
+                    # 40-band ultra-smooth full-spectrum color palette - guaranteed to use entire range
+                    full_spectrum_colors = [
+                        # Deep blues (0-10%)
+                        '#000033', '#000044', '#000055', '#000066',
+                        # Medium blues (10-20%)  
+                        '#000077', '#000088', '#000099', '#0000AA',
+                        # Bright blues (20-30%)
+                        '#0000BB', '#0000CC', '#0000DD', '#0000FF',
+                        # Blue transitions (30-40%)
+                        '#0022FF', '#0044FF', '#0066FF', '#0088FF',
+                        # Sky blues (40-50%)
+                        '#00AAFF', '#00CCFF', '#00EEFF', '#00FFFF',
+                        # Cyan-turquoise (50-60%)
+                        '#00FFEE', '#00FFDD', '#00FFCC', '#00FFBB',
+                        # Turquoise-green (60-70%)
+                        '#00FFAA', '#00FF99', '#00FF88', '#00FF77',
+                        # Green spectrum (70-75%)
+                        '#00FF66', '#00FF44',
+                        # Yellow-green transition (75-80%)
+                        '#22FF22', '#44FF00',
+                        # Lime-yellow (80-85%)
+                        '#66FF00', '#88FF00', '#AAFF00', '#CCFF00',
+                        # Yellow spectrum (85-90%)
+                        '#EEFF00', '#FFFF00', '#FFEE00', '#FFDD00',
+                        # Orange transition (90-95%)
+                        '#FFCC00', '#FFBB00', '#FFAA00', '#FF9900',
+                        # Red spectrum (95-100%)
+                        '#FF7700', '#FF5500', '#FF3300', '#FF0000'
                     ]
                     
-                    # Find which zone this value belongs to
-                    for i in range(20):
-                        if value <= breakpoints[i + 1]:
-                            # Calculate smooth interpolation within the zone
-                            if breakpoints[i + 1] > breakpoints[i]:
-                                zone_ratio = (value - breakpoints[i]) / (breakpoints[i + 1] - breakpoints[i])
-                            else:
-                                zone_ratio = 0
-                            zone_ratio = max(0.0, min(1.0, zone_ratio))
-                            
-                            # Smooth interpolation between adjacent colors within zone
-                            if zone_ratio < 0.5:
-                                # Closer to start of zone
-                                return zone_colors[i]
-                            else:
-                                # Closer to end of zone - blend towards next color
-                                return zone_colors[i + 1] if i + 1 < len(zone_colors) else zone_colors[i]
+                    # Calculate exact color index using normalized value
+                    # This ensures the FULL spectrum is used from darkest blue to bright red
+                    color_index = int(normalized_value * (len(full_spectrum_colors) - 1))
+                    color_index = min(color_index, len(full_spectrum_colors) - 1)
                     
-                    # Fallback for highest values
-                    return zone_colors[-1]
+                    return full_spectrum_colors[color_index]
             
             # Fallback to linear mapping if no percentile data available
             if global_max_value <= global_min_value:

@@ -277,6 +277,11 @@ with st.sidebar:
                 geology_file = "attached_assets/NZ Geology_1753591871374.tif"
                 if os.path.exists(geology_file):
                     st.info("Coverage: Most of New Zealand (-45.87°S to -42.09°S, 168.86°E to 175.63°E)")
+                    st.success("✅ **OIS River Deposit Clipping Active**")
+                    st.write("Heatmaps will show only triangles overlapping:")
+                    st.write("• **OIS1**: Holocene river deposits (7 polygons)")  
+                    st.write("• **OIS2**: Late Pleistocene river deposits (7 polygons)")
+                    st.write("• **Coverage**: Canterbury region geological boundaries")
                 else:
                     st.warning("Geology file not found")
                     show_geology_overlay = False

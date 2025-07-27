@@ -83,6 +83,263 @@ def check_geotiff_info(tiff_path):
         print(f"ERROR reading GeoTIFF: {e}")
         return None
 
+def extract_ois_river_deposits(tiff_path, target_crs='EPSG:4326'):
+    """
+    Extract OIS1 (Holocene) and OIS2 (Late Pleistocene) river deposits based on identified colors
+    OIS1: RGB(26,229,102) - Holocene river deposits
+    OIS2: RGB(153,255,50) - Late Pleistocene river deposits
+    """
+    print(f"\nEXTRACTING OIS1/OIS2 RIVER DEPOSITS FROM: {tiff_path}")
+    print("=" * 60)
+    
+    # Known colors for OIS units based on analysis
+    ois_colors = {
+        'OIS1': (26, 229, 102),   # Holocene river deposits - Light blue-green
+        'OIS2': (153, 255, 50)    # Late Pleistocene river deposits - Light green-yellow
+    }
+    
+    try:
+        with rasterio.open(tiff_path) as src:
+            print(f"Searching for OIS river deposit colors:")
+            print(f"  OIS1 (Holocene): RGB{ois_colors['OIS1']}")
+            print(f"  OIS2 (Late Pleistocene): RGB{ois_colors['OIS2']}")
+            
+            # Read RGB bands
+            data = src.read()
+            geology_polygons = []
+            
+            for unit_name, (r_target, g_target, b_target) in ois_colors.items():
+                print(f"\nProcessing {unit_name} - RGB({r_target},{g_target},{b_target})...")
+                
+                # Create mask for exact color match
+                mask = ((data[0] == r_target) & 
+                       (data[1] == g_target) & 
+                       (data[2] == b_target))
+                
+                if np.any(mask):
+                    pixel_count = np.sum(mask)
+                    area_km2 = pixel_count * (410.68 ** 2) / 1e6  # Area in km²
+                    print(f"  Found {pixel_count} pixels (~{area_km2:.2f} km²)")
+                    
+                    # Convert mask to polygons
+                    polygon_count = 0
+                    for geom, value in shapes(mask.astype(rasterio.uint8), 
+                                            mask=mask, 
+                                            transform=src.transform):
+                        if value == 1:
+                            geology_polygons.append({
+                                'geometry': geom,
+                                'properties': {
+                                    'unit_type': unit_name,
+                                    'rgb': f'({r_target},{g_target},{b_target})',
+                                    'description': f'{unit_name} river deposits',
+                                    'age': 'Holocene' if unit_name == 'OIS1' else 'Late Pleistocene'
+                                }
+                            })
+                            polygon_count += 1
+                    
+                    print(f"  Extracted {polygon_count} {unit_name} polygons")
+                else:
+                    print(f"  No pixels found for {unit_name}")
+            
+            if geology_polygons:
+                # Create GeoDataFrame
+                from shapely.geometry import shape
+                shapely_geoms = [shape(poly['geometry']) for poly in geology_polygons]
+                properties = [poly['properties'] for poly in geology_polygons]
+                
+                gdf = gpd.GeoDataFrame(properties, geometry=shapely_geoms, crs=src.crs)
+                
+                # Reproject if needed
+                if str(src.crs) != target_crs:
+                    print(f"REPROJECTING: {src.crs} → {target_crs}")
+                    gdf = gdf.to_crs(target_crs)
+                
+                # Summary statistics
+                ois1_count = len(gdf[gdf['unit_type'] == 'OIS1'])
+                ois2_count = len(gdf[gdf['unit_type'] == 'OIS2'])
+                print(f"\n✅ EXTRACTION COMPLETE:")
+                print(f"   OIS1 (Holocene): {ois1_count} polygons")
+                print(f"   OIS2 (Late Pleistocene): {ois2_count} polygons")
+                print(f"   Total: {len(gdf)} river deposit polygons")
+                
+                return gdf
+            else:
+                print("❌ No OIS river deposit polygons found")
+                return None
+                
+    except Exception as e:
+        print(f"ERROR extracting OIS river deposits: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def extract_specific_geology_units(tiff_path, unit_names=['OIS1', 'OIS2'], target_crs='EPSG:4326'):
+    """
+    Extract specific geology units (OIS1 and OIS2 river deposits) from GeoTIFF
+    Returns polygons for only the specified units
+    """
+    print(f"\nEXTRACTING SPECIFIC GEOLOGY UNITS: {unit_names}")
+    print("=" * 60)
+    
+    try:
+        with rasterio.open(tiff_path) as src:
+            # For RGB GeoTIFF, we need to check if there's associated metadata
+            # that maps pixel values to geology unit names
+            
+            # First, let's examine the data structure
+            print(f"Bands: {src.count}, Data type: {src.dtypes[0]}")
+            
+            # Read all bands to understand the data structure
+            data = src.read()
+            print(f"Data shape: {data.shape}")
+            
+            # For a 4-band RGBA image, we might need to:
+            # 1. Convert RGB values to geology unit IDs
+            # 2. Use external lookup table to map colors to unit names
+            
+            # Let's first extract unique color combinations
+            if src.count >= 3:  # RGB or RGBA
+                # Reshape to get unique color combinations
+                rgb_data = data[:3]  # Take RGB bands
+                reshaped = rgb_data.reshape(3, -1).T  # Shape: (pixels, 3)
+                unique_colors = np.unique(reshaped, axis=0)
+                print(f"Found {len(unique_colors)} unique RGB combinations")
+                
+                # Create potential OIS unit mapping based on common geological map colors
+                # River deposits are often shown in light blues, greens, or sandy colors
+                ois_color_candidates = []
+                
+                # Look for colors that might represent river deposits
+                for i, color in enumerate(unique_colors):
+                    r, g, b = color
+                    
+                    # Skip obvious background colors
+                    if ((r == 0 and g == 0 and b == 0) or  # Black
+                        (r == 255 and g == 255 and b == 255) or  # White
+                        (r < 5 and g < 5 and b < 5)):  # Very dark colors
+                        continue
+                    
+                    # Look for colors that might represent alluvial/river deposits
+                    # Light blues, sandy colors, light greens, yellows
+                    is_potential_river_deposit = (
+                        (r < 100 and g < 150 and b > 150) or  # Light blue
+                        (r > 150 and g > 150 and b < 100) or  # Sandy/yellow
+                        (r < 150 and g > 150 and b < 150) or  # Light green
+                        (r > 200 and g > 200 and b > 150) or  # Light sandy
+                        (abs(r-g) < 30 and b > 100 and r > 50)  # Blue-ish tones
+                    )
+                    
+                    if is_potential_river_deposit:
+                        ois_color_candidates.append((i, color))
+                
+                print(f"Found {len(ois_color_candidates)} potential river deposit colors")
+                
+                # Extract polygons for all potential river deposit colors
+                geology_polygons = []
+                
+                for i, color in ois_color_candidates:
+                    r, g, b = color
+                    
+                    # Create mask for this color
+                    mask = ((data[0] == r) & (data[1] == g) & (data[2] == b))
+                    
+                    if np.any(mask):
+                        pixel_count = np.sum(mask)
+                        area_km2 = pixel_count * (410.68 ** 2) / 1e6  # Approximate area in km²
+                        
+                        # Only process colors with reasonable polygon sizes
+                        if pixel_count > 100:  # At least 100 pixels
+                            print(f"Processing color ({r},{g},{b}): {pixel_count} pixels, ~{area_km2:.2f} km²")
+                            
+                            # Convert mask to polygons
+                            for geom, value in shapes(mask.astype(rasterio.uint8), 
+                                                    mask=mask, 
+                                                    transform=src.transform):
+                                if value == 1:
+                                    # Determine potential unit type based on color characteristics
+                                    potential_unit = 'unknown'
+                                    if r < 100 and g < 150 and b > 150:
+                                        potential_unit = 'OIS1_candidate'  # Light blue - Holocene
+                                    elif r > 150 and g > 150 and b < 100:
+                                        potential_unit = 'OIS2_candidate'  # Sandy - Late Pleistocene
+                                    elif r < 150 and g > 150 and b < 150:
+                                        potential_unit = 'OIS1_candidate'  # Light green - Recent deposits
+                                    
+                                    geology_polygons.append({
+                                        'geometry': geom,
+                                        'properties': {
+                                            'unit_id': f'color_{i}',
+                                            'rgb': f'({r},{g},{b})',
+                                            'potential_unit': potential_unit,
+                                            'pixel_count': int(pixel_count),
+                                            'area_km2': round(area_km2, 2)
+                                        }
+                                    })
+                
+                if geology_polygons:
+                    # Create GeoDataFrame
+                    from shapely.geometry import shape
+                    shapely_geoms = [shape(poly['geometry']) for poly in geology_polygons]
+                    properties = [poly['properties'] for poly in geology_polygons]
+                    
+                    gdf = gpd.GeoDataFrame(properties, geometry=shapely_geoms, crs=src.crs)
+                    
+                    # Reproject if needed
+                    if str(src.crs) != target_crs:
+                        print(f"REPROJECTING: {src.crs} → {target_crs}")
+                        gdf = gdf.to_crs(target_crs)
+                    
+                    print(f"EXTRACTED: {len(gdf)} geology unit polygons")
+                    return gdf
+                else:
+                    print("No geology unit polygons found")
+                    return None
+            else:
+                print("Single band data - using value-based extraction")
+                # Handle single band raster
+                band_data = src.read(1)
+                unique_values = np.unique(band_data[~np.isnan(band_data.astype(float))])
+                print(f"Unique values: {unique_values}")
+                
+                # Extract polygons for each unique value
+                geology_polygons = []
+                for value in unique_values:
+                    if value != src.nodata and not np.isnan(value):
+                        mask = (band_data == value)
+                        
+                        for geom, val in shapes(mask.astype(rasterio.uint8), 
+                                              mask=mask, 
+                                              transform=src.transform):
+                            if val == 1:
+                                geology_polygons.append({
+                                    'geometry': geom,
+                                    'properties': {
+                                        'unit_id': f'value_{value}',
+                                        'value': value
+                                    }
+                                })
+                
+                if geology_polygons:
+                    from shapely.geometry import shape
+                    shapely_geoms = [shape(poly['geometry']) for poly in geology_polygons]
+                    properties = [poly['properties'] for poly in geology_polygons]
+                    
+                    gdf = gpd.GeoDataFrame(properties, geometry=shapely_geoms, crs=src.crs)
+                    
+                    if str(src.crs) != target_crs:
+                        gdf = gdf.to_crs(target_crs)
+                    
+                    return gdf
+                
+                return None
+                
+    except Exception as e:
+        print(f"ERROR extracting geology units: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def extract_geology_polygons(tiff_path, target_crs='EPSG:4326'):
     """
     Extract geology polygons from GeoTIFF and convert to vector format

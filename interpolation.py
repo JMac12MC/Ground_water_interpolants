@@ -948,11 +948,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Apply geology clipping if available - but only if click is within geology bounds
     if GEOLOGY_AVAILABLE and len(features) > 0:
         try:
-            geology_path = "attached_assets/NZ Geology_1753590503005.tif"
+            geology_path = "attached_assets/NZ Geology_1753591871374.tif"
             import os
             if os.path.exists(geology_path):
                 # Check if heatmap area overlaps with geology bounds first
-                geology_bounds = (-43.92, -43.66, 171.52, 171.97)  # S, N, W, E
+                geology_bounds = (-45.87, -42.09, 168.86, 175.63)  # S, N, W, E - Updated for new GeoTIFF
                 center_lat = (lat_vals[0] + lat_vals[-1]) / 2
                 center_lon = (lon_vals[0] + lon_vals[-1]) / 2
                 
@@ -967,8 +967,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     geology_boundary = get_geology_boundary(geology_path)
                     
                     if geology_boundary is not None:
-                        # Apply geology clipping to heatmap features
-                        clipped_geojson = clip_heatmap_to_geology(geojson, geology_boundary)
+                        # Apply OIS1/OIS2 river deposit clipping for precise geological boundaries
+                        try:
+                            from geology_processor import extract_ois_river_deposits
+                            print("🗻 EXTRACTING OIS1/OIS2 RIVER DEPOSITS for precise heatmap clipping...")
+                            
+                            river_deposits = extract_ois_river_deposits(geology_path)
+                            
+                            if river_deposits is not None and len(river_deposits) > 0:
+                                ois1_count = len(river_deposits[river_deposits['unit_type'] == 'OIS1'])
+                                ois2_count = len(river_deposits[river_deposits['unit_type'] == 'OIS2'])
+                                print(f"🗻 FOUND OIS RIVER DEPOSITS: {ois1_count} Holocene + {ois2_count} Late Pleistocene polygons")
+                                print("🗻 APPLYING PRECISE RIVER DEPOSIT CLIPPING...")
+                                clipped_geojson = clip_heatmap_to_geology(geojson, river_deposits)
+                            else:
+                                print("🗻 NO OIS RIVER DEPOSITS FOUND - falling back to general boundary clipping")
+                                clipped_geojson = clip_heatmap_to_geology(geojson, geology_boundary)
+                        except Exception as unit_error:
+                            print(f"🗻 RIVER DEPOSIT EXTRACTION ERROR: {unit_error} - using general boundary")
+                            clipped_geojson = clip_heatmap_to_geology(geojson, geology_boundary)
                         
                         # Update feature count statistics
                         original_count = len(features)

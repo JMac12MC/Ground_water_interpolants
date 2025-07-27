@@ -121,12 +121,21 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 27, 2025**: OIS RIVER DEPOSIT CLIPPING: Implemented precise geology unit-based heatmap clipping
+  - Added extract_ois_river_deposits() function for targeting specific geological units
+  - Identified OIS1 (Holocene) river deposits: RGB(26,229,102) - 7 polygons (~49.42 km²)
+  - Identified OIS2 (Late Pleistocene) river deposits: RGB(153,255,50) - 7 polygons (~30.19 km²)
+  - Heatmap triangles now clipped to show only areas overlapping these specific river deposits
+  - Enhanced geology unit extraction with color-based classification and area calculations
+  - Automated fallback to general boundary clipping if specific units unavailable
+  - Updated coverage area: Canterbury region (169.21°E to 171.98°E, -43.77°S to -42.11°S)
+
 - **July 27, 2025**: GEOLOGY CLIPPING INTEGRATION: Added GeoTIFF-based geology boundary clipping
   - Integrated NZ Geology GeoTIFF (1280x1024 pixels, NZGD2000 projection) for heatmap boundary clipping
   - Created geology_processor.py with automated boundary extraction and coordinate reprojection
   - Added intelligent heatmap feature clipping to remove interpolations outside geology boundaries
   - Supports 114 geology classes with efficient boundary dissolution and simplification
-  - Coverage area: Canterbury region (-43.92°S to -43.66°S, 171.52°E to 171.97°E)
+  - Coverage area: Most of New Zealand (-45.87°S to -42.09°S, 168.86°E to 175.63°E)
   - Automatic feature retention statistics and fallback handling for processing errors
 
 - **July 25, 2025**: CRITICAL FIX: Corrected ground water level viability logic in indicator kriging

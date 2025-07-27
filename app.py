@@ -82,7 +82,7 @@ def get_database_connection():
 def load_banks_peninsula_coords():
     """Load and cache Banks Peninsula polygon coordinates"""
     try:
-        file_path = "attached_assets/banks peninsula_1753599917298.txt"
+        file_path = "attached_assets/banks peninsula_1753603323297.txt"
         coordinates = parse_coordinates_file(file_path)
         if coordinates:
             print(f"Loaded {len(coordinates)} Banks Peninsula coordinates")

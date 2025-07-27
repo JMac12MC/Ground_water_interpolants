@@ -113,7 +113,7 @@ def add_polygon_to_map(folium_map, coordinates, name="Banks Peninsula", color="r
 
 if __name__ == "__main__":
     # Test the coordinate parsing
-    file_path = "attached_assets/banks peninsula_1753599917298.txt"
+    file_path = "attached_assets/banks peninsula_1753603323297.txt"
     
     coordinates = parse_coordinates_file(file_path)
     

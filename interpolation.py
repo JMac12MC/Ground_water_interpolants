@@ -843,7 +843,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                                 "yield": avg_yield
                             }
                         }
-                        features.append(poly)
+                        
+                        # Check if triangle should be excluded by Banks Peninsula
+                        should_exclude = False
+                        if banks_peninsula_polygon is not None:
+                            try:
+                                # Use the triangle centroid for exclusion check
+                                centroid_lon = np.mean([vertices[0,0], vertices[1,0], vertices[2,0]])
+                                centroid_lat = np.mean([vertices[0,1], vertices[1,1], vertices[2,1]])
+                                center_point = Point(centroid_lon, centroid_lat)
+                                
+                                # Exclude if the center point is inside Banks Peninsula
+                                if banks_peninsula_polygon.contains(center_point):
+                                    should_exclude = True
+                            except Exception as e:
+                                print(f"Error checking Banks Peninsula exclusion for triangle: {e}")
+                        
+                        # Only add feature if it's not excluded
+                        if not should_exclude:
+                            features.append(poly)
     except Exception as e:
         # If triangulation fails, fall back to the simpler grid method
         print(f"Triangulation error: {e}, using grid method")

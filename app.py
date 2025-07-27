@@ -774,14 +774,15 @@ with main_col1:
                         # Use the dedicated sequential processing module for automatic generation
                         from sequential_heatmap import generate_quad_heatmaps_sequential
                         
-                        # Generate all four heatmaps sequentially
+                        # Generate all four heatmaps sequentially with Banks Peninsula exclusion
                         success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
                             wells_data=st.session_state.wells_data,
                             click_point=st.session_state.selected_point,
                             search_radius=st.session_state.search_radius,
                             interpolation_method=st.session_state.interpolation_method,
                             polygon_db=st.session_state.polygon_db,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                            banks_peninsula_coords=st.session_state.banks_peninsula_coords
                         )
                         
                         print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")

@@ -1,7 +1,7 @@
 # Sequential Heatmap Generation System
 # Generates, stores, and displays heatmaps one at a time to prevent crashes
 
-def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None):
+def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None, banks_peninsula_coords=None):
     """
     Generate six heatmaps sequentially (original, east, south, southeast, northeast, far_southeast) to avoid memory issues.
     
@@ -320,7 +320,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap
+            # Generate heatmap with Banks Peninsula exclusion
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
@@ -331,7 +331,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 auto_fit_variogram=True,
                 variogram_model='spherical',
                 soil_polygons=soil_polygons,
-                indicator_mask=indicator_mask
+                indicator_mask=indicator_mask,
+                banks_peninsula_coords=banks_peninsula_coords
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:

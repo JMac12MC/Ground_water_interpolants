@@ -533,7 +533,50 @@ with main_col1:
             else:
                 return '#00FF00'    # Green for good
         else:
-            # Use linear mapping with stored global range for consistency
+            # Use percentile-based color mapping for better data distribution
+            # Extract percentiles from stored metadata if available
+            if stored_colormap_metadata and 'percentiles' in stored_colormap_metadata:
+                percentiles = stored_colormap_metadata['percentiles']
+                if percentiles:
+                    p25 = percentiles.get('25th', global_min_value)
+                    p50 = percentiles.get('50th', (global_min_value + global_max_value) / 2)
+                    p75 = percentiles.get('75th', global_max_value)
+                    
+                    # Percentile-based color mapping for enhanced data distribution
+                    if value <= p25:
+                        # Bottom 25% - Deep blues to dark blues
+                        if p25 > global_min_value:
+                            ratio = (value - global_min_value) / (p25 - global_min_value)
+                        else:
+                            ratio = 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#000033', '#000066', '#000099', '#0000CC', '#0000FF']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+                    elif value <= p50:
+                        # 25%-50% - Blues to cyan (showing more variety in common range)
+                        ratio = (value - p25) / (p50 - p25) if p50 > p25 else 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+                    elif value <= p75:
+                        # 50%-75% - Cyan to green (medium range gets green spectrum)
+                        ratio = (value - p50) / (p75 - p50) if p75 > p50 else 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+                    else:
+                        # Top 25% - Green to red (high values get the warm spectrum)
+                        ratio = (value - p75) / (global_max_value - p75) if global_max_value > p75 else 0
+                        ratio = max(0.0, min(1.0, ratio))
+                        colors = ['#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00', 
+                                 '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000']
+                        color_index = int(ratio * (len(colors) - 1))
+                        return colors[min(color_index, len(colors) - 1)]
+            
+            # Fallback to linear mapping if no percentile data available
             if global_max_value <= global_min_value:
                 return '#000080'  # Default blue if no range
             normalized_value = (value - global_min_value) / (global_max_value - global_min_value)

@@ -265,34 +265,6 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
-    
-    # Geology overlay option
-    show_geology_overlay = st.checkbox("🗻 Show Geology GeoTIFF Overlay", value=False, help="Display the geology boundary on the map")
-    
-    if show_geology_overlay:
-        try:
-            from geology_processor import GEOLOGY_AVAILABLE
-            if GEOLOGY_AVAILABLE:
-                import os
-                geology_file = "attached_assets/NZ Geology_1753591871374.tif"
-                if os.path.exists(geology_file):
-                    st.info("Coverage: Most of New Zealand (-45.87°S to -42.09°S, 168.86°E to 175.63°E)")
-                    st.success("✅ **River Deposit Geology Units Active**")
-                    st.write("**Map displays merged geology units:**")
-                    st.write("• **Fan Deposits**: Single orange polygon (merged from 3,167 pieces)")
-                    st.write("• **Formation Units**: Single yellow polygon (merged from 6,736 pieces)")  
-                    st.write("• **OIS2 River**: Single green polygon (merged from 38 pieces)")
-                    st.write("• **Clean Display**: No overlapping boundaries, simplified view")
-                    st.write("• **Heatmap Clipping**: Only triangles within these units will display")
-                else:
-                    st.warning("Geology file not found")
-                    show_geology_overlay = False
-            else:
-                st.warning("Geology processing not available")
-                show_geology_overlay = False
-        except ImportError:
-            st.warning("Geology processing not available")
-            show_geology_overlay = False
 
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -428,96 +400,6 @@ with main_col1:
                 sticky=False
             )
         ).add_to(m)
-
-    # Add geology overlay if requested
-    if show_geology_overlay:
-        try:
-            from geology_processor import get_geology_boundary
-            geology_path = "attached_assets/NZ Geology_1753591871374.tif"
-            import os
-            if os.path.exists(geology_path):
-                print("Adding geology river deposit polygons to map...")
-                
-                # Extract all river deposit polygons
-                from geology_processor import extract_all_river_deposits
-                river_deposits = extract_all_river_deposits(geology_path)
-                
-                if river_deposits is not None and len(river_deposits) > 0:
-                    print(f"Adding {len(river_deposits)} merged river deposit polygons to map...")
-                    
-                    # Color mapping for different unit types
-                    unit_colors = {
-                        'OIS1_Holocene_river': '#1a8c66',          # Dark green
-                        'OIS2_Late_Pleistocene_river': '#99ff32',  # Light green
-                        'fan_deposits': '#ffcc99',                 # Light orange
-                        'middle_pleistocene_river': '#cc9966',     # Brown
-                        'late_pleistocene_holocene_river': '#66ccff',  # Light blue
-                        'potential_formation': '#ffff99',          # Light yellow
-                        'unknown': '#cccccc'                       # Gray
-                    }
-                    
-                    # Add each merged polygon as a separate GeoJSON layer
-                    for idx, polygon in river_deposits.iterrows():
-                        unit_type = polygon['unit_type']
-                        description = polygon['description']
-                        area = polygon['area_km2']
-                        
-                        # Get color for this unit type
-                        color = unit_colors.get(unit_type, '#cccccc')
-                        
-                        # Create popup with detailed information
-                        polygon_count = polygon.get('polygon_count', 1)
-                        popup_text = f"""
-                        <b>{description}</b><br>
-                        Type: {unit_type}<br>
-                        Total Area: {area:,.1f} km²<br>
-                        Original Polygons: {polygon_count}<br>
-                        RGB: {polygon['rgb']}
-                        """
-                        
-                        # Add merged polygon to map
-                        folium.GeoJson(
-                            polygon.geometry.__geo_interface__,
-                            style_function=lambda feature, color=color: {
-                                'fillColor': color,
-                                'color': 'black',
-                                'weight': 2,
-                                'fillOpacity': 0.5,
-                                'opacity': 0.8
-                            },
-                            popup=folium.Popup(popup_text, parse_html=True, max_width=300),
-                            tooltip=f"{description} ({area:,.0f} km²)"
-                        ).add_to(m)
-                    
-                    # Add simplified legend
-                    legend_text = "<b>Merged River Deposit Units:</b><br>"
-                    for _, polygon in river_deposits.iterrows():
-                        unit_type = polygon['unit_type']
-                        area = polygon['area_km2']
-                        polygon_count = polygon.get('polygon_count', 1)
-                        color = unit_colors.get(unit_type, '#cccccc')
-                        legend_text += f'<span style="color: {color};">■</span> {unit_type}: {area:,.0f} km² (from {polygon_count} polygons)<br>'
-                    
-                    # Add legend marker at map center
-                    map_center = [-43.5, 171.5]  # Canterbury region center
-                    folium.Marker(
-                        map_center,
-                        popup=folium.Popup(legend_text, parse_html=True, max_width=350),
-                        icon=folium.Icon(color="blue", icon="info-sign")
-                    ).add_to(m)
-                    
-                    print("✅ River deposit polygons added successfully to map")
-                    print(f"   Unit types found: {list(unit_counts.keys())}")
-                    print(f"   Total polygons: {len(river_deposits)}")
-                    print(f"   Coverage bounds: {river_deposits.total_bounds}")
-                else:
-                    print("⚠️ Could not extract geology boundary for overlay")
-            else:
-                print("⚠️ Geology file not found for overlay")
-        except Exception as e:
-            print(f"⚠️ Error adding geology overlay: {e}")
-            import traceback
-            traceback.print_exc()
 
     # UNIFIED COLORMAP PROCESSING: Use stored colormap metadata for consistent coloring
     global_min_value = float('inf')
@@ -870,31 +752,28 @@ with main_col1:
                             if stored_heatmap_ids:
                                 primary_heatmap = st.session_state.stored_heatmaps[0] if st.session_state.stored_heatmaps else None
                                 if primary_heatmap and primary_heatmap.get('geojson_data'):
-                                    st.session_state.geojson_data = primary_heatmap['geojson_data']
+                                    geojson_data = primary_heatmap['geojson_data']
                                     print(f"AUTOMATIC GENERATION: Using stored heatmap for display")
-                                else:
-                                    st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
-                            else:
-                                st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
                         
                         # Sequential processing and storage handled by the dedicated module
                     except Exception as e:
                         print(f"CRITICAL ERROR in heatmap generation: {e}")
                         st.error(f"Error generating heatmaps: {e}")
-                        st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
+                        geojson_data = {"type": "FeatureCollection", "features": []}
+                        geojson_data_east = None
                 else:
-                    st.session_state.geojson_data = {"type": "FeatureCollection", "features": []}
+                    geojson_data = {"type": "FeatureCollection", "features": []}
 
-                print(f"DEBUG: geojson_data exists: {bool(st.session_state.geojson_data)}")
-                if st.session_state.geojson_data:
-                    print(f"DEBUG: geojson_data features count: {len(st.session_state.geojson_data.get('features', []))}")
+                print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
+                if geojson_data:
+                    print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")
 
-                if st.session_state.geojson_data and len(st.session_state.geojson_data['features']) > 0:
+                if geojson_data and len(geojson_data['features']) > 0:
                     # Calculate max value for setting the color scale
                     max_value = 0
                     value_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
 
-                    for feature in st.session_state.geojson_data['features']:
+                    for feature in geojson_data['features']:
                         if value_field in feature['properties']:
                             max_value = max(max_value, feature['properties'][value_field])
 
@@ -1013,7 +892,7 @@ with main_col1:
 
                     # Add GeoJSON overlay for tooltips
                     folium.GeoJson(
-                        st.session_state.geojson_data,
+                        geojson_data,
                         style_function=style_function,
                         tooltip=folium.GeoJsonTooltip(
                             fields=[tooltip_field],
@@ -1029,8 +908,8 @@ with main_col1:
                     updated_global_max = float('-inf')
 
                     # Include fresh heatmap values
-                    if st.session_state.geojson_data and 'features' in st.session_state.geojson_data:
-                        for feature in st.session_state.geojson_data['features']:
+                    if geojson_data and 'features' in geojson_data:
+                        for feature in geojson_data['features']:
                             value = feature['properties'].get('yield', feature['properties'].get('value', 0))
                             if value > 0:
                                 updated_global_min = min(updated_global_min, value)
@@ -1274,37 +1153,18 @@ with main_col1:
 
     # Layer control removed - all heatmaps display simultaneously
 
-    # Use st_folium with error handling and fallback
+    # Use st_folium with stability optimizations
     try:
-        # Try with minimal configuration first
         map_data = st_folium(
             m,
             use_container_width=True,
             height=600,
             key="main_map",
-            returned_objects=["last_clicked"],
-            feature_group_to_add=None,
-            zoom=None
+            returned_objects=["last_clicked"]
         )
     except Exception as e:
-        print(f"st_folium error: {e}")
-        # Fallback: Display map without interactive features
-        try:
-            st.write("**Map Display (Interactive features temporarily unavailable)**")
-            # Save map as HTML and display in iframe
-            import tempfile
-            import os
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp:
-                m.save(tmp.name)
-                with open(tmp.name, 'r') as f:
-                    map_html = f.read()
-                st.components.v1.html(map_html, height=600)
-                os.unlink(tmp.name)
-            map_data = None
-        except Exception as e2:
-            print(f"Fallback map rendering error: {e2}")
-            st.error("Map rendering temporarily unavailable. Please refresh the page.")
-            map_data = None
+        print(f"Map rendering error: {e}")
+        map_data = None
 
     # Process clicks from the map with better stability and error handling
     try:

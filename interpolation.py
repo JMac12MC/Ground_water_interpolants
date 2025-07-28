@@ -9,6 +9,14 @@ from pykrige.ok import OrdinaryKriging
 from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import unary_union
 import geopandas as gpd
+import rasterio
+from rasterio.transform import from_bounds
+from rasterio.crs import CRS
+import io
+import base64
+from PIL import Image
+import matplotlib.colors as mcolors
+from scipy.interpolate import griddata
 
 def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
     """
@@ -2418,3 +2426,157 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
         print(f"Error adding colormap legend: {e}")
 
     return m
+
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None):
+    """
+    Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
+    
+    Parameters:
+    -----------
+    geojson_data : dict
+        GeoJSON FeatureCollection containing triangular mesh data
+    bounds : dict
+        Dictionary with 'north', 'south', 'east', 'west' bounds
+    raster_size : tuple
+        (width, height) of output raster in pixels
+    global_colormap_func : function
+        Function to map values to colors consistently across all heatmaps
+        
+    Returns:
+    --------
+    dict
+        Dictionary containing base64 encoded image and bounds for Folium overlay
+    """
+    try:
+        if not geojson_data or not geojson_data.get('features'):
+            return None
+            
+        # Extract values and coordinates from triangular mesh
+        values = []
+        coords = []
+        
+        for feature in geojson_data['features']:
+            if feature.get('properties', {}).get('value') is not None:
+                value = feature['properties']['value']
+                
+                # Get triangle centroid
+                if feature['geometry']['type'] == 'Polygon':
+                    triangle_coords = feature['geometry']['coordinates'][0]
+                    if len(triangle_coords) >= 3:
+                        centroid_lon = sum(coord[0] for coord in triangle_coords) / len(triangle_coords)
+                        centroid_lat = sum(coord[1] for coord in triangle_coords) / len(triangle_coords)
+                        
+                        values.append(value)
+                        coords.append([centroid_lon, centroid_lat])
+        
+        if not values or not coords:
+            return None
+            
+        values = np.array(values)
+        coords = np.array(coords)
+        
+        # Create high-resolution grid for smooth interpolation
+        width, height = raster_size
+        west, east = bounds['west'], bounds['east']
+        south, north = bounds['south'], bounds['north']
+        
+        # Create coordinate grids
+        x = np.linspace(west, east, width)
+        y = np.linspace(south, north, height)
+        xi, yi = np.meshgrid(x, y)
+        
+        # Interpolate values onto high-resolution grid using cubic interpolation
+        try:
+            # Use cubic interpolation for smoothest results
+            zi = griddata(coords, values, (xi, yi), method='cubic', fill_value=np.nan)
+            
+            # Fill any remaining NaN values with linear interpolation
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_linear = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
+                zi[nan_mask] = zi_linear[nan_mask]
+                
+            # Final pass with nearest neighbor for any remaining NaN
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
+                zi[nan_mask] = zi_nearest[nan_mask]
+                
+        except Exception as e:
+            print(f"Cubic interpolation failed, using linear: {e}")
+            # Fallback to linear interpolation
+            zi = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
+            
+            # Fill NaN with nearest neighbor
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
+                zi[nan_mask] = zi_nearest[nan_mask]
+        
+        # Apply Gaussian smoothing for even smoother appearance
+        from scipy.ndimage import gaussian_filter
+        zi_smooth = gaussian_filter(zi, sigma=1.0, mode='nearest')
+        
+        # Convert values to colors using global colormap function
+        if global_colormap_func:
+            # Create RGBA image
+            rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
+            
+            for i in range(height):
+                for j in range(width):
+                    if not np.isnan(zi_smooth[i, j]):
+                        color_hex = global_colormap_func(zi_smooth[i, j])
+                        # Convert hex to RGB
+                        color_hex = color_hex.lstrip('#')
+                        if len(color_hex) == 6:
+                            r = int(color_hex[0:2], 16)
+                            g = int(color_hex[2:4], 16)
+                            b = int(color_hex[4:6], 16)
+                            rgba_image[i, j] = [r, g, b, 180]  # 70% opacity for smooth blending
+                        else:
+                            rgba_image[i, j] = [0, 0, 0, 0]  # Transparent for invalid colors
+                    else:
+                        rgba_image[i, j] = [0, 0, 0, 0]  # Transparent for NaN values
+        else:
+            # Fallback: use matplotlib colormap
+            from matplotlib.cm import viridis
+            from matplotlib.colors import Normalize
+            
+            # Normalize values
+            valid_mask = ~np.isnan(zi_smooth)
+            if np.any(valid_mask):
+                vmin, vmax = np.nanmin(zi_smooth), np.nanmax(zi_smooth)
+                norm = Normalize(vmin=vmin, vmax=vmax)
+                
+                # Apply colormap
+                colored = viridis(norm(zi_smooth))
+                rgba_image = (colored * 255).astype(np.uint8)
+                
+                # Set transparency for NaN values
+                rgba_image[~valid_mask, 3] = 0
+                rgba_image[valid_mask, 3] = 180  # 70% opacity
+            else:
+                rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
+        
+        # Convert to PIL Image and then to base64
+        # Flip vertically because raster coordinates are different from image coordinates
+        rgba_image_flipped = np.flipud(rgba_image)
+        pil_image = Image.fromarray(rgba_image_flipped, 'RGBA')
+        
+        # Save to bytes buffer
+        img_buffer = io.BytesIO()
+        pil_image.save(img_buffer, format='PNG', optimize=True)
+        img_buffer.seek(0)
+        
+        # Encode to base64
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
+        return {
+            'image_base64': img_base64,
+            'bounds': [[south, west], [north, east]],
+            'opacity': 0.7
+        }
+        
+    except Exception as e:
+        print(f"Error generating smooth raster overlay: {e}")
+        return None

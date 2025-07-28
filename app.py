@@ -10,7 +10,7 @@ import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data
+from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
@@ -59,7 +59,8 @@ session_defaults = {
     'new_heatmap_added': False,
     'colormap_updated': False,
     'show_banks_peninsula': True,
-    'banks_peninsula_coords': None
+    'banks_peninsula_coords': None,
+    'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
 }
 
 # Initialize all session state variables
@@ -233,6 +234,15 @@ with st.sidebar:
         help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
         key="visualization_method_selector"
     )
+    
+    # Heatmap visualization style selection
+    heatmap_style = st.selectbox(
+        "Heatmap Display Style",
+        options=["Triangle Mesh (Scientific)", "Smooth Raster (Windy.com Style)"],
+        index=0,  # Default to Triangle Mesh
+        help="Choose how interpolated data is visualized: Triangle Mesh shows precise triangular interpolation, Smooth Raster provides a weather-map style visualization",
+        key="heatmap_style_selector"
+    )
 
     # Map visualization selection to internal parameters
     if 'interpolation_method' not in st.session_state:
@@ -302,6 +312,23 @@ with st.sidebar:
 
     # Display options
     st.header("Display Options")
+    
+    # Heatmap visualization mode toggle
+    st.subheader("Heatmap Visualization Style")
+    heatmap_mode = st.radio(
+        "Choose heatmap rendering style:",
+        options=["Triangular Mesh (Current)", "Smooth Raster (Windy.com style)"],
+        index=0 if st.session_state.heatmap_visualization_mode == 'triangular_mesh' else 1,
+        help="Triangular Mesh: Current triangular interpolation with sharp boundaries. Smooth Raster: Windy.com-style smooth gradient visualization without triangle artifacts."
+    )
+    
+    # Update session state based on selection
+    if "Smooth Raster" in heatmap_mode:
+        st.session_state.heatmap_visualization_mode = 'smooth_raster'
+        st.info("🌊 **Smooth Raster Mode**: Heatmaps will display with smooth gradients like Windy.com weather maps")
+    else:
+        st.session_state.heatmap_visualization_mode = 'triangular_mesh'
+        st.info("🔺 **Triangular Mesh Mode**: Heatmaps display current triangular interpolation boundaries")
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
@@ -929,24 +956,104 @@ with main_col1:
                         lat, lon = st.session_state.selected_point
                         new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
 
-                    # Add the fresh heatmap to the map
-                    fresh_geojson = folium.GeoJson(
-                        data=geojson_data,
-                        name=new_heatmap_name,
-                        style_function=lambda feature: {
-                            'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        },
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=[display_field],
-                            aliases=[f'{display_field.title()}:'],
-                            labels=True,
-                            sticky=False
+                    # Add the fresh heatmap to the map based on selected style
+                    if heatmap_style == "Smooth Raster (Windy.com Style)":
+                        # Generate smooth raster overlay for fresh heatmap
+                        print(f"Generating smooth raster overlay for fresh heatmap: {new_heatmap_name}")
+                        
+                        # Calculate bounds for the fresh heatmap
+                        all_coords = []
+                        for feature in geojson_data['features']:
+                            if feature['geometry']['type'] == 'Polygon':
+                                coords = feature['geometry']['coordinates'][0]
+                                all_coords.extend(coords)
+                        
+                        if all_coords:
+                            lons = [coord[0] for coord in all_coords]
+                            lats = [coord[1] for coord in all_coords]
+                            bounds = {
+                                'north': max(lats),
+                                'south': min(lats),
+                                'east': max(lons),
+                                'west': min(lons)
+                            }
+                            
+                            # Generate smooth raster with global colormap function
+                            raster_overlay = generate_smooth_raster_overlay(
+                                geojson_data, 
+                                bounds, 
+                                raster_size=(512, 512), 
+                                global_colormap_func=lambda value: get_global_unified_color(value, st.session_state.interpolation_method)
+                            )
+                            
+                            if raster_overlay:
+                                # Add raster overlay to map
+                                folium.raster_layers.ImageOverlay(
+                                    image=f"data:image/png;base64,{raster_overlay['image_base64']}",
+                                    bounds=raster_overlay['bounds'],
+                                    opacity=raster_overlay['opacity'],
+                                    name=f"Fresh Smooth: {new_heatmap_name}"
+                                ).add_to(m)
+                                print(f"Added smooth raster overlay for fresh heatmap: {new_heatmap_name}")
+                            else:
+                                print("Failed to generate smooth raster for fresh heatmap, falling back to triangle mesh")
+                                # Fallback to triangle mesh
+                                fresh_geojson = folium.GeoJson(
+                                    data=geojson_data,
+                                    name=new_heatmap_name,
+                                    style_function=lambda feature: {
+                                        'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
+                                        'color': 'none',
+                                        'weight': 0,
+                                        'fillOpacity': 0.7
+                                    },
+                                    tooltip=folium.GeoJsonTooltip(
+                                        fields=[display_field],
+                                        aliases=[f'{display_field.title()}:'],
+                                        labels=True,
+                                        sticky=False
+                                    )
+                                )
+                                fresh_geojson.add_to(m)
+                        else:
+                            print("No valid coordinates found for fresh smooth raster, using triangle mesh")
+                            # Fallback to triangle mesh
+                            fresh_geojson = folium.GeoJson(
+                                data=geojson_data,
+                                name=new_heatmap_name,
+                                style_function=lambda feature: {
+                                    'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
+                                    'color': 'none',
+                                    'weight': 0,
+                                    'fillOpacity': 0.7
+                                },
+                                tooltip=folium.GeoJsonTooltip(
+                                    fields=[display_field],
+                                    aliases=[f'{display_field.title()}:'],
+                                    labels=True,
+                                    sticky=False
+                                )
+                            )
+                            fresh_geojson.add_to(m)
+                    else:
+                        # Default: Triangle Mesh (Scientific) visualization
+                        fresh_geojson = folium.GeoJson(
+                            data=geojson_data,
+                            name=new_heatmap_name,
+                            style_function=lambda feature: {
+                                'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
+                                'color': 'none',
+                                'weight': 0,
+                                'fillOpacity': 0.7
+                            },
+                            tooltip=folium.GeoJsonTooltip(
+                                fields=[display_field],
+                                aliases=[f'{display_field.title()}:'],
+                                labels=True,
+                                sticky=False
+                            )
                         )
-                    )
-                    fresh_geojson.add_to(m)
+                        fresh_geojson.add_to(m)
 
                     # Mark that we have a fresh heatmap displayed
                     st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
@@ -1101,23 +1208,102 @@ with main_col1:
                         sample_values.append(f"{value:.2f}→{color}")
                     print(f"  COLORMAP SAMPLE for {stored_heatmap['heatmap_name']}: {', '.join(sample_values)}")
 
-                    # Add GeoJSON layer for triangular mesh visualization with UPDATED UNIFIED coloring
-                    folium.GeoJson(
-                        geojson_data,
-                        name=f"Stored: {stored_heatmap['heatmap_name']}",
-                        style_function=lambda feature, method=method: {
-                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                            'color': 'none',
-                            'weight': 0,
-                            'fillOpacity': 0.7
-                        },
-                        tooltip=folium.GeoJsonTooltip(
-                            fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                            aliases=['Value:'],
-                            localize=True
-                        )
-                    ).add_to(m)
-                    stored_heatmap_count += 1
+                    # Choose visualization style based on user selection
+                    if heatmap_style == "Smooth Raster (Windy.com Style)":
+                        # Generate smooth raster overlay
+                        print(f"  Generating smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                        
+                        # Calculate bounds for the heatmap
+                        all_coords = []
+                        for feature in geojson_data['features']:
+                            if feature['geometry']['type'] == 'Polygon':
+                                coords = feature['geometry']['coordinates'][0]
+                                all_coords.extend(coords)
+                        
+                        if all_coords:
+                            lons = [coord[0] for coord in all_coords]
+                            lats = [coord[1] for coord in all_coords]
+                            bounds = {
+                                'north': max(lats),
+                                'south': min(lats),
+                                'east': max(lons),
+                                'west': min(lons)
+                            }
+                            
+                            # Generate smooth raster with global colormap function
+                            raster_overlay = generate_smooth_raster_overlay(
+                                geojson_data, 
+                                bounds, 
+                                raster_size=(512, 512), 
+                                global_colormap_func=lambda value: get_global_unified_color(value, method)
+                            )
+                            
+                            if raster_overlay:
+                                # Add raster overlay to map
+                                folium.raster_layers.ImageOverlay(
+                                    image=f"data:image/png;base64,{raster_overlay['image_base64']}",
+                                    bounds=raster_overlay['bounds'],
+                                    opacity=raster_overlay['opacity'],
+                                    name=f"Smooth: {stored_heatmap['heatmap_name']}"
+                                ).add_to(m)
+                                stored_heatmap_count += 1
+                                print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                            else:
+                                print(f"  Failed to generate smooth raster, falling back to triangle mesh")
+                                # Fallback to triangle mesh
+                                folium.GeoJson(
+                                    geojson_data,
+                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                    style_function=lambda feature, method=method: {
+                                        'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                        'color': 'none',
+                                        'weight': 0,
+                                        'fillOpacity': 0.7
+                                    },
+                                    tooltip=folium.GeoJsonTooltip(
+                                        fields=['yield'],
+                                        aliases=['Value:'],
+                                        localize=True
+                                    )
+                                ).add_to(m)
+                                stored_heatmap_count += 1
+                        else:
+                            print(f"  No valid coordinates found for smooth raster, using triangle mesh")
+                            # Fallback to triangle mesh
+                            folium.GeoJson(
+                                geojson_data,
+                                name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                style_function=lambda feature, method=method: {
+                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                    'color': 'none',
+                                    'weight': 0,
+                                    'fillOpacity': 0.7
+                                },
+                                tooltip=folium.GeoJsonTooltip(
+                                    fields=['yield'],
+                                    aliases=['Value:'],
+                                    localize=True
+                                )
+                            ).add_to(m)
+                            stored_heatmap_count += 1
+                    else:
+                        # Default: Triangle Mesh (Scientific) visualization
+                        folium.GeoJson(
+                            geojson_data,
+                            name=f"Stored: {stored_heatmap['heatmap_name']}",
+                            style_function=lambda feature, method=method: {
+                                'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                'color': 'none',
+                                'weight': 0,
+                                'fillOpacity': 0.7
+                            },
+                            tooltip=folium.GeoJsonTooltip(
+                                fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
+                                aliases=['Value:'],
+                                localize=True
+                            )
+                        ).add_to(m)
+                        stored_heatmap_count += 1
 
                 elif heatmap_data and len(heatmap_data) > 0:
                     print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")

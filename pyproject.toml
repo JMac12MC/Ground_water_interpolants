@@ -21,4 +21,7 @@ dependencies = [
     "shapely>=2.1.0",
     "psycopg2-binary>=2.9.10",
     "sqlalchemy>=2.0.41",
+    "rasterio>=1.4.3",
+    "rio-cogeo>=5.4.2",
+    "pillow>=11.2.1",
 ]

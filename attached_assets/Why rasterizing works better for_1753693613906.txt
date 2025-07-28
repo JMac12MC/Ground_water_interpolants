@@ -1,0 +1,18 @@
+🔵 Why rasterizing works better for smooth heatmaps:
+Your current mesh: shows jagged triangle edges (clearly visible in the image — angular steps and banding).
+
+Raster grid: samples values at regular pixel centers (e.g. 512×512 or 1024×1024 grid), then uses interpolation (bilinear or cubic) to make smooth transitions.
+
+Rendered with GPU shaders or raster tiles, this gives a continuous “liquid-like” look — just like Windy.com.
+
+
+🔧 What to do (in short):
+Interpolate your triangle mesh into a regular grid (griddata, pykrige, RBF, etc.).
+
+Save it as a raster (GeoTIFF or PNG).
+
+Generate raster tiles using gdal2tiles.py or rio cogeo.
+
+Use deck.gl TileLayer + BitmapLayer, or MapLibre GL JS to load tiles.
+
+Apply bilinear or bicubic interpolation when rendering to make it smooth.

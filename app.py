@@ -617,86 +617,50 @@ with main_col1:
             else:
                 return '#00FF00'    # Green for good
         else:
-            # Use percentile-based color mapping for better data distribution
-            # Extract percentiles from stored metadata if available
-            if stored_colormap_metadata and 'percentiles' in stored_colormap_metadata:
-                percentiles = stored_colormap_metadata['percentiles']
-                if percentiles:
-                    p25 = percentiles.get('25th', global_min_value)
-                    p50 = percentiles.get('50th', (global_min_value + global_max_value) / 2)
-                    p75 = percentiles.get('75th', global_max_value)
-                    
-                    # ENHANCED 40-BAND FULL-SPECTRUM COLOR MAPPING
-                    # Use simple linear distribution to ensure FULL color spectrum utilization
-                    if global_max_value > global_min_value:
-                        normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
-                    else:
-                        normalized_value = 0.5
-                    normalized_value = max(0.0, min(1.0, normalized_value))
-                    
-                    # 40-band ultra-smooth full-spectrum color palette - guaranteed to use entire range
-                    full_spectrum_colors = [
-                        # Deep blues (0-10%)
-                        '#000033', '#000044', '#000055', '#000066',
-                        # Medium blues (10-20%)  
-                        '#000077', '#000088', '#000099', '#0000AA',
-                        # Bright blues (20-30%)
-                        '#0000BB', '#0000CC', '#0000DD', '#0000FF',
-                        # Blue transitions (30-40%)
-                        '#0022FF', '#0044FF', '#0066FF', '#0088FF',
-                        # Sky blues (40-50%)
-                        '#00AAFF', '#00CCFF', '#00EEFF', '#00FFFF',
-                        # Cyan-turquoise (50-60%)
-                        '#00FFEE', '#00FFDD', '#00FFCC', '#00FFBB',
-                        # Turquoise-green (60-70%)
-                        '#00FFAA', '#00FF99', '#00FF88', '#00FF77',
-                        # Green spectrum (70-75%)
-                        '#00FF66', '#00FF44',
-                        # Yellow-green transition (75-80%)
-                        '#22FF22', '#44FF00',
-                        # Lime-yellow (80-85%)
-                        '#66FF00', '#88FF00', '#AAFF00', '#CCFF00',
-                        # Yellow spectrum (85-90%)
-                        '#EEFF00', '#FFFF00', '#FFEE00', '#FFDD00',
-                        # Orange transition (90-95%)
-                        '#FFCC00', '#FFBB00', '#FFAA00', '#FF9900',
-                        # Red spectrum (95-100%)
-                        '#FF7700', '#FF5500', '#FF3300', '#FF0000'
-                    ]
-                    
-                    # Calculate exact color index using normalized value
-                    # This ensures the FULL spectrum is used from darkest blue to bright red
-                    color_index = int(normalized_value * (len(full_spectrum_colors) - 1))
-                    color_index = min(color_index, len(full_spectrum_colors) - 1)
-                    
-                    return full_spectrum_colors[color_index]
+            # FORCE USE OF PERCENTILE-BASED RANGE - ignore stored metadata that causes problems
+            # Always use the newly calculated global_min_value and global_max_value which are already percentile-adjusted
+            if global_max_value > global_min_value:
+                normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+            else:
+                normalized_value = 0.5
+            normalized_value = max(0.0, min(1.0, normalized_value))
             
-            # Fallback to linear mapping if no percentile data available
-            if global_max_value <= global_min_value:
-                return '#000080'  # Default blue if no range
-            normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
-            normalized_value = max(0.0, min(1.0, normalized_value))  # Clamp to 0-1
-            
-            # Apply enhanced color gradient with 25 color bands for maximum detail
-            # Extended color palette for superior visual discrimination in data-dense areas
-            colors = [
-                # Deep blues (low values)
-                '#000033', '#000066', '#000099', '#0000CC', '#0000FF',
-                # Blue transitions
-                '#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF',
-                # Cyan to green transitions
-                '#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00',
-                # Green to yellow transitions  
-                '#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00',
-                # Yellow to red transitions (high values)
-                '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000'
+            # 40-band ultra-smooth full-spectrum color palette - guaranteed to use entire range
+            full_spectrum_colors = [
+                # Deep blues (0-10%)
+                '#000033', '#000044', '#000055', '#000066',
+                # Medium blues (10-20%)  
+                '#000077', '#000088', '#000099', '#0000AA',
+                # Bright blues (20-30%)
+                '#0000BB', '#0000CC', '#0000DD', '#0000FF',
+                # Blue transitions (30-40%)
+                '#0022FF', '#0044FF', '#0066FF', '#0088FF',
+                # Sky blues (40-50%)
+                '#00AAFF', '#00CCFF', '#00EEFF', '#00FFFF',
+                # Cyan-turquoise (50-60%)
+                '#00FFEE', '#00FFDD', '#00FFCC', '#00FFBB',
+                # Turquoise-green (60-70%)
+                '#00FFAA', '#00FF99', '#00FF88', '#00FF77',
+                # Green spectrum (70-75%)
+                '#00FF66', '#00FF44',
+                # Yellow-green transition (75-80%)
+                '#22FF22', '#44FF00',
+                # Lime-yellow (80-85%)
+                '#66FF00', '#88FF00', '#AAFF00', '#CCFF00',
+                # Yellow spectrum (85-90%)
+                '#EEFF00', '#FFFF00', '#FFEE00', '#FFDD00',
+                # Orange transition (90-95%)
+                '#FFCC00', '#FFBB00', '#FFAA00', '#FF9900',
+                # Red spectrum (95-100%)
+                '#FF7700', '#FF5500', '#FF3300', '#FF0000'
             ]
             
-            # Map normalized value to color index
-            color_index = int(normalized_value * (len(colors) - 1))
-            color_index = min(color_index, len(colors) - 1)
+            # Calculate exact color index using normalized value
+            # This ensures the FULL spectrum is used from darkest blue to bright red
+            color_index = int(normalized_value * (len(full_spectrum_colors) - 1))
+            color_index = min(color_index, len(full_spectrum_colors) - 1)
             
-            return colors[color_index]
+            return full_spectrum_colors[color_index]
 
     # Stored heatmaps will be displayed after fresh heatmap generation and global range calculation
 

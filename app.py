@@ -703,10 +703,29 @@ with main_col1:
                         break
                 else:
                     normalized_value = 1.0
-            else:
-                # Default linear distribution
+            elif color_dist_method == 'data_density_optimized':
+                # Use percentile-based mapping to spread colors across data distribution
                 if global_max_value > global_min_value:
+                    # Use log transformation for better distribution across range
+                    import math
+                    # Apply square root transformation to spread out lower values
+                    min_val = max(0.1, global_min_value)  # Avoid zero in sqrt
+                    max_val = global_max_value
+                    val = max(min_val, value)
+                    
+                    # Square root normalization spreads out lower values
+                    sqrt_val = math.sqrt(val - min_val + 1)
+                    sqrt_range = math.sqrt(max_val - min_val + 1)
+                    normalized_value = sqrt_val / sqrt_range
+                else:
+                    normalized_value = 0.5
+            else:
+                # Default linear distribution but with enhanced range utilization
+                if global_max_value > global_min_value:
+                    import math
                     normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+                    # Apply curve to better utilize full colormap range
+                    normalized_value = math.pow(normalized_value, 0.6)  # Power curve for better distribution
                 else:
                     normalized_value = 0.5
             

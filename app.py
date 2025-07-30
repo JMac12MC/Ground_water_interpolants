@@ -536,7 +536,8 @@ with main_col1:
         colormap_source = "fallback_defaults"
 
     # DYNAMIC RANGE ADJUSTMENT: Calculate actual data range from currently displayed heatmaps
-    if st.session_state.stored_heatmaps and colormap_source == "needs_regeneration":
+    # FORCE this calculation for ALL stored heatmaps to fix color distribution
+    if st.session_state.stored_heatmaps:
         print("🎨 CALCULATING DYNAMIC RANGE from current stored heatmaps...")
         actual_min = float('inf')
         actual_max = float('-inf')

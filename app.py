@@ -706,26 +706,36 @@ with main_col1:
             elif color_dist_method == 'data_density_optimized':
                 # Use percentile-based mapping to spread colors across data distribution
                 if global_max_value > global_min_value:
-                    # Use log transformation for better distribution across range
                     import math
                     # Apply square root transformation to spread out lower values
-                    min_val = max(0.1, global_min_value)  # Avoid zero in sqrt
+                    min_val = max(0.0, global_min_value)  # Use 0.0 as minimum
                     max_val = global_max_value
-                    val = max(min_val, value)
+                    val = max(min_val, min(max_val, value))  # Clamp value to range
                     
-                    # Square root normalization spreads out lower values
-                    sqrt_val = math.sqrt(val - min_val + 1)
-                    sqrt_range = math.sqrt(max_val - min_val + 1)
-                    normalized_value = sqrt_val / sqrt_range
+                    # Safe square root normalization - avoid negative values
+                    try:
+                        sqrt_input = max(0.0, val - min_val + 1.0)  # Ensure positive input
+                        sqrt_val = math.sqrt(sqrt_input)
+                        sqrt_range = math.sqrt(max_val - min_val + 1.0)
+                        normalized_value = sqrt_val / sqrt_range if sqrt_range > 0 else 0.5
+                    except (ValueError, ZeroDivisionError):
+                        # Fallback to linear normalization if sqrt fails
+                        normalized_value = (val - min_val) / (max_val - min_val) if (max_val - min_val) > 0 else 0.5
                 else:
                     normalized_value = 0.5
             else:
                 # Default linear distribution but with enhanced range utilization
                 if global_max_value > global_min_value:
                     import math
-                    normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
-                    # Apply curve to better utilize full colormap range
-                    normalized_value = math.pow(normalized_value, 0.6)  # Power curve for better distribution
+                    # Clamp value to valid range
+                    val = max(global_min_value, min(global_max_value, value))
+                    normalized_value = (val - global_min_value) / (global_max_value - global_min_value)
+                    # Apply curve to better utilize full colormap range - safe power function
+                    try:
+                        normalized_value = math.pow(max(0.0, min(1.0, normalized_value)), 0.6)
+                    except (ValueError, OverflowError):
+                        # Fallback to simple linear if power fails
+                        pass
                 else:
                     normalized_value = 0.5
             

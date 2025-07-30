@@ -553,10 +553,40 @@ with main_col1:
                         total_values += 1
         
         if actual_min != float('inf') and total_values > 0:
-            global_min_value = actual_min
-            global_max_value = actual_max
-            colormap_source = "dynamic_calculation"
-            print(f"🎨 DYNAMIC RANGE CALCULATED: {global_min_value:.2f} to {global_max_value:.2f} (from {total_values} data points)")
+            # Calculate percentile-based range for better color distribution
+            all_values = []
+            for stored_heatmap in st.session_state.stored_heatmaps:
+                geojson_data = stored_heatmap.get('geojson_data')
+                if geojson_data and geojson_data.get('features'):
+                    for feature in geojson_data['features']:
+                        value = feature['properties'].get('yield', feature['properties'].get('value', 0))
+                        if value > 0:
+                            all_values.append(value)
+            
+            if all_values:
+                all_values.sort()
+                # Use 5th to 95th percentile range to avoid extreme outliers
+                p5_index = int(len(all_values) * 0.05)
+                p95_index = int(len(all_values) * 0.95)
+                global_min_value = all_values[p5_index] if p5_index < len(all_values) else actual_min
+                global_max_value = all_values[p95_index] if p95_index < len(all_values) else actual_max
+                
+                # Ensure we don't lose too much data at the extremes
+                if global_max_value - global_min_value < (actual_max - actual_min) * 0.5:
+                    # If the 5-95% range is too narrow, use 10-90% range
+                    p10_index = int(len(all_values) * 0.10)
+                    p90_index = int(len(all_values) * 0.90)
+                    global_min_value = all_values[p10_index] if p10_index < len(all_values) else actual_min
+                    global_max_value = all_values[p90_index] if p90_index < len(all_values) else actual_max
+                
+                colormap_source = "percentile_based_calculation"
+                print(f"🎨 PERCENTILE-BASED RANGE: {global_min_value:.2f} to {global_max_value:.2f} (5-95% of {total_values} values, excludes outliers)")
+                print(f"🎨 ORIGINAL FULL RANGE WAS: {actual_min:.2f} to {actual_max:.2f} - now using percentile range for better color distribution")
+            else:
+                global_min_value = actual_min
+                global_max_value = actual_max
+                colormap_source = "dynamic_calculation"
+                print(f"🎨 DYNAMIC RANGE CALCULATED: {global_min_value:.2f} to {global_max_value:.2f} (from {total_values} data points)")
     
     print(f"🎨 FINAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (source: {colormap_source})")
 
@@ -1088,38 +1118,8 @@ with main_col1:
                     
                     print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
-                    # Add UNIFIED colormap legend using global min/max values
-                    if st.session_state.interpolation_method == 'indicator_kriging':
-                        # Three-tier indicator kriging legend
-                        colormap = folium.StepColormap(
-                            colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
-                            vmin=0,
-                            vmax=1.0,
-                            index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
-                            caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
-                        )
-                    else:
-                        # Enhanced PERCENTILE-based colormap legend using stored metadata
-                        caption_text = f'Percentile-Based Scale: {global_min_value:.1f} to {global_max_value:.1f} L/s'
-                        if stored_colormap_metadata and 'percentiles' in stored_colormap_metadata:
-                            percentiles = stored_colormap_metadata['percentiles']
-                            if percentiles:
-                                p25 = percentiles.get('25th', 0)
-                                p50 = percentiles.get('50th', 0)
-                                p75 = percentiles.get('75th', 0)
-                                caption_text = f'Data-Density Optimized: {global_min_value:.1f} → {p25:.1f} (25%) → {p50:.1f} (50%) → {p75:.1f} (75%) → {global_max_value:.1f} L/s'
-                        
-                        colormap = folium.LinearColormap(
-                            colors=['#000033', '#000066', '#000099', '#0000CC', '#0000FF',
-                                    '#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF',
-                                    '#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00',
-                                    '#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00',
-                                    '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000'],
-                            vmin=float(global_min_value),
-                            vmax=float(global_max_value),
-                            caption=caption_text
-                        )
-                    colormap.add_to(m)
+                    # Add UNIFIED colormap legend using global min/max values - only once for fresh heatmaps
+                    # Note: For stored heatmaps, the legend will be added separately after all heatmaps are processed
 
                     # Analysis complete
 
@@ -1360,6 +1360,51 @@ with main_col1:
                 print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
 
         print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
+        
+        # Add colormap legend AFTER all heatmaps are processed
+        if stored_heatmap_count > 0:
+            if st.session_state.interpolation_method == 'indicator_kriging':
+                # Three-tier indicator kriging legend
+                colormap = folium.StepColormap(
+                    colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
+                    vmin=0,
+                    vmax=1.0,
+                    index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
+                    caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
+                )
+            else:
+                # Determine appropriate caption based on method
+                if st.session_state.interpolation_method == 'ground_water_level_kriging':
+                    caption_text = f'Ground Water Level: {global_min_value:.1f} to {global_max_value:.1f} meters depth'
+                    unit_label = 'm'
+                elif 'depth' in st.session_state.interpolation_method:
+                    caption_text = f'Depth to Groundwater: {global_min_value:.1f} to {global_max_value:.1f} meters'
+                    unit_label = 'm'
+                else:
+                    caption_text = f'Groundwater Yield: {global_min_value:.1f} to {global_max_value:.1f} L/s'
+                    unit_label = 'L/s'
+                
+                # Enhanced PERCENTILE-based colormap legend using stored metadata
+                if stored_colormap_metadata and 'percentiles' in stored_colormap_metadata:
+                    percentiles = stored_colormap_metadata['percentiles']
+                    if percentiles:
+                        p25 = percentiles.get('25th', 0)
+                        p50 = percentiles.get('50th', 0)
+                        p75 = percentiles.get('75th', 0)
+                        caption_text = f'Data-Density Optimized: {global_min_value:.1f} → {p25:.1f} (25%) → {p50:.1f} (50%) → {p75:.1f} (75%) → {global_max_value:.1f} {unit_label}'
+                
+                colormap = folium.LinearColormap(
+                    colors=['#000033', '#000066', '#000099', '#0000CC', '#0000FF',
+                            '#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF',
+                            '#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00',
+                            '#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00',
+                            '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000'],
+                    vmin=float(global_min_value),
+                    vmax=float(global_max_value),
+                    caption=caption_text
+                )
+            colormap.add_to(m)
+            print(f"Added colormap legend: {caption_text}")
     else:
         print("No stored heatmaps to display - list is empty or cleared")
 

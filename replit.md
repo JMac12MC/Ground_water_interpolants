@@ -121,6 +121,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **July 30, 2025**: MAJOR FEATURE ADDED: Windy.com-style smooth raster visualization with toggle functionality
+  - Implemented `generate_smooth_raster_overlay()` function using cubic interpolation and Gaussian smoothing
+  - Added "Heatmap Display Style" selector: Triangle Mesh (Scientific) vs Smooth Raster (Windy.com Style)
+  - Applied smooth visualization to both stored and fresh heatmaps with consistent global coloring
+  - Enhanced dynamic colormap range calculation to properly utilize full color spectrum (blue to red)
+  - Fixed Ground Water Level colormap range (0-100m) vs Yield range (0-25 L/s) for proper color distribution
+  - Preserved all existing triangular mesh functionality while adding new weather-map style display
+  - Uses 512x512 raster resolution with 70% opacity for smooth blending over base map
+
 - **July 27, 2025**: Extended heatmap grid system from 2x3 to configurable 10x10 grid
   - Added flexible grid generation supporting up to 100 heatmaps (10x10 layout)
   - Maintained precise 19.82km spacing across extended grid with latitude-compensated longitude offsets

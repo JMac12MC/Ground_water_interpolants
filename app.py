@@ -523,14 +523,41 @@ with main_col1:
     if global_min_value == float('inf') or colormap_source == "needs_regeneration":
         if st.session_state.interpolation_method == 'indicator_kriging':
             global_min_value, global_max_value = 0.0, 1.0
+        elif st.session_state.interpolation_method == 'ground_water_level_kriging':
+            global_min_value, global_max_value = 0.0, 100.0  # Ground water level is typically 0-100+ meters
+        elif 'depth' in st.session_state.interpolation_method:
+            global_min_value, global_max_value = 0.0, 50.0   # Depth to groundwater is typically 0-50 meters  
         else:
-            global_min_value, global_max_value = 0.0, 25.0
+            global_min_value, global_max_value = 0.0, 25.0   # Yield data is typically 0-25 L/s
         if colormap_source == "needs_regeneration":
             print(f"🎨 OLD HEATMAPS DETECTED: Using fallback range {global_min_value:.2f} to {global_max_value:.2f} - regenerate for consistency")
         else:
             print(f"🎨 USING FALLBACK COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f}")
         colormap_source = "fallback_defaults"
 
+    # DYNAMIC RANGE ADJUSTMENT: Calculate actual data range from currently displayed heatmaps
+    if st.session_state.stored_heatmaps and colormap_source == "needs_regeneration":
+        print("🎨 CALCULATING DYNAMIC RANGE from current stored heatmaps...")
+        actual_min = float('inf')
+        actual_max = float('-inf')
+        total_values = 0
+        
+        for stored_heatmap in st.session_state.stored_heatmaps:
+            geojson_data = stored_heatmap.get('geojson_data')
+            if geojson_data and geojson_data.get('features'):
+                for feature in geojson_data['features']:
+                    value = feature['properties'].get('yield', feature['properties'].get('value', 0))
+                    if value > 0:  # Only count positive values
+                        actual_min = min(actual_min, value)
+                        actual_max = max(actual_max, value)
+                        total_values += 1
+        
+        if actual_min != float('inf') and total_values > 0:
+            global_min_value = actual_min
+            global_max_value = actual_max
+            colormap_source = "dynamic_calculation"
+            print(f"🎨 DYNAMIC RANGE CALCULATED: {global_min_value:.2f} to {global_max_value:.2f} (from {total_values} data points)")
+    
     print(f"🎨 FINAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (source: {colormap_source})")
 
     # PERCENTILE-BASED COLOR ENHANCEMENT: Now handled during generation for consistency
@@ -1206,6 +1233,13 @@ with main_col1:
                         value = feature['properties'].get('yield', 0)
                         color = get_global_unified_color(value, method)
                         sample_values.append(f"{value:.2f}→{color}")
+                    # Debug the actual value distribution in this heatmap
+                    all_values_in_heatmap = [feature['properties'].get('yield', 0) for feature in geojson_data['features']]
+                    if all_values_in_heatmap:
+                        heatmap_min = min(all_values_in_heatmap)
+                        heatmap_max = max(all_values_in_heatmap)
+                        heatmap_mean = sum(all_values_in_heatmap) / len(all_values_in_heatmap)
+                        print(f"  HEATMAP DATA RANGE for {stored_heatmap['heatmap_name']}: min={heatmap_min:.2f}, max={heatmap_max:.2f}, mean={heatmap_mean:.2f}, global_range=({global_min_value:.2f}-{global_max_value:.2f})")
                     print(f"  COLORMAP SAMPLE for {stored_heatmap['heatmap_name']}: {', '.join(sample_values)}")
 
                     # Choose visualization style based on user selection

@@ -329,6 +329,21 @@ with st.sidebar:
     else:
         st.session_state.heatmap_visualization_mode = 'triangular_mesh'
         st.info("🔺 **Triangular Mesh Mode**: Heatmaps display current triangular interpolation boundaries")
+    
+    # Color Distribution Method
+    st.subheader("Color Distribution Method")
+    color_method = st.selectbox(
+        "How should colors be distributed?",
+        options=[
+            "Linear Distribution (Current)", 
+            "Equal Count Bins (Quantile)", 
+            "Data-Density Optimized"
+        ],
+        index=0,
+        help="Linear: Even spacing across value range. Equal Count: Each color represents same number of data points. Data-Density: Emphasizes areas with most data variation."
+    )
+    st.session_state.color_distribution_method = color_method.split(" (")[0].lower().replace(" ", "_").replace("-", "_")
+    
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
@@ -581,8 +596,40 @@ with main_col1:
                     global_max_value = all_values[p90_index] if p90_index < len(all_values) else actual_max
                 
                 colormap_source = "percentile_based_calculation"
+                
+                # DETAILED DATA DISTRIBUTION ANALYSIS
+                all_values_sorted = sorted(all_values)
+                p10 = all_values_sorted[int(len(all_values_sorted) * 0.10)]
+                p25 = all_values_sorted[int(len(all_values_sorted) * 0.25)]
+                p50 = all_values_sorted[int(len(all_values_sorted) * 0.50)]
+                p75 = all_values_sorted[int(len(all_values_sorted) * 0.75)]
+                p90 = all_values_sorted[int(len(all_values_sorted) * 0.90)]
+                
+                # Count values in different color ranges for transparency
+                blue_range = global_min_value + (global_max_value - global_min_value) * 0.3  # 0-30%
+                green_range = global_min_value + (global_max_value - global_min_value) * 0.7  # 30-70%
+                orange_range = global_min_value + (global_max_value - global_min_value) * 0.9  # 70-90%
+                # 90-100% is red range
+                
+                blue_count = sum(1 for v in all_values if v <= blue_range)
+                green_count = sum(1 for v in all_values if blue_range < v <= green_range)
+                yellow_count = sum(1 for v in all_values if green_range < v <= orange_range)
+                red_count = sum(1 for v in all_values if v > orange_range)
+                
                 print(f"🎨 PERCENTILE-BASED RANGE: {global_min_value:.2f} to {global_max_value:.2f} (5-95% of {total_values} values, excludes outliers)")
                 print(f"🎨 ORIGINAL FULL RANGE WAS: {actual_min:.2f} to {actual_max:.2f} - now using percentile range for better color distribution")
+                print(f"🎨 DATA DISTRIBUTION: p10={p10:.1f}, p25={p25:.1f}, p50={p50:.1f}, p75={p75:.1f}, p90={p90:.1f}")
+                print(f"🎨 COLOR DISTRIBUTION: Blue(0-30%)={blue_count} ({blue_count/total_values*100:.1f}%), Green(30-70%)={green_count} ({green_count/total_values*100:.1f}%), Yellow(70-90%)={yellow_count} ({yellow_count/total_values*100:.1f}%), Red(90%+)={red_count} ({red_count/total_values*100:.1f}%)")
+                
+                # Calculate quantile breakpoints for equal count bins
+                global quantile_breakpoints
+                num_bins = 40  # Match the number of colors
+                quantile_breakpoints = []
+                for i in range(num_bins + 1):
+                    percentile = i / num_bins
+                    idx = int(percentile * (len(all_values_sorted) - 1))
+                    quantile_breakpoints.append(all_values_sorted[idx])
+                print(f"🎨 QUANTILE BREAKPOINTS CALCULATED: {num_bins} equal-count bins ready")
             else:
                 global_min_value = actual_min
                 global_max_value = actual_max
@@ -618,12 +665,24 @@ with main_col1:
             else:
                 return '#00FF00'    # Green for good
         else:
-            # FORCE USE OF PERCENTILE-BASED RANGE - ignore stored metadata that causes problems
-            # Always use the newly calculated global_min_value and global_max_value which are already percentile-adjusted
-            if global_max_value > global_min_value:
-                normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+            # Apply selected color distribution method
+            color_dist_method = getattr(st.session_state, 'color_distribution_method', 'linear_distribution')
+            
+            if color_dist_method == 'equal_count_bins' and 'quantile_breakpoints' in globals():
+                # Use quantile-based color mapping for equal representation
+                for i, breakpoint in enumerate(quantile_breakpoints):
+                    if value <= breakpoint:
+                        normalized_value = i / (len(quantile_breakpoints) - 1)
+                        break
+                else:
+                    normalized_value = 1.0
             else:
-                normalized_value = 0.5
+                # Default linear distribution
+                if global_max_value > global_min_value:
+                    normalized_value = (value - global_min_value) / (global_max_value - global_min_value)
+                else:
+                    normalized_value = 0.5
+            
             normalized_value = max(0.0, min(1.0, normalized_value))
             
             # 40-band ultra-smooth full-spectrum color palette - guaranteed to use entire range

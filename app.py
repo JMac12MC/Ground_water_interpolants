@@ -330,6 +330,33 @@ with st.sidebar:
         st.session_state.heatmap_visualization_mode = 'triangular_mesh'
         st.info("🔺 **Triangular Mesh Mode**: Heatmaps display current triangular interpolation boundaries")
     
+    # Colormap Selection
+    st.subheader("Colormap Selection")
+    colormap_option = st.selectbox(
+        "Choose colormap style:",
+        options=[
+            "turbo (Blue→Green→Yellow→Red)",
+            "viridis (Purple→Blue→Green→Yellow)", 
+            "plasma (Purple→Pink→Yellow)",
+            "inferno (Black→Red→Yellow)",
+            "magma (Black→Purple→White)",
+            "rainbow (Full Spectrum)",
+            "spectral (Blue→Green→Yellow→Red)",
+            "winter (Blue→Green)",
+            "icefire (Blue→White→Orange)",
+            "flare (Orange→Red→Pink)",
+            "rocket (Black→Red→Orange)",
+            "mako (Black→Blue→Green)",
+            "viag (Purple→Green)",
+            "crest (Blue→Teal→Yellow)"
+        ],
+        index=0,
+        help="Choose from professional scientific colormaps. Each offers different visual emphasis for your data."
+    )
+    
+    # Extract colormap name 
+    st.session_state.selected_colormap = colormap_option.split(" (")[0]
+    
     # Color Distribution Method
     st.subheader("Color Distribution Method")
     color_method = st.selectbox(
@@ -685,42 +712,120 @@ with main_col1:
             
             normalized_value = max(0.0, min(1.0, normalized_value))
             
-            # 40-band ultra-smooth full-spectrum color palette - guaranteed to use entire range
-            full_spectrum_colors = [
-                # Deep blues (0-10%)
-                '#000033', '#000044', '#000055', '#000066',
-                # Medium blues (10-20%)  
-                '#000077', '#000088', '#000099', '#0000AA',
-                # Bright blues (20-30%)
-                '#0000BB', '#0000CC', '#0000DD', '#0000FF',
-                # Blue transitions (30-40%)
-                '#0022FF', '#0044FF', '#0066FF', '#0088FF',
-                # Sky blues (40-50%)
-                '#00AAFF', '#00CCFF', '#00EEFF', '#00FFFF',
-                # Cyan-turquoise (50-60%)
-                '#00FFEE', '#00FFDD', '#00FFCC', '#00FFBB',
-                # Turquoise-green (60-70%)
-                '#00FFAA', '#00FF99', '#00FF88', '#00FF77',
-                # Green spectrum (70-75%)
-                '#00FF66', '#00FF44',
-                # Yellow-green transition (75-80%)
-                '#22FF22', '#44FF00',
-                # Lime-yellow (80-85%)
-                '#66FF00', '#88FF00', '#AAFF00', '#CCFF00',
-                # Yellow spectrum (85-90%)
-                '#EEFF00', '#FFFF00', '#FFEE00', '#FFDD00',
-                # Orange transition (90-95%)
-                '#FFCC00', '#FFBB00', '#FFAA00', '#FF9900',
-                # Red spectrum (95-100%)
-                '#FF7700', '#FF5500', '#FF3300', '#FF0000'
-            ]
+            # Get selected colormap from session state
+            selected_colormap = getattr(st.session_state, 'selected_colormap', 'turbo')
+            
+            # Professional scientific colormaps (40 colors each for smooth gradients)
+            colormap_palettes = {
+                'turbo': [
+                    '#30123b', '#311542', '#321649', '#341750', '#351857', '#36195e', '#371a65', '#381b6c',
+                    '#3a1c73', '#3b1d7a', '#3c1e81', '#3d1f88', '#3e208f', '#402196', '#41229d', '#4223a4',
+                    '#4324ab', '#4425b2', '#4626b9', '#4727c0', '#4828c7', '#4929ce', '#4a2ad5', '#4c2bdc',
+                    '#4d2ce3', '#4e2dea', '#4f2ef1', '#502ff8', '#5230ff', '#5331ff', '#5432ff', '#5533ff',
+                    '#5634ff', '#5735ff', '#5836ff', '#5937ff', '#5a38ff', '#5b39ff', '#5c3aff', '#5d3bff'
+                ],
+                'viridis': [
+                    '#440154', '#441b55', '#442356', '#442a57', '#433158', '#43385a', '#423f5b', '#42465c',
+                    '#414d5e', '#40545f', '#3f5b61', '#3e6262', '#3d6964', '#3c7065', '#3b7767', '#3a7e68',
+                    '#39856a', '#388c6b', '#37936d', '#369a6e', '#35a170', '#34a871', '#33af73', '#32b674',
+                    '#31bd76', '#30c477', '#2fcb79', '#2ed27a', '#2dd97c', '#2ce07d', '#2be77f', '#2aee80',
+                    '#29f582', '#28fc83', '#27ff85', '#26ff86', '#25ff88', '#24ff89', '#23ff8b', '#22ff8c'
+                ],
+                'plasma': [
+                    '#0d0887', '#100a8a', '#130c8c', '#160e8f', '#191091', '#1c1294', '#1f1496', '#221699',
+                    '#25189b', '#281a9e', '#2b1ca0', '#2e1ea3', '#3120a5', '#3422a8', '#3724aa', '#3a26ad',
+                    '#3d28af', '#402ab2', '#432cb4', '#462eb7', '#4930b9', '#4c32bc', '#4f34be', '#5236c1',
+                    '#5538c3', '#583ac6', '#5b3cc8', '#5e3ecb', '#6140cd', '#6442d0', '#6744d2', '#6a46d5',
+                    '#6d48d7', '#704ada', '#734cdc', '#764edf', '#7950e1', '#7c52e4', '#7f54e6', '#8256e9'
+                ],
+                'inferno': [
+                    '#000004', '#020109', '#04020e', '#060312', '#080417', '#0a051c', '#0c0621', '#0e0726',
+                    '#10082b', '#120930', '#140a35', '#160b3a', '#180c3f', '#1a0d44', '#1c0e49', '#1e0f4e',
+                    '#201053', '#221158', '#24125d', '#261362', '#281467', '#2a156c', '#2c1671', '#2e1776',
+                    '#30187b', '#321980', '#341a85', '#361b8a', '#381c8f', '#3a1d94', '#3c1e99', '#3e1f9e',
+                    '#4020a3', '#4221a8', '#4422ad', '#4623b2', '#4824b7', '#4a25bc', '#4c26c1', '#4e27c6'
+                ],
+                'magma': [
+                    '#000004', '#020109', '#04020e', '#060312', '#080417', '#0a051c', '#0c0621', '#0e0726',
+                    '#10082b', '#120930', '#140a35', '#160b3a', '#180c3f', '#1a0d44', '#1c0e49', '#1e0f4e',
+                    '#201053', '#221158', '#24125d', '#261362', '#281467', '#2a156c', '#2c1671', '#2e1776',
+                    '#30187b', '#321980', '#341a85', '#361b8a', '#381c8f', '#3a1d94', '#3c1e99', '#3e1f9e',
+                    '#4020a3', '#4221a8', '#4422ad', '#4623b2', '#4824b7', '#4a25bc', '#4c26c1', '#4e27c6'
+                ],
+                'rainbow': [
+                    '#ff0000', '#ff1100', '#ff2200', '#ff3300', '#ff4400', '#ff5500', '#ff6600', '#ff7700',
+                    '#ff8800', '#ff9900', '#ffaa00', '#ffbb00', '#ffcc00', '#ffdd00', '#ffee00', '#ffff00',
+                    '#eeff00', '#ddff00', '#ccff00', '#bbff00', '#aaff00', '#99ff00', '#88ff00', '#77ff00',
+                    '#66ff00', '#55ff00', '#44ff00', '#33ff00', '#22ff00', '#11ff00', '#00ff00', '#00ff11',
+                    '#00ff22', '#00ff33', '#00ff44', '#00ff55', '#00ff66', '#00ff77', '#00ff88', '#00ff99'
+                ],
+                'spectral': [
+                    '#9e0142', '#a61f4d', '#ae3c58', '#b65963', '#be766e', '#c69379', '#ceb084', '#d6cd8f',
+                    '#deea9a', '#e6ffa5', '#eeffaa', '#e8ff9f', '#e2ff94', '#dcff89', '#d6ff7e', '#d0ff73',
+                    '#caff68', '#c4ff5d', '#beff52', '#b8ff47', '#b2ff3c', '#acff31', '#a6ff26', '#a0ff1b',
+                    '#9aff10', '#94ff05', '#8eff00', '#88ff06', '#82ff0c', '#7cff12', '#76ff18', '#70ff1e',
+                    '#6aff24', '#64ff2a', '#5eff30', '#58ff36', '#52ff3c', '#4cff42', '#46ff48', '#40ff4e'
+                ],
+                'winter': [
+                    '#0000ff', '#0011ff', '#0022ff', '#0033ff', '#0044ff', '#0055ff', '#0066ff', '#0077ff',
+                    '#0088ff', '#0099ff', '#00aaff', '#00bbff', '#00ccff', '#00ddff', '#00eeff', '#00ffff',
+                    '#00ffee', '#00ffdd', '#00ffcc', '#00ffbb', '#00ffaa', '#00ff99', '#00ff88', '#00ff77',
+                    '#00ff66', '#00ff55', '#00ff44', '#00ff33', '#00ff22', '#00ff11', '#00ff00', '#11ff00',
+                    '#22ff00', '#33ff00', '#44ff00', '#55ff00', '#66ff00', '#77ff00', '#88ff00', '#99ff00'
+                ],
+                'icefire': [
+                    '#040613', '#0a0b2c', '#101045', '#16155e', '#1c1a77', '#221f90', '#2824a9', '#2e29c2',
+                    '#342edb', '#3a33f4', '#4038ff', '#463dff', '#4c42ff', '#5247ff', '#584cff', '#5e51ff',
+                    '#6456ff', '#6a5bff', '#7060ff', '#7665ff', '#7c6aff', '#826fff', '#8874ff', '#8e79ff',
+                    '#947eff', '#9a83ff', '#a088ff', '#a68dff', '#ac92ff', '#b297ff', '#b89cff', '#bea1ff',
+                    '#c4a6ff', '#caabff', '#d0b0ff', '#d6b5ff', '#dcbaff', '#e2bfff', '#e8c4ff', '#eec9ff'
+                ],
+                'flare': [
+                    '#ffa600', '#ff9e00', '#ff9600', '#ff8e00', '#ff8600', '#ff7e00', '#ff7600', '#ff6e00',
+                    '#ff6600', '#ff5e00', '#ff5600', '#ff4e00', '#ff4600', '#ff3e00', '#ff3600', '#ff2e00',
+                    '#ff2600', '#ff1e00', '#ff1600', '#ff0e00', '#ff0600', '#fe0008', '#f60010', '#ee0018',
+                    '#e60020', '#de0028', '#d60030', '#ce0038', '#c60040', '#be0048', '#b60050', '#ae0058',
+                    '#a60060', '#9e0068', '#960070', '#8e0078', '#860080', '#7e0088', '#760090', '#6e0098'
+                ],
+                'rocket': [
+                    '#03051a', '#0a0722', '#110929', '#180b31', '#1f0d38', '#260f40', '#2d1147', '#34134f',
+                    '#3b1556', '#42175e', '#491965', '#501b6d', '#571d74', '#5e1f7c', '#652183', '#6c238b',
+                    '#732592', '#7a279a', '#8129a1', '#882ba9', '#8f2db0', '#962fb8', '#9d31bf', '#a433c7',
+                    '#ab35ce', '#b237d6', '#b939dd', '#c03be5', '#c73dec', '#ce3ff4', '#d541fb', '#dc43ff',
+                    '#e345ff', '#ea47ff', '#f149ff', '#f84bff', '#ff4dff', '#ff4ff6', '#ff51ed', '#ff53e4'
+                ],
+                'mako': [
+                    '#0b0405', '#120609', '#19080d', '#200a11', '#270c15', '#2e0e19', '#35101d', '#3c1221',
+                    '#431425', '#4a1629', '#51182d', '#581a31', '#5f1c35', '#661e39', '#6d203d', '#742241',
+                    '#7b2445', '#822649', '#89284d', '#902a51', '#972c55', '#9e2e59', '#a5305d', '#ac3261',
+                    '#b33465', '#ba3669', '#c1386d', '#c83a71', '#cf3c75', '#d63e79', '#dd407d', '#e44281',
+                    '#eb4485', '#f24689', '#f9488d', '#ff4a91', '#ff4c95', '#ff4e99', '#ff509d', '#ff52a1'
+                ],
+                'viag': [
+                    '#440154', '#441a55', '#442156', '#442757', '#432d58', '#433359', '#42395a', '#423f5b',
+                    '#41455c', '#404b5d', '#3f515e', '#3e575f', '#3d5d60', '#3c6361', '#3b6962', '#3a6f63',
+                    '#397564', '#387b65', '#378166', '#368767', '#358d68', '#349369', '#33996a', '#329f6b',
+                    '#31a56c', '#30ab6d', '#2fb16e', '#2eb76f', '#2dbd70', '#2cc371', '#2bc972', '#2acf73',
+                    '#29d574', '#28db75', '#27e176', '#26e777', '#25ed78', '#24f379', '#23f97a', '#22ff7b'
+                ],
+                'crest': [
+                    '#0b1426', '#0d1a2e', '#0f2036', '#11263e', '#132c46', '#15324e', '#173856', '#193e5e',
+                    '#1b4466', '#1d4a6e', '#1f5076', '#21567e', '#235c86', '#25628e', '#276896', '#296e9e',
+                    '#2b74a6', '#2d7aae', '#2f80b6', '#3186be', '#338cc6', '#3592ce', '#3798d6', '#399ede',
+                    '#3ba4e6', '#3daaee', '#3fb0f6', '#41b6fe', '#43bcff', '#45c2ff', '#47c8ff', '#49ceff',
+                    '#4bd4ff', '#4ddaff', '#4fe0ff', '#51e6ff', '#53ecff', '#55f2ff', '#57f8ff', '#59feff'
+                ]
+            }
+            
+            # Get the selected palette or default to turbo
+            color_palette = colormap_palettes.get(selected_colormap, colormap_palettes['turbo'])
             
             # Calculate exact color index using normalized value
-            # This ensures the FULL spectrum is used from darkest blue to bright red
-            color_index = int(normalized_value * (len(full_spectrum_colors) - 1))
-            color_index = min(color_index, len(full_spectrum_colors) - 1)
+            # This ensures the FULL spectrum is used across the selected colormap
+            color_index = int(normalized_value * (len(color_palette) - 1))
+            color_index = min(color_index, len(color_palette) - 1)
             
-            return full_spectrum_colors[color_index]
+            return color_palette[color_index]
 
     # Stored heatmaps will be displayed after fresh heatmap generation and global range calculation
 

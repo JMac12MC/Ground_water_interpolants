@@ -2427,7 +2427,7 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
-def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None):
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7):
     """
     Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
     
@@ -2441,6 +2441,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         (width, height) of output raster in pixels
     global_colormap_func : function
         Function to map values to colors consistently across all heatmaps
+    opacity : float
+        Transparency level (0.0 to 1.0) matching triangle mesh fillOpacity
         
     Returns:
     --------
@@ -2532,7 +2534,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                             r = int(color_hex[0:2], 16)
                             g = int(color_hex[2:4], 16)
                             b = int(color_hex[4:6], 16)
-                            rgba_image[i, j] = [r, g, b, 180]  # 70% opacity for smooth blending
+                            rgba_image[i, j] = [r, g, b, int(opacity * 255)]  # Match triangle mesh opacity
                         else:
                             rgba_image[i, j] = [0, 0, 0, 0]  # Transparent for invalid colors
                     else:
@@ -2554,7 +2556,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 
                 # Set transparency for NaN values
                 rgba_image[~valid_mask, 3] = 0
-                rgba_image[valid_mask, 3] = 180  # 70% opacity
+                rgba_image[valid_mask, 3] = int(opacity * 255)  # Match triangle mesh opacity
             else:
                 rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
         
@@ -2574,7 +2576,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         return {
             'image_base64': img_base64,
             'bounds': [[south, west], [north, east]],
-            'opacity': 0.7
+            'opacity': opacity
         }
         
     except Exception as e:

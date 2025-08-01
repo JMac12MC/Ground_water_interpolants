@@ -1193,12 +1193,13 @@ with main_col1:
                                 'west': min(lons)
                             }
                             
-                            # Generate smooth raster with global colormap function
+                            # Generate smooth raster with global colormap function and same opacity as triangle mesh
                             raster_overlay = generate_smooth_raster_overlay(
                                 geojson_data, 
                                 bounds, 
                                 raster_size=(512, 512), 
-                                global_colormap_func=lambda value: get_global_unified_color(value, st.session_state.interpolation_method)
+                                global_colormap_func=lambda value: get_global_unified_color(value, st.session_state.interpolation_method),
+                                opacity=0.7  # Match triangle mesh fillOpacity
                             )
                             
                             if raster_overlay:
@@ -1422,12 +1423,13 @@ with main_col1:
                                 'west': min(lons)
                             }
                             
-                            # Generate smooth raster with global colormap function
+                            # Generate smooth raster with global colormap function and same opacity as triangle mesh
                             raster_overlay = generate_smooth_raster_overlay(
                                 geojson_data, 
                                 bounds, 
                                 raster_size=(512, 512), 
-                                global_colormap_func=lambda value: get_global_unified_color(value, method)
+                                global_colormap_func=lambda value: get_global_unified_color(value, method),
+                                opacity=0.7  # Match triangle mesh fillOpacity
                             )
                             
                             if raster_overlay:

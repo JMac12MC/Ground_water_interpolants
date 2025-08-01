@@ -2515,56 +2515,66 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
                 zi[nan_mask] = zi_nearest[nan_mask]
         
-        # Apply boundary clipping mask before smoothing
-        # Create a mask for areas that should be excluded (same logic as triangular mesh)
+        # Apply fast boundary clipping using rasterization (much faster than point-by-point)
         boundary_mask = np.ones_like(zi, dtype=bool)
         
-        # Apply Banks Peninsula exclusion if coordinates are available
+        # Fast Banks Peninsula exclusion using rasterization
         try:
             import streamlit as st
             if hasattr(st.session_state, 'banks_peninsula_coords') and st.session_state.banks_peninsula_coords:
-                from shapely.geometry import Point, Polygon
+                from rasterio.features import rasterize
+                from shapely.geometry import Polygon
                 import geopandas as gpd
+                
                 banks_polygon = Polygon(st.session_state.banks_peninsula_coords)
                 
-                # Vectorized approach: create points from grid coordinates
-                grid_points = [Point(x, y) for x, y in zip(xi.ravel(), yi.ravel())]
-                points_gdf = gpd.GeoSeries(grid_points)
+                # Create transform for rasterization
+                transform = rasterio.transform.from_bounds(
+                    bounds['west'], bounds['south'], bounds['east'], bounds['north'], 
+                    width, height
+                )
                 
-                # Check which points are inside Banks Peninsula
-                inside_banks = points_gdf.within(banks_polygon).values.reshape(height, width)
-                boundary_mask[inside_banks] = False
-                print(f"Applied Banks Peninsula exclusion to smooth raster: {np.sum(inside_banks)} pixels excluded")
+                # Rasterize Banks Peninsula (much faster than point checking)
+                banks_mask = rasterize(
+                    [banks_polygon], 
+                    out_shape=(height, width),
+                    transform=transform,
+                    fill=0,
+                    default_value=1
+                ).astype(bool)
+                
+                # Exclude Banks Peninsula areas
+                boundary_mask[banks_mask] = False
+                print(f"Applied Banks Peninsula exclusion to smooth raster: {np.sum(banks_mask)} pixels excluded (fast rasterization)")
         except Exception as e:
             print(f"Banks Peninsula clipping not applied to smooth raster: {e}")
         
-        # Apply soil polygon clipping if available
+        # Fast soil polygon clipping using rasterization
         try:
             if hasattr(st.session_state, 'soil_polygons') and not st.session_state.soil_polygons.empty:
-                import geopandas as gpd
+                from rasterio.features import rasterize
                 
-                # Convert soil polygons to a unified boundary
-                soil_union = st.session_state.soil_polygons.unary_union
+                # Get all soil polygon geometries
+                soil_geometries = st.session_state.soil_polygons.geometry.tolist()
                 
-                # Only check points not already excluded by Banks Peninsula
-                remaining_mask = boundary_mask.copy()
-                remaining_indices = np.where(remaining_mask)
+                # Create transform for rasterization
+                transform = rasterio.transform.from_bounds(
+                    bounds['west'], bounds['south'], bounds['east'], bounds['north'], 
+                    width, height
+                )
                 
-                if len(remaining_indices[0]) > 0:
-                    # Create points only for remaining grid cells
-                    remaining_points = [Point(xi[i, j], yi[i, j]) for i, j in zip(remaining_indices[0], remaining_indices[1])]
-                    points_gdf = gpd.GeoSeries(remaining_points)
-                    
-                    # Check which points are outside soil boundaries
-                    outside_soil = ~(points_gdf.within(soil_union) | points_gdf.touches(soil_union))
-                    
-                    # Apply exclusion to boundary mask
-                    for idx, outside in enumerate(outside_soil):
-                        if outside:
-                            i, j = remaining_indices[0][idx], remaining_indices[1][idx]
-                            boundary_mask[i, j] = False
-                    
-                    print(f"Applied soil polygon clipping to smooth raster: {np.sum(outside_soil)} additional pixels excluded")
+                # Rasterize soil polygons (much faster than point checking)
+                soil_mask = rasterize(
+                    soil_geometries, 
+                    out_shape=(height, width),
+                    transform=transform,
+                    fill=0,
+                    default_value=1
+                ).astype(bool)
+                
+                # Exclude areas outside soil polygons
+                boundary_mask[~soil_mask] = False
+                print(f"Applied soil polygon clipping to smooth raster: {np.sum(~soil_mask)} pixels excluded (fast rasterization)")
         except Exception as e:
             print(f"Soil polygon clipping not applied to smooth raster: {e}")
         

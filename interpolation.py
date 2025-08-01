@@ -2515,71 +2515,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
                 zi[nan_mask] = zi_nearest[nan_mask]
         
-        # Apply fast boundary clipping using rasterization (much faster than point-by-point)
-        boundary_mask = np.ones_like(zi, dtype=bool)
-        
-        # Fast Banks Peninsula exclusion using rasterization
-        try:
-            import streamlit as st
-            if hasattr(st.session_state, 'banks_peninsula_coords') and st.session_state.banks_peninsula_coords:
-                from rasterio.features import rasterize
-                from shapely.geometry import Polygon
-                import geopandas as gpd
-                
-                banks_polygon = Polygon(st.session_state.banks_peninsula_coords)
-                
-                # Create transform for rasterization
-                transform = rasterio.transform.from_bounds(
-                    bounds['west'], bounds['south'], bounds['east'], bounds['north'], 
-                    width, height
-                )
-                
-                # Rasterize Banks Peninsula (much faster than point checking)
-                banks_mask = rasterize(
-                    [banks_polygon], 
-                    out_shape=(height, width),
-                    transform=transform,
-                    fill=0,
-                    default_value=1
-                ).astype(bool)
-                
-                # Exclude Banks Peninsula areas
-                boundary_mask[banks_mask] = False
-                print(f"Applied Banks Peninsula exclusion to smooth raster: {np.sum(banks_mask)} pixels excluded (fast rasterization)")
-        except Exception as e:
-            print(f"Banks Peninsula clipping not applied to smooth raster: {e}")
-        
-        # Fast soil polygon clipping using rasterization
-        try:
-            if hasattr(st.session_state, 'soil_polygons') and not st.session_state.soil_polygons.empty:
-                from rasterio.features import rasterize
-                
-                # Get all soil polygon geometries
-                soil_geometries = st.session_state.soil_polygons.geometry.tolist()
-                
-                # Create transform for rasterization
-                transform = rasterio.transform.from_bounds(
-                    bounds['west'], bounds['south'], bounds['east'], bounds['north'], 
-                    width, height
-                )
-                
-                # Rasterize soil polygons (much faster than point checking)
-                soil_mask = rasterize(
-                    soil_geometries, 
-                    out_shape=(height, width),
-                    transform=transform,
-                    fill=0,
-                    default_value=1
-                ).astype(bool)
-                
-                # Exclude areas outside soil polygons
-                boundary_mask[~soil_mask] = False
-                print(f"Applied soil polygon clipping to smooth raster: {np.sum(~soil_mask)} pixels excluded (fast rasterization)")
-        except Exception as e:
-            print(f"Soil polygon clipping not applied to smooth raster: {e}")
-        
-        # Apply boundary mask to remove areas outside valid boundaries
-        zi[~boundary_mask] = np.nan
+        # Apply natural boundary clipping - keep the natural interpolation boundaries 
+        # No artificial rectangular clipping, let interpolation naturally fade to NaN at edges
+        print(f"Smooth raster using natural interpolation boundaries (no artificial clipping)")
         
         # Apply Gaussian smoothing for even smoother appearance
         from scipy.ndimage import gaussian_filter

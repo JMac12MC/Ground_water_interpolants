@@ -371,6 +371,18 @@ with st.sidebar:
     )
     st.session_state.color_distribution_method = color_method.split(" (")[0].lower().replace(" ", "_").replace("-", "_")
     
+    # Transparency Control
+    st.subheader("Transparency Settings")
+    opacity = st.slider(
+        "Heatmap Transparency",
+        min_value=0.1,
+        max_value=1.0,
+        value=0.7,
+        step=0.1,
+        help="Adjust how transparent the heatmaps appear over the base map. Lower values = more transparent, higher values = more opaque."
+    )
+    st.session_state.heatmap_opacity = opacity
+    
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     if st.session_state.soil_polygons is not None:
@@ -521,7 +533,7 @@ with main_col1:
                 'fillColor': 'transparent',
                 'color': 'blue',
                 'weight': 1,
-                'fillOpacity': 0.1
+                'fillOpacity': 0.1  # Keep low opacity for polygon outlines
             },
             tooltip=folium.GeoJsonTooltip(
                 fields=['DRAINAGE'] if 'DRAINAGE' in st.session_state.soil_polygons.columns else [],
@@ -1159,7 +1171,7 @@ with main_col1:
                             'fillColor': get_color(yield_value),
                             'color': 'none',
                             'weight': 0,
-                            'fillOpacity': 0.7
+                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                         }
 
                     # Add the GeoJSON with our custom styling
@@ -1193,13 +1205,13 @@ with main_col1:
                                 'west': min(lons)
                             }
                             
-                            # Generate smooth raster with global colormap function and same opacity as triangle mesh
+                            # Generate smooth raster with global colormap function and configurable opacity
                             raster_overlay = generate_smooth_raster_overlay(
                                 geojson_data, 
                                 bounds, 
                                 raster_size=(512, 512), 
                                 global_colormap_func=lambda value: get_global_unified_color(value, st.session_state.interpolation_method),
-                                opacity=0.7  # Match triangle mesh fillOpacity
+                                opacity=st.session_state.get('heatmap_opacity', 0.7)
                             )
                             
                             if raster_overlay:
@@ -1221,7 +1233,7 @@ with main_col1:
                                         'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
                                         'color': 'none',
                                         'weight': 0,
-                                        'fillOpacity': 0.7
+                                        'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                     },
                                     tooltip=folium.GeoJsonTooltip(
                                         fields=[display_field],
@@ -1241,7 +1253,7 @@ with main_col1:
                                     'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
                                     'color': 'none',
                                     'weight': 0,
-                                    'fillOpacity': 0.7
+                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                 },
                                 tooltip=folium.GeoJsonTooltip(
                                     fields=[display_field],
@@ -1260,7 +1272,7 @@ with main_col1:
                                 'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
                                 'color': 'none',
                                 'weight': 0,
-                                'fillOpacity': 0.7
+                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                             },
                             tooltip=folium.GeoJsonTooltip(
                                 fields=[display_field],
@@ -1284,7 +1296,7 @@ with main_col1:
 
                     # Add tooltips to show appropriate values on hover
                     style_function = lambda x: {'fillColor': 'transparent', 'color': 'transparent'}
-                    highlight_function = lambda x: {'fillOpacity': 0.8}
+                    highlight_function = lambda x: {'fillOpacity': min(1.0, st.session_state.get('heatmap_opacity', 0.7) + 0.1)}
 
                     # Determine tooltip label based on visualization type
                     if st.session_state.interpolation_method == 'depth_kriging':
@@ -1423,13 +1435,13 @@ with main_col1:
                                 'west': min(lons)
                             }
                             
-                            # Generate smooth raster with global colormap function and same opacity as triangle mesh
+                            # Generate smooth raster with global colormap function and configurable opacity
                             raster_overlay = generate_smooth_raster_overlay(
                                 geojson_data, 
                                 bounds, 
                                 raster_size=(512, 512), 
                                 global_colormap_func=lambda value: get_global_unified_color(value, method),
-                                opacity=0.7  # Match triangle mesh fillOpacity
+                                opacity=st.session_state.get('heatmap_opacity', 0.7)
                             )
                             
                             if raster_overlay:
@@ -1452,7 +1464,7 @@ with main_col1:
                                         'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
                                         'color': 'none',
                                         'weight': 0,
-                                        'fillOpacity': 0.7
+                                        'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                     },
                                     tooltip=folium.GeoJsonTooltip(
                                         fields=['yield'],
@@ -1471,7 +1483,7 @@ with main_col1:
                                     'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
                                     'color': 'none',
                                     'weight': 0,
-                                    'fillOpacity': 0.7
+                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                 },
                                 tooltip=folium.GeoJsonTooltip(
                                     fields=['yield'],
@@ -1489,7 +1501,7 @@ with main_col1:
                                 'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
                                 'color': 'none',
                                 'weight': 0,
-                                'fillOpacity': 0.7
+                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                             },
                             tooltip=folium.GeoJsonTooltip(
                                 fields=['yield'],  # Use 'yield' since that's what's reliably in stored data

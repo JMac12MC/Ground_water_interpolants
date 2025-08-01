@@ -2515,9 +2515,68 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
                 zi[nan_mask] = zi_nearest[nan_mask]
         
+        # Apply boundary clipping mask before smoothing
+        # Create a mask for areas that should be excluded (same logic as triangular mesh)
+        boundary_mask = np.ones_like(zi, dtype=bool)
+        
+        # Apply Banks Peninsula exclusion if coordinates are available
+        try:
+            import streamlit as st
+            if hasattr(st.session_state, 'banks_peninsula_coords') and st.session_state.banks_peninsula_coords:
+                from shapely.geometry import Point, Polygon
+                import geopandas as gpd
+                banks_polygon = Polygon(st.session_state.banks_peninsula_coords)
+                
+                # Vectorized approach: create points from grid coordinates
+                grid_points = [Point(x, y) for x, y in zip(xi.ravel(), yi.ravel())]
+                points_gdf = gpd.GeoSeries(grid_points)
+                
+                # Check which points are inside Banks Peninsula
+                inside_banks = points_gdf.within(banks_polygon).values.reshape(height, width)
+                boundary_mask[inside_banks] = False
+                print(f"Applied Banks Peninsula exclusion to smooth raster: {np.sum(inside_banks)} pixels excluded")
+        except Exception as e:
+            print(f"Banks Peninsula clipping not applied to smooth raster: {e}")
+        
+        # Apply soil polygon clipping if available
+        try:
+            if hasattr(st.session_state, 'soil_polygons') and not st.session_state.soil_polygons.empty:
+                import geopandas as gpd
+                
+                # Convert soil polygons to a unified boundary
+                soil_union = st.session_state.soil_polygons.unary_union
+                
+                # Only check points not already excluded by Banks Peninsula
+                remaining_mask = boundary_mask.copy()
+                remaining_indices = np.where(remaining_mask)
+                
+                if len(remaining_indices[0]) > 0:
+                    # Create points only for remaining grid cells
+                    remaining_points = [Point(xi[i, j], yi[i, j]) for i, j in zip(remaining_indices[0], remaining_indices[1])]
+                    points_gdf = gpd.GeoSeries(remaining_points)
+                    
+                    # Check which points are outside soil boundaries
+                    outside_soil = ~(points_gdf.within(soil_union) | points_gdf.touches(soil_union))
+                    
+                    # Apply exclusion to boundary mask
+                    for idx, outside in enumerate(outside_soil):
+                        if outside:
+                            i, j = remaining_indices[0][idx], remaining_indices[1][idx]
+                            boundary_mask[i, j] = False
+                    
+                    print(f"Applied soil polygon clipping to smooth raster: {np.sum(outside_soil)} additional pixels excluded")
+        except Exception as e:
+            print(f"Soil polygon clipping not applied to smooth raster: {e}")
+        
+        # Apply boundary mask to remove areas outside valid boundaries
+        zi[~boundary_mask] = np.nan
+        
         # Apply Gaussian smoothing for even smoother appearance
         from scipy.ndimage import gaussian_filter
         zi_smooth = gaussian_filter(zi, sigma=1.0, mode='nearest')
+        
+        # Reapply boundary mask after smoothing to ensure clean boundaries
+        zi_smooth[~boundary_mask] = np.nan
         
         # Convert values to colors using global colormap function
         if global_colormap_func:

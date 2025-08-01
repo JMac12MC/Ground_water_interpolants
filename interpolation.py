@@ -2523,9 +2523,6 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         from scipy.ndimage import gaussian_filter
         zi_smooth = gaussian_filter(zi, sigma=1.0, mode='nearest')
         
-        # Reapply boundary mask after smoothing to ensure clean boundaries
-        zi_smooth[~boundary_mask] = np.nan
-        
         # Convert values to colors using global colormap function
         if global_colormap_func:
             # Create RGBA image

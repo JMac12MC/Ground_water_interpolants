@@ -1155,9 +1155,9 @@ with main_col1:
                         # Use the gap-adjusted sequential processing for automatic generation with perfect alignment
                         from gap_adjusted_sequential_complete import generate_gap_adjusted_sequential_heatmaps
                         
-                        # Generate heatmaps sequentially with automatic gap adjustment (tolerance: 0.1mm)
+                        # Generate heatmaps sequentially with automatic gap adjustment (tolerance: 1m)
                         st.write("🎯 **Gap-Adjusted Generation**: Automatically measuring and correcting gaps during generation...")
-                        st.write("Target: All adjacent heatmaps within 0.1mm (0.0001km) gap tolerance")
+                        st.write("Target: All adjacent heatmaps within 1 meter (0.001km) gap tolerance")
                         
                         success_count, stored_heatmap_ids, error_messages = generate_gap_adjusted_sequential_heatmaps(
                             wells_data=st.session_state.wells_data,
@@ -1168,7 +1168,7 @@ with main_col1:
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                             banks_peninsula_coords=st.session_state.banks_peninsula_coords,
                             grid_size=st.session_state.get('grid_size', (2, 3)),
-                            max_gap_tolerance=0.0001  # 0.1mm tolerance as requested
+                            max_gap_tolerance=0.001  # 1 meter tolerance as requested
                         )
                         
                         print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")

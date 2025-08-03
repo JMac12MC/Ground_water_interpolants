@@ -14,7 +14,7 @@ from utils import get_distance, is_within_square
 
 def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_radius, interpolation_method, 
                                              polygon_db, soil_polygons=None, banks_peninsula_coords=None, 
-                                             grid_size=None, max_gap_tolerance=0.0001):
+                                             grid_size=None, max_gap_tolerance=0.001):
     """
     Generate heatmaps sequentially with automatic gap adjustment to ensure seamless joining
     
@@ -27,7 +27,7 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
         soil_polygons: Soil polygon data for clipping
         banks_peninsula_coords: Banks Peninsula exclusion coordinates
         grid_size: Grid dimensions (rows, cols)
-        max_gap_tolerance: Maximum allowed gap in km (default 0.0001 km = 10cm)
+        max_gap_tolerance: Maximum allowed gap in km (default 0.001 km = 1 meter)
         
     Returns:
         tuple: (success_count, stored_heatmap_ids, error_messages)

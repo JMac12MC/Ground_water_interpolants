@@ -728,10 +728,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Build the GeoJSON structure
     features = []
 
-    # Create final square clipping geometry (smaller than original search area)
-    # Original search area is radius_km x radius_km square
-    # Final clipping area is 50% of original (10km for 20km original)
-    final_clip_factor = 0.5
+    # Create final square clipping geometry (full radius as intended)
+    # Use the full search radius for proper 20km coverage
+    # No artificial clipping - heatmaps should extend the full requested radius
+    final_clip_factor = 1.0  # Use full radius (20km for 20km search)
     final_radius_km = radius_km * final_clip_factor
     
     # Create final square clipping polygon centered on the original center
@@ -749,7 +749,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     from shapely.geometry import Polygon as ShapelyPolygon
     final_clip_geometry = ShapelyPolygon(final_clip_polygon_coords)
     
-    print(f"Final clipping: {radius_km}km -> {final_radius_km:.1f}km square ({final_clip_factor*100:.0f}% of original)")
+    print(f"Final clipping: {radius_km}km -> {final_radius_km:.1f}km square ({final_clip_factor*100:.0f}% of original - FULL RADIUS)")
     print(f"Final clipping geometry bounds: {final_clip_geometry.bounds}")
 
     # Create polygons only where needed - use a Delaunay triangulation approach

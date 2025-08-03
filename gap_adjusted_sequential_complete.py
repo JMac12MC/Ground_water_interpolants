@@ -114,25 +114,11 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
         
         row_longitude_offsets.append(best_lon_offset)
     
-    # Step 3: Generate all grid positions
-    locations = []
-    for row in range(grid_rows):
-        for col in range(grid_cols):
-            lat = clicked_lat - (row * south_offset_degrees)
-            lng = clicked_lng + (col * row_longitude_offsets[row])
-            
-            if grid_rows == 2 and grid_cols == 3:
-                names_2x3 = [
-                    ['original', 'east', 'northeast'],
-                    ['south', 'southeast', 'far_southeast']
-                ]
-                name = names_2x3[row][col]
-            else:
-                name = f"r{row}c{col}"
-                if row == 0 and col == 0:
-                    name = "original"
-            
-            locations.append((name, [lat, lng]))
+    # Step 3: Use map-based positioning for higher accuracy
+    from map_based_positioning import calculate_map_based_grid_positions
+    
+    print(f"🗺️ SWITCHING TO MAP-BASED POSITIONING for higher accuracy...")
+    locations = calculate_map_based_grid_positions([clicked_lat, clicked_lng], (grid_rows, grid_cols))
     
     print(f"📍 GRID LAYOUT: {len(locations)} positions in {grid_rows}x{grid_cols} grid")
     for i, (name, coords) in enumerate(locations):

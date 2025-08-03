@@ -385,6 +385,12 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                 if test_success and test_data:
                     print(f"   ⚠️  USING NON-GAP-ADJUSTED VERSION for {location_name} - position is valid")
                     success, heatmap_data, final_center, iterations = test_success, test_data, test_center, test_iter
+                    print(f"   ✅ FALLBACK SUCCESS: {location_name} will be processed with success={success}")
+                else:
+                    print(f"   ❌ FALLBACK ALSO FAILED: {location_name} cannot be generated at this position")
+                    print(f"   🔍 FALLBACK DETAILS: success={test_success}, data={'exists' if test_data else 'None'}")
+                    # Still continue to ensure all positions are attempted
+                    continue
                 
         except Exception as e:
             import traceback

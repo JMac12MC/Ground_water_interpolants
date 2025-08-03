@@ -130,9 +130,10 @@ def measure_rectangular_edge_gap(bounds1, bounds2, center1, center2):
     
     return gap_km, edge_info
 
-def measure_centroid_to_edge_distances(heatmap_data):
+def measure_centroid_to_edge_distances_from_map(heatmap_data):
     """
-    Measure distances from heatmap centroid to each of the 4 edges
+    Measure actual distances from heatmap centroid to the edges of the built heatmap
+    Uses the actual GeoJSON geometry that was generated and displayed on the map
     """
     center = heatmap_data.get('center', (0, 0))
     if isinstance(center, list):
@@ -144,31 +145,66 @@ def measure_centroid_to_edge_distances(heatmap_data):
     if not geojson_data:
         return None
     
-    # Extract rectangular bounds from GeoJSON
-    bounds_dict = get_heatmap_rectangular_bounds(geojson_data)
-    if not bounds_dict:
+    try:
+        # Parse the GeoJSON if it's a string
+        if isinstance(geojson_data, str):
+            import json
+            geojson_data = json.loads(geojson_data)
+        
+        # Extract ALL coordinate points from the actual heatmap triangular mesh
+        all_coords = []
+        feature_count = 0
+        
+        for feature in geojson_data.get('features', []):
+            if feature.get('geometry', {}).get('type') == 'Polygon':
+                coords = feature['geometry']['coordinates'][0]  # Exterior ring
+                for lon, lat in coords:
+                    if lon != coords[0][0] or lat != coords[0][1]:  # Skip duplicate closing point
+                        all_coords.append((lat, lon))
+                feature_count += 1
+        
+        if not all_coords:
+            return None
+        
+        print(f"  📊 Analyzing {feature_count} triangular features with {len(all_coords)} coordinate points")
+        
+        # Find the actual extreme coordinates from the built heatmap
+        latitudes = [coord[0] for coord in all_coords]
+        longitudes = [coord[1] for coord in all_coords]
+        
+        actual_north = max(latitudes)
+        actual_south = min(latitudes)
+        actual_east = max(longitudes)
+        actual_west = min(longitudes)
+        
+        # Calculate actual distances from centroid to the real heatmap edges
+        distances = {
+            'north': get_distance(center[0], center[1], actual_north, center[1]),
+            'south': get_distance(center[0], center[1], actual_south, center[1]),
+            'east': get_distance(center[0], center[1], center[0], actual_east),
+            'west': get_distance(center[0], center[1], center[0], actual_west)
+        }
+        
+        # Calculate the actual coverage area
+        actual_bounds = {
+            'min_lon': actual_west, 'max_lon': actual_east,
+            'min_lat': actual_south, 'max_lat': actual_north,
+            'width': actual_east - actual_west,
+            'height': actual_north - actual_south
+        }
+        
+        return {
+            'name': name,
+            'center': center,
+            'bounds_dict': actual_bounds,
+            'distances': distances,
+            'feature_count': feature_count,
+            'coordinate_count': len(all_coords)
+        }
+        
+    except Exception as e:
+        print(f"  ❌ Error measuring centroid distances for {name}: {e}")
         return None
-    
-    # Extract bounds: min_lon, min_lat, max_lon, max_lat
-    west = bounds_dict['min_lon']
-    south = bounds_dict['min_lat']
-    east = bounds_dict['max_lon']
-    north = bounds_dict['max_lat']
-    
-    # Calculate distances from centroid to each edge
-    distances = {
-        'north': get_distance(center[0], center[1], north, center[1]),
-        'south': get_distance(center[0], center[1], south, center[1]),
-        'east': get_distance(center[0], center[1], center[0], east),
-        'west': get_distance(center[0], center[1], center[0], west)
-    }
-    
-    return {
-        'name': name,
-        'center': center,
-        'bounds_dict': bounds_dict,
-        'distances': distances
-    }
 
 def analyze_centroid_to_edge_distances(polygon_db):
     """
@@ -211,7 +247,7 @@ def analyze_centroid_to_edge_distances(polygon_db):
                 'created_at': created_at
             }
             
-            edge_distances = measure_centroid_to_edge_distances(heatmap_data)
+            edge_distances = measure_centroid_to_edge_distances_from_map(heatmap_data)
             if edge_distances:
                 centroid_measurements.append(edge_distances)
                 distances = edge_distances['distances']
@@ -220,10 +256,11 @@ def analyze_centroid_to_edge_distances(polygon_db):
                 
                 print(f"🎯 {edge_distances['name']}")
                 print(f"   Center: ({center[0]:.6f}, {center[1]:.6f})")
-                print(f"   Bounds: {bounds['min_lon']:.6f} to {bounds['max_lon']:.6f} (lon)")
-                print(f"           {bounds['min_lat']:.6f} to {bounds['max_lat']:.6f} (lat)")
-                print(f"   Coverage dimensions: {bounds['width']:.6f}° × {bounds['height']:.6f}°")
-                print(f"   Centroid to edges:")
+                print(f"   Built from {edge_distances.get('feature_count', 0)} triangular features, {edge_distances.get('coordinate_count', 0)} coordinates")
+                print(f"   Actual coverage bounds: {bounds['min_lon']:.6f} to {bounds['max_lon']:.6f} (lon)")
+                print(f"                          {bounds['min_lat']:.6f} to {bounds['max_lat']:.6f} (lat)")
+                print(f"   Actual dimensions: {bounds['width']:.6f}° × {bounds['height']:.6f}°")
+                print(f"   📏 CENTROID TO ACTUAL HEATMAP EDGES:")
                 print(f"     🧭 North: {distances['north']:.3f}km | South: {distances['south']:.3f}km")
                 print(f"     🧭 East:  {distances['east']:.3f}km  | West:  {distances['west']:.3f}km")
                 

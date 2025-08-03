@@ -539,9 +539,13 @@ with st.sidebar:
                                 
                                 st.write(f"**🎯 {measurement['name']}**")
                                 st.write(f"  • Center: ({center[0]:.6f}, {center[1]:.6f})")
-                                st.write(f"  • Coverage: {bounds['width']:.6f}° × {bounds['height']:.6f}°")
-                                st.write(f"  • North: {distances['north']:.3f}km | South: {distances['south']:.3f}km")
-                                st.write(f"  • East: {distances['east']:.3f}km | West: {distances['west']:.3f}km")
+                                feature_count = measurement.get('feature_count', 0)
+                                coord_count = measurement.get('coordinate_count', 0)
+                                st.write(f"  • Built from: {feature_count} triangular features, {coord_count} coordinates")
+                                st.write(f"  • Actual coverage: {bounds['width']:.6f}° × {bounds['height']:.6f}°")
+                                st.write(f"  • **📏 CENTROID TO ACTUAL HEATMAP EDGES:**")
+                                st.write(f"    🧭 North: {distances['north']:.3f}km | South: {distances['south']:.3f}km")
+                                st.write(f"    🧭 East: {distances['east']:.3f}km | West: {distances['west']:.3f}km")
                                 st.write(f"  • Average radius: {avg_radius:.3f}km")
                                 st.write(f"  • Symmetry variation: {variation:.3f}km")
                                 

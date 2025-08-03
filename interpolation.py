@@ -840,37 +840,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                             print(f"Triangulation indicator clipping: excluded triangle at ({centroid_lat:.3f}, {centroid_lon:.3f}) with value {avg_yield:.2f}")
 
                     if include_triangle:
-                        # Calculate distance-based weight for seamless blending in overlap zones
-                        centroid_lon = float(np.mean(vertices[:, 0]))
-                        centroid_lat = float(np.mean(vertices[:, 1]))
-                        
-                        # Calculate distance from heatmap center for blending weight
-                        center_lat, center_lon = center_point
-                        distance_from_center = np.sqrt(
-                            ((centroid_lat - center_lat) * 111.0)**2 + 
-                            ((centroid_lon - center_lon) * 111.0 * np.cos(np.radians(center_lat)))**2
-                        )
-                        
-                        # Apply distance-based blending weight for overlap zones
-                        if clipping_radius_km and distance_from_center > (clipping_radius_km * 0.9):  # In outer 10% of clipping area
-                            # Calculate blend factor: 1.0 at center, 0.5 at edge for smooth blending
-                            core_radius = clipping_radius_km * 0.9  # 90% of clipping radius = core area
-                            overlap_distance = distance_from_center - core_radius
-                            max_overlap_distance = clipping_radius_km - core_radius
-                            
-                            if max_overlap_distance > 0:
-                                # Linear fade from 1.0 to 0.5 in overlap zone
-                                blend_weight = 1.0 - 0.5 * (overlap_distance / max_overlap_distance)
-                                blend_weight = max(0.5, min(1.0, blend_weight))  # Clamp between 0.5 and 1.0
-                                
-                                # Apply blend weight to the value for seamless merging
-                                blended_value = avg_yield * blend_weight
-                            else:
-                                blended_value = avg_yield
-                        else:
-                            blended_value = avg_yield
-                        
-                        # Create polygon for this triangle with blended value
+                        # Create polygon for this triangle
                         poly = {
                             "type": "Feature",
                             "geometry": {
@@ -883,11 +853,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                                 ]]
                             },
                             "properties": {
-                                "value": blended_value,
-                                "yield": blended_value,
-                                "original_value": avg_yield,  # Keep original for debugging
-                                "distance_from_center": distance_from_center,
-                                "blend_weight": blend_weight if 'blend_weight' in locals() else 1.0
+                                "value": avg_yield,
+                                "yield": avg_yield
                             }
                         }
                         

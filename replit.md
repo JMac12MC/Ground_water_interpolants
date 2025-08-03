@@ -126,15 +126,6 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **August 03, 2025**: CRITICAL ENHANCEMENT: Seamless heatmap blending system implemented
-  - Extended clipping boundaries from 10km to 11km radius for 1km overlap zones
-  - Added distance-weighted blending in overlap areas: values fade from 100% to 50% intensity
-  - Overlap zones use linear blending weight in outer 10% of clipping area for smooth transitions  
-  - Adjacent heatmaps now merge seamlessly without visible gaps or hard boundaries
-  - Maintains 20km interpolation radius while extending display boundaries for coverage
-  - Each triangle in overlap zones gets blend_weight property for debugging and verification
-  - Enhanced logging shows number of blended features per heatmap for quality assurance
-
 - **July 30, 2025**: MAJOR FEATURE ADDED: Windy.com-style smooth raster visualization with toggle functionality
   - Implemented `generate_smooth_raster_overlay()` function using cubic interpolation and Gaussian smoothing
   - Added "Heatmap Display Style" selector: Triangle Mesh (Scientific) vs Smooth Raster (Windy.com Style)

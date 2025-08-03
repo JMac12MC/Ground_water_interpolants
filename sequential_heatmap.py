@@ -374,9 +374,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             overlap_zone = clipping_radius - 10.0  # 1km overlap for blending
             
             print(f"  🔧 SEAMLESS MODE: {search_radius}km interpolation, {clipping_radius}km clipping")
-            print(f"     Overlap zone: {overlap_zone}km for distance-weighted blending")
+            print(f"     Overlap zone: {overlap_zone}km for seamless blending")
             print(f"     Adjacent heatmaps will overlap by {overlap_zone*2}km total")
-            print(f"     Blend zone: outer 10% of clipping area ({clipping_radius*0.1:.1f}km) fades from 100% to 50% intensity")
             
             # Generate indicator mask with standard radius
             if interpolation_method in methods_requiring_mask:
@@ -410,19 +409,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:
-                # Count blended features for seamless verification
-                blended_features = 0
-                total_features = len(geojson_data.get('features', []))
-                
-                for feature in geojson_data.get('features', []):
-                    props = feature.get('properties', {})
-                    if props.get('blend_weight', 1.0) < 1.0:
-                        blended_features += 1
-                
-                print(f"  ✅ {location_name.upper()}: Generated {total_features} features")
-                if blended_features > 0:
-                    print(f"     🌊 SEAMLESS BLENDING: {blended_features} features in overlap zone ({100*blended_features/total_features:.1f}%)")
-                
+                print(f"  ✅ {location_name.upper()}: Generated {len(geojson_data.get('features', []))} features")
                 generated_heatmaps.append((location_name, center_point, geojson_data, len(filtered_wells)))
                 
                 # Store immediately in database

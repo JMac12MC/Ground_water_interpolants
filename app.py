@@ -1773,6 +1773,12 @@ with main_col1:
 
     # Process clicks from the map with better stability and error handling
     try:
+        print(f"MAP CLICK DEBUG: map_data exists: {map_data is not None}")
+        if map_data:
+            print(f"MAP CLICK DEBUG: map_data keys: {list(map_data.keys()) if map_data else 'None'}")
+            if "last_clicked" in map_data:
+                print(f"MAP CLICK DEBUG: last_clicked value: {map_data['last_clicked']}")
+        
         if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
             # Get the coordinates from the click
             clicked_lat = map_data["last_clicked"]["lat"]

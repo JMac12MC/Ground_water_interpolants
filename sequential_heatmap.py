@@ -23,13 +23,12 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     from utils import is_within_square, get_distance
     import numpy as np
     
-    # Calculate positions for all heatmaps using PERFECT 19.82km spacing
-    # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
-    # This creates overlapping coverage for seamless visual joining
+    # Calculate positions for seamless heatmap alignment
+    # Heatmaps are clipped to 10km boundaries, so centers must be exactly 10km apart for perfect edge alignment
     clicked_lat, clicked_lng = click_point
     
-    # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
-    target_offset_km = 19.82
+    # CRITICAL FIX: Use 10km spacing to match the clipping boundary distance
+    target_offset_km = 10.0  # Matches the 10km clipping boundary for seamless edges
     
     # SURVEY-GRADE GEODETIC CALCULATIONS with adaptive precision targeting
     # Achieves professional-grade accuracy through intelligent convergence algorithms
@@ -191,14 +190,14 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             
             locations.append((name, [lat, lng]))
     
-    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in {grid_rows}x{grid_cols} grid (PERFECT 19.82km spacing)")
+    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in {grid_rows}x{grid_cols} grid (SEAMLESS 10km spacing)")
     for i, (name, coords) in enumerate(locations):
         print(f"  {i+1}. {name.upper()}: ({coords[0]:.6f}, {coords[1]:.6f})")
         
     # Show grid layout summary
     if len(locations) > 6:
         print(f"EXTENDED GRID LAYOUT: {grid_rows} rows × {grid_cols} columns = {len(locations)} total heatmaps")
-        print(f"  Coverage area: {(grid_rows-1)*19.82:.1f}km south × {(grid_cols-1)*19.82:.1f}km east")
+        print(f"  Coverage area: {(grid_rows-1)*10.0:.1f}km south × {(grid_cols-1)*10.0:.1f}km east")
     
     # ULTRA-PRECISE SPACING VERIFICATION - adaptive for any grid size
     print("ULTRA-PRECISE SPACING VERIFICATION:")

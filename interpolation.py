@@ -171,23 +171,26 @@ def calculate_precise_grid_boundaries(center_point, radius_km, grid_position=Non
     center_point : tuple
         (latitude, longitude) of heatmap center
     radius_km : float
-        Radius in km (20km creates 40km x 40km heatmap)
+        Radius in km (but heatmaps are clipped to 10km boundaries)
     grid_position : dict, optional
         Grid positioning info for boundary alignment
         
     Returns:
     --------
     tuple
-        (min_lat, max_lat, min_lon, max_lon) precise boundaries
+        (min_lat, max_lat, min_lon, max_lon) precise boundaries for 10km clipped area
     """
     center_lat, center_lon = center_point
     km_per_degree_lat = 111.0
     km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
     
-    # Calculate precise rectangular boundaries
-    # Each heatmap is exactly 40km x 40km (radius_km * 2)
-    half_size_lat = radius_km / km_per_degree_lat
-    half_size_lon = radius_km / km_per_degree_lon
+    # CRITICAL: For seamless alignment with 10km center spacing, each heatmap extends 5km from center
+    # This ensures adjacent boundaries touch exactly with no gaps or overlaps
+    clipping_radius_km = 5.0
+    
+    # Calculate precise rectangular boundaries for the clipped area
+    half_size_lat = clipping_radius_km / km_per_degree_lat
+    half_size_lon = clipping_radius_km / km_per_degree_lon
     
     min_lat = center_lat - half_size_lat
     max_lat = center_lat + half_size_lat

@@ -37,7 +37,7 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
     print(f"   Gap tolerance: {max_gap_tolerance*1000:.1f} meters")
     print(f"   Target spacing: 19.82 km between centers")
     
-    # Calculate grid positions using existing precise calculations
+    # Use EXACT same ultra-precise coordinate calculation from sequential_heatmap.py
     clicked_lat, clicked_lng = click_point
     
     if grid_size is None:
@@ -45,13 +45,14 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
     else:
         grid_rows, grid_cols = grid_size
     
-    # Use the same ultra-precise geodetic calculations from sequential_heatmap.py
+    print(f"🎯 USING ULTRA-PRECISE GEODETIC SPACING CALCULATION (sequential_heatmap.py method)")
+    
     target_offset_km = 19.82
     MAX_ITERATIONS = 200
-    TOLERANCE_KM = 0.0001
+    TOLERANCE_KM = 0.0001  
     ADAPTIVE_STEP_SIZE = 0.000001
     
-    # Step 1: Ultra-precise latitude offset
+    # Step 1: Ultra-precise latitude offset calculation
     lat_offset_degrees = target_offset_km / 111.0
     best_lat_offset = lat_offset_degrees
     best_lat_error = float('inf')
@@ -79,43 +80,93 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                 lat_offset_degrees += step_size
     
     lat_offset_degrees = best_lat_offset
+    final_lat_distance = get_distance(clicked_lat, clicked_lng, clicked_lat - lat_offset_degrees, clicked_lng)
+    print(f"  Latitude offset: {lat_offset_degrees:.15f}° (achieved: {final_lat_distance:.8f}km)")
+    
+    # Step 2: Ultra-precise top row longitude offset
+    top_lat = clicked_lat
+    east_offset_degrees_top = target_offset_km / (111.32 * abs(np.cos(np.radians(top_lat))))
+    best_top_offset = east_offset_degrees_top
+    best_top_error = float('inf')
+    
+    for i in range(MAX_ITERATIONS):
+        test_lon = clicked_lng + east_offset_degrees_top
+        actual_distance = get_distance(top_lat, clicked_lng, top_lat, test_lon)
+        error = abs(actual_distance - target_offset_km)
+        
+        if error < best_top_error:
+            best_top_offset = east_offset_degrees_top
+            best_top_error = error
+        
+        if error < TOLERANCE_KM:
+            break
+            
+        if error > 0.001:
+            adjustment_factor = target_offset_km / actual_distance
+            east_offset_degrees_top *= adjustment_factor
+        else:
+            step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+            if actual_distance > target_offset_km:
+                east_offset_degrees_top -= step_size
+            else:
+                east_offset_degrees_top += step_size
+    
+    east_offset_degrees_top = best_top_offset
+    final_top_distance = get_distance(top_lat, clicked_lng, top_lat, clicked_lng + east_offset_degrees_top)
+    print(f"  Top row longitude offset: {east_offset_degrees_top:.15f}° (achieved: {final_top_distance:.8f}km)")
+    
+    # Step 3: Ultra-precise bottom row longitude offset 
+    bottom_lat = clicked_lat - lat_offset_degrees
+    east_offset_degrees_bottom = target_offset_km / (111.32 * abs(np.cos(np.radians(bottom_lat))))
+    best_bottom_offset = east_offset_degrees_bottom  
+    best_bottom_error = float('inf')
+    
+    for i in range(MAX_ITERATIONS):
+        test_lon = clicked_lng + east_offset_degrees_bottom
+        actual_distance = get_distance(bottom_lat, clicked_lng, bottom_lat, test_lon)
+        error = abs(actual_distance - target_offset_km)
+        
+        if error < best_bottom_error:
+            best_bottom_offset = east_offset_degrees_bottom
+            best_bottom_error = error
+        
+        if error < TOLERANCE_KM:
+            break
+            
+        if error > 0.001:
+            adjustment_factor = target_offset_km / actual_distance
+            east_offset_degrees_bottom *= adjustment_factor
+        else:
+            step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+            if actual_distance > target_offset_km:
+                east_offset_degrees_bottom -= step_size
+            else:
+                east_offset_degrees_bottom += step_size
+    
+    east_offset_degrees_bottom = best_bottom_offset
+    final_bottom_distance = get_distance(bottom_lat, clicked_lng, bottom_lat, clicked_lng + east_offset_degrees_bottom)
+    print(f"  Bottom row longitude offset: {east_offset_degrees_bottom:.15f}° (achieved: {final_bottom_distance:.8f}km)")
+    
+    # Generate grid locations using ultra-precise offsets
+    locations = []
     south_offset_degrees = lat_offset_degrees
     
-    # Step 2: Row-specific longitude offsets
+    # Calculate longitude offsets for each row with latitude compensation
     row_longitude_offsets = []
     for row in range(grid_rows):
-        current_lat = clicked_lat - (row * south_offset_degrees)
+        row_lat = clicked_lat - (row * south_offset_degrees)
         
-        lon_offset_degrees = target_offset_km / (111.32 * abs(np.cos(np.radians(current_lat))))
-        best_lon_offset = lon_offset_degrees
-        best_lon_error = float('inf')
+        if row == 0:
+            row_lon_offset = east_offset_degrees_top
+        elif row == grid_rows - 1:
+            row_lon_offset = east_offset_degrees_bottom
+        else:
+            interpolation_factor = row / (grid_rows - 1)
+            row_lon_offset = east_offset_degrees_top + interpolation_factor * (east_offset_degrees_bottom - east_offset_degrees_top)
         
-        for i in range(MAX_ITERATIONS):
-            test_lon = clicked_lng + lon_offset_degrees
-            actual_distance = get_distance(current_lat, clicked_lng, current_lat, test_lon)
-            error = abs(actual_distance - target_offset_km)
-            
-            if error < best_lon_error:
-                best_lon_offset = lon_offset_degrees
-                best_lon_error = error
-            
-            if error < TOLERANCE_KM:
-                break
-                
-            if error > 0.001:
-                adjustment_factor = target_offset_km / actual_distance
-                lon_offset_degrees *= adjustment_factor
-            else:
-                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
-                if actual_distance > target_offset_km:
-                    lon_offset_degrees -= step_size
-                else:
-                    lon_offset_degrees += step_size
-        
-        row_longitude_offsets.append(best_lon_offset)
+        row_longitude_offsets.append(row_lon_offset)
     
-    # Step 3: Generate all grid positions
-    locations = []
+    # Generate all grid positions
     for row in range(grid_rows):
         for col in range(grid_cols):
             lat = clicked_lat - (row * south_offset_degrees)
@@ -259,16 +310,7 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                     colormap_metadata, max_gap_tolerance
                 )
                 
-                # If gap adjustment fails, fallback to original position to ensure generation
-                # If gap adjustment fails, fallback to original position to ensure generation
-                if not success:
-                    print(f"   ⚠️ GAP ADJUSTMENT FAILED - Using original position for {location_name}")
-                    success, heatmap_data, final_center, iterations = generate_single_heatmap(
-                        filtered_wells, center_point, location_name, interpolation_method,
-                        search_radius, soil_polygons, banks_peninsula_coords, colormap_metadata
-                    )
-                    if success:
-                        print(f"   ✅ FALLBACK SUCCESSFUL - Generated {location_name} at original position")
+
             
             if success and heatmap_data:
                 print(f"   ✅ {location_name.upper()}: Generated successfully (iterations: {iterations})")

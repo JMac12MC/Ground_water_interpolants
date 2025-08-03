@@ -157,9 +157,19 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                 global_values.extend([0.0, 1.0])
             else:
                 if interpolation_method == 'ground_water_level_kriging':
-                    values = filtered_wells_temp['ground_water_level'].dropna()
-                    if len(values) > 0:
-                        global_values.extend(values.tolist())
+                    # Check for different possible column names
+                    if 'depth_to_groundwater' in filtered_wells_temp.columns:
+                        values = filtered_wells_temp['depth_to_groundwater'].dropna()
+                        if len(values) > 0:
+                            global_values.extend(values.tolist())
+                    elif 'NZTM_NORTH' in filtered_wells_temp.columns and 'NZTM_EAST' in filtered_wells_temp.columns:
+                        # Use depth column for depth kriging if available
+                        if 'depth' in filtered_wells_temp.columns:
+                            values = filtered_wells_temp['depth'].dropna()
+                            if len(values) > 0:
+                                global_values.extend(values.tolist())
+                    else:
+                        print(f"   Warning: No ground water level data found for {interpolation_method}")
                 else:
                     yield_values = filtered_wells_temp['yield_rate'].dropna()
                     if len(yield_values) > 0:
@@ -275,7 +285,11 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                                     lat = sum(coord[1] for coord in coords) / len(coords)
                                     lon = sum(coord[0] for coord in coords) / len(coords)
                                     if interpolation_method == 'ground_water_level_kriging':
-                                        value = feature['properties'].get('ground_water_level', 0)
+                                        # Try different possible property names for ground water level
+                                        value = (feature['properties'].get('ground_water_level', 0) or 
+                                                feature['properties'].get('depth_to_groundwater', 0) or
+                                                feature['properties'].get('depth', 0) or
+                                                feature['properties'].get('value', 0))
                                     else:
                                         value = feature['properties'].get('yield', 0)
                                     heatmap_data_points.append([lat, lon, value])
@@ -307,9 +321,11 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                 print(f"   ❌ {error_msg}")
                 
         except Exception as e:
+            import traceback
             error_msg = f"Exception processing {location_name}: {str(e)}"
             error_messages.append(error_msg)
             print(f"   ❌ {error_msg}")
+            print(f"   🔍 Error details: {traceback.format_exc()}")
             continue
     
     print(f"\n🏁 GAP-ADJUSTED SEQUENTIAL GENERATION COMPLETE:")

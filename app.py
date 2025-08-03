@@ -520,42 +520,25 @@ with st.sidebar:
                             all_radii.append(avg_radius)
                             all_variations.append(variation)
                         
-                        st.write("**📏 Centroid-to-Edge Analysis Summary:**")
-                        st.write(f"• Average heatmap radius: {sum(all_radii)/len(all_radii):.3f} km")
-                        st.write(f"• Radius range: {min(all_radii):.3f} to {max(all_radii):.3f} km")
-                        st.write(f"• Average symmetry variation: {sum(all_variations)/len(all_variations):.3f} km")
+                        st.write("**📏 CENTROID TO EDGE DISTANCES (METERS)**")
                         
-                        well_centered = sum(1 for v in all_variations if v < 0.5)
-                        st.write(f"• Well-centered heatmaps: {well_centered}/{len(all_variations)} ({well_centered/len(all_variations)*100:.1f}%)")
-                        
-                        # Show detailed centroid measurements
-                        with st.expander("📊 Detailed Centroid-to-Edge Distance Measurements"):
-                            for measurement in centroid_results:
-                                distances = measurement['distances']
-                                center = measurement['center']
-                                bounds = measurement['bounds_dict']
-                                avg_radius = sum(distances.values()) / 4
-                                variation = max(distances.values()) - min(distances.values())
-                                
-                                st.write(f"**🎯 {measurement['name']}**")
-                                st.write(f"  • Center: ({center[0]:.6f}, {center[1]:.6f})")
-                                feature_count = measurement.get('feature_count', 0)
-                                coord_count = measurement.get('coordinate_count', 0)
-                                st.write(f"  • Built from: {feature_count} triangular features, {coord_count} coordinates")
-                                st.write(f"  • Actual coverage: {bounds['width']:.6f}° × {bounds['height']:.6f}°")
-                                st.write(f"  • **📏 CENTROID TO ACTUAL HEATMAP EDGES:**")
-                                st.write(f"    🧭 North: {distances['north']:.3f}km | South: {distances['south']:.3f}km")
-                                st.write(f"    🧭 East: {distances['east']:.3f}km | West: {distances['west']:.3f}km")
-                                st.write(f"  • Average radius: {avg_radius:.3f}km")
-                                st.write(f"  • Symmetry variation: {variation:.3f}km")
-                                
-                                if variation < 0.5:
-                                    st.write(f"  • ✅ **WELL-CENTERED** (variation < 0.5km)")
-                                elif variation < 1.0:
-                                    st.write(f"  • ⚠️ **SLIGHTLY OFF-CENTER** (variation < 1.0km)")
-                                else:
-                                    st.write(f"  • ❌ **POORLY CENTERED** (variation ≥ 1.0km)")
-                                st.write("")
+                        # Simple table format showing exactly what the user wants
+                        for measurement in centroid_results:
+                            distances = measurement['distances']
+                            name = measurement['name'].replace('ground_water_level_kriging_', '').replace('-', ' ')
+                            
+                            # Convert to meters and show clearly
+                            north_m = int(distances['north'] * 1000)
+                            south_m = int(distances['south'] * 1000)
+                            east_m = int(distances['east'] * 1000)
+                            west_m = int(distances['west'] * 1000)
+                            
+                            st.write(f"**{name.upper()}:**")
+                            st.write(f"  • North: {north_m:,} meters")
+                            st.write(f"  • South: {south_m:,} meters") 
+                            st.write(f"  • East: {east_m:,} meters")
+                            st.write(f"  • West: {west_m:,} meters")
+                            st.write("")
                     
                     # Display gap analysis results
                     if gap_results:

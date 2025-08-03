@@ -149,31 +149,36 @@ def analyze_displayed_heatmap_gaps(polygon_db):
                         })
                         
                         # Display result
-                        status = "OVERLAP" if gap_distance < 0 else "GAP"
                         print(f"  {heatmap1['name']} ↔ {heatmap2['name']}:")
                         print(f"    Center distance: {center_distance:.3f} km")
-                        print(f"    Edge gap: {gap_distance:.3f} km ({status})")
                         if gap_distance < 0:
-                            print(f"    Overlap: {abs(gap_distance):.3f} km")
+                            print(f"    🔴 OVERLAP: {abs(gap_distance):.3f} km (edge distance: {gap_distance:.3f} km)")
+                        else:
+                            print(f"    🟢 GAP: {gap_distance:.3f} km")
                         print()
         
         # Summary statistics
         if gap_results:
             gaps = [r['edge_gap'] for r in gap_results]
-            print(f"📊 GAP SUMMARY:")
+            print(f"📊 GAP AND OVERLAP SUMMARY:")
             print(f"  Total adjacent pairs analyzed: {len(gap_results)}")
-            print(f"  Average gap: {sum(gaps)/len(gaps):.3f} km")
-            print(f"  Minimum gap: {min(gaps):.3f} km")
-            print(f"  Maximum gap: {max(gaps):.3f} km")
+            print(f"  Average gap/overlap: {sum(gaps)/len(gaps):.3f} km")
+            print(f"  Range: {min(gaps):.3f} to {max(gaps):.3f} km")
             print(f"  Gap variation: {max(gaps) - min(gaps):.3f} km")
             
-            overlaps = [abs(g) for g in gaps if g < 0]
+            overlaps = [g for g in gaps if g < 0]  # Keep negative values for overlaps
             actual_gaps = [g for g in gaps if g >= 0]
             
             if overlaps:
-                print(f"  Overlapping pairs: {len(overlaps)} (avg overlap: {sum(overlaps)/len(overlaps):.3f} km)")
+                avg_overlap = sum(abs(o) for o in overlaps) / len(overlaps)
+                print(f"  🔴 OVERLAPPING pairs: {len(overlaps)} (avg overlap: {avg_overlap:.3f} km)")
+                for i, overlap in enumerate(overlaps):
+                    print(f"    • Overlap {i+1}: {abs(overlap):.3f} km")
             if actual_gaps:
-                print(f"  Gap pairs: {len(actual_gaps)} (avg gap: {sum(actual_gaps)/len(actual_gaps):.3f} km)")
+                avg_gap = sum(actual_gaps) / len(actual_gaps)
+                print(f"  🟢 GAP pairs: {len(actual_gaps)} (avg gap: {avg_gap:.3f} km)")
+                for i, gap in enumerate(actual_gaps):
+                    print(f"    • Gap {i+1}: {gap:.3f} km")
         
         print("=" * 65)
         return gap_results

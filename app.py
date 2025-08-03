@@ -506,19 +506,31 @@ with st.sidebar:
                         
                         # Display gap summary
                         gaps = [r['edge_gap'] for r in gap_results]
-                        st.write("**Gap Summary:**")
-                        st.write(f"• Average gap: {sum(gaps)/len(gaps):.3f} km")
+                        overlaps = [g for g in gaps if g < 0]
+                        actual_gaps = [g for g in gaps if g >= 0]
+                        
+                        st.write("**Gap and Overlap Summary:**")
+                        st.write(f"• Average gap/overlap: {sum(gaps)/len(gaps):.3f} km")
                         st.write(f"• Range: {min(gaps):.3f} to {max(gaps):.3f} km")
                         
+                        if overlaps:
+                            avg_overlap = sum(abs(o) for o in overlaps) / len(overlaps)
+                            st.write(f"• 🔴 **Overlapping pairs**: {len(overlaps)} (avg overlap: {avg_overlap:.3f} km)")
+                        if actual_gaps:
+                            avg_gap = sum(actual_gaps) / len(actual_gaps)
+                            st.write(f"• 🟢 **Gap pairs**: {len(actual_gaps)} (avg gap: {avg_gap:.3f} km)")
+                        
                         # Show detailed results
-                        with st.expander("📊 Detailed Gap Measurements"):
+                        with st.expander("📊 Detailed Gap and Overlap Measurements"):
                             for result in gap_results:
-                                status = "OVERLAP" if result['edge_gap'] < 0 else "GAP"
-                                st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
-                                st.write(f"  • Center distance: {result['center_distance']:.3f} km")
-                                st.write(f"  • Edge gap: {result['edge_gap']:.3f} km ({status})")
                                 if result['edge_gap'] < 0:
-                                    st.write(f"  • Overlap: {abs(result['edge_gap']):.3f} km")
+                                    st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
+                                    st.write(f"  • Center distance: {result['center_distance']:.3f} km")
+                                    st.write(f"  • 🔴 **OVERLAP**: {abs(result['edge_gap']):.3f} km (edge distance: {result['edge_gap']:.3f} km)")
+                                else:
+                                    st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
+                                    st.write(f"  • Center distance: {result['center_distance']:.3f} km")
+                                    st.write(f"  • 🟢 **GAP**: {result['edge_gap']:.3f} km")
                                 st.write("")
                     else:
                         st.warning("⚠️ No adjacent heatmap pairs found to analyze")

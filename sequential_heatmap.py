@@ -23,12 +23,13 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     from utils import is_within_square, get_distance
     import numpy as np
     
-    # Calculate positions for seamless heatmap alignment
-    # Heatmaps are clipped to 10km boundaries, so centers must be exactly 10km apart for perfect edge alignment
+    # Calculate positions for all heatmaps using PERFECT 19.82km spacing
+    # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
+    # This creates overlapping coverage for seamless visual joining
     clicked_lat, clicked_lng = click_point
     
-    # CRITICAL FIX: Use 10km spacing to match the clipping boundary distance
-    target_offset_km = 10.0  # Matches the 10km clipping boundary for seamless edges
+    # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
+    target_offset_km = 19.82
     
     # SURVEY-GRADE GEODETIC CALCULATIONS with adaptive precision targeting
     # Achieves professional-grade accuracy through intelligent convergence algorithms
@@ -190,14 +191,14 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             
             locations.append((name, [lat, lng]))
     
-    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in {grid_rows}x{grid_cols} grid (SEAMLESS 10km spacing)")
+    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in {grid_rows}x{grid_cols} grid (PERFECT 19.82km spacing)")
     for i, (name, coords) in enumerate(locations):
         print(f"  {i+1}. {name.upper()}: ({coords[0]:.6f}, {coords[1]:.6f})")
         
     # Show grid layout summary
     if len(locations) > 6:
         print(f"EXTENDED GRID LAYOUT: {grid_rows} rows × {grid_cols} columns = {len(locations)} total heatmaps")
-        print(f"  Coverage area: {(grid_rows-1)*10.0:.1f}km south × {(grid_cols-1)*10.0:.1f}km east")
+        print(f"  Coverage area: {(grid_rows-1)*19.82:.1f}km south × {(grid_cols-1)*19.82:.1f}km east")
     
     # ULTRA-PRECISE SPACING VERIFICATION - adaptive for any grid size
     print("ULTRA-PRECISE SPACING VERIFICATION:")
@@ -380,7 +381,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap with Banks Peninsula exclusion and PRECISE BOUNDARIES
+            # Generate heatmap with Banks Peninsula exclusion
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
@@ -392,8 +393,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 variogram_model='spherical',
                 soil_polygons=soil_polygons,
                 indicator_mask=indicator_mask,
-                banks_peninsula_coords=banks_peninsula_coords,
-                use_precise_boundaries=True  # ENABLE PRECISE RECTANGULAR BOUNDARIES
+                banks_peninsula_coords=banks_peninsula_coords
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:

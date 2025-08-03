@@ -368,24 +368,34 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
             ]
             
+            # SEAMLESS SOLUTION 1: Extended Buffer Zone Interpolation  
+            # Use 25km interpolation radius (25% buffer) for seamless coverage
+            extended_radius = search_radius * 1.25  # 25% buffer for overlap
+            
             if interpolation_method in methods_requiring_mask:
                 try:
+                    # Use extended radius for indicator mask to match interpolation area
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
                         center_point,
-                        search_radius,
+                        extended_radius,  # Use extended radius for mask too
                         resolution=100,
                         soil_polygons=soil_polygons,
                         threshold=0.7
                     )
+                    print(f"  🎯 Indicator mask generated with {extended_radius:.1f}km radius for seamless boundaries")
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap with Banks Peninsula exclusion
+            print(f"  🔧 SEAMLESS MODE: Using {extended_radius:.1f}km interpolation radius (was {search_radius}km)")
+            print(f"     Interpolation area: {extended_radius*2:.1f}km × {extended_radius*2:.1f}km")
+            print(f"     Display boundary: {search_radius*2:.1f}km × {search_radius*2:.1f}km (clipped)")
+            
+            # Generate heatmap with extended radius for seamless coverage
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
-                search_radius,
+                extended_radius,  # Use extended radius for interpolation
                 resolution=100,
                 method=interpolation_method,
                 show_variance=False,

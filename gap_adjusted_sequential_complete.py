@@ -387,7 +387,7 @@ def generate_single_heatmap(filtered_wells, center_point, location_name, interpo
 
 def generate_gap_adjusted_heatmap(filtered_wells, initial_center, location_name, interpolation_method,
                                  search_radius, existing_heatmaps, soil_polygons, banks_peninsula_coords,
-                                 colormap_metadata, max_gap_tolerance, max_iterations=3):
+                                 colormap_metadata, max_gap_tolerance, max_iterations=5):
     """Generate a heatmap with automatic position adjustment to minimize gaps"""
     
     current_center = list(initial_center)

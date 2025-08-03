@@ -369,9 +369,22 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                 generated_heatmaps.append((location_name, final_center, heatmap_data['geojson_data'], len(filtered_wells)))
                 
             else:
-                error_msg = f"Failed to generate {location_name} after {iterations} iterations"
+                error_msg = f"Failed to generate {location_name} - success={success}, heatmap_data={'exists' if heatmap_data else 'None'}"
                 error_messages.append(error_msg)
                 print(f"   ❌ {error_msg}")
+                print(f"   🔍 FAILURE DETAILS: Gap adjustment returned success={success}, iterations={iterations}")
+                
+                # Let's try once without gap adjustment to see if the position itself is the problem
+                print(f"   🔄 TESTING: Trying {location_name} without gap adjustment...")
+                test_success, test_data, test_center, test_iter = generate_single_heatmap(
+                    filtered_wells, center_point, location_name, interpolation_method,
+                    search_radius, soil_polygons, banks_peninsula_coords, colormap_metadata
+                )
+                print(f"   🔍 TEST RESULT: Without gap adjustment: success={test_success}, data={'exists' if test_data else 'None'}")
+                
+                if test_success and test_data:
+                    print(f"   ⚠️  USING NON-GAP-ADJUSTED VERSION for {location_name} - position is valid")
+                    success, heatmap_data, final_center, iterations = test_success, test_data, test_center, test_iter
                 
         except Exception as e:
             import traceback

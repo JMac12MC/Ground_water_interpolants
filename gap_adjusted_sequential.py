@@ -4,10 +4,11 @@ Gap-adjusted sequential heatmap generation with automatic position correction
 """
 
 import streamlit as st
+import pandas as pd
+import numpy as np
 from measure_heatmap_gaps import get_heatmap_rectangular_bounds, measure_rectangular_edge_gap
 from interpolation import generate_geo_json_grid, generate_indicator_kriging_mask
 from utils import get_distance
-import numpy as np
 
 def generate_gap_adjusted_heatmap(wells_data, center_lat, center_lon, heatmap_name, interpolation_method, 
                                  polygon_db, existing_heatmaps=None, soil_polygons=None, banks_peninsula_coords=None,

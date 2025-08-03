@@ -1764,8 +1764,7 @@ with main_col1:
             m,
             use_container_width=True,
             height=600,
-            key="main_map",
-            returned_objects=["last_clicked"]
+            key="main_map"
         )
     except Exception as e:
         print(f"Map rendering error: {e}")
@@ -1778,11 +1777,19 @@ with main_col1:
             print(f"MAP CLICK DEBUG: map_data keys: {list(map_data.keys()) if map_data else 'None'}")
             if "last_clicked" in map_data:
                 print(f"MAP CLICK DEBUG: last_clicked value: {map_data['last_clicked']}")
+                print(f"MAP CLICK DEBUG: last_clicked type: {type(map_data['last_clicked'])}")
         
-        if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+        # Handle different possible click data structures
+        click_data = None
+        if map_data and "last_clicked" in map_data:
+            click_data = map_data["last_clicked"]
+        elif map_data and "last_object_clicked" in map_data:
+            click_data = map_data["last_object_clicked"]
+        
+        if click_data and click_data is not None and isinstance(click_data, dict) and "lat" in click_data and "lng" in click_data:
             # Get the coordinates from the click
-            clicked_lat = map_data["last_clicked"]["lat"]
-            clicked_lng = map_data["last_clicked"]["lng"]
+            clicked_lat = click_data["lat"]
+            clicked_lng = click_data["lng"]
 
             print(f"RAW CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
 

@@ -10,6 +10,7 @@ from shapely.ops import nearest_points
 import geopandas as gpd
 import pandas as pd
 from sqlalchemy import text
+from utils import get_distance
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """Calculate distance between two points in kilometers"""
@@ -128,6 +129,152 @@ def measure_rectangular_edge_gap(bounds1, bounds2, center1, center2):
             edge_info = f"vertical (closest edge)"
     
     return gap_km, edge_info
+
+def measure_centroid_to_edge_distances(heatmap_data):
+    """
+    Measure distances from heatmap centroid to each of the 4 edges
+    """
+    center = heatmap_data.get('center', (0, 0))
+    if isinstance(center, list):
+        center = tuple(center)
+    
+    geojson_data = heatmap_data.get('geojson_data')
+    name = heatmap_data.get('name', 'unknown')
+    
+    if not geojson_data:
+        return None
+    
+    # Extract rectangular bounds from GeoJSON
+    bounds_dict = get_heatmap_rectangular_bounds(geojson_data)
+    if not bounds_dict:
+        return None
+    
+    # Extract bounds: min_lon, min_lat, max_lon, max_lat
+    west = bounds_dict['min_lon']
+    south = bounds_dict['min_lat']
+    east = bounds_dict['max_lon']
+    north = bounds_dict['max_lat']
+    
+    # Calculate distances from centroid to each edge
+    distances = {
+        'north': get_distance(center[0], center[1], north, center[1]),
+        'south': get_distance(center[0], center[1], south, center[1]),
+        'east': get_distance(center[0], center[1], center[0], east),
+        'west': get_distance(center[0], center[1], center[0], west)
+    }
+    
+    return {
+        'name': name,
+        'center': center,
+        'bounds_dict': bounds_dict,
+        'distances': distances
+    }
+
+def analyze_centroid_to_edge_distances(polygon_db):
+    """
+    Analyze centroid-to-edge distances for all stored heatmaps
+    """
+    try:
+        # Get all stored heatmaps with their GeoJSON data
+        query = """
+        SELECT heatmap_name, center_lat, center_lon, geojson_data, created_at
+        FROM stored_heatmaps 
+        WHERE interpolation_method = 'ground_water_level_kriging'
+        ORDER BY created_at DESC 
+        LIMIT 10
+        """
+        
+        # Execute query through database connection
+        if hasattr(polygon_db, 'engine') and polygon_db.engine:
+            with polygon_db.engine.connect() as connection:
+                result = connection.execute(text(query)).fetchall()
+        else:
+            print("No database connection available")
+            return None
+            
+        if not result:
+            print("No stored heatmaps found")
+            return None
+            
+        print(f"📏 ANALYZING CENTROID-TO-EDGE DISTANCES FOR {len(result)} HEATMAPS")
+        print("=" * 70)
+        
+        # Process each heatmap and measure centroid-to-edge distances
+        centroid_measurements = []
+        for row in result:
+            heatmap_name, center_lat, center_lon, geojson_data, created_at = row
+            
+            heatmap_data = {
+                'name': heatmap_name,
+                'center': (center_lat, center_lon),
+                'geojson_data': geojson_data,
+                'created_at': created_at
+            }
+            
+            edge_distances = measure_centroid_to_edge_distances(heatmap_data)
+            if edge_distances:
+                centroid_measurements.append(edge_distances)
+                distances = edge_distances['distances']
+                center = edge_distances['center']
+                bounds = edge_distances['bounds_dict']
+                
+                print(f"🎯 {edge_distances['name']}")
+                print(f"   Center: ({center[0]:.6f}, {center[1]:.6f})")
+                print(f"   Bounds: {bounds['min_lon']:.6f} to {bounds['max_lon']:.6f} (lon)")
+                print(f"           {bounds['min_lat']:.6f} to {bounds['max_lat']:.6f} (lat)")
+                print(f"   Coverage dimensions: {bounds['width']:.6f}° × {bounds['height']:.6f}°")
+                print(f"   Centroid to edges:")
+                print(f"     🧭 North: {distances['north']:.3f}km | South: {distances['south']:.3f}km")
+                print(f"     🧭 East:  {distances['east']:.3f}km  | West:  {distances['west']:.3f}km")
+                
+                # Calculate average radius and symmetry
+                avg_radius = sum(distances.values()) / 4
+                min_radius = min(distances.values())
+                max_radius = max(distances.values())
+                symmetry_variation = max_radius - min_radius
+                
+                print(f"   📊 Average radius: {avg_radius:.3f}km")
+                print(f"   📊 Radius range: {min_radius:.3f}km to {max_radius:.3f}km")
+                print(f"   📊 Symmetry variation: {symmetry_variation:.3f}km")
+                
+                if symmetry_variation < 0.5:
+                    print(f"   ✅ WELL-CENTERED (variation < 0.5km)")
+                elif symmetry_variation < 1.0:
+                    print(f"   ⚠️ SLIGHTLY OFF-CENTER (variation < 1.0km)")
+                else:
+                    print(f"   ❌ POORLY CENTERED (variation ≥ 1.0km)")
+                
+                print()
+            else:
+                print(f"❌ Failed to measure distances for: {heatmap_name}")
+        
+        # Summary statistics
+        if centroid_measurements:
+            all_radii = []
+            all_variations = []
+            
+            for measurement in centroid_measurements:
+                distances = measurement['distances']
+                avg_radius = sum(distances.values()) / 4
+                variation = max(distances.values()) - min(distances.values())
+                all_radii.append(avg_radius)
+                all_variations.append(variation)
+            
+            print(f"📊 SUMMARY STATISTICS:")
+            print(f"   Total heatmaps analyzed: {len(centroid_measurements)}")
+            print(f"   Average radius across all heatmaps: {sum(all_radii)/len(all_radii):.3f}km")
+            print(f"   Radius range: {min(all_radii):.3f}km to {max(all_radii):.3f}km")
+            print(f"   Average symmetry variation: {sum(all_variations)/len(all_variations):.3f}km")
+            
+            well_centered = sum(1 for v in all_variations if v < 0.5)
+            print(f"   Well-centered heatmaps: {well_centered}/{len(all_variations)} ({well_centered/len(all_variations)*100:.1f}%)")
+        
+        print("=" * 70)
+        return centroid_measurements
+        
+    except Exception as e:
+        print(f"Error analyzing centroid-to-edge distances: {e}")
+        return None
 
 def analyze_displayed_heatmap_gaps(polygon_db):
     """

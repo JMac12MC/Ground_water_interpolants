@@ -492,15 +492,68 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📏 Heatmap Gap Analysis")
     
-    if st.button("🔍 Measure Heatmap Gaps", help="Analyze the actual edge-to-edge gaps between displayed heatmaps"):
+    if st.button("🔍 Measure Heatmap Gaps", help="Analyze centroid-to-edge distances and gaps between displayed heatmaps"):
         if st.session_state.polygon_db and st.session_state.stored_heatmaps:
-            with st.spinner("Analyzing heatmap boundaries and measuring gaps..."):
+            with st.spinner("Analyzing heatmap boundaries, centroid distances, and measuring gaps..."):
                 try:
-                    # Import the gap analysis function
-                    from measure_heatmap_gaps import analyze_displayed_heatmap_gaps
+                    # Import the analysis functions
+                    from measure_heatmap_gaps import analyze_displayed_heatmap_gaps, analyze_centroid_to_edge_distances
                     
+                    # First, analyze centroid-to-edge distances for each heatmap
+                    centroid_results = analyze_centroid_to_edge_distances(st.session_state.polygon_db)
+                    
+                    # Then, analyze gaps between heatmaps
                     gap_results = analyze_displayed_heatmap_gaps(st.session_state.polygon_db)
                     
+                    # Display centroid-to-edge analysis results
+                    if centroid_results:
+                        st.success(f"✅ Analyzed centroid-to-edge distances for {len(centroid_results)} heatmaps")
+                        
+                        # Summary statistics for centroid measurements
+                        all_radii = []
+                        all_variations = []
+                        
+                        for measurement in centroid_results:
+                            distances = measurement['distances']
+                            avg_radius = sum(distances.values()) / 4
+                            variation = max(distances.values()) - min(distances.values())
+                            all_radii.append(avg_radius)
+                            all_variations.append(variation)
+                        
+                        st.write("**📏 Centroid-to-Edge Analysis Summary:**")
+                        st.write(f"• Average heatmap radius: {sum(all_radii)/len(all_radii):.3f} km")
+                        st.write(f"• Radius range: {min(all_radii):.3f} to {max(all_radii):.3f} km")
+                        st.write(f"• Average symmetry variation: {sum(all_variations)/len(all_variations):.3f} km")
+                        
+                        well_centered = sum(1 for v in all_variations if v < 0.5)
+                        st.write(f"• Well-centered heatmaps: {well_centered}/{len(all_variations)} ({well_centered/len(all_variations)*100:.1f}%)")
+                        
+                        # Show detailed centroid measurements
+                        with st.expander("📊 Detailed Centroid-to-Edge Distance Measurements"):
+                            for measurement in centroid_results:
+                                distances = measurement['distances']
+                                center = measurement['center']
+                                bounds = measurement['bounds_dict']
+                                avg_radius = sum(distances.values()) / 4
+                                variation = max(distances.values()) - min(distances.values())
+                                
+                                st.write(f"**🎯 {measurement['name']}**")
+                                st.write(f"  • Center: ({center[0]:.6f}, {center[1]:.6f})")
+                                st.write(f"  • Coverage: {bounds['width']:.6f}° × {bounds['height']:.6f}°")
+                                st.write(f"  • North: {distances['north']:.3f}km | South: {distances['south']:.3f}km")
+                                st.write(f"  • East: {distances['east']:.3f}km | West: {distances['west']:.3f}km")
+                                st.write(f"  • Average radius: {avg_radius:.3f}km")
+                                st.write(f"  • Symmetry variation: {variation:.3f}km")
+                                
+                                if variation < 0.5:
+                                    st.write(f"  • ✅ **WELL-CENTERED** (variation < 0.5km)")
+                                elif variation < 1.0:
+                                    st.write(f"  • ⚠️ **SLIGHTLY OFF-CENTER** (variation < 1.0km)")
+                                else:
+                                    st.write(f"  • ❌ **POORLY CENTERED** (variation ≥ 1.0km)")
+                                st.write("")
+                    
+                    # Display gap analysis results
                     if gap_results:
                         st.success(f"✅ Analyzed {len(gap_results)} adjacent heatmap pairs")
                         
@@ -509,7 +562,7 @@ with st.sidebar:
                         overlaps = [g for g in gaps if g < 0]
                         actual_gaps = [g for g in gaps if g >= 0]
                         
-                        st.write("**Gap and Overlap Summary:**")
+                        st.write("**🔗 Centroid Gap Analysis Summary:**")
                         st.write(f"• Average gap/overlap: {sum(gaps)/len(gaps):.3f} km")
                         st.write(f"• Range: {min(gaps):.3f} to {max(gaps):.3f} km")
                         

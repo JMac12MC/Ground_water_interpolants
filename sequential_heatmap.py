@@ -368,35 +368,24 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
             ]
             
-            # SEAMLESS SOLUTION 1: Extended Display Clipping with Overlap Blending
-            # Keep 20km interpolation but extend clipping to 11km for 1km overlap zones
-            clipping_radius = 11.0  # Extended from 10km to create overlap
-            overlap_zone = clipping_radius - 10.0  # 1km overlap for blending
-            
-            print(f"  🔧 SEAMLESS MODE: {search_radius}km interpolation, {clipping_radius}km clipping")
-            print(f"     Overlap zone: {overlap_zone}km for seamless blending")
-            print(f"     Adjacent heatmaps will overlap by {overlap_zone*2}km total")
-            
-            # Generate indicator mask with standard radius
             if interpolation_method in methods_requiring_mask:
                 try:
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
                         center_point,
-                        search_radius,  # Standard radius for mask
+                        search_radius,
                         resolution=100,
                         soil_polygons=soil_polygons,
                         threshold=0.7
                     )
-                    print(f"  🎯 Indicator mask generated with {search_radius}km radius")
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap with standard interpolation but extended clipping
+            # Generate heatmap with Banks Peninsula exclusion
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
-                search_radius,  # Standard interpolation radius
+                search_radius,
                 resolution=100,
                 method=interpolation_method,
                 show_variance=False,
@@ -404,8 +393,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 variogram_model='spherical',
                 soil_polygons=soil_polygons,
                 indicator_mask=indicator_mask,
-                banks_peninsula_coords=banks_peninsula_coords,
-                clipping_radius_km=clipping_radius  # Extended clipping radius for overlap
+                banks_peninsula_coords=banks_peninsula_coords
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:

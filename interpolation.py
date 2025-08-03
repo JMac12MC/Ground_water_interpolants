@@ -161,7 +161,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None, clipping_radius_km=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -728,17 +728,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Build the GeoJSON structure
     features = []
 
-    # Create final clipping geometry - support extended clipping for seamless heatmaps
-    # Use clipping_radius_km if provided, otherwise use 50% of search radius (default behavior)
-    if clipping_radius_km is not None:
-        # Extended clipping mode for seamless heatmap coverage
-        final_radius_km = clipping_radius_km
-        final_clip_factor = clipping_radius_km / radius_km
-        print(f"SEAMLESS CLIPPING: Using extended {clipping_radius_km}km clipping radius ({final_clip_factor*100:.0f}% of {radius_km}km search area)")
-    else:
-        # Standard clipping mode (50% of search radius)
-        final_clip_factor = 0.5
-        final_radius_km = radius_km * final_clip_factor
+    # Create final square clipping geometry (smaller than original search area)
+    # Original search area is radius_km x radius_km square
+    # Final clipping area is 50% of original (10km for 20km original)
+    final_clip_factor = 0.5
+    final_radius_km = radius_km * final_clip_factor
     
     # Create final square clipping polygon centered on the original center
     final_clip_lat_radius = final_radius_km / km_per_degree_lat

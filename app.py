@@ -230,7 +230,7 @@ with st.sidebar:
             "Ground Water Level (Spherical Kriging)",
             "Indicator Kriging (Yield Suitability)"
         ],
-        index=0,
+        index=5,  # Default to Ground Water Level (Spherical Kriging)
         help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
         key="visualization_method_selector"
     )
@@ -350,7 +350,7 @@ with st.sidebar:
             "viag (Purple→Green)",
             "crest (Blue→Teal→Yellow)"
         ],
-        index=0,
+        index=13,  # Default to crest colormap
         help="Choose from professional scientific colormaps. Each offers different visual emphasis for your data."
     )
     

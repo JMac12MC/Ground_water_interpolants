@@ -119,6 +119,11 @@ This is a Streamlit-based groundwater visualization application that allows user
 
 Preferred communication style: Simple, everyday language.
 
+**Default Settings**:
+- Default colormap: crest (Blue→Teal→Yellow) 
+- Default visualization method: Ground Water Level (Spherical Kriging)
+- User prefers these as the application defaults for new sessions
+
 ## Recent Changes
 
 - **July 30, 2025**: MAJOR FEATURE ADDED: Windy.com-style smooth raster visualization with toggle functionality

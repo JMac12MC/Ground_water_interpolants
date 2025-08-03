@@ -24,8 +24,11 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     import numpy as np
     
     # Calculate positions for all heatmaps using PERFECT 19.82km spacing
-    # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
-    # This creates overlapping coverage for seamless visual joining
+    # SEAMLESS COVERAGE: Use radius = centroid_spacing / 2 = 9.91km for no gaps/overlaps
+    # This creates exact edge-to-edge coverage with no gaps or overlaps
+    seamless_radius_km = 19.82 / 2  # 9.91km radius for seamless coverage
+    
+    st.info(f"🔧 **SEAMLESS COVERAGE IMPROVEMENT**: Using {seamless_radius_km}km radius instead of {search_radius}km to eliminate gaps and overlaps between adjacent heatmaps.")
     clicked_lat, clicked_lng = click_point
     
     # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
@@ -340,7 +343,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         try:
             st.write(f"🔄 Building heatmap {i+1}/6: {location_name.title()} location...")
             
-            # Filter wells for this location
+            # Filter wells for this location using SEAMLESS RADIUS
             wells_df = wells_data.copy()
             wells_df['within_square'] = wells_df.apply(
                 lambda row: is_within_square(
@@ -348,7 +351,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     row['longitude'],
                     center_point[0],
                     center_point[1],
-                    search_radius
+                    seamless_radius_km  # Use 9.91km for seamless coverage
                 ), 
                 axis=1
             )
@@ -373,7 +376,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
                         center_point,
-                        search_radius,
+                        seamless_radius_km,  # Use seamless radius for consistency
                         resolution=100,
                         soil_polygons=soil_polygons,
                         threshold=0.7
@@ -381,11 +384,11 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap with Banks Peninsula exclusion
+            # Generate heatmap with Banks Peninsula exclusion using SEAMLESS RADIUS
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
-                search_radius,
+                seamless_radius_km,  # Use 9.91km for seamless coverage
                 resolution=100,
                 method=interpolation_method,
                 show_variance=False,
@@ -432,7 +435,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         heatmap_name=heatmap_name,
                         center_lat=center_lat,
                         center_lon=center_lon,
-                        radius_km=search_radius,
+                        radius_km=seamless_radius_km,  # Store seamless radius
                         interpolation_method=interpolation_method,
                         heatmap_data=heatmap_data,
                         geojson_data=geojson_data,

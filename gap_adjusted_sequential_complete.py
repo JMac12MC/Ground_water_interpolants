@@ -251,13 +251,24 @@ def generate_gap_adjusted_sequential_heatmaps(wells_data, click_point, search_ra
                     search_radius, soil_polygons, banks_peninsula_coords, colormap_metadata
                 )
             else:
-                # Subsequent heatmaps - use gap adjustment
+                # Subsequent heatmaps - try gap adjustment first, fallback to original if needed
                 print(f"   🔧 GAP-ADJUSTED GENERATION (tolerance: {max_gap_tolerance*1000:.1f}m)")
                 success, heatmap_data, final_center, iterations = generate_gap_adjusted_heatmap(
                     filtered_wells, center_point, location_name, interpolation_method,
                     search_radius, existing_heatmaps, soil_polygons, banks_peninsula_coords,
                     colormap_metadata, max_gap_tolerance
                 )
+                
+                # If gap adjustment fails, fallback to original position to ensure generation
+                # If gap adjustment fails, fallback to original position to ensure generation
+                if not success:
+                    print(f"   ⚠️ GAP ADJUSTMENT FAILED - Using original position for {location_name}")
+                    success, heatmap_data, final_center, iterations = generate_single_heatmap(
+                        filtered_wells, center_point, location_name, interpolation_method,
+                        search_radius, soil_polygons, banks_peninsula_coords, colormap_metadata
+                    )
+                    if success:
+                        print(f"   ✅ FALLBACK SUCCESSFUL - Generated {location_name} at original position")
             
             if success and heatmap_data:
                 print(f"   ✅ {location_name.upper()}: Generated successfully (iterations: {iterations})")

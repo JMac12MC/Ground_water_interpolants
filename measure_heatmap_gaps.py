@@ -9,6 +9,7 @@ from shapely.geometry import Polygon, Point
 from shapely.ops import nearest_points
 import geopandas as gpd
 import pandas as pd
+from sqlalchemy import text
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """Calculate distance between two points in kilometers"""
@@ -82,8 +83,9 @@ def analyze_displayed_heatmap_gaps(polygon_db):
         """
         
         # Execute query through database connection
-        if hasattr(polygon_db, 'pg_engine') and polygon_db.pg_engine:
-            result = polygon_db.pg_engine.execute(query).fetchall()
+        if hasattr(polygon_db, 'engine') and polygon_db.engine:
+            with polygon_db.engine.connect() as connection:
+                result = connection.execute(text(query)).fetchall()
         else:
             print("No database connection available")
             return None

@@ -488,6 +488,48 @@ with st.sidebar:
         st.write("*No stored heatmaps available*")
         st.write("Generate a heatmap and use the 'Save Heatmap' button to store it permanently.")
 
+    # Gap Measurement Section
+    st.markdown("---")
+    st.subheader("📏 Heatmap Gap Analysis")
+    
+    if st.button("🔍 Measure Heatmap Gaps", help="Analyze the actual edge-to-edge gaps between displayed heatmaps"):
+        if st.session_state.polygon_db and st.session_state.stored_heatmaps:
+            with st.spinner("Analyzing heatmap boundaries and measuring gaps..."):
+                try:
+                    # Import the gap analysis function
+                    from measure_heatmap_gaps import analyze_displayed_heatmap_gaps
+                    
+                    gap_results = analyze_displayed_heatmap_gaps(st.session_state.polygon_db)
+                    
+                    if gap_results:
+                        st.success(f"✅ Analyzed {len(gap_results)} adjacent heatmap pairs")
+                        
+                        # Display gap summary
+                        gaps = [r['edge_gap'] for r in gap_results]
+                        st.write("**Gap Summary:**")
+                        st.write(f"• Average gap: {sum(gaps)/len(gaps):.3f} km")
+                        st.write(f"• Range: {min(gaps):.3f} to {max(gaps):.3f} km")
+                        
+                        # Show detailed results
+                        with st.expander("📊 Detailed Gap Measurements"):
+                            for result in gap_results:
+                                status = "OVERLAP" if result['edge_gap'] < 0 else "GAP"
+                                st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
+                                st.write(f"  • Center distance: {result['center_distance']:.3f} km")
+                                st.write(f"  • Edge gap: {result['edge_gap']:.3f} km ({status})")
+                                if result['edge_gap'] < 0:
+                                    st.write(f"  • Overlap: {abs(result['edge_gap']):.3f} km")
+                                st.write("")
+                    else:
+                        st.warning("⚠️ No adjacent heatmap pairs found to analyze")
+                        
+                except ImportError:
+                    st.error("Gap analysis module not available")
+                except Exception as e:
+                    st.error(f"Error analyzing gaps: {e}")
+        else:
+            st.warning("⚠️ Need stored heatmaps and database connection to measure gaps")
+
 
 
 # Main content area

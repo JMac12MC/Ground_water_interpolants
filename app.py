@@ -488,102 +488,6 @@ with st.sidebar:
         st.write("*No stored heatmaps available*")
         st.write("Generate a heatmap and use the 'Save Heatmap' button to store it permanently.")
 
-    # Gap Measurement Section
-    st.markdown("---")
-    st.subheader("📏 Heatmap Gap Analysis")
-    
-    if st.button("🔍 Measure Heatmap Gaps", help="Analyze centroid-to-edge distances and gaps between displayed heatmaps"):
-        if st.session_state.polygon_db and st.session_state.stored_heatmaps:
-            with st.spinner("Analyzing heatmap boundaries, centroid distances, and measuring gaps..."):
-                try:
-                    # Import the analysis functions
-                    from measure_heatmap_gaps import analyze_displayed_heatmap_gaps, analyze_centroid_to_edge_distances
-                    
-                    # First, analyze centroid-to-edge distances for each heatmap
-                    centroid_results = analyze_centroid_to_edge_distances(st.session_state.polygon_db)
-                    
-                    # Then, analyze gaps between heatmaps
-                    gap_results = analyze_displayed_heatmap_gaps(st.session_state.polygon_db)
-                    
-                    # Display centroid-to-edge analysis results
-                    if centroid_results:
-                        st.success(f"✅ Analyzed centroid-to-edge distances for {len(centroid_results)} heatmaps")
-                        
-                        # Summary statistics for centroid measurements
-                        all_radii = []
-                        all_variations = []
-                        
-                        for measurement in centroid_results:
-                            distances = measurement['distances']
-                            avg_radius = sum(distances.values()) / 4
-                            variation = max(distances.values()) - min(distances.values())
-                            all_radii.append(avg_radius)
-                            all_variations.append(variation)
-                        
-                        st.write("**📏 CENTROID TO EDGE DISTANCES (METERS)**")
-                        
-                        # Simple table format showing exactly what the user wants
-                        for measurement in centroid_results:
-                            distances = measurement['distances']
-                            name = measurement['name'].replace('ground_water_level_kriging_', '').replace('-', ' ')
-                            
-                            # Convert to meters and show clearly
-                            north_m = int(distances['north'] * 1000)
-                            south_m = int(distances['south'] * 1000)
-                            east_m = int(distances['east'] * 1000)
-                            west_m = int(distances['west'] * 1000)
-                            
-                            st.write(f"**{name.upper()}:**")
-                            st.write(f"  • North: {north_m:,} meters")
-                            st.write(f"  • South: {south_m:,} meters") 
-                            st.write(f"  • East: {east_m:,} meters")
-                            st.write(f"  • West: {west_m:,} meters")
-                            st.write("")
-                    
-                    # Display gap analysis results
-                    if gap_results:
-                        st.success(f"✅ Analyzed {len(gap_results)} adjacent heatmap pairs")
-                        
-                        # Display gap summary
-                        gaps = [r['edge_gap'] for r in gap_results]
-                        overlaps = [g for g in gaps if g < 0]
-                        actual_gaps = [g for g in gaps if g >= 0]
-                        
-                        st.write("**🔗 Centroid Gap Analysis Summary:**")
-                        st.write(f"• Average gap/overlap: {sum(gaps)/len(gaps):.3f} km")
-                        st.write(f"• Range: {min(gaps):.3f} to {max(gaps):.3f} km")
-                        
-                        if overlaps:
-                            avg_overlap = sum(abs(o) for o in overlaps) / len(overlaps)
-                            st.write(f"• 🔴 **Overlapping pairs**: {len(overlaps)} (avg overlap: {avg_overlap:.3f} km)")
-                        if actual_gaps:
-                            avg_gap = sum(actual_gaps) / len(actual_gaps)
-                            st.write(f"• 🟢 **Gap pairs**: {len(actual_gaps)} (avg gap: {avg_gap:.3f} km)")
-                        
-                        # Show detailed results
-                        with st.expander("📊 Detailed Rectangular Edge Gap and Overlap Measurements"):
-                            for result in gap_results:
-                                if result['edge_gap'] < 0:
-                                    st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
-                                    st.write(f"  • Center distance: {result['center_distance']:.3f} km")
-                                    st.write(f"  • Edge measurement: {result.get('edge_info', 'edge analysis')}")
-                                    st.write(f"  • 🔴 **OVERLAP**: {abs(result['edge_gap']):.3f} km (negative edge distance: {result['edge_gap']:.3f} km)")
-                                else:
-                                    st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
-                                    st.write(f"  • Center distance: {result['center_distance']:.3f} km")
-                                    st.write(f"  • Edge measurement: {result.get('edge_info', 'edge analysis')}")
-                                    st.write(f"  • 🟢 **GAP**: {result['edge_gap']:.3f} km")
-                                st.write("")
-                    else:
-                        st.warning("⚠️ No adjacent heatmap pairs found to analyze")
-                        
-                except ImportError:
-                    st.error("Gap analysis module not available")
-                except Exception as e:
-                    st.error(f"Error analyzing gaps: {e}")
-        else:
-            st.warning("⚠️ Need stored heatmaps and database connection to measure gaps")
-
 
 
 # Main content area
@@ -1192,14 +1096,11 @@ with main_col1:
                     try:
                         print(f"AUTOMATIC SEQUENTIAL GENERATION: Triggering quad heatmap generation on click")
                         
-                        # Use the gap-adjusted sequential processing for automatic generation with perfect alignment
-                        from gap_adjusted_sequential_complete import generate_gap_adjusted_sequential_heatmaps
+                        # Use the dedicated sequential processing module for automatic generation
+                        from sequential_heatmap import generate_quad_heatmaps_sequential
                         
-                        # Generate heatmaps sequentially with precise centroid distance matching
-                        st.write("🎯 **Precise Centroid Generation**: Automatically ensuring exact 19.82km distances between adjacent centroids...")
-                        st.write("Target: All adjacent heatmap centroids exactly 19.82km apart with map-based measurement")
-                        
-                        success_count, stored_heatmap_ids, error_messages = generate_gap_adjusted_sequential_heatmaps(
+                        # Generate heatmaps sequentially with Banks Peninsula exclusion and selected grid size
+                        success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
                             wells_data=st.session_state.wells_data,
                             click_point=st.session_state.selected_point,
                             search_radius=st.session_state.search_radius,
@@ -1207,8 +1108,7 @@ with main_col1:
                             polygon_db=st.session_state.polygon_db,
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                             banks_peninsula_coords=st.session_state.banks_peninsula_coords,
-                            grid_size=st.session_state.get('grid_size', (2, 3)),
-                            max_gap_tolerance=0.01  # 10 meter tolerance - precise centroid alignment
+                            grid_size=st.session_state.get('grid_size', (2, 3))
                         )
                         
                         print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")

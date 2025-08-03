@@ -735,65 +735,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     final_radius_km = radius_km * final_clip_factor
     
     # Create final square clipping polygon centered on the original center
-    # Use precise geodetic calculation for exactly 10.0km radius
-    import math
-    
-    def get_distance_km(lat1, lon1, lat2, lon2):
-        """Calculate exact distance between two points using Haversine formula"""
-        R = 6371.0
-        lat1_rad = math.radians(lat1)
-        lat2_rad = math.radians(lat2)
-        delta_lat = math.radians(lat2 - lat1)
-        delta_lon = math.radians(lon2 - lon1)
-        a = math.sin(delta_lat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return R * c
-    
-    def precise_offset_for_distance(center_lat, center_lon, target_distance_km, direction):
-        """Calculate precise coordinate offset for exact distance using iterative refinement"""
-        if direction in ['north', 'south']:
-            # Start with approximation
-            offset = target_distance_km / 111.0
-            test_lat = center_lat + (offset if direction == 'north' else -offset)
-            
-            # Iterative refinement
-            for _ in range(10):  # Maximum 10 iterations
-                actual_distance = get_distance_km(center_lat, center_lon, test_lat, center_lon)
-                error = target_distance_km - actual_distance
-                if abs(error) < 0.001:  # 1 meter precision
-                    break
-                # Adjust offset based on error
-                offset_correction = error / 111.0
-                offset += offset_correction
-                test_lat = center_lat + (offset if direction == 'north' else -offset)
-            
-            return offset if direction == 'north' else -offset, 0
-        else:
-            # Start with approximation
-            offset = target_distance_km / (111.0 * math.cos(math.radians(center_lat)))
-            test_lon = center_lon + (offset if direction == 'east' else -offset)
-            
-            # Iterative refinement
-            for _ in range(10):  # Maximum 10 iterations
-                actual_distance = get_distance_km(center_lat, center_lon, center_lat, test_lon)
-                error = target_distance_km - actual_distance
-                if abs(error) < 0.001:  # 1 meter precision
-                    break
-                # Adjust offset based on error
-                offset_correction = error / (111.0 * math.cos(math.radians(center_lat)))
-                offset += offset_correction
-                test_lon = center_lon + (offset if direction == 'east' else -offset)
-            
-            return 0, offset if direction == 'east' else -offset
-    
-    # Calculate precise offsets for exactly 10.0km
-    lat_offset_north, _ = precise_offset_for_distance(center_lat, center_lon, final_radius_km, 'north')
-    lat_offset_south, _ = precise_offset_for_distance(center_lat, center_lon, final_radius_km, 'south')
-    _, lon_offset_east = precise_offset_for_distance(center_lat, center_lon, final_radius_km, 'east')
-    _, lon_offset_west = precise_offset_for_distance(center_lat, center_lon, final_radius_km, 'west')
-    
-    final_clip_lat_radius = lat_offset_north  # Use north offset for radius
-    final_clip_lon_radius = lon_offset_east   # Use east offset for radius
+    final_clip_lat_radius = final_radius_km / km_per_degree_lat
+    final_clip_lon_radius = final_radius_km / km_per_degree_lon
     
     final_clip_polygon_coords = [
         [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
@@ -844,19 +787,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                 # Only add triangles with meaningful values and within our radius
                 if avg_yield > effective_threshold:
-                    # Check if triangle should be included based on geometric boundary
+                    # Check if triangle should be included based on soil polygons
                     include_triangle = True
-                    
-                    # First, check if triangle is within the final clipping geometry (10km boundary)
-                    triangle_coords = [(float(v[0]), float(v[1])) for v in vertices]
-                    triangle_coords.append(triangle_coords[0])  # Close the polygon
-                    triangle_polygon = ShapelyPolygon(triangle_coords)
-                    
-                    # Apply geometric clipping to ensure exact 10km boundary
-                    include_triangle = final_clip_geometry.intersects(triangle_polygon)
 
-                    if include_triangle and merged_soil_geometry is not None:
-                        # Additional soil polygon clipping
+                    if merged_soil_geometry is not None:
+                        # Apply proper geometric intersection clipping
+                        triangle_coords = [(float(v[0]), float(v[1])) for v in vertices]
+                        triangle_coords.append(triangle_coords[0])  # Close the polygon
+                        triangle_polygon = ShapelyPolygon(triangle_coords)
+                        
                         # Only include if triangle is completely within soil drainage areas
                         include_triangle = merged_soil_geometry.contains(triangle_polygon)
 

@@ -521,15 +521,17 @@ with st.sidebar:
                             st.write(f"• 🟢 **Gap pairs**: {len(actual_gaps)} (avg gap: {avg_gap:.3f} km)")
                         
                         # Show detailed results
-                        with st.expander("📊 Detailed Gap and Overlap Measurements"):
+                        with st.expander("📊 Detailed Rectangular Edge Gap and Overlap Measurements"):
                             for result in gap_results:
                                 if result['edge_gap'] < 0:
                                     st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
                                     st.write(f"  • Center distance: {result['center_distance']:.3f} km")
-                                    st.write(f"  • 🔴 **OVERLAP**: {abs(result['edge_gap']):.3f} km (edge distance: {result['edge_gap']:.3f} km)")
+                                    st.write(f"  • Edge measurement: {result.get('edge_info', 'edge analysis')}")
+                                    st.write(f"  • 🔴 **OVERLAP**: {abs(result['edge_gap']):.3f} km (negative edge distance: {result['edge_gap']:.3f} km)")
                                 else:
                                     st.write(f"**{result['heatmap1']} ↔ {result['heatmap2']}**")
                                     st.write(f"  • Center distance: {result['center_distance']:.3f} km")
+                                    st.write(f"  • Edge measurement: {result.get('edge_info', 'edge analysis')}")
                                     st.write(f"  • 🟢 **GAP**: {result['edge_gap']:.3f} km")
                                 st.write("")
                     else:

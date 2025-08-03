@@ -20,52 +20,114 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.asin(math.sqrt(a))
     return c * 6371
 
-def get_heatmap_boundary_from_geojson(geojson_data):
-    """Extract the boundary polygon from GeoJSON triangular mesh data"""
+def get_heatmap_rectangular_bounds(geojson_data):
+    """Extract the rectangular bounds (min/max lat/lon) from GeoJSON triangular mesh data"""
     try:
         if isinstance(geojson_data, str):
             geojson_data = json.loads(geojson_data)
         
         # Collect all coordinate points from triangular features
-        all_points = []
+        min_lon, min_lat = float('inf'), float('inf')
+        max_lon, max_lat = float('-inf'), float('-inf')
+        
         for feature in geojson_data.get('features', []):
             if feature.get('geometry', {}).get('type') == 'Polygon':
                 coords = feature['geometry']['coordinates'][0]  # Exterior ring
-                all_points.extend(coords)
+                for lon, lat in coords:
+                    min_lon = min(min_lon, lon)
+                    max_lon = max(max_lon, lon)
+                    min_lat = min(min_lat, lat)
+                    max_lat = max(max_lat, lat)
         
-        if not all_points:
+        if min_lon == float('inf'):
             return None
             
-        # Create a GeoDataFrame from points
-        gdf = gpd.GeoDataFrame(
-            geometry=[Point(lon, lat) for lon, lat in all_points],
-            crs='EPSG:4326'
-        )
-        
-        # Get the convex hull (boundary) of all points
-        boundary = gdf.unary_union.convex_hull
-        return boundary
+        return {
+            'min_lon': min_lon, 'max_lon': max_lon,
+            'min_lat': min_lat, 'max_lat': max_lat,
+            'width': max_lon - min_lon,
+            'height': max_lat - min_lat
+        }
         
     except Exception as e:
-        print(f"Error extracting boundary: {e}")
+        print(f"Error extracting rectangular bounds: {e}")
         return None
 
-def measure_gap_between_boundaries(boundary1, boundary2):
-    """Measure the minimum distance between two boundary polygons"""
-    try:
-        # Find the nearest points between the two boundaries
-        point1, point2 = nearest_points(boundary1, boundary2)
+def measure_rectangular_edge_gap(bounds1, bounds2, center1, center2):
+    """
+    Measure gap between rectangular heatmap edges
+    Returns negative value for overlaps
+    """
+    # Determine the spatial relationship
+    center_lat1, center_lon1 = center1
+    center_lat2, center_lon2 = center2
+    
+    # Calculate differences
+    lat_diff = abs(center_lat1 - center_lat2)
+    lon_diff = abs(center_lon1 - center_lon2)
+    
+    # Determine if they're horizontally or vertically adjacent
+    if lat_diff < 0.01:  # Same latitude row - horizontal neighbors
+        # Measure horizontal gap between east/west edges
+        if center_lon1 < center_lon2:  # bounds1 is west of bounds2
+            gap_degrees = bounds2['min_lon'] - bounds1['max_lon']
+            edge1_desc = f"east edge ({bounds1['max_lon']:.4f})"
+            edge2_desc = f"west edge ({bounds2['min_lon']:.4f})"
+        else:  # bounds1 is east of bounds2
+            gap_degrees = bounds1['min_lon'] - bounds2['max_lon']
+            edge1_desc = f"west edge ({bounds1['min_lon']:.4f})"
+            edge2_desc = f"east edge ({bounds2['max_lon']:.4f})"
         
-        # Convert to lat/lon and calculate distance
-        lat1, lon1 = point1.y, point1.x
-        lat2, lon2 = point2.y, point2.x
+        # Convert longitude to km at this latitude
+        lat_avg = (center_lat1 + center_lat2) / 2
+        gap_km = gap_degrees * 111.32 * abs(math.cos(math.radians(lat_avg)))
+        edge_info = f"horizontal ({edge1_desc} to {edge2_desc})"
         
-        gap_distance = haversine_distance(lat1, lon1, lat2, lon2)
-        return gap_distance, (lat1, lon1), (lat2, lon2)
+    elif lon_diff < 0.01:  # Same longitude column - vertical neighbors
+        # Measure vertical gap between north/south edges
+        if center_lat1 > center_lat2:  # bounds1 is north of bounds2
+            gap_degrees = bounds2['max_lat'] - bounds1['min_lat']
+            edge1_desc = f"south edge ({bounds1['min_lat']:.4f})"
+            edge2_desc = f"north edge ({bounds2['max_lat']:.4f})"
+        else:  # bounds1 is south of bounds2
+            gap_degrees = bounds1['max_lat'] - bounds2['min_lat']
+            edge1_desc = f"north edge ({bounds1['max_lat']:.4f})"
+            edge2_desc = f"south edge ({bounds2['min_lat']:.4f})"
         
-    except Exception as e:
-        print(f"Error measuring gap: {e}")
-        return None, None, None
+        # Convert latitude to km
+        gap_km = gap_degrees * 111.32
+        edge_info = f"vertical ({edge1_desc} to {edge2_desc})"
+        
+    else:
+        # Diagonal neighbors - measure minimum edge distance
+        # Calculate horizontal and vertical gaps
+        h_gap = None
+        v_gap = None
+        
+        # Horizontal gap
+        if center_lon1 < center_lon2:  # bounds1 west of bounds2
+            h_gap_deg = bounds2['min_lon'] - bounds1['max_lon']
+        else:
+            h_gap_deg = bounds1['min_lon'] - bounds2['max_lon']
+        lat_avg = (center_lat1 + center_lat2) / 2
+        h_gap = h_gap_deg * 111.32 * abs(math.cos(math.radians(lat_avg)))
+        
+        # Vertical gap  
+        if center_lat1 > center_lat2:  # bounds1 north of bounds2
+            v_gap_deg = bounds2['max_lat'] - bounds1['min_lat']
+        else:
+            v_gap_deg = bounds1['max_lat'] - bounds2['min_lat']
+        v_gap = v_gap_deg * 111.32
+        
+        # Use minimum distance (closest edge)
+        if abs(h_gap) < abs(v_gap):
+            gap_km = h_gap
+            edge_info = f"horizontal (closest edge)"
+        else:
+            gap_km = v_gap
+            edge_info = f"vertical (closest edge)"
+    
+    return gap_km, edge_info
 
 def analyze_displayed_heatmap_gaps(polygon_db):
     """
@@ -97,29 +159,30 @@ def analyze_displayed_heatmap_gaps(polygon_db):
         print(f"🎯 ANALYZING GAPS BETWEEN {len(result)} DISPLAYED HEATMAPS")
         print("=" * 65)
         
-        # Process each heatmap and extract boundaries
+        # Process each heatmap and extract rectangular bounds
         heatmaps = []
         for row in result:
             heatmap_name, center_lat, center_lon, geojson_data, created_at = row
             
-            # Extract boundary from GeoJSON data
-            boundary = get_heatmap_boundary_from_geojson(geojson_data)
-            if boundary:
+            # Extract rectangular bounds from GeoJSON data
+            bounds = get_heatmap_rectangular_bounds(geojson_data)
+            if bounds:
                 heatmaps.append({
                     'name': heatmap_name,
                     'center': (center_lat, center_lon),
-                    'boundary': boundary,
+                    'bounds': bounds,
                     'created_at': created_at
                 })
-                print(f"✅ Processed boundary for: {heatmap_name}")
+                print(f"✅ Processed bounds for: {heatmap_name}")
+                print(f"    Rectangle: {bounds['min_lon']:.4f} to {bounds['max_lon']:.4f} (lon), {bounds['min_lat']:.4f} to {bounds['max_lat']:.4f} (lat)")
             else:
-                print(f"❌ Failed to extract boundary for: {heatmap_name}")
+                print(f"❌ Failed to extract bounds for: {heatmap_name}")
         
         if len(heatmaps) < 2:
             print("Need at least 2 heatmaps to measure gaps")
             return None
             
-        print(f"\n📏 MEASURING GAPS BETWEEN ADJACENT HEATMAPS:")
+        print(f"\n📏 MEASURING RECTANGULAR EDGE GAPS BETWEEN ADJACENT HEATMAPS:")
         print("-" * 65)
         
         # Measure gaps between all heatmap pairs
@@ -135,8 +198,9 @@ def analyze_displayed_heatmap_gaps(polygon_db):
                 
                 # Only analyze adjacent heatmaps (within ~25km center distance)
                 if center_distance <= 25.0:
-                    gap_distance, point1, point2 = measure_gap_between_boundaries(
-                        heatmap1['boundary'], heatmap2['boundary']
+                    gap_distance, edge_info = measure_rectangular_edge_gap(
+                        heatmap1['bounds'], heatmap2['bounds'],
+                        heatmap1['center'], heatmap2['center']
                     )
                     
                     if gap_distance is not None:
@@ -145,14 +209,15 @@ def analyze_displayed_heatmap_gaps(polygon_db):
                             'heatmap2': heatmap2['name'],
                             'center_distance': center_distance,
                             'edge_gap': gap_distance,
-                            'gap_points': (point1, point2)
+                            'edge_info': edge_info
                         })
                         
                         # Display result
                         print(f"  {heatmap1['name']} ↔ {heatmap2['name']}:")
                         print(f"    Center distance: {center_distance:.3f} km")
+                        print(f"    Edge measurement: {edge_info}")
                         if gap_distance < 0:
-                            print(f"    🔴 OVERLAP: {abs(gap_distance):.3f} km (edge distance: {gap_distance:.3f} km)")
+                            print(f"    🔴 OVERLAP: {abs(gap_distance):.3f} km (negative edge distance: {gap_distance:.3f} km)")
                         else:
                             print(f"    🟢 GAP: {gap_distance:.3f} km")
                         print()

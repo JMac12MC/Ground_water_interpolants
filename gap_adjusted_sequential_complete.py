@@ -406,10 +406,11 @@ def generate_gap_adjusted_heatmap(filtered_wells, initial_center, location_name,
                 print(f"     ❌ Failed to generate interpolation")
                 return False, None, current_center, iteration
             
-            # Measure gaps with existing adjacent heatmaps
-            gaps_measured = []
-            max_gap = 0
+            # Measure centroid distances with existing adjacent heatmaps (MAP-BASED)
+            centroid_gaps = []
+            max_centroid_error = 0
             worst_gap_info = None
+            target_distance = 19.82  # Exact target distance
             
             for existing_heatmap in existing_heatmaps:
                 # Check if adjacent (within ~25km center distance)
@@ -419,45 +420,40 @@ def generate_gap_adjusted_heatmap(filtered_wells, initial_center, location_name,
                     existing_center[0], existing_center[1]
                 )
                 
-                if center_distance <= 25.0:  # Adjacent heatmap
-                    existing_bounds = existing_heatmap.get('bounds')
-                    if existing_bounds and heatmap_data['bounds']:
-                        gap_distance, edge_info = measure_rectangular_edge_gap(
-                            heatmap_data['bounds'], existing_bounds,
-                            current_center, existing_center
-                        )
-                        
-                        gap_abs = abs(gap_distance)
-                        gaps_measured.append({
-                            'distance': gap_distance,
-                            'abs_distance': gap_abs,
-                            'edge_info': edge_info,
-                            'existing_name': existing_heatmap.get('name', 'unknown'),
-                            'existing_center': existing_center
-                        })
-                        
-                        if gap_abs > max_gap:
-                            max_gap = gap_abs
-                            worst_gap_info = gaps_measured[-1]
-                        
-                        print(f"     📏 Gap to {existing_heatmap.get('name', 'unknown')}: {gap_distance:.6f} km ({edge_info})")
+                if 18.0 <= center_distance <= 22.0:  # Adjacent heatmap (should be ~19.82km)
+                    # Calculate error from target 19.82km distance
+                    distance_error = abs(center_distance - target_distance)
+                    
+                    centroid_gaps.append({
+                        'measured_distance': center_distance,
+                        'target_distance': target_distance,
+                        'error': distance_error,
+                        'existing_name': existing_heatmap.get('name', 'unknown'),
+                        'existing_center': existing_center
+                    })
+                    
+                    if distance_error > max_centroid_error:
+                        max_centroid_error = distance_error
+                        worst_gap_info = centroid_gaps[-1]
+                    
+                    print(f"     📏 Centroid to {existing_heatmap.get('name', 'unknown')}: {center_distance:.6f}km (target: {target_distance}km, error: {distance_error*1000:.1f}m)")
             
-            if gaps_measured:
-                print(f"     📊 Max gap: {max_gap:.6f} km")
+            if centroid_gaps:
+                print(f"     📊 Max centroid error: {max_centroid_error*1000:.1f}m from target 19.82km")
                 
-                # Check if all gaps are within tolerance
-                if max_gap <= max_gap_tolerance:
-                    print(f"     ✅ ALL GAPS WITHIN TOLERANCE ({max_gap*1000:.1f}m ≤ {max_gap_tolerance*1000:.1f}m)")
+                # Check if all centroid distances are within tolerance
+                if max_centroid_error <= max_gap_tolerance:
+                    print(f"     ✅ ALL CENTROIDS WITHIN TOLERANCE ({max_centroid_error*1000:.1f}m ≤ {max_gap_tolerance*1000:.1f}m)")
                     return True, heatmap_data, current_center, iteration
                 else:
                     if iteration >= max_iterations:
                         print(f"     ❌ MAX ITERATIONS REACHED")
                         break
                     
-                    # Calculate position adjustment
-                    print(f"     ⚠️ GAP TOO LARGE: {max_gap*1000:.1f}m > {max_gap_tolerance*1000:.1f}m")
-                    adjustment_lat, adjustment_lon = calculate_position_adjustment(
-                        worst_gap_info, current_center[0], current_center[1], heatmap_data['bounds']
+                    # Calculate position adjustment based on centroid distance error
+                    print(f"     ⚠️ CENTROID ERROR TOO LARGE: {max_centroid_error*1000:.1f}m > {max_gap_tolerance*1000:.1f}m")
+                    adjustment_lat, adjustment_lon = calculate_centroid_adjustment(
+                        worst_gap_info, current_center[0], current_center[1]
                     )
                     
                     print(f"     🔧 Adjusting position: lat {adjustment_lat:.6f}°, lon {adjustment_lon:.6f}°")
@@ -476,37 +472,26 @@ def generate_gap_adjusted_heatmap(filtered_wells, initial_center, location_name,
     print(f"     ❌ FAILED AFTER {max_iterations} ITERATIONS")
     return False, None, current_center, iteration
 
-def calculate_position_adjustment(gap_info, current_lat, current_lon, current_bounds):
-    """Calculate position adjustment to minimize gap"""
-    gap_distance = gap_info['distance']
-    edge_info = gap_info['edge_info']
+def calculate_centroid_adjustment(gap_info, current_lat, current_lon):
+    """Calculate position adjustment to achieve exact 19.82km centroid distance"""
+    measured_distance = gap_info['measured_distance']
+    target_distance = gap_info['target_distance']
     existing_center = gap_info['existing_center']
     
-    adjustment_factor = 0.5  # Conservative adjustment
+    # Calculate direction vector from existing to current centroid
+    delta_lat = current_lat - existing_center[0]
+    delta_lon = current_lon - existing_center[1]
     
-    if 'horizontal' in edge_info:
-        # Horizontal gap - adjust longitude
-        if current_lon < existing_center[1]:
-            lon_adjustment = gap_distance * adjustment_factor / (111.32 * abs(np.cos(np.radians(current_lat))))
-        else:
-            lon_adjustment = -gap_distance * adjustment_factor / (111.32 * abs(np.cos(np.radians(current_lat))))
-        lat_adjustment = 0
-    elif 'vertical' in edge_info:
-        # Vertical gap - adjust latitude
-        if current_lat > existing_center[0]:
-            lat_adjustment = -gap_distance * adjustment_factor / 111.32
-        else:
-            lat_adjustment = gap_distance * adjustment_factor / 111.32
-        lon_adjustment = 0
-    else:
-        # Diagonal adjustment
-        lat_adjustment = gap_distance * adjustment_factor * 0.5 / 111.32
-        lon_adjustment = gap_distance * adjustment_factor * 0.5 / (111.32 * abs(np.cos(np.radians(current_lat))))
-        
-        if current_lat > existing_center[0]:
-            lat_adjustment = -lat_adjustment
-        if current_lon > existing_center[1]:
-            lon_adjustment = -lon_adjustment
+    # Calculate required adjustment to reach exact target distance
+    distance_ratio = target_distance / measured_distance
+    
+    # Calculate new position that's exactly target_distance away
+    new_lat = existing_center[0] + (delta_lat * distance_ratio)
+    new_lon = existing_center[1] + (delta_lon * distance_ratio)
+    
+    # Return adjustment needed
+    lat_adjustment = new_lat - current_lat
+    lon_adjustment = new_lon - current_lon
     
     return lat_adjustment, lon_adjustment
 

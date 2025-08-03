@@ -1155,9 +1155,9 @@ with main_col1:
                         # Use the gap-adjusted sequential processing for automatic generation with perfect alignment
                         from gap_adjusted_sequential_complete import generate_gap_adjusted_sequential_heatmaps
                         
-                        # Generate heatmaps sequentially with automatic gap adjustment (tolerance: 50m)
-                        st.write("🎯 **Gap-Adjusted Generation**: Automatically measuring and correcting gaps during generation...")
-                        st.write("Target: All adjacent heatmaps within 50 meters (0.05km) gap tolerance with fallback to original positions")
+                        # Generate heatmaps sequentially with precise centroid distance matching
+                        st.write("🎯 **Precise Centroid Generation**: Automatically ensuring exact 19.82km distances between adjacent centroids...")
+                        st.write("Target: All adjacent heatmap centroids exactly 19.82km apart with map-based measurement")
                         
                         success_count, stored_heatmap_ids, error_messages = generate_gap_adjusted_sequential_heatmaps(
                             wells_data=st.session_state.wells_data,
@@ -1168,7 +1168,7 @@ with main_col1:
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                             banks_peninsula_coords=st.session_state.banks_peninsula_coords,
                             grid_size=st.session_state.get('grid_size', (2, 3)),
-                            max_gap_tolerance=0.05  # 50 meter tolerance - practical with fallback
+                            max_gap_tolerance=0.01  # 10 meter tolerance - precise centroid alignment
                         )
                         
                         print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")

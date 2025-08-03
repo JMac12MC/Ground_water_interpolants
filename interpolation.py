@@ -105,11 +105,12 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         
     # Get indicator kriging interpolation for the area
     try:
-        # Use indicator kriging to get probability surface
+        # Use indicator kriging to get probability surface with precise boundaries
         geojson_data = generate_geo_json_grid(
             wells_df, center_point, radius_km, 
             resolution=resolution, method='indicator_kriging',
-            soil_polygons=soil_polygons
+            soil_polygons=soil_polygons,
+            use_precise_boundaries=True
         )
         
         if not geojson_data or not geojson_data.get('features'):
@@ -161,7 +162,41 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None):
+def calculate_precise_grid_boundaries(center_point, radius_km, grid_position=None):
+    """
+    Calculate precise rectangular boundaries for seamless heatmap grid alignment
+    
+    Parameters:
+    -----------
+    center_point : tuple
+        (latitude, longitude) of heatmap center
+    radius_km : float
+        Radius in km (20km creates 40km x 40km heatmap)
+    grid_position : dict, optional
+        Grid positioning info for boundary alignment
+        
+    Returns:
+    --------
+    tuple
+        (min_lat, max_lat, min_lon, max_lon) precise boundaries
+    """
+    center_lat, center_lon = center_point
+    km_per_degree_lat = 111.0
+    km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+    
+    # Calculate precise rectangular boundaries
+    # Each heatmap is exactly 40km x 40km (radius_km * 2)
+    half_size_lat = radius_km / km_per_degree_lat
+    half_size_lon = radius_km / km_per_degree_lon
+    
+    min_lat = center_lat - half_size_lat
+    max_lat = center_lat + half_size_lat
+    min_lon = center_lon - half_size_lon
+    max_lon = center_lon + half_size_lon
+    
+    return min_lat, max_lat, min_lon, max_lon
+
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None, use_precise_boundaries=True):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -247,14 +282,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     # Extract the original grid information
     center_lat, center_lon = center_point
-    km_per_degree_lat = 111.0  # ~111km per degree of latitude
-    km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # Longitude degrees vary with latitude
-
-    # Create grid in lat/lon space
-    min_lat = center_lat - (radius_km / km_per_degree_lat)
-    max_lat = center_lat + (radius_km / km_per_degree_lat)
-    min_lon = center_lon - (radius_km / km_per_degree_lon)
-    max_lon = center_lon + (radius_km / km_per_degree_lon)
+    
+    # Use precise rectangular boundaries for seamless grid alignment
+    if use_precise_boundaries:
+        min_lat, max_lat, min_lon, max_lon = calculate_precise_grid_boundaries(center_point, radius_km)
+        print(f"🎯 PRECISE BOUNDARIES: lat={min_lat:.6f} to {max_lat:.6f}, lon={min_lon:.6f} to {max_lon:.6f}")
+    else:
+        # Legacy boundary calculation (can cause gaps/overlaps)
+        km_per_degree_lat = 111.0  # ~111km per degree of latitude
+        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # Longitude degrees vary with latitude
+        
+        min_lat = center_lat - (radius_km / km_per_degree_lat)
+        max_lat = center_lat + (radius_km / km_per_degree_lat)
+        min_lon = center_lon - (radius_km / km_per_degree_lon)
+        max_lon = center_lon + (radius_km / km_per_degree_lon)
 
     # High resolution grid for smooth professional visualization
     # Increase resolution significantly for smoother appearance like kriging software

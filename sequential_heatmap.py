@@ -381,7 +381,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap with Banks Peninsula exclusion
+            # Generate heatmap with Banks Peninsula exclusion and PRECISE BOUNDARIES
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
@@ -393,7 +393,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 variogram_model='spherical',
                 soil_polygons=soil_polygons,
                 indicator_mask=indicator_mask,
-                banks_peninsula_coords=banks_peninsula_coords
+                banks_peninsula_coords=banks_peninsula_coords,
+                use_precise_boundaries=True  # ENABLE PRECISE RECTANGULAR BOUNDARIES
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:

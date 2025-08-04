@@ -243,6 +243,12 @@ with st.sidebar:
         help="Choose how interpolated data is visualized: Triangle Mesh shows precise triangular interpolation, Smooth Raster provides a weather-map style visualization",
         key="heatmap_style_selector"
     )
+    
+    # Map UI selection to session state
+    if heatmap_style == "Smooth Raster (Windy.com Style)":
+        st.session_state.heatmap_visualization_mode = 'smooth_raster'
+    else:
+        st.session_state.heatmap_visualization_mode = 'triangular_mesh'
 
     # Map visualization selection to internal parameters
     if 'interpolation_method' not in st.session_state:
@@ -1149,7 +1155,7 @@ with main_col1:
                         new_heatmap_name += f" ({lat:.3f}, {lon:.3f})"
 
                     # Add the fresh heatmap to the map based on selected style
-                    if heatmap_style == "Smooth Raster (Windy.com Style)":
+                    if st.session_state.heatmap_visualization_mode == "smooth_raster":
                         # Generate smooth raster overlay for fresh heatmap
                         print(f"Generating smooth raster overlay for fresh heatmap: {new_heatmap_name}")
                         
@@ -1337,7 +1343,7 @@ with main_col1:
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
         # Check if we should use unified raster for seamless display
-        if st.session_state.heatmap_style == 'smooth_raster':
+        if st.session_state.heatmap_visualization_mode == 'smooth_raster':
             print("🔄 UNIFIED RASTER MODE: Creating seamless overlay from all heatmap sections")
             
             try:
@@ -1347,7 +1353,7 @@ with main_col1:
                 # Create unified seamless overlay
                 unified_overlay = create_unified_raster_overlay(
                     st.session_state.stored_heatmaps, 
-                    heatmap_style=st.session_state.heatmap_style,
+                    heatmap_style=st.session_state.heatmap_visualization_mode,
                     opacity=0.7
                 )
                 
@@ -1372,7 +1378,7 @@ with main_col1:
                 # Proceed to individual processing below
         
         # Only process individual heatmaps if unified raster wasn't successful or not in smooth raster mode
-        if st.session_state.heatmap_style != 'smooth_raster' or stored_heatmap_count == 0:
+        if st.session_state.heatmap_visualization_mode != 'smooth_raster' or stored_heatmap_count == 0:
             for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 try:
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
@@ -1417,7 +1423,7 @@ with main_col1:
                         print(f"  COLORMAP SAMPLE for {stored_heatmap['heatmap_name']}: {', '.join(sample_values)}")
 
                         # Choose visualization style based on user selection
-                        if heatmap_style == "Smooth Raster (Windy.com Style)":
+                        if st.session_state.heatmap_visualization_mode == "smooth_raster":
                             # Generate smooth raster overlay
                             print(f"  Generating smooth raster overlay for {stored_heatmap['heatmap_name']}")
                             

@@ -78,12 +78,21 @@ def snap_adjacent_boundaries(geojson1, geojson2, direction, name1, name2):
     boundary2 = get_boundary_line(geojson2, get_opposite_direction(direction))
     
     if not boundary1 or not boundary2:
+        print(f"    ❌ No boundaries found: {len(boundary1)} vs {len(boundary2)}")
         return 0
     
     print(f"    📍 Snapping {direction}: {name1} → {name2}")
+    print(f"    🔍 Boundaries: {len(boundary1)} from {name1}, {len(boundary2)} from {name2}")
+    
+    # Debug: Print boundary sample
+    if boundary1:
+        print(f"    📌 {name1} {direction} boundary sample: {boundary1[0]} to {boundary1[-1] if len(boundary1) > 1 else 'single point'}")
+    if boundary2:
+        print(f"    📌 {name2} {get_opposite_direction(direction)} boundary sample: {boundary2[0]} to {boundary2[-1] if len(boundary2) > 1 else 'single point'}")
     
     snap_count = 0
-    extension_threshold = 0.02  # 2km - more generous for detection
+    extension_threshold = 0.05  # 5km - very generous for debugging
+    candidates_found = 0
     
     # For each triangle in the first heatmap
     for feature in geojson1['features']:
@@ -99,10 +108,15 @@ def snap_adjacent_boundaries(geojson1, geojson2, direction, name1, name2):
             
             # Check if this vertex is near the boundary that needs snapping
             if is_near_boundary(vertex, boundary1, extension_threshold):
+                candidates_found += 1
                 # Find the closest point on the adjacent boundary
                 snapped_point = find_closest_boundary_point(vertex, boundary2, extension_threshold)
                 
                 if snapped_point and snapped_point != vertex:
+                    # Calculate distance moved
+                    distance_moved = np.sqrt((vertex[0] - snapped_point[0])**2 + (vertex[1] - snapped_point[1])**2)
+                    print(f"      🎯 Snapping vertex {vertex} → {snapped_point} (moved {distance_moved*111:.0f}m)")
+                    
                     coords[i] = snapped_point
                     snap_count += 1
                     modified = True
@@ -115,6 +129,7 @@ def snap_adjacent_boundaries(geojson1, geojson2, direction, name1, name2):
         if modified:
             feature['geometry']['coordinates'][0] = coords
     
+    print(f"    ✅ Found {candidates_found} boundary candidates, snapped {snap_count} vertices")
     return snap_count
 
 def get_boundary_line(geojson_data, direction):
@@ -135,20 +150,28 @@ def get_boundary_line(geojson_data, direction):
     lats = [coord[1] for coord in all_coords]
     lons = [coord[0] for coord in all_coords]
     
-    tolerance = 0.001  # Very tight tolerance for exact boundary
+    print(f"      🔍 Analyzing {len(all_coords)} coordinates for {direction} boundary")
+    print(f"      📊 Lat range: {min(lats):.6f} to {max(lats):.6f}")
+    print(f"      📊 Lon range: {min(lons):.6f} to {max(lons):.6f}")
+    
+    tolerance = 0.005  # Larger tolerance for debugging - ~500m
     
     if direction == 'east':
         max_lon = max(lons)
         boundary_coords = [coord for coord in all_coords if coord[0] >= max_lon - tolerance]
+        print(f"      🎯 East boundary: max_lon={max_lon:.6f}, found {len(boundary_coords)} coords >= {max_lon-tolerance:.6f}")
     elif direction == 'west':
         min_lon = min(lons)
         boundary_coords = [coord for coord in all_coords if coord[0] <= min_lon + tolerance]
+        print(f"      🎯 West boundary: min_lon={min_lon:.6f}, found {len(boundary_coords)} coords <= {min_lon+tolerance:.6f}")
     elif direction == 'north':
         max_lat = max(lats)
         boundary_coords = [coord for coord in all_coords if coord[1] >= max_lat - tolerance]
+        print(f"      🎯 North boundary: max_lat={max_lat:.6f}, found {len(boundary_coords)} coords >= {max_lat-tolerance:.6f}")
     elif direction == 'south':
         min_lat = min(lats)
         boundary_coords = [coord for coord in all_coords if coord[1] <= min_lat + tolerance]
+        print(f"      🎯 South boundary: min_lat={min_lat:.6f}, found {len(boundary_coords)} coords <= {min_lat+tolerance:.6f}")
     else:
         return []
     
@@ -159,7 +182,9 @@ def get_boundary_line(geojson_data, direction):
     else:
         unique_coords.sort(key=lambda x: x[0])  # Sort by longitude for horizontal boundaries
     
-    return [list(coord) for coord in unique_coords]
+    result = [list(coord) for coord in unique_coords]
+    print(f"      ✅ Final boundary: {len(result)} unique coordinates")
+    return result
 
 def is_near_boundary(vertex, boundary_coords, threshold):
     """Check if a vertex is near any boundary coordinate."""

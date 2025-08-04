@@ -626,27 +626,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     x_coords = (lons - center_lon) * km_per_degree_lon
     y_coords = (lats - center_lat) * km_per_degree_lat
 
-    # CRITICAL PRECISION FIX: Create precise 20km×20km final heatmap
-    # Search area is 2×radius_km (40km×40km) but final heatmap should be exactly 20km×20km
-    final_heatmap_radius = 10.0  # Exactly 10km radius = 20km×20km final heatmap
+    # PROPER INTERPOLATION APPROACH: Build full 40km×40km interpolant first, then clip to 20km×20km
+    final_heatmap_radius = 10.0  # Target: 20km×20km final heatmap (10km radius)
     
-    # Create grid in km space with proper clipping bounds
-    # Use search radius for interpolation data gathering, but clip to final size
-    grid_x = np.linspace(-radius_km, radius_km, grid_size)  # Full search area for interpolation
+    # Step 1: Create FULL interpolation grid at 40km×40km for high-quality boundaries
+    grid_x = np.linspace(-radius_km, radius_km, grid_size)  # Full 40km×40km interpolation area
     grid_y = np.linspace(-radius_km, radius_km, grid_size)
     grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
 
-    # Flatten for interpolation
+    # Step 2: Flatten ALL points for full-area interpolation (no masking yet)
     points = np.vstack([x_coords, y_coords]).T  # Well points in km
-    xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
-
-    # PRECISION CLIPPING: Use exactly 10km radius for final 20km×20km heatmap
-    mask = (np.abs(xi[:,0]) <= final_heatmap_radius) & (np.abs(xi[:,1]) <= final_heatmap_radius)
+    xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # ALL grid points for interpolation
     
-    print(f"PRECISION CLIPPING: Search area {radius_km*2}km×{radius_km*2}km → Final heatmap {final_heatmap_radius*2}km×{final_heatmap_radius*2}km")
-
-    # Define grid_points early to avoid UnboundLocalError
-    grid_points = xi[mask]
+    print(f"BUILDING FULL INTERPOLANT: {radius_km*2}km×{radius_km*2}km ({len(xi)} points) → Will clip to {final_heatmap_radius*2}km×{final_heatmap_radius*2}km")
 
     # Perform interpolation
     points = np.vstack([x_coords, y_coords]).T
@@ -699,9 +691,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             lon_values = x_coords / km_per_degree_lon + center_lon
             lat_values = y_coords / km_per_degree_lat + center_lat
 
-            # Use already defined grid_points
-            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
+            # Use FULL grid for interpolation (build complete 40km×40km indicator interpolant)
+            xi_lon = xi[:, 0] / km_per_degree_lon + center_lon
+            xi_lat = xi[:, 1] / km_per_degree_lat + center_lat
 
             # Set up kriging for binary indicator data with constrained parameters
             # Use spherical model with limited range to prevent high values far from viable wells
@@ -728,7 +720,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             good_wells_mask = yields >= 0.75  # Wells with good yield indicators
             if np.any(good_wells_mask):
                 good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
-                grid_coords = grid_points
+                grid_coords = xi  # Use full grid coordinates
 
                 # Calculate distance to nearest good well for each grid point
                 from scipy.spatial.distance import cdist

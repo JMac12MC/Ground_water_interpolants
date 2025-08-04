@@ -1342,6 +1342,15 @@ with main_col1:
         print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
+        # Apply boundary alignment for seamless triangular mesh display
+        try:
+            from boundary_alignment import apply_boundary_alignment_to_stored_heatmaps
+            aligned_heatmaps = apply_boundary_alignment_to_stored_heatmaps(st.session_state.stored_heatmaps)
+            print(f"🔧 BOUNDARY ALIGNMENT: Applied seamless boundary snapping to triangular mesh")
+        except Exception as e:
+            print(f"⚠️  Boundary alignment failed, using original heatmaps: {e}")
+            aligned_heatmaps = st.session_state.stored_heatmaps
+        
         # Check if we should use unified raster for seamless display
         if st.session_state.heatmap_visualization_mode == 'smooth_raster':
             print("🔄 UNIFIED RASTER MODE: Creating seamless overlay from all heatmap sections")
@@ -1352,7 +1361,7 @@ with main_col1:
                 
                 # Create unified seamless overlay
                 unified_overlay = create_unified_raster_overlay(
-                    st.session_state.stored_heatmaps, 
+                    aligned_heatmaps, 
                     heatmap_style=st.session_state.heatmap_visualization_mode,
                     opacity=0.7
                 )
@@ -1363,7 +1372,7 @@ with main_col1:
                     print("✅ UNIFIED RASTER: Added seamless overlay to map - skipping individual processing")
                     
                     # Update colormap with unified data if needed
-                    unified_colormap = get_unified_colormap_info(st.session_state.stored_heatmaps)
+                    unified_colormap = get_unified_colormap_info(aligned_heatmaps)
                     if unified_colormap and colormap_source != "stored_metadata":
                         global_min_value = unified_colormap['min_value']
                         global_max_value = unified_colormap['max_value']
@@ -1379,7 +1388,7 @@ with main_col1:
         
         # Only process individual heatmaps if unified raster wasn't successful or not in smooth raster mode
         if st.session_state.heatmap_visualization_mode != 'smooth_raster' or stored_heatmap_count == 0:
-            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
+            for i, stored_heatmap in enumerate(aligned_heatmaps):
                 try:
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders

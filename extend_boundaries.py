@@ -22,14 +22,14 @@ def extend_triangular_boundaries(stored_heatmaps):
     
     print(f"🔧 BOUNDARY EXTENSION: Processing {len(stored_heatmaps)} heatmaps for gap elimination")
     
-    # Define extension directions and amounts for 2x3 grid
+    # Define extension directions and amounts for 2x3 grid (in degrees, ~300m)
     extensions = {
-        0: {'east': 0.01, 'south': 0.01},     # Far SE: extend east and south
-        1: {'west': 0.01, 'east': 0.01, 'south': 0.01},  # SE: extend all directions
-        2: {'west': 0.01, 'south': 0.01},     # South: extend west and south  
-        3: {'east': 0.01, 'north': 0.01},     # NE: extend east and north
-        4: {'west': 0.01, 'east': 0.01, 'north': 0.01},  # East: extend all directions
-        5: {'west': 0.01, 'north': 0.01}      # Original: extend west and north
+        0: {'east': 0.003, 'south': 0.003},     # Far SE: extend east and south
+        1: {'west': 0.003, 'east': 0.003, 'south': 0.003},  # SE: extend all directions
+        2: {'west': 0.003, 'south': 0.003},     # South: extend west and south  
+        3: {'east': 0.003, 'north': 0.003},     # NE: extend east and north
+        4: {'west': 0.003, 'east': 0.003, 'north': 0.003},  # East: extend all directions
+        5: {'west': 0.003, 'north': 0.003}      # Original: extend west and north
     }
     
     # Create working copies

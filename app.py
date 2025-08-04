@@ -1342,13 +1342,13 @@ with main_col1:
         print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
-        # Apply final boundary snapping for seamless triangular mesh display
+        # Apply boundary extension for seamless triangular mesh display
         try:
-            from final_boundary_snap import snap_final_triangular_boundaries
-            aligned_heatmaps = snap_final_triangular_boundaries(st.session_state.stored_heatmaps)
-            print(f"🔧 FINAL BOUNDARY SNAP: Applied direct vertex snapping to triangular mesh")
+            from extend_boundaries import apply_boundary_extension_to_stored_heatmaps
+            aligned_heatmaps = apply_boundary_extension_to_stored_heatmaps(st.session_state.stored_heatmaps)
+            print(f"🔧 BOUNDARY EXTENSION: Applied coordinate extension to eliminate gaps")
         except Exception as e:
-            print(f"⚠️  Final boundary snap failed, using original heatmaps: {e}")
+            print(f"⚠️  Boundary extension failed, using original heatmaps: {e}")
             aligned_heatmaps = st.session_state.stored_heatmaps
         
         # Check if we should use unified raster for seamless display

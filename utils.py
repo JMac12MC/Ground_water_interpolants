@@ -41,10 +41,83 @@ def is_within_square(lat, lon, center_lat, center_lon, radius_km):
     """
     Check if a point is within a square area defined by radius from center
     For radius_km = 10, creates a 20km x 20km square
+    Uses high-precision conversion factors for consistency with heatmap system
     """
-    # Convert radius to degrees (approximate)
-    lat_radius_deg = radius_km / 111.0  # ~111km per degree latitude
-    lon_radius_deg = radius_km / (111.0 * np.cos(np.radians(center_lat)))  # adjust for longitude
+    # HIGH-PRECISION COORDINATE CONVERSION - Same as interpolation.py system
+    TOLERANCE_KM = 0.0001  # 10cm tolerance
+    MAX_ITERATIONS = 50    # Reduced iterations for performance in checking function
+    ADAPTIVE_STEP_SIZE = 0.000001
+    
+    def get_precise_conversion_factors(reference_lat, reference_lon):
+        """Calculate ultra-precise km-to-degree conversion factors"""
+        test_distance = 1.0  # 1km test distance
+        
+        # Ultra-precise latitude conversion
+        lat_offset_initial = test_distance / 111.0
+        best_lat_factor = 111.0
+        best_lat_error = float('inf')
+        
+        for i in range(MAX_ITERATIONS):
+            test_lat = reference_lat + lat_offset_initial
+            actual_distance = get_distance(reference_lat, reference_lon, test_lat, reference_lon)
+            error = abs(actual_distance - test_distance)
+            
+            current_factor = test_distance / lat_offset_initial
+            if error < best_lat_error:
+                best_lat_factor = current_factor
+                best_lat_error = error
+            
+            if error < TOLERANCE_KM:
+                break
+                
+            # Simplified adaptive refinement for performance
+            if error > 0.001:
+                adjustment_factor = test_distance / actual_distance  
+                lat_offset_initial *= adjustment_factor
+            else:
+                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+                if actual_distance > test_distance:
+                    lat_offset_initial -= step_size
+                else:
+                    lat_offset_initial += step_size
+        
+        # Ultra-precise longitude conversion
+        lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
+        best_lon_factor = 111.0 * abs(np.cos(np.radians(reference_lat)))
+        best_lon_error = float('inf')
+        
+        for i in range(MAX_ITERATIONS):
+            test_lon = reference_lon + lon_offset_initial
+            actual_distance = get_distance(reference_lat, reference_lon, reference_lat, test_lon)
+            error = abs(actual_distance - test_distance)
+            
+            current_factor = test_distance / lon_offset_initial
+            if error < best_lon_error:
+                best_lon_factor = current_factor
+                best_lon_error = error
+            
+            if error < TOLERANCE_KM:
+                break
+                
+            # Simplified adaptive refinement for performance
+            if error > 0.001:
+                adjustment_factor = test_distance / actual_distance
+                lon_offset_initial *= adjustment_factor
+            else:
+                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+                if actual_distance > test_distance:
+                    lon_offset_initial -= step_size
+                else:
+                    lon_offset_initial += step_size
+        
+        return best_lat_factor, best_lon_factor
+    
+    # Get precise conversion factors for this location
+    km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
+    
+    # Convert radius to degrees using high-precision factors
+    lat_radius_deg = radius_km / km_per_degree_lat
+    lon_radius_deg = radius_km / km_per_degree_lon
     
     # Check if point is within square bounds
     lat_within = abs(lat - center_lat) <= lat_radius_deg

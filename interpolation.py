@@ -120,8 +120,9 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         
         # Use same high-precision conversion factors as main interpolation
         from utils import get_distance
-        TOLERANCE_KM = 0.0001  # 10cm tolerance
-        MAX_ITERATIONS = 100
+        TOLERANCE_KM = 0.0001  # 10cm tolerance - SAME as sequential_heatmap.py
+        MAX_ITERATIONS = 200   # SAME as sequential_heatmap.py
+        ADAPTIVE_STEP_SIZE = 0.000001  # SAME dynamic precision as sequential_heatmap.py
         
         def get_precise_conversion_factors(reference_lat, reference_lon):
             """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
@@ -146,10 +147,16 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
                 if error < TOLERANCE_KM:
                     break
                     
-                if actual_distance > test_distance:
-                    lat_offset_initial *= 0.999
-                else:
-                    lat_offset_initial *= 1.001
+                # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py
+                if error > 0.001:  # > 1 meter error - proportional adjustment
+                    adjustment_factor = test_distance / actual_distance  
+                    lat_offset_initial *= adjustment_factor
+                else:  # Precision phase - adaptive micro-adjustments
+                    step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
+                    if actual_distance > test_distance:
+                        lat_offset_initial -= step_size
+                    else:
+                        lat_offset_initial += step_size
             
             # Ultra-precise longitude conversion
             lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
@@ -169,10 +176,16 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
                 if error < TOLERANCE_KM:
                     break
                     
-                if actual_distance > test_distance:
-                    lon_offset_initial *= 0.999
-                else:
-                    lon_offset_initial *= 1.001
+                # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py  
+                if error > 0.001:  # > 1 meter error - proportional adjustment
+                    adjustment_factor = test_distance / actual_distance
+                    lon_offset_initial *= adjustment_factor
+                else:  # Precision phase - adaptive micro-adjustments
+                    step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
+                    if actual_distance > test_distance:
+                        lon_offset_initial -= step_size
+                    else:
+                        lon_offset_initial += step_size
             
             return best_lat_factor, best_lon_factor
         
@@ -313,8 +326,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # Ultra-precise conversion factors using iterative refinement
     # Target: Match sequential_heatmap.py precision (10cm accuracy)
-    TOLERANCE_KM = 0.0001  # 10cm tolerance
-    MAX_ITERATIONS = 100
+    TOLERANCE_KM = 0.0001  # 10cm tolerance - SAME as sequential_heatmap.py
+    MAX_ITERATIONS = 200   # SAME as sequential_heatmap.py
+    ADAPTIVE_STEP_SIZE = 0.000001  # SAME dynamic precision as sequential_heatmap.py
     
     def get_precise_conversion_factors(reference_lat, reference_lon):
         """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
@@ -340,11 +354,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if error < TOLERANCE_KM:
                 break
                 
-            # Adaptive refinement
-            if actual_distance > test_distance:
-                lat_offset_initial *= 0.999  # Smaller offset needed
-            else:
-                lat_offset_initial *= 1.001  # Larger offset needed
+            # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py
+            if error > 0.001:  # > 1 meter error - proportional adjustment
+                adjustment_factor = test_distance / actual_distance  
+                lat_offset_initial *= adjustment_factor
+            else:  # Precision phase - adaptive micro-adjustments
+                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
+                if actual_distance > test_distance:
+                    lat_offset_initial -= step_size
+                else:
+                    lat_offset_initial += step_size
         
         # Step 2: Ultra-precise longitude conversion (latitude-dependent)
         lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
@@ -365,11 +384,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if error < TOLERANCE_KM:
                 break
                 
-            # Adaptive refinement
-            if actual_distance > test_distance:
-                lon_offset_initial *= 0.999
-            else:
-                lon_offset_initial *= 1.001
+            # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py
+            if error > 0.001:  # > 1 meter error - proportional adjustment
+                adjustment_factor = test_distance / actual_distance
+                lon_offset_initial *= adjustment_factor
+            else:  # Precision phase - adaptive micro-adjustments
+                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
+                if actual_distance > test_distance:
+                    lon_offset_initial -= step_size
+                else:
+                    lon_offset_initial += step_size
         
         print(f"HIGH-PRECISION CONVERSION: lat_factor={best_lat_factor:.8f} km/deg (error: {best_lat_error:.8f}km)")
         print(f"HIGH-PRECISION CONVERSION: lon_factor={best_lon_factor:.8f} km/deg (error: {best_lon_error:.8f}km)")

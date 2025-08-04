@@ -34,6 +34,67 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             'far_southeast': '#0088FF'  # Blue - Edge-aligned
         }
         return colors.get(location_name, '#CCCCCC')
+
+    def extract_boundary_vertices(completed_boundaries, current_location, adjacent_boundaries):
+        """Extract shared boundary vertices from completed heatmaps to ensure seamless edges"""
+        boundary_vertices = []
+        
+        try:
+            # For each adjacent boundary, extract vertices that should be shared
+            for boundary_type, boundary_coord in adjacent_boundaries.items():
+                # Get the source heatmap that provides this boundary
+                source_location = None
+                
+                if current_location == 'east' and boundary_type == 'west':
+                    source_location = 'original'
+                elif current_location == 'northeast' and boundary_type == 'west':
+                    source_location = 'east'
+                elif current_location == 'south' and boundary_type == 'north':
+                    source_location = 'original'
+                elif current_location == 'southeast':
+                    if boundary_type == 'west':
+                        source_location = 'east'
+                    elif boundary_type == 'north':
+                        source_location = 'south'
+                elif current_location == 'far_southeast':
+                    if boundary_type == 'west':
+                        source_location = 'northeast'
+                    elif boundary_type == 'north':
+                        source_location = 'southeast'
+                
+                if source_location and source_location in completed_boundaries:
+                    source_bounds = completed_boundaries[source_location]
+                    
+                    # Generate vertices along the shared boundary
+                    # Create 20 evenly spaced vertices along each boundary edge
+                    num_vertices = 20
+                    
+                    if boundary_type in ['north', 'south']:
+                        # Horizontal boundary - vary longitude
+                        lat = boundary_coord
+                        lon_start = source_bounds['west']
+                        lon_end = source_bounds['east']
+                        
+                        for i in range(num_vertices):
+                            lon = lon_start + (lon_end - lon_start) * i / (num_vertices - 1)
+                            boundary_vertices.append((lat, lon))
+                            
+                    elif boundary_type in ['east', 'west']:
+                        # Vertical boundary - vary latitude
+                        lon = boundary_coord
+                        lat_start = source_bounds['south']
+                        lat_end = source_bounds['north']
+                        
+                        for i in range(num_vertices):
+                            lat = lat_start + (lat_end - lat_start) * i / (num_vertices - 1)
+                            boundary_vertices.append((lat, lon))
+            
+            print(f"    EXTRACTED {len(boundary_vertices)} boundary vertices for {current_location}")
+            return boundary_vertices
+            
+        except Exception as e:
+            print(f"    Warning: Could not extract boundary vertices for {current_location}: {e}")
+            return []
     
     # Calculate positions for all heatmaps using PERFECT 19.82km spacing
     # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
@@ -495,6 +556,13 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
             # Generate heatmap with Banks Peninsula exclusion AND edge-aligned boundaries
+            # Add boundary vertex sharing for seamless edges
+            boundary_vertices = None
+            if adjacent_boundaries and len(completed_boundaries) > 0:
+                # Create shared boundary vertices from completed heatmaps
+                boundary_vertices = extract_boundary_vertices(completed_boundaries, location_name, adjacent_boundaries)
+                print(f"  🔗 BOUNDARY VERTICES: Using {len(boundary_vertices) if boundary_vertices else 0} shared vertices for seamless edges")
+            
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
@@ -507,7 +575,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 soil_polygons=soil_polygons,
                 indicator_mask=indicator_mask,
                 banks_peninsula_coords=banks_peninsula_coords,
-                adjacent_boundaries=adjacent_boundaries
+                adjacent_boundaries=adjacent_boundaries,
+                boundary_vertices=boundary_vertices
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:

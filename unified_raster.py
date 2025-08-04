@@ -64,7 +64,7 @@ def create_unified_raster_overlay(stored_heatmaps, heatmap_style='smooth_raster'
             for feature in geojson_data['features']:
                 try:
                     coords = feature['geometry']['coordinates'][0]
-                    value = feature['properties'].get('yield_rate', 0)
+                    value = feature['properties'].get('yield', feature['properties'].get('yield_rate', feature['properties'].get('value', 0)))
                     
                     if len(coords) >= 3 and value is not None:
                         # Calculate triangle centroid
@@ -228,7 +228,7 @@ def get_unified_colormap_info(stored_heatmaps):
                 
             for feature in geojson_data['features']:
                 try:
-                    value = feature['properties'].get('yield_rate', 0)
+                    value = feature['properties'].get('yield', feature['properties'].get('yield_rate', feature['properties'].get('value', 0)))
                     if value is not None:
                         all_values.append(float(value))
                 except:

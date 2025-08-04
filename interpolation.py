@@ -191,10 +191,13 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         
         km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
         
-        min_lat = center_lat - (radius_km / km_per_degree_lat)
-        max_lat = center_lat + (radius_km / km_per_degree_lat)
-        min_lon = center_lon - (radius_km / km_per_degree_lon)
-        max_lon = center_lon + (radius_km / km_per_degree_lon)
+        # PRECISION FIX: Create grid using final heatmap radius for exact 20km×20km boundary
+        final_heatmap_radius = 10.0  # Exactly 10km radius = 20km×20km final heatmap
+        
+        min_lat = center_lat - (final_heatmap_radius / km_per_degree_lat)
+        max_lat = center_lat + (final_heatmap_radius / km_per_degree_lat)
+        min_lon = center_lon - (final_heatmap_radius / km_per_degree_lon)
+        max_lon = center_lon + (final_heatmap_radius / km_per_degree_lon)
         
         # Create grid
         grid_size = min(150, max(50, resolution))
@@ -623,8 +626,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     x_coords = (lons - center_lon) * km_per_degree_lon
     y_coords = (lats - center_lat) * km_per_degree_lat
 
-    # Create grid in km space (square bounds)
-    grid_x = np.linspace(-radius_km, radius_km, grid_size)
+    # CRITICAL PRECISION FIX: Create precise 20km×20km final heatmap
+    # Search area is 2×radius_km (40km×40km) but final heatmap should be exactly 20km×20km
+    final_heatmap_radius = 10.0  # Exactly 10km radius = 20km×20km final heatmap
+    
+    # Create grid in km space with proper clipping bounds
+    # Use search radius for interpolation data gathering, but clip to final size
+    grid_x = np.linspace(-radius_km, radius_km, grid_size)  # Full search area for interpolation
     grid_y = np.linspace(-radius_km, radius_km, grid_size)
     grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
 
@@ -632,8 +640,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     points = np.vstack([x_coords, y_coords]).T  # Well points in km
     xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
 
-    # Use square bounds instead of circular radius
-    mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
+    # PRECISION CLIPPING: Use exactly 10km radius for final 20km×20km heatmap
+    mask = (np.abs(xi[:,0]) <= final_heatmap_radius) & (np.abs(xi[:,1]) <= final_heatmap_radius)
+    
+    print(f"PRECISION CLIPPING: Search area {radius_km*2}km×{radius_km*2}km → Final heatmap {final_heatmap_radius*2}km×{final_heatmap_radius*2}km")
 
     # Define grid_points early to avoid UnboundLocalError
     grid_points = xi[mask]

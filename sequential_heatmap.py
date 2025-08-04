@@ -589,45 +589,68 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         if 'clipping_polygons' not in st.session_state:
                             st.session_state.clipping_polygons = []
                         
-                        # Calculate the actual 0.5 clipping zone boundaries
-                        # This is what's actually used for interpolation
+                        # SIMPLIFIED APPROACH: Use identical polygon size, just move the position
                         radius_km = st.session_state.search_radius
                         final_clip_factor = 0.5
                         final_radius_km = radius_km * final_clip_factor
                         
-                        center_lat, center_lon = center_point
+                        # Get the standard polygon dimensions (same for all)
                         km_per_degree_lat = 111.0
-                        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+                        km_per_degree_lon = 111.0 * np.cos(np.radians(center_point[0]))
                         
-                        # Standard centroid-based clipping zone calculation
-                        standard_clip_lat_radius = final_radius_km / km_per_degree_lat
-                        standard_clip_lon_radius = final_radius_km / km_per_degree_lon
+                        polygon_half_width_lat = final_radius_km / km_per_degree_lat
+                        polygon_half_width_lon = final_radius_km / km_per_degree_lon
                         
-                        # Calculate actual clipping zone boundaries
-                        if adjacent_boundaries is None:
-                            # Original (first) heatmap - use standard centroid-based clipping
-                            clip_north = center_lat + standard_clip_lat_radius
-                            clip_south = center_lat - standard_clip_lat_radius
-                            clip_east = center_lon + standard_clip_lon_radius
-                            clip_west = center_lon - standard_clip_lon_radius
-                        else:
-                            # Edge-aligned heatmap - use boundaries from adjacent heatmaps
-                            clip_north = center_lat + standard_clip_lat_radius
-                            clip_south = center_lat - standard_clip_lat_radius
-                            clip_east = center_lon + standard_clip_lon_radius
-                            clip_west = center_lon - standard_clip_lon_radius
+                        if location_name == 'original':
+                            # First polygon - position around clicked center
+                            center_lat, center_lon = center_point
+                            clip_north = center_lat + polygon_half_width_lat
+                            clip_south = center_lat - polygon_half_width_lat
+                            clip_east = center_lon + polygon_half_width_lon
+                            clip_west = center_lon - polygon_half_width_lon
                             
-                            # Override with adjacent boundaries where they exist
-                            if 'north' in adjacent_boundaries:
-                                clip_north = adjacent_boundaries['north']
-                            if 'south' in adjacent_boundaries:
-                                clip_south = adjacent_boundaries['south']  
-                            if 'east' in adjacent_boundaries:
-                                clip_east = adjacent_boundaries['east']
-                            if 'west' in adjacent_boundaries:
-                                clip_west = adjacent_boundaries['west']
+                        elif location_name == 'east':
+                            # Move original polygon exactly east - share west/east boundaries
+                            original_bounds = completed_boundaries['original']
+                            clip_west = original_bounds['east']  # Share exact boundary
+                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
+                            clip_north = original_bounds['north']  # Same north boundary
+                            clip_south = original_bounds['south']  # Same south boundary
+                            
+                        elif location_name == 'northeast':
+                            # Move east polygon exactly east - share west/east boundaries  
+                            east_bounds = completed_boundaries['east']
+                            clip_west = east_bounds['east']  # Share exact boundary
+                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
+                            clip_north = east_bounds['north']  # Same north boundary
+                            clip_south = east_bounds['south']  # Same south boundary
+                            
+                        elif location_name == 'south':
+                            # Move original polygon exactly south - share north/south boundaries
+                            original_bounds = completed_boundaries['original']
+                            clip_north = original_bounds['south']  # Share exact boundary
+                            clip_south = clip_north - (2 * polygon_half_width_lat)  # Move polygon height south
+                            clip_west = original_bounds['west']  # Same west boundary
+                            clip_east = original_bounds['east']  # Same east boundary
+                            
+                        elif location_name == 'southeast':
+                            # Position at intersection - share boundaries with both east and south
+                            east_bounds = completed_boundaries['east']
+                            south_bounds = completed_boundaries['south']
+                            clip_west = east_bounds['east']  # Share east's right boundary
+                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
+                            clip_north = south_bounds['south']  # Share south's bottom boundary
+                            clip_south = clip_north - (2 * polygon_half_width_lat)  # Move polygon height south
+                            
+                        elif location_name == 'far_southeast':
+                            # Move southeast polygon exactly east - share west/east boundaries
+                            southeast_bounds = completed_boundaries['southeast']
+                            clip_west = southeast_bounds['east']  # Share exact boundary
+                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
+                            clip_north = southeast_bounds['north']  # Same north boundary
+                            clip_south = southeast_bounds['south']  # Same south boundary
                         
-                        # Store the actual 0.5 clipping zone for visualization
+                        # Store the 0.5 clipping zone for visualization
                         clipping_polygon = {
                             'name': location_name,
                             'boundaries': {
@@ -637,15 +660,15 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                                 'west': clip_west
                             },
                             'center': center_point,
-                            'aligned': adjacent_boundaries is not None,
+                            'aligned': location_name != 'original',
                             'color': get_clipping_polygon_color(location_name),
                             'radius_km': final_radius_km
                         }
                         st.session_state.clipping_polygons.append(clipping_polygon)
                         
-                        print(f"  📐 0.5 CLIPPING ZONE for {location_name.upper()}: N={clip_north:.8f}, S={clip_south:.8f}, E={clip_east:.8f}, W={clip_west:.8f} (radius={final_radius_km}km)")
-                        if adjacent_boundaries:
-                            print(f"      EDGE-ALIGNED: Used {len(adjacent_boundaries)} adjacent boundaries")
+                        print(f"  📐 0.5 CLIPPING ZONE for {location_name.upper()}: N={clip_north:.8f}, S={clip_south:.8f}, E={clip_east:.8f}, W={clip_west:.8f} (size={final_radius_km*2}km×{final_radius_km*2}km)")
+                        if location_name != 'original':
+                            print(f"      EXACT BOUNDARY SHARING: Moved identical polygon to new position")
                     else:
                         print(f"  ⚠️  {location_name.upper()}: Already exists in database")
                         

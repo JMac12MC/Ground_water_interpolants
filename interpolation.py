@@ -191,13 +191,10 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         
         km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
         
-        # PRECISION FIX: Create grid using final heatmap radius for exact 20km×20km boundary
-        final_heatmap_radius = 10.0  # Exactly 10km radius = 20km×20km final heatmap
-        
-        min_lat = center_lat - (final_heatmap_radius / km_per_degree_lat)
-        max_lat = center_lat + (final_heatmap_radius / km_per_degree_lat)
-        min_lon = center_lon - (final_heatmap_radius / km_per_degree_lon)
-        max_lon = center_lon + (final_heatmap_radius / km_per_degree_lon)
+        min_lat = center_lat - (radius_km / km_per_degree_lat)
+        max_lat = center_lat + (radius_km / km_per_degree_lat)
+        min_lon = center_lon - (radius_km / km_per_degree_lon)
+        max_lon = center_lon + (radius_km / km_per_degree_lon)
         
         # Create grid
         grid_size = min(150, max(50, resolution))
@@ -626,19 +623,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     x_coords = (lons - center_lon) * km_per_degree_lon
     y_coords = (lats - center_lat) * km_per_degree_lat
 
-    # PROPER INTERPOLATION APPROACH: Build full 40km×40km interpolant first, then clip to 20km×20km
-    final_heatmap_radius = 10.0  # Target: 20km×20km final heatmap (10km radius)
-    
-    # Step 1: Create FULL interpolation grid at 40km×40km for high-quality boundaries
-    grid_x = np.linspace(-radius_km, radius_km, grid_size)  # Full 40km×40km interpolation area
+    # Create grid in km space (square bounds)
+    grid_x = np.linspace(-radius_km, radius_km, grid_size)
     grid_y = np.linspace(-radius_km, radius_km, grid_size)
     grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
 
-    # Step 2: Flatten ALL points for full-area interpolation (no masking yet)
+    # Flatten for interpolation
     points = np.vstack([x_coords, y_coords]).T  # Well points in km
-    xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # ALL grid points for interpolation
-    
-    print(f"BUILDING FULL INTERPOLANT: {radius_km*2}km×{radius_km*2}km ({len(xi)} points) → Will clip to {final_heatmap_radius*2}km×{final_heatmap_radius*2}km")
+    xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
+
+    # Use square bounds instead of circular radius
+    mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
+
+    # Define grid_points early to avoid UnboundLocalError
+    grid_points = xi[mask]
 
     # Perform interpolation
     points = np.vstack([x_coords, y_coords]).T
@@ -691,9 +689,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             lon_values = x_coords / km_per_degree_lon + center_lon
             lat_values = y_coords / km_per_degree_lat + center_lat
 
-            # Use FULL grid for interpolation (build complete 40km×40km indicator interpolant)
-            xi_lon = xi[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = xi[:, 1] / km_per_degree_lat + center_lat
+            # Use already defined grid_points
+            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
+            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
             # Set up kriging for binary indicator data with constrained parameters
             # Use spherical model with limited range to prevent high values far from viable wells
@@ -720,7 +718,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             good_wells_mask = yields >= 0.75  # Wells with good yield indicators
             if np.any(good_wells_mask):
                 good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
-                grid_coords = xi  # Use full grid coordinates
+                grid_coords = grid_points
 
                 # Calculate distance to nearest good well for each grid point
                 from scipy.spatial.distance import cdist

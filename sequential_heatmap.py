@@ -493,47 +493,53 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             
             km_per_deg_lat, km_per_deg_lon = get_precise_boundary_factors(center_lat, center_lon)
             
-            # Determine which boundaries to align based on location name
-            adjacent_boundaries = None
+            # Calculate exact boundary coordinates for seamless snapping
+            radius_km = search_radius
+            min_lat = center_lat - (radius_km / km_per_deg_lat)
+            max_lat = center_lat + (radius_km / km_per_deg_lat)
+            min_lon = center_lon - (radius_km / km_per_deg_lon)
+            max_lon = center_lon + (radius_km / km_per_deg_lon)
             
+            # Determine which boundaries to snap to based on grid position
+            adjacent_boundaries = {}
+            
+            # 2x3 grid boundary snapping logic
             if location_name == 'east' and 'original' in completed_boundaries:
-                # East heatmap: align west boundary with original's east boundary
-                adjacent_boundaries = {'west': completed_boundaries['original']['east']}
-                print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with original east boundary")
+                # East: snap west boundary to original's east boundary
+                adjacent_boundaries['west'] = completed_boundaries['original']['east']
+                print(f"  BOUNDARY SNAP: {location_name} west → original east ({adjacent_boundaries['west']:.8f})")
                 
             elif location_name == 'northeast' and 'east' in completed_boundaries:
-                # Northeast heatmap: align west boundary with east's east boundary  
-                adjacent_boundaries = {'west': completed_boundaries['east']['east']}
-                print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with east east boundary")
+                # Northeast: snap west boundary to east's east boundary
+                adjacent_boundaries['west'] = completed_boundaries['east']['east']
+                print(f"  BOUNDARY SNAP: {location_name} west → east east ({adjacent_boundaries['west']:.8f})")
                 
             elif location_name == 'south' and 'original' in completed_boundaries:
-                # South heatmap: align north boundary with original's south boundary
-                adjacent_boundaries = {'north': completed_boundaries['original']['south']}
-                print(f"  EDGE ALIGNMENT: {location_name} north boundary aligned with original south boundary")
+                # South: snap north boundary to original's south boundary
+                adjacent_boundaries['north'] = completed_boundaries['original']['south']
+                print(f"  BOUNDARY SNAP: {location_name} north → original south ({adjacent_boundaries['north']:.8f})")
                 
             elif location_name == 'southeast':
-                # Southeast heatmap: align with both south and east boundaries
-                adjacent_boundaries = {}
+                # Southeast: snap to both south and east if available
                 if 'south' in completed_boundaries:
                     adjacent_boundaries['north'] = completed_boundaries['south']['south']
-                    print(f"  EDGE ALIGNMENT: {location_name} north boundary aligned with south south boundary")
+                    print(f"  BOUNDARY SNAP: {location_name} north → south south ({adjacent_boundaries['north']:.8f})")
                 if 'east' in completed_boundaries:
-                    adjacent_boundaries['west'] = completed_boundaries['east']['east'] 
-                    print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with east east boundary")
-                if not adjacent_boundaries:  # If no boundaries found, set to None
-                    adjacent_boundaries = None
+                    adjacent_boundaries['west'] = completed_boundaries['east']['east']
+                    print(f"  BOUNDARY SNAP: {location_name} west → east east ({adjacent_boundaries['west']:.8f})")
                     
             elif location_name == 'far_southeast':
-                # Far_southeast heatmap: align with both northeast and southeast boundaries
-                adjacent_boundaries = {}
-                if 'northeast' in completed_boundaries:
-                    adjacent_boundaries['west'] = completed_boundaries['northeast']['east']
-                    print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with northeast east boundary")
+                # Far Southeast: snap to southeast boundaries
                 if 'southeast' in completed_boundaries:
-                    adjacent_boundaries['north'] = completed_boundaries['southeast']['south']
-                    print(f"  EDGE ALIGNMENT: {location_name} north boundary aligned with southeast south boundary")
-                if not adjacent_boundaries:  # If no boundaries found, set to None
-                    adjacent_boundaries = None
+                    adjacent_boundaries['west'] = completed_boundaries['southeast']['east']
+                    print(f"  BOUNDARY SNAP: {location_name} west → southeast east ({adjacent_boundaries['west']:.8f})")
+                if 'south' in completed_boundaries:
+                    adjacent_boundaries['north'] = completed_boundaries['south']['south'] 
+                    print(f"  BOUNDARY SNAP: {location_name} north → south south ({adjacent_boundaries['north']:.8f})")
+            
+            # Set to None if no boundaries to snap
+            if not adjacent_boundaries:
+                adjacent_boundaries = None
             
             # Generate indicator mask if needed
             indicator_mask = None

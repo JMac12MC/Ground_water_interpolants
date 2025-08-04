@@ -1058,6 +1058,12 @@ with main_col1:
                 wells_count = len(st.session_state.filtered_wells) if has_filtered_wells else 0
                 
                 print(f"HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
+                print(f"DEBUG DETAILED: selected_point value={st.session_state.selected_point}")
+                print(f"DEBUG DETAILED: filtered_wells exists={('filtered_wells' in st.session_state)}")
+                if 'filtered_wells' in st.session_state:
+                    print(f"DEBUG DETAILED: filtered_wells value={st.session_state.filtered_wells is not None}")
+                    if st.session_state.filtered_wells is not None:
+                        print(f"DEBUG DETAILED: filtered_wells length={len(st.session_state.filtered_wells)}")
                 
                 if has_selected_point and has_filtered_wells and wells_count > 0:
                     try:

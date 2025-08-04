@@ -1135,6 +1135,10 @@ with main_col1:
                 else:
                     geojson_data = {"type": "FeatureCollection", "features": []}
 
+                # Ensure geojson_data is always defined
+                if 'geojson_data' not in locals():
+                    geojson_data = {"type": "FeatureCollection", "features": []}
+                    
                 print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
                 if geojson_data:
                     print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")

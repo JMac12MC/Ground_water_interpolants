@@ -125,6 +125,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         
         def get_precise_conversion_factors(reference_lat, reference_lon):
             """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
+            import numpy as np
             test_distance = 1.0  # 1km test distance
             
             # Ultra-precise latitude conversion
@@ -309,7 +310,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Use same ultra-precise geodetic calculations as sequential_heatmap.py
     # This ensures perfect alignment between heatmap centroids and clipping boundaries
     from utils import get_distance
-    import numpy as np
     
     # Ultra-precise conversion factors using iterative refinement
     # Target: Match sequential_heatmap.py precision (10cm accuracy)
@@ -318,6 +318,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     def get_precise_conversion_factors(reference_lat, reference_lon):
         """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
+        import numpy as np
         
         # Step 1: Ultra-precise latitude conversion
         test_distance = 1.0  # 1km test distance

@@ -259,10 +259,13 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         if max_error < 0.0001:  # < 10cm
             print(f"  🎖️ SURVEY PRECISION: Exceeds industry standards for seamless mapping")
     
-    # Process each location sequentially
+    # Process each location sequentially with EDGE-ALIGNED BOUNDARIES
     generated_heatmaps = []
     stored_heatmap_ids = []
     error_messages = []
+    
+    # Track boundary coordinates for adjacent heatmap alignment
+    completed_boundaries = {}  # Store exact boundaries from completed heatmaps
     
     # Calculate GLOBAL colormap range ONCE for ALL heatmaps to ensure consistency
     print(f"🎨 CALCULATING GLOBAL COLORMAP RANGE for all {len(locations)} heatmaps...")
@@ -361,6 +364,98 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 
             print(f"  {location_name.upper()}: {len(filtered_wells)} wells found")
             
+            # CALCULATE ADJACENT BOUNDARIES for edge-aligned clipping
+            adjacent_boundaries = None
+            center_lat, center_lon = center_point
+            
+            # Calculate high-precision conversion factors for this location
+            from utils import get_distance
+            TOLERANCE_KM = 0.0001
+            MAX_ITERATIONS = 50
+            ADAPTIVE_STEP_SIZE = 0.000001
+            
+            def get_precise_boundary_factors(ref_lat, ref_lon):
+                test_distance = 1.0
+                lat_offset = test_distance / 111.0
+                best_lat_factor = 111.0
+                
+                for iter in range(MAX_ITERATIONS):
+                    test_lat = ref_lat + lat_offset
+                    actual_dist = get_distance(ref_lat, ref_lon, test_lat, ref_lon)
+                    error = abs(actual_dist - test_distance)
+                    
+                    if error < TOLERANCE_KM:
+                        break
+                    if error > 0.001:
+                        lat_offset *= test_distance / actual_dist
+                    else:
+                        step = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+                        if actual_dist > test_distance:
+                            lat_offset -= step
+                        else:
+                            lat_offset += step
+                    best_lat_factor = test_distance / lat_offset
+                
+                lon_offset = test_distance / (111.0 * abs(np.cos(np.radians(ref_lat))))
+                best_lon_factor = 111.0 * abs(np.cos(np.radians(ref_lat)))
+                
+                for iter in range(MAX_ITERATIONS):
+                    test_lon = ref_lon + lon_offset  
+                    actual_dist = get_distance(ref_lat, ref_lon, ref_lat, test_lon)
+                    error = abs(actual_dist - test_distance)
+                    
+                    if error < TOLERANCE_KM:
+                        break
+                    if error > 0.001:
+                        lon_offset *= test_distance / actual_dist
+                    else:
+                        step = max(ADAPTIVE_STEP_SIZE, error / 10.0)
+                        if actual_dist > test_distance: 
+                            lon_offset -= step
+                        else:
+                            lon_offset += step
+                    best_lon_factor = test_distance / lon_offset
+                    
+                return best_lat_factor, best_lon_factor
+            
+            km_per_deg_lat, km_per_deg_lon = get_precise_boundary_factors(center_lat, center_lon)
+            
+            # Determine which boundaries to align based on location name
+            adjacent_boundaries = {}
+            
+            if location_name == 'east' and 'original' in completed_boundaries:
+                # East heatmap: align west boundary with original's east boundary
+                adjacent_boundaries['west'] = completed_boundaries['original']['east']
+                print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with original east boundary")
+                
+            elif location_name == 'northeast' and 'east' in completed_boundaries:
+                # Northeast heatmap: align west boundary with east's east boundary  
+                adjacent_boundaries['west'] = completed_boundaries['east']['east']
+                print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with east east boundary")
+                
+            elif location_name == 'south' and 'original' in completed_boundaries:
+                # South heatmap: align north boundary with original's south boundary
+                adjacent_boundaries['north'] = completed_boundaries['original']['south']
+                print(f"  EDGE ALIGNMENT: {location_name} north boundary aligned with original south boundary")
+                
+            elif location_name == 'southeast':
+                # Southeast heatmap: align with both south (east) and east (south) boundaries
+                if 'south' in completed_boundaries:
+                    adjacent_boundaries['north'] = completed_boundaries['south']['south']
+                    print(f"  EDGE ALIGNMENT: {location_name} north boundary aligned with south south boundary")
+                if 'east' in completed_boundaries:
+                    adjacent_boundaries['west'] = completed_boundaries['east']['east'] 
+                    print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with east east boundary")
+                    
+            elif location_name == 'far_southeast':
+                # Far_southeast heatmap: align west boundary with northeast's east boundary
+                if 'northeast' in completed_boundaries:
+                    adjacent_boundaries['west'] = completed_boundaries['northeast']['east']
+                    print(f"  EDGE ALIGNMENT: {location_name} west boundary aligned with northeast east boundary")
+                if 'southeast' in completed_boundaries:
+                    adjacent_boundaries['north'] = completed_boundaries['southeast']['south']
+                    print(f"  EDGE ALIGNMENT: {location_name} north boundary aligned with southeast south boundary")
+            
             # Generate indicator mask if needed
             indicator_mask = None
             methods_requiring_mask = [
@@ -381,7 +476,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap with Banks Peninsula exclusion
+            # Generate heatmap with Banks Peninsula exclusion AND edge-aligned boundaries
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
@@ -393,7 +488,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 variogram_model='spherical',
                 soil_polygons=soil_polygons,
                 indicator_mask=indicator_mask,
-                banks_peninsula_coords=banks_peninsula_coords
+                banks_peninsula_coords=banks_peninsula_coords,
+                adjacent_boundaries=adjacent_boundaries
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:
@@ -443,6 +539,33 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     if stored_heatmap_id:
                         stored_heatmap_ids.append((location_name, stored_heatmap_id))
                         print(f"  ✅ {location_name.upper()}: Stored as ID {stored_heatmap_id}")
+                        
+                        # STORE BOUNDARY COORDINATES for next adjacent heatmaps
+                        # Calculate this heatmap's exact boundaries for alignment
+                        boundary_min_lat = center_lat - (search_radius / km_per_deg_lat)
+                        boundary_max_lat = center_lat + (search_radius / km_per_deg_lat)
+                        boundary_min_lon = center_lon - (search_radius / km_per_deg_lon)
+                        boundary_max_lon = center_lon + (search_radius / km_per_deg_lon)
+                        
+                        # If this heatmap used adjacent boundaries, update with the aligned values
+                        if adjacent_boundaries:
+                            if 'west' in adjacent_boundaries:
+                                boundary_min_lon = adjacent_boundaries['west']
+                            if 'east' in adjacent_boundaries:
+                                boundary_max_lon = adjacent_boundaries['east']
+                            if 'north' in adjacent_boundaries:
+                                boundary_max_lat = adjacent_boundaries['north']
+                            if 'south' in adjacent_boundaries:
+                                boundary_min_lat = adjacent_boundaries['south']
+                        
+                        completed_boundaries[location_name] = {
+                            'north': boundary_max_lat,
+                            'south': boundary_min_lat,
+                            'east': boundary_max_lon,
+                            'west': boundary_min_lon
+                        }
+                        
+                        print(f"  📐 BOUNDARIES STORED for {location_name.upper()}: N={boundary_max_lat:.8f}, S={boundary_min_lat:.8f}, E={boundary_max_lon:.8f}, W={boundary_min_lon:.8f}")
                     else:
                         print(f"  ⚠️  {location_name.upper()}: Already exists in database")
                         

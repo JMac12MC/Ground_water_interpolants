@@ -232,7 +232,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None, adjacent_boundaries=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -403,11 +403,41 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Calculate ultra-precise conversion factors
     km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
 
-    # Create grid in lat/lon space
-    min_lat = center_lat - (radius_km / km_per_degree_lat)
-    max_lat = center_lat + (radius_km / km_per_degree_lat)
-    min_lon = center_lon - (radius_km / km_per_degree_lon)
-    max_lon = center_lon + (radius_km / km_per_degree_lon)
+    # Create grid in lat/lon space with EXACT EDGE ALIGNMENT for adjacent heatmaps
+    if adjacent_boundaries is not None:
+        # Use adjacent boundaries to ensure perfect edge alignment
+        print(f"EDGE-ALIGNED CLIPPING: Using adjacent boundaries for seamless joining")
+        
+        # Extract adjacent boundary information
+        west_boundary = adjacent_boundaries.get('west')
+        east_boundary = adjacent_boundaries.get('east') 
+        north_boundary = adjacent_boundaries.get('north')
+        south_boundary = adjacent_boundaries.get('south')
+        
+        # Calculate default boundaries first
+        default_min_lat = center_lat - (radius_km / km_per_degree_lat)
+        default_max_lat = center_lat + (radius_km / km_per_degree_lat)
+        default_min_lon = center_lon - (radius_km / km_per_degree_lon)
+        default_max_lon = center_lon + (radius_km / km_per_degree_lon)
+        
+        # Use adjacent boundaries where available, defaults otherwise
+        min_lat = south_boundary if south_boundary is not None else default_min_lat
+        max_lat = north_boundary if north_boundary is not None else default_max_lat
+        min_lon = west_boundary if west_boundary is not None else default_min_lon
+        max_lon = east_boundary if east_boundary is not None else default_max_lon
+        
+        print(f"  West edge: {'ALIGNED' if west_boundary is not None else 'DEFAULT'} ({min_lon:.8f})")
+        print(f"  East edge: {'ALIGNED' if east_boundary is not None else 'DEFAULT'} ({max_lon:.8f})")
+        print(f"  North edge: {'ALIGNED' if north_boundary is not None else 'DEFAULT'} ({max_lat:.8f})")
+        print(f"  South edge: {'ALIGNED' if south_boundary is not None else 'DEFAULT'} ({min_lat:.8f})")
+        
+    else:
+        # Standard centroid-based boundaries
+        min_lat = center_lat - (radius_km / km_per_degree_lat)
+        max_lat = center_lat + (radius_km / km_per_degree_lat)
+        min_lon = center_lon - (radius_km / km_per_degree_lon)
+        max_lon = center_lon + (radius_km / km_per_degree_lon)
+        print(f"STANDARD CLIPPING: Using centroid-based boundaries")
 
     # High resolution grid for smooth professional visualization
     # Increase resolution significantly for smoother appearance like kriging software

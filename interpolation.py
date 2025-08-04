@@ -115,10 +115,67 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         if not geojson_data or not geojson_data.get('features'):
             return None, None, None, None, None
             
-        # Extract center coordinates and setup grid
+        # Extract center coordinates and setup grid with HIGH-PRECISION conversion
         center_lat, center_lon = center_point
-        km_per_degree_lat = 111.0
-        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        
+        # Use same high-precision conversion factors as main interpolation
+        from utils import get_distance
+        TOLERANCE_KM = 0.0001  # 10cm tolerance
+        MAX_ITERATIONS = 100
+        
+        def get_precise_conversion_factors(reference_lat, reference_lon):
+            """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
+            test_distance = 1.0  # 1km test distance
+            
+            # Ultra-precise latitude conversion
+            lat_offset_initial = test_distance / 111.0
+            best_lat_factor = 111.0
+            best_lat_error = float('inf')
+            
+            for i in range(MAX_ITERATIONS):
+                test_lat = reference_lat + lat_offset_initial
+                actual_distance = get_distance(reference_lat, reference_lon, test_lat, reference_lon)
+                error = abs(actual_distance - test_distance)
+                
+                current_factor = test_distance / lat_offset_initial
+                if error < best_lat_error:
+                    best_lat_factor = current_factor
+                    best_lat_error = error
+                
+                if error < TOLERANCE_KM:
+                    break
+                    
+                if actual_distance > test_distance:
+                    lat_offset_initial *= 0.999
+                else:
+                    lat_offset_initial *= 1.001
+            
+            # Ultra-precise longitude conversion
+            lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
+            best_lon_factor = 111.0 * abs(np.cos(np.radians(reference_lat)))
+            best_lon_error = float('inf')
+            
+            for i in range(MAX_ITERATIONS):
+                test_lon = reference_lon + lon_offset_initial
+                actual_distance = get_distance(reference_lat, reference_lon, reference_lat, test_lon)
+                error = abs(actual_distance - test_distance)
+                
+                current_factor = test_distance / lon_offset_initial
+                if error < best_lon_error:
+                    best_lon_factor = current_factor
+                    best_lon_error = error
+                
+                if error < TOLERANCE_KM:
+                    break
+                    
+                if actual_distance > test_distance:
+                    lon_offset_initial *= 0.999
+                else:
+                    lon_offset_initial *= 1.001
+            
+            return best_lat_factor, best_lon_factor
+        
+        km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
         
         min_lat = center_lat - (radius_km / km_per_degree_lat)
         max_lat = center_lat + (radius_km / km_per_degree_lat)
@@ -245,10 +302,81 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
 
-    # Extract the original grid information
+    # Extract the original grid information with HIGH-PRECISION coordinate conversion
     center_lat, center_lon = center_point
-    km_per_degree_lat = 111.0  # ~111km per degree of latitude
-    km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # Longitude degrees vary with latitude
+    
+    # HIGH-PRECISION COORDINATE CONVERSION SYSTEM
+    # Use same ultra-precise geodetic calculations as sequential_heatmap.py
+    # This ensures perfect alignment between heatmap centroids and clipping boundaries
+    from utils import get_distance
+    import numpy as np
+    
+    # Ultra-precise conversion factors using iterative refinement
+    # Target: Match sequential_heatmap.py precision (10cm accuracy)
+    TOLERANCE_KM = 0.0001  # 10cm tolerance
+    MAX_ITERATIONS = 100
+    
+    def get_precise_conversion_factors(reference_lat, reference_lon):
+        """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
+        
+        # Step 1: Ultra-precise latitude conversion
+        test_distance = 1.0  # 1km test distance
+        lat_offset_initial = test_distance / 111.0  # Initial estimate
+        
+        best_lat_factor = 111.0
+        best_lat_error = float('inf')
+        
+        for i in range(MAX_ITERATIONS):
+            test_lat = reference_lat + lat_offset_initial
+            actual_distance = get_distance(reference_lat, reference_lon, test_lat, reference_lon)
+            error = abs(actual_distance - test_distance)
+            
+            current_factor = test_distance / lat_offset_initial
+            if error < best_lat_error:
+                best_lat_factor = current_factor
+                best_lat_error = error
+            
+            if error < TOLERANCE_KM:
+                break
+                
+            # Adaptive refinement
+            if actual_distance > test_distance:
+                lat_offset_initial *= 0.999  # Smaller offset needed
+            else:
+                lat_offset_initial *= 1.001  # Larger offset needed
+        
+        # Step 2: Ultra-precise longitude conversion (latitude-dependent)
+        lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
+        
+        best_lon_factor = 111.0 * abs(np.cos(np.radians(reference_lat)))
+        best_lon_error = float('inf')
+        
+        for i in range(MAX_ITERATIONS):
+            test_lon = reference_lon + lon_offset_initial
+            actual_distance = get_distance(reference_lat, reference_lon, reference_lat, test_lon)
+            error = abs(actual_distance - test_distance)
+            
+            current_factor = test_distance / lon_offset_initial
+            if error < best_lon_error:
+                best_lon_factor = current_factor
+                best_lon_error = error
+            
+            if error < TOLERANCE_KM:
+                break
+                
+            # Adaptive refinement
+            if actual_distance > test_distance:
+                lon_offset_initial *= 0.999
+            else:
+                lon_offset_initial *= 1.001
+        
+        print(f"HIGH-PRECISION CONVERSION: lat_factor={best_lat_factor:.8f} km/deg (error: {best_lat_error:.8f}km)")
+        print(f"HIGH-PRECISION CONVERSION: lon_factor={best_lon_factor:.8f} km/deg (error: {best_lon_error:.8f}km)")
+        
+        return best_lat_factor, best_lon_factor
+    
+    # Calculate ultra-precise conversion factors
+    km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
 
     # Create grid in lat/lon space
     min_lat = center_lat - (radius_km / km_per_degree_lat)

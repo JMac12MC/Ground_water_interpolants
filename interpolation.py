@@ -882,10 +882,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     features = []
 
     # Create final square clipping geometry (smaller than original search area)
-    # Original search area is radius_km x radius_km square
-    # Final clipping area is 50% of original (10km for 20km original)
-    final_clip_factor = 0.5
-    final_radius_km = radius_km * final_clip_factor
+    # FIXED: Original search area is (2 * radius_km) x (2 * radius_km) square
+    # Final clipping area should be exactly 50% of the TOTAL search area
+    # So: 20km search radius -> 40km x 40km search area -> 20km x 20km clipping area
+    search_area_side_km = 2 * radius_km  # Total search area side length
+    final_clip_side_km = search_area_side_km * 0.5  # 50% of search area
+    final_radius_km = final_clip_side_km / 2  # Convert back to radius for calculations
     
     # Create final square clipping polygon centered on the original center
     final_clip_lat_radius = final_radius_km / km_per_degree_lat

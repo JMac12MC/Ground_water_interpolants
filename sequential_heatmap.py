@@ -23,6 +23,18 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     from utils import is_within_square, get_distance
     import numpy as np
     
+    def get_clipping_polygon_color(location_name):
+        """Get color for clipping polygon visualization"""
+        colors = {
+            'original': '#FF0000',      # Red - First/centroid-based
+            'east': '#FF8800',          # Orange - Edge-aligned
+            'northeast': '#FFDD00',     # Yellow - Edge-aligned  
+            'south': '#88FF00',         # Lime - Edge-aligned
+            'southeast': '#00FF88',     # Green - Edge-aligned
+            'far_southeast': '#0088FF'  # Blue - Edge-aligned
+        }
+        return colors.get(location_name, '#CCCCCC')
+    
     # Calculate positions for all heatmaps using PERFECT 19.82km spacing
     # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
     # This creates overlapping coverage for seamless visual joining
@@ -572,6 +584,25 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         }
                         
                         print(f"  📐 BOUNDARIES STORED for {location_name.upper()}: N={boundary_max_lat:.8f}, S={boundary_min_lat:.8f}, E={boundary_max_lon:.8f}, W={boundary_min_lon:.8f}")
+                        
+                        # STORE CLIPPING POLYGON VISUALIZATION DATA
+                        if 'clipping_polygons' not in st.session_state:
+                            st.session_state.clipping_polygons = []
+                        
+                        # Add this heatmap's clipping polygon for visualization
+                        clipping_polygon = {
+                            'name': location_name,
+                            'boundaries': {
+                                'north': boundary_max_lat,
+                                'south': boundary_min_lat, 
+                                'east': boundary_max_lon,
+                                'west': boundary_min_lon
+                            },
+                            'center': center_point,
+                            'aligned': adjacent_boundaries is not None,
+                            'color': get_clipping_polygon_color(location_name)
+                        }
+                        st.session_state.clipping_polygons.append(clipping_polygon)
                     else:
                         print(f"  ⚠️  {location_name.upper()}: Already exists in database")
                         

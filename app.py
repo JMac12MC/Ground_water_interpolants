@@ -1678,6 +1678,101 @@ with main_col1:
     # Add click event to capture coordinates (only need this once)
     folium.LatLngPopup().add_to(m)
 
+    # DISPLAY CLIPPING POLYGON VISUALIZATION
+    if hasattr(st.session_state, 'clipping_polygons') and st.session_state.clipping_polygons:
+        st.write("📐 **Clipping Polygon Visualization**")
+        
+        # Add checkbox to toggle clipping polygon display
+        show_clipping_polygons = st.checkbox("Show Clipping Polygons", value=True, help="Display the exact boundary polygons used for each heatmap")
+        
+        if show_clipping_polygons:
+            # Add comparison toggle
+            show_comparison = st.checkbox("Show Centroid vs Edge-Aligned Comparison", value=False, help="Compare centroid-based vs edge-aligned clipping")
+            
+            for polygon_data in st.session_state.clipping_polygons:
+                boundaries = polygon_data['boundaries']
+                name = polygon_data['name']
+                color = polygon_data['color']
+                is_aligned = polygon_data['aligned']
+                center_lat, center_lon = polygon_data['center']
+                
+                # Create actual clipping polygon (edge-aligned or centroid-based)
+                actual_bounds = [
+                    [boundaries['south'], boundaries['west']],  # SW corner
+                    [boundaries['south'], boundaries['east']],  # SE corner  
+                    [boundaries['north'], boundaries['east']],  # NE corner
+                    [boundaries['north'], boundaries['west']],  # NW corner
+                    [boundaries['south'], boundaries['west']]   # Close polygon
+                ]
+                
+                # Add actual clipping polygon
+                style_suffix = " (Edge-Aligned)" if is_aligned else " (Centroid-Based)"
+                folium.Polygon(
+                    locations=actual_bounds,
+                    color=color,
+                    fill=False,
+                    weight=3,
+                    opacity=0.8,
+                    popup=f"{name.title()} Clipping Zone{style_suffix}",
+                    tooltip=f"{name.title()} - Actual Clipping Boundary"
+                ).add_to(m)
+                
+                # Add comparison polygons if requested
+                if show_comparison and is_aligned:
+                    # Calculate what centroid-based clipping would look like
+                    radius_km = st.session_state.search_radius
+                    lat_radius_deg = radius_km / 111.0
+                    lon_radius_deg = radius_km / (111.0 * np.cos(np.radians(center_lat)))
+                    
+                    centroid_bounds = [
+                        [center_lat - lat_radius_deg, center_lon - lon_radius_deg],  # SW corner
+                        [center_lat - lat_radius_deg, center_lon + lon_radius_deg],  # SE corner
+                        [center_lat + lat_radius_deg, center_lon + lon_radius_deg],  # NE corner
+                        [center_lat + lat_radius_deg, center_lon - lon_radius_deg],  # NW corner
+                        [center_lat - lat_radius_deg, center_lon - lon_radius_deg]   # Close polygon
+                    ]
+                    
+                    # Add dashed centroid-based polygon for comparison
+                    folium.Polygon(
+                        locations=centroid_bounds,
+                        color=color,
+                        fill=False,
+                        weight=2,
+                        opacity=0.4,
+                        dashArray="10,10",
+                        popup=f"{name.title()} - Centroid-Based (What It Would Be)",
+                        tooltip=f"{name.title()} - Centroid-Based Comparison (Dashed)"
+                    ).add_to(m)
+                
+                # Add center marker
+                folium.CircleMarker(
+                    location=[center_lat, center_lon],
+                    radius=4,
+                    color=color,
+                    fill=True,
+                    fillColor=color,
+                    fillOpacity=0.8,
+                    popup=f"{name.title()} Center",
+                    tooltip=f"{name.title()} Heatmap Center"
+                ).add_to(m)
+        
+        # Add explanation
+        if show_clipping_polygons:
+            explanation_text = """
+            **Clipping Polygon Legend:**
+            - **Solid Lines**: Actual clipping boundaries used
+            - **Red (Original)**: Centroid-based (first heatmap)
+            - **Other Colors**: Edge-aligned boundaries
+            """
+            
+            if show_comparison:
+                explanation_text += """
+            - **Dashed Lines**: What centroid-based would look like
+            - **Notice**: Edge-aligned polygons share exact boundaries with adjacent heatmaps
+            """
+            
+            st.markdown(explanation_text)
+
     # Add a simple click handler that manually tracks clicks
     folium.LayerControl().add_to(m)
 
@@ -1950,7 +2045,7 @@ with main_col1:
                 'selected_point', 'selected_point_east', 'selected_point_northeast', 'selected_point_south', 'selected_point_southeast', 'selected_point_far_southeast',
                 'filtered_wells', 'filtered_wells_east', 'filtered_wells_northeast', 'filtered_wells_south', 'filtered_wells_southeast', 'filtered_wells_far_southeast',
                 'stored_heatmaps', 'geojson_data',
-                'fresh_heatmap_displayed', 'new_heatmap_added'
+                'fresh_heatmap_displayed', 'new_heatmap_added', 'clipping_polygons'
             ]
             
             for key in keys_to_clear:

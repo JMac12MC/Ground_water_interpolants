@@ -385,11 +385,7 @@ with st.sidebar:
     
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
-    if st.session_state.soil_polygons is not None:
-        st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
-    
-    # Banks Peninsula polygon display option
-    st.session_state.show_banks_peninsula = st.checkbox("Show Banks Peninsula Boundary", value=st.session_state.show_banks_peninsula, help="Display the Banks Peninsula coastline boundary")
+
 
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -506,42 +502,7 @@ with main_col1:
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
 
-    # Add Banks Peninsula polygon if enabled and coordinates are available
-    if st.session_state.show_banks_peninsula and st.session_state.banks_peninsula_coords:
-        try:
-            # Add the polygon to the map with distinctive styling
-            m, peninsula_center = add_polygon_to_map(
-                m, 
-                st.session_state.banks_peninsula_coords,
-                name="Banks Peninsula",
-                color="#FF6B35",  # Distinctive orange-red color
-                weight=3,
-                opacity=0.8,
-                fill_opacity=0.15
-            )
-            print(f"Banks Peninsula polygon added to map (center: {peninsula_center})")
-        except Exception as e:
-            print(f"Error adding Banks Peninsula to map: {e}")
 
-    # Add soil drainage polygons if available and enabled
-    if st.session_state.soil_polygons is not None and st.session_state.show_soil_polygons:
-        # Convert to GeoJSON and add to map
-        folium.GeoJson(
-            st.session_state.soil_polygons.__geo_interface__,
-            name="Soil Drainage Areas",
-            style_function=lambda feature: {
-                'fillColor': 'transparent',
-                'color': 'blue',
-                'weight': 1,
-                'fillOpacity': 0.1  # Keep low opacity for polygon outlines
-            },
-            tooltip=folium.GeoJsonTooltip(
-                fields=['DRAINAGE'] if 'DRAINAGE' in st.session_state.soil_polygons.columns else [],
-                aliases=['Drainage:'] if 'DRAINAGE' in st.session_state.soil_polygons.columns else [],
-                labels=True,
-                sticky=False
-            )
-        ).add_to(m)
 
     # UNIFIED COLORMAP PROCESSING: Use stored colormap metadata for consistent coloring
     global_min_value = float('inf')
@@ -1678,107 +1639,7 @@ with main_col1:
     # Add click event to capture coordinates (only need this once)
     folium.LatLngPopup().add_to(m)
 
-    # DISPLAY 0.5 CLIPPING ZONE VISUALIZATION
-    if hasattr(st.session_state, 'clipping_polygons') and st.session_state.clipping_polygons:
-        st.write("🔍 **0.5 Clipping Zone Visualization**")
-        
-        # Add checkbox to toggle clipping polygon display
-        show_clipping_polygons = st.checkbox("Show 0.5 Clipping Zones", value=True, help="Display the actual 0.5 clipping zones used for interpolation (NOT the 40km search radius)")
-        
-        if show_clipping_polygons:
-            # Add comparison toggle
-            show_comparison = st.checkbox("Show Centroid vs Edge-Aligned Comparison", value=False, help="Compare centroid-based vs edge-aligned 0.5 clipping zones")
-            
-            for polygon_data in st.session_state.clipping_polygons:
-                boundaries = polygon_data['boundaries']
-                name = polygon_data['name']
-                color = polygon_data['color']
-                is_aligned = polygon_data['aligned']
-                center_lat, center_lon = polygon_data['center']
-                radius_km = polygon_data.get('radius_km', 10.0)  # Default to 10km if not set
-                
-                # Create actual 0.5 clipping polygon (edge-aligned or centroid-based)
-                actual_bounds = [
-                    [boundaries['south'], boundaries['west']],  # SW corner
-                    [boundaries['south'], boundaries['east']],  # SE corner  
-                    [boundaries['north'], boundaries['east']],  # NE corner
-                    [boundaries['north'], boundaries['west']],  # NW corner
-                    [boundaries['south'], boundaries['west']]   # Close polygon
-                ]
-                
-                # Add actual 0.5 clipping polygon with thick border
-                style_suffix = " (Edge-Aligned)" if is_aligned else " (Centroid-Based)"
-                folium.Polygon(
-                    locations=actual_bounds,
-                    color=color,
-                    fill=True,
-                    fillColor=color,
-                    fillOpacity=0.15,
-                    weight=4,
-                    opacity=0.9,
-                    popup=f"{name.title()} 0.5 Clipping Zone{style_suffix} ({radius_km:.1f}km)",
-                    tooltip=f"{name.title()} - Actual 0.5 Clipping Zone ({radius_km:.1f}km)"
-                ).add_to(m)
-                
-                # Add comparison polygons if requested
-                if show_comparison and is_aligned:
-                    # Calculate what centroid-based 0.5 clipping would look like
-                    km_per_degree_lat = 111.0
-                    km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
-                    
-                    clip_lat_radius = radius_km / km_per_degree_lat
-                    clip_lon_radius = radius_km / km_per_degree_lon
-                    
-                    centroid_bounds = [
-                        [center_lat - clip_lat_radius, center_lon - clip_lon_radius],  # SW corner
-                        [center_lat - clip_lat_radius, center_lon + clip_lon_radius],  # SE corner
-                        [center_lat + clip_lat_radius, center_lon + clip_lon_radius],  # NE corner
-                        [center_lat + clip_lat_radius, center_lon - clip_lon_radius],  # NW corner
-                        [center_lat - clip_lat_radius, center_lon - clip_lon_radius]   # Close polygon
-                    ]
-                    
-                    # Add dashed centroid-based 0.5 clipping polygon for comparison
-                    folium.Polygon(
-                        locations=centroid_bounds,
-                        color=color,
-                        fill=False,
-                        weight=3,
-                        opacity=0.5,
-                        dashArray="10,10",
-                        popup=f"{name.title()} - Centroid-Based 0.5 Clipping (What It Would Be)",
-                        tooltip=f"{name.title()} - Centroid-Based 0.5 Clipping Comparison (Dashed)"
-                    ).add_to(m)
-                
-                # Add center marker
-                folium.CircleMarker(
-                    location=[center_lat, center_lon],
-                    radius=5,
-                    color=color,
-                    fill=True,
-                    fillColor=color,
-                    fillOpacity=1.0,
-                    weight=2,
-                    popup=f"{name.title()} Center",
-                    tooltip=f"{name.title()} Heatmap Center"
-                ).add_to(m)
-        
-        # Add explanation
-        if show_clipping_polygons:
-            explanation_text = f"""
-            **0.5 Clipping Zone Legend:**
-            - **Solid Rectangles**: Actual 0.5 clipping zones used for interpolation
-            - **Red (Original)**: Standard centroid-based 0.5 clipping zone
-            - **Other Colors**: Edge-aligned 0.5 clipping zones
-            - **Size**: Each zone is {st.session_state.search_radius * 0.5:.1f}km × {st.session_state.search_radius * 0.5:.1f}km (50% of {st.session_state.search_radius}km search radius)
-            """
-            
-            if show_comparison:
-                explanation_text += """
-            - **Dashed Lines**: What centroid-based 0.5 clipping would look like
-            - **Key Difference**: Edge-aligned zones share exact boundaries with adjacent heatmaps
-            """
-            
-            st.markdown(explanation_text)
+
 
     # Add a simple click handler that manually tracks clicks
     folium.LayerControl().add_to(m)

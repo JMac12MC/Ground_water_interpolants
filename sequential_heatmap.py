@@ -339,6 +339,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     
     # Track boundary coordinates for adjacent heatmap alignment
     completed_boundaries = {}  # Store exact boundaries from completed heatmaps
+    print(f"🔧 BOUNDARY SNAPPING: Starting sequential generation with empty completed_boundaries")
     
     # Calculate GLOBAL colormap range ONCE for ALL heatmaps to ensure consistency
     print(f"🎨 CALCULATING GLOBAL COLORMAP RANGE for all {len(locations)} heatmaps...")
@@ -502,6 +503,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             
             # Determine which boundaries to snap to based on grid position
             adjacent_boundaries = {}
+            print(f"🔧 BOUNDARY CHECK: Processing {location_name}, completed_boundaries has: {list(completed_boundaries.keys())}")
             
             # 2x3 grid boundary snapping logic
             if location_name == 'east' and 'original' in completed_boundaries:

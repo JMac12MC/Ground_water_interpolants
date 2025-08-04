@@ -97,40 +97,22 @@ def align_heatmap_boundaries(stored_heatmaps, heatmap_order=None):
 
 def align_boundary_edge(current_geojson, adjacent_geojson, direction, current_name, adjacent_name):
     """
-    Align the boundary edge between two adjacent heatmaps.
-    
-    Parameters:
-    -----------
-    current_geojson : dict
-        GeoJSON data for current heatmap (will be modified)
-    adjacent_geojson : dict  
-        GeoJSON data for adjacent heatmap (reference for alignment)
-    direction : str
-        Direction of adjacency ('north', 'south', 'east', 'west')
-    current_name : str
-        Name of current heatmap for logging
-    adjacent_name : str
-        Name of adjacent heatmap for logging
-    
-    Returns:
-    --------
-    int : Number of boundary points aligned
+    Align the boundary edge between two adjacent heatmaps using precise coordinate snapping.
     """
     
-    # Extract boundary coordinates from both heatmaps
-    current_boundary = extract_boundary_coords(current_geojson, direction, 'current')
-    adjacent_boundary = extract_boundary_coords(adjacent_geojson, get_opposite_direction(direction), 'adjacent')
+    # Get the exact boundary line for both heatmaps
+    current_boundary_line = get_exact_boundary_line(current_geojson, direction)
+    adjacent_boundary_line = get_exact_boundary_line(adjacent_geojson, get_opposite_direction(direction))
     
-    if not current_boundary or not adjacent_boundary:
+    if not current_boundary_line or not adjacent_boundary_line:
         return 0
     
-    print(f"    🔍 Aligning {direction} boundary: {len(current_boundary)} current vs {len(adjacent_boundary)} adjacent points")
+    print(f"    🔍 Aligning {direction} boundary: {len(current_boundary_line)} current vs {len(adjacent_boundary_line)} adjacent points")
     
-    # Find matching boundary segments and snap coordinates
     alignment_count = 0
-    snap_distance_threshold = 0.005  # ~500m tolerance for boundary matching
+    snap_threshold = 0.01  # 1km tolerance
     
-    # For each triangle in current heatmap, check if it has boundary edges that need alignment
+    # Process every triangle and snap boundary vertices to the adjacent boundary
     for feature in current_geojson['features']:
         if feature['geometry']['type'] != 'Polygon':
             continue
@@ -138,37 +120,33 @@ def align_boundary_edge(current_geojson, adjacent_geojson, direction, current_na
         coords = feature['geometry']['coordinates'][0]
         modified = False
         
-        # Check each edge of the triangle
-        for j in range(len(coords) - 1):  # -1 because last coord duplicates first
-            point1 = coords[j]
-            point2 = coords[(j + 1) % (len(coords) - 1)]
+        # Check each vertex of the triangle
+        for j in range(len(coords) - 1):  # Skip last duplicate coordinate
+            vertex = coords[j]
             
-            # Check if this edge is on the boundary that needs alignment
-            if is_boundary_edge(point1, point2, direction, current_boundary):
-                # Find nearest points on adjacent boundary and snap to them
-                snapped_p1 = snap_to_boundary(point1, adjacent_boundary, snap_distance_threshold)
-                snapped_p2 = snap_to_boundary(point2, adjacent_boundary, snap_distance_threshold)
+            # Check if this vertex is on the boundary that needs alignment
+            if is_on_boundary(vertex, direction):
+                # Find the closest point on the adjacent boundary line
+                snapped_vertex = find_closest_boundary_point(vertex, adjacent_boundary_line, snap_threshold)
                 
-                if snapped_p1 or snapped_p2:
-                    if snapped_p1:
-                        coords[j] = snapped_p1
-                        alignment_count += 1
-                    if snapped_p2:
-                        coords[(j + 1) % (len(coords) - 1)] = snapped_p2
-                        alignment_count += 1
-                        # Also update the closing coordinate if it matches
-                        if j + 1 == len(coords) - 1:
-                            coords[-1] = snapped_p2
+                if snapped_vertex and snapped_vertex != vertex:
+                    coords[j] = snapped_vertex
+                    alignment_count += 1
                     modified = True
+                    
+                    # Also update the closing coordinate if this is the last vertex
+                    if j == 0:
+                        coords[-1] = snapped_vertex
         
-        # Update the feature if coordinates were modified
+        # Update the feature coordinates if modified
         if modified:
             feature['geometry']['coordinates'][0] = coords
     
+    print(f"    ✅ Successfully aligned {alignment_count} boundary vertices")
     return alignment_count
 
-def extract_boundary_coords(geojson_data, direction, role):
-    """Extract boundary coordinates for a specific direction."""
+def get_exact_boundary_line(geojson_data, direction):
+    """Get the exact boundary line coordinates for a specific direction."""
     if not geojson_data or not geojson_data.get('features'):
         return []
     
@@ -181,49 +159,91 @@ def extract_boundary_coords(geojson_data, direction, role):
     if not all_coords:
         return []
     
-    # Find boundary coordinates based on direction
+    # Find the exact boundary line based on direction
     lats = [coord[1] for coord in all_coords]
     lons = [coord[0] for coord in all_coords]
     
-    boundary_coords = []
-    tolerance = 0.002  # ~200m tolerance for boundary detection
-    
     if direction == 'north':
-        max_lat = max(lats)
-        boundary_coords = [coord for coord in all_coords if coord[1] >= max_lat - tolerance]
+        boundary_lat = max(lats)
+        boundary_coords = [coord for coord in all_coords if abs(coord[1] - boundary_lat) < 0.0001]
     elif direction == 'south':
-        min_lat = min(lats)
-        boundary_coords = [coord for coord in all_coords if coord[1] <= min_lat + tolerance]
+        boundary_lat = min(lats)
+        boundary_coords = [coord for coord in all_coords if abs(coord[1] - boundary_lat) < 0.0001]
     elif direction == 'east':
-        max_lon = max(lons)
-        boundary_coords = [coord for coord in all_coords if coord[0] >= max_lon - tolerance]
+        boundary_lon = max(lons)
+        boundary_coords = [coord for coord in all_coords if abs(coord[0] - boundary_lon) < 0.0001]
     elif direction == 'west':
-        min_lon = min(lons)
-        boundary_coords = [coord for coord in all_coords if coord[0] <= min_lon + tolerance]
+        boundary_lon = min(lons)
+        boundary_coords = [coord for coord in all_coords if abs(coord[0] - boundary_lon) < 0.0001]
+    else:
+        return []
     
-    # Remove duplicates and sort
+    # Remove duplicates and sort appropriately
     unique_coords = list(set(tuple(coord) for coord in boundary_coords))
+    if direction in ['north', 'south']:
+        # Sort by longitude for horizontal boundaries
+        unique_coords.sort(key=lambda x: x[0])
+    else:
+        # Sort by latitude for vertical boundaries
+        unique_coords.sort(key=lambda x: x[1])
+    
     return [list(coord) for coord in unique_coords]
 
-def is_boundary_edge(point1, point2, direction, boundary_coords):
-    """Check if an edge is on the specified boundary."""
-    boundary_set = set(tuple(coord) for coord in boundary_coords)
-    return tuple(point1) in boundary_set or tuple(point2) in boundary_set
+def is_on_boundary(vertex, direction):
+    """Check if a vertex is potentially on the specified boundary."""
+    # This is a simplified check - in practice, we'll determine this during processing
+    return True  # We'll check proximity to actual boundary during snapping
 
-def snap_to_boundary(point, boundary_coords, threshold):
-    """Snap a point to the nearest boundary coordinate within threshold."""
-    min_distance = float('inf')
-    nearest_coord = None
+def find_closest_boundary_point(vertex, boundary_line, threshold):
+    """Find the closest point on the boundary line to snap to."""
+    if not boundary_line:
+        return None
     
-    for boundary_coord in boundary_coords:
-        # Calculate distance between point and boundary coordinate
-        distance = np.sqrt((point[0] - boundary_coord[0])**2 + (point[1] - boundary_coord[1])**2)
+    min_distance = float('inf')
+    closest_point = None
+    
+    # Check distance to each point on the boundary line
+    for boundary_point in boundary_line:
+        distance = np.sqrt((vertex[0] - boundary_point[0])**2 + (vertex[1] - boundary_point[1])**2)
         
         if distance < min_distance and distance <= threshold:
             min_distance = distance
-            nearest_coord = boundary_coord
+            closest_point = boundary_point
     
-    return nearest_coord if nearest_coord else None
+    # If no exact point match, try linear interpolation along boundary segments
+    if not closest_point and len(boundary_line) > 1:
+        for i in range(len(boundary_line) - 1):
+            p1 = boundary_line[i]
+            p2 = boundary_line[i + 1]
+            
+            # Find closest point on line segment p1-p2 to vertex
+            interpolated_point = closest_point_on_segment(vertex, p1, p2)
+            if interpolated_point:
+                distance = np.sqrt((vertex[0] - interpolated_point[0])**2 + (vertex[1] - interpolated_point[1])**2)
+                if distance <= threshold and distance < min_distance:
+                    min_distance = distance
+                    closest_point = interpolated_point
+    
+    return closest_point
+
+def closest_point_on_segment(point, seg_start, seg_end):
+    """Find the closest point on a line segment to a given point."""
+    # Vector from seg_start to seg_end
+    seg_vec = [seg_end[0] - seg_start[0], seg_end[1] - seg_start[1]]
+    # Vector from seg_start to point
+    point_vec = [point[0] - seg_start[0], point[1] - seg_start[1]]
+    
+    # Calculate segment length squared
+    seg_len_sq = seg_vec[0]**2 + seg_vec[1]**2
+    if seg_len_sq == 0:
+        return seg_start  # Segment is a point
+    
+    # Calculate the projection parameter t
+    t = max(0, min(1, (point_vec[0] * seg_vec[0] + point_vec[1] * seg_vec[1]) / seg_len_sq))
+    
+    # Calculate the closest point on the segment
+    closest = [seg_start[0] + t * seg_vec[0], seg_start[1] + t * seg_vec[1]]
+    return closest
 
 def get_opposite_direction(direction):
     """Get the opposite direction for boundary matching."""

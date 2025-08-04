@@ -155,24 +155,62 @@ def create_unified_raster_overlay(stored_heatmaps, heatmap_style='smooth_raster'
         interpolated_values = gaussian_filter(interpolated_values, sigma=sigma)
         print(f"  ✨ SMOOTHING: Applied Gaussian filter (σ={sigma})")
         
-        # Step 5: Generate seamless raster image
-        # Create custom colormap matching the existing one
-        colors = ['#000033', '#000066', '#000099', '#0000CC', '#0000FF',
-                 '#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF',
-                 '#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00',
-                 '#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00',
-                 '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000']
+        # Step 5: Generate seamless raster image using the same global colormap
+        # Import the global colormap function from the main app
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
         
-        cmap = LinearSegmentedColormap.from_list('custom', colors, N=256)
-        
-        # Normalize values for coloring
-        vmin, vmax = all_values.min(), all_values.max()
-        norm_values = (interpolated_values - vmin) / (vmax - vmin)
-        norm_values = np.clip(norm_values, 0, 1)
-        
-        # Generate RGBA image
-        rgba_image = cmap(norm_values)
-        rgba_image[..., 3] = opacity  # Set opacity
+        try:
+            # Try to get the global colormap function from app.py
+            from app import get_global_unified_color, global_min_value, global_max_value
+            
+            print(f"  🎨 USING GLOBAL COLORMAP: Range {global_min_value:.2f} to {global_max_value:.2f}")
+            
+            # Use the exact same crest colormap that the triangular mesh uses
+            from matplotlib.colors import to_rgba
+            import matplotlib.pyplot as plt
+            
+            # Get the crest colormap that matches the triangular mesh
+            crest_colors = ['#0c2c84', '#225ea8', '#1d91c0', '#41b6c4', '#7fcdbb', 
+                           '#c7e9b4', '#edf8b1', '#ffffd9']
+            cmap = LinearSegmentedColormap.from_list('crest', crest_colors, N=256)
+            
+            # Normalize using the SAME global range as triangular mesh
+            if global_max_value > global_min_value:
+                norm_values = (interpolated_values - global_min_value) / (global_max_value - global_min_value)
+            else:
+                norm_values = np.zeros_like(interpolated_values)
+            norm_values = np.clip(norm_values, 0, 1)
+            
+            # Generate RGBA image with the same colormap
+            rgba_image = cmap(norm_values)
+            rgba_image[..., 3] = opacity  # Set opacity
+            
+            # Make NaN areas transparent
+            nan_mask = np.isnan(interpolated_values)
+            rgba_image[nan_mask, 3] = 0
+                        
+        except ImportError:
+            # Fallback to simplified colormap if import fails
+            print("  ⚠️  Could not import global colormap, using fallback")
+            # Use the existing triangular mesh colormap (crest-style)
+            colors = ['#0c2c84', '#1e3a8a', '#1d4ed8', '#2563eb', '#3b82f6',
+                     '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe', '#eff6ff',
+                     '#f0f9ff', '#ecfdf5', '#d1fae5', '#a7f3d0', '#6ee7b7',
+                     '#34d399', '#10b981', '#059669', '#047857', '#065f46',
+                     '#064e3b', '#fbbf24', '#f59e0b', '#d97706', '#b45309']
+            
+            cmap = LinearSegmentedColormap.from_list('crest', colors, N=256)
+            
+            # Normalize values for coloring using global range
+            vmin, vmax = all_values.min(), all_values.max()
+            norm_values = (interpolated_values - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(interpolated_values)
+            norm_values = np.clip(norm_values, 0, 1)
+            
+            # Generate RGBA image
+            rgba_image = cmap(norm_values)
+            rgba_image[..., 3] = opacity  # Set opacity
         
         # Convert to PIL Image
         rgba_uint8 = (rgba_image * 255).astype(np.uint8)

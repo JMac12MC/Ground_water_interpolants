@@ -918,17 +918,47 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     final_clip_factor = 0.5
     final_radius_km = radius_km * final_clip_factor
     
-    # Create final square clipping polygon centered on the original center
+    # Create final square clipping polygon - RESPECT BOUNDARY SNAPPING
     final_clip_lat_radius = final_radius_km / km_per_degree_lat
     final_clip_lon_radius = final_radius_km / km_per_degree_lon
     
-    final_clip_polygon_coords = [
-        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
-        [center_lon + final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SE
-        [center_lon + final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NE
-        [center_lon - final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NW
-        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius]   # Close
-    ]
+    # Use snapped boundaries if available, otherwise use center-based calculation
+    if adjacent_boundaries is not None:
+        # Use the same boundaries that were used for grid creation
+        west_boundary = adjacent_boundaries.get('west')
+        east_boundary = adjacent_boundaries.get('east') 
+        north_boundary = adjacent_boundaries.get('north')
+        south_boundary = adjacent_boundaries.get('south')
+        
+        # Calculate default final clip boundaries
+        default_final_min_lat = center_lat - final_clip_lat_radius
+        default_final_max_lat = center_lat + final_clip_lat_radius
+        default_final_min_lon = center_lon - final_clip_lon_radius
+        default_final_max_lon = center_lon + final_clip_lon_radius
+        
+        # Use snapped boundaries where available, defaults otherwise
+        final_min_lat = south_boundary if south_boundary is not None else default_final_min_lat
+        final_max_lat = north_boundary if north_boundary is not None else default_final_max_lat
+        final_min_lon = west_boundary if west_boundary is not None else default_final_min_lon
+        final_max_lon = east_boundary if east_boundary is not None else default_final_max_lon
+        
+        final_clip_polygon_coords = [
+            [final_min_lon, final_min_lat],  # SW
+            [final_max_lon, final_min_lat],  # SE
+            [final_max_lon, final_max_lat],  # NE
+            [final_min_lon, final_max_lat],  # NW
+            [final_min_lon, final_min_lat]   # Close
+        ]
+        print(f"Final clipping using SNAPPED BOUNDARIES: W={final_min_lon:.8f}, E={final_max_lon:.8f}")
+    else:
+        # Standard center-based clipping when no boundaries are snapped
+        final_clip_polygon_coords = [
+            [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
+            [center_lon + final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SE
+            [center_lon + final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NE
+            [center_lon - final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NW
+            [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius]   # Close
+        ]
     
     from shapely.geometry import Polygon as ShapelyPolygon
     final_clip_geometry = ShapelyPolygon(final_clip_polygon_coords)
@@ -980,7 +1010,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     snapped_vertices = 0
                     if adjacent_boundaries is not None:
                         # Apply boundary snapping to triangle vertices
-                        snap_threshold_km = 1.0  # 1km threshold for snapping
+                        snap_threshold_km = 3.0  # 3km threshold for snapping (covers typical boundary gaps)
                         
                         for vertex_idx in range(3):  # 3 vertices per triangle
                             vertex_lon, vertex_lat = vertices[vertex_idx]

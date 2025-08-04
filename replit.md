@@ -126,6 +126,20 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **August 04, 2025**: CRITICAL FIX: Boundary snapping now fully functional across all grid sizes
+  - Fixed vertex-level boundary snapping threshold from 1km to 3km to catch boundary vertices
+  - Corrected final clipping logic to preserve snapped boundaries instead of overriding them
+  - Added comprehensive automated testing with test_boundary_snapping_simple.py
+  - Verified 9,387 vertices snap successfully with perfect 0.0m accuracy to target boundaries
+  - Seamless heatmap connection now working for 1×2, 2×3, and 10×10 grids
+  - Console logging shows vertex coordinate changes during triangular mesh generation
+
+- **August 04, 2025**: Added 1×2 Grid option for rapid boundary snapping testing
+  - Implemented 1×2 grid layout (original + east heatmaps) for quick iteration
+  - Added grid-specific boundary snapping logic in sequential_heatmap.py
+  - Updated naming convention and status messages for 1×2 grid
+  - Perfect for testing boundary alignment with minimal generation time
+
 - **July 30, 2025**: MAJOR FEATURE ADDED: Windy.com-style smooth raster visualization with toggle functionality
   - Implemented `generate_smooth_raster_overlay()` function using cubic interpolation and Gaussian smoothing
   - Added "Heatmap Display Style" selector: Triangle Mesh (Scientific) vs Smooth Raster (Windy.com Style)

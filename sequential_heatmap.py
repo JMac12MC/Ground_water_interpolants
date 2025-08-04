@@ -585,24 +585,67 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         
                         print(f"  📐 BOUNDARIES STORED for {location_name.upper()}: N={boundary_max_lat:.8f}, S={boundary_min_lat:.8f}, E={boundary_max_lon:.8f}, W={boundary_min_lon:.8f}")
                         
-                        # STORE CLIPPING POLYGON VISUALIZATION DATA
+                        # STORE ACTUAL 0.5 CLIPPING POLYGON FOR VISUALIZATION
                         if 'clipping_polygons' not in st.session_state:
                             st.session_state.clipping_polygons = []
                         
-                        # Add this heatmap's clipping polygon for visualization
+                        # Calculate the actual 0.5 clipping zone boundaries
+                        # This is what's actually used for interpolation
+                        radius_km = st.session_state.search_radius
+                        final_clip_factor = 0.5
+                        final_radius_km = radius_km * final_clip_factor
+                        
+                        center_lat, center_lon = center_point
+                        km_per_degree_lat = 111.0
+                        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+                        
+                        # Standard centroid-based clipping zone calculation
+                        standard_clip_lat_radius = final_radius_km / km_per_degree_lat
+                        standard_clip_lon_radius = final_radius_km / km_per_degree_lon
+                        
+                        # Calculate actual clipping zone boundaries
+                        if adjacent_boundaries is None:
+                            # Original (first) heatmap - use standard centroid-based clipping
+                            clip_north = center_lat + standard_clip_lat_radius
+                            clip_south = center_lat - standard_clip_lat_radius
+                            clip_east = center_lon + standard_clip_lon_radius
+                            clip_west = center_lon - standard_clip_lon_radius
+                        else:
+                            # Edge-aligned heatmap - use boundaries from adjacent heatmaps
+                            clip_north = center_lat + standard_clip_lat_radius
+                            clip_south = center_lat - standard_clip_lat_radius
+                            clip_east = center_lon + standard_clip_lon_radius
+                            clip_west = center_lon - standard_clip_lon_radius
+                            
+                            # Override with adjacent boundaries where they exist
+                            if 'north' in adjacent_boundaries:
+                                clip_north = adjacent_boundaries['north']
+                            if 'south' in adjacent_boundaries:
+                                clip_south = adjacent_boundaries['south']  
+                            if 'east' in adjacent_boundaries:
+                                clip_east = adjacent_boundaries['east']
+                            if 'west' in adjacent_boundaries:
+                                clip_west = adjacent_boundaries['west']
+                        
+                        # Store the actual 0.5 clipping zone for visualization
                         clipping_polygon = {
                             'name': location_name,
                             'boundaries': {
-                                'north': boundary_max_lat,
-                                'south': boundary_min_lat, 
-                                'east': boundary_max_lon,
-                                'west': boundary_min_lon
+                                'north': clip_north,
+                                'south': clip_south, 
+                                'east': clip_east,
+                                'west': clip_west
                             },
                             'center': center_point,
                             'aligned': adjacent_boundaries is not None,
-                            'color': get_clipping_polygon_color(location_name)
+                            'color': get_clipping_polygon_color(location_name),
+                            'radius_km': final_radius_km
                         }
                         st.session_state.clipping_polygons.append(clipping_polygon)
+                        
+                        print(f"  📐 0.5 CLIPPING ZONE for {location_name.upper()}: N={clip_north:.8f}, S={clip_south:.8f}, E={clip_east:.8f}, W={clip_west:.8f} (radius={final_radius_km}km)")
+                        if adjacent_boundaries:
+                            print(f"      EDGE-ALIGNED: Used {len(adjacent_boundaries)} adjacent boundaries")
                     else:
                         print(f"  ⚠️  {location_name.upper()}: Already exists in database")
                         

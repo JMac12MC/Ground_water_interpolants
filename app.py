@@ -303,13 +303,16 @@ with st.sidebar:
     st.subheader("Heatmap Grid Options")
     grid_option = st.selectbox(
         "Heatmap Grid Size",
-        options=["2×3 Grid (6 heatmaps)", "10×10 Grid (100 heatmaps)"],
-        index=0,  # Default to 2x3
-        help="Choose the grid size for automatic heatmap generation. 10×10 creates comprehensive regional coverage but takes longer to generate."
+        options=["1×2 Grid (2 heatmaps)", "2×3 Grid (6 heatmaps)", "10×10 Grid (100 heatmaps)"],
+        index=1,  # Default to 2x3
+        help="Choose the grid size for automatic heatmap generation. 1×2 creates just original + east heatmap for quick testing, 2×3 is standard layout, 10×10 creates comprehensive regional coverage."
     )
     
     # Convert selection to grid_size tuple and store in session state
-    if "10×10" in grid_option:
+    if "1×2" in grid_option:
+        st.session_state.grid_size = (1, 2)
+        st.info("🚀 **Quick Mode**: Will generate 2 heatmaps (original + east) for rapid boundary testing")
+    elif "10×10" in grid_option:
         st.session_state.grid_size = (10, 10)
         st.info("📊 **Extended Mode**: Will generate 100 heatmaps covering 178km south × 178km east area")
     else:

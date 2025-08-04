@@ -249,7 +249,13 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             lng = clicked_lng + (col * row_longitude_offsets[row])
             
             # Generate descriptive names for grid positions
-            if grid_rows == 2 and grid_cols == 3:
+            if grid_rows == 1 and grid_cols == 2:
+                # Use simple naming for 1x2 grid (original + east)
+                names_1x2 = [
+                    ['original', 'east']
+                ]
+                name = names_1x2[row][col]
+            elif grid_rows == 2 and grid_cols == 3:
                 # Use original naming for 2x3 grid
                 names_2x3 = [
                     ['original', 'east', 'northeast'],
@@ -415,7 +421,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     
     for i, (location_name, center_point) in enumerate(locations):
         try:
-            st.write(f"🔄 Building heatmap {i+1}/6: {location_name.title()} location...")
+            st.write(f"🔄 Building heatmap {i+1}/{len(locations)}: {location_name.title()} location...")
             
             # Filter wells for this location
             wells_df = wells_data.copy()
@@ -505,8 +511,17 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             adjacent_boundaries = {}
             print(f"🔧 BOUNDARY CHECK: Processing {location_name}, completed_boundaries has: {list(completed_boundaries.keys())}")
             
-            # 2x3 grid boundary snapping logic
-            if location_name == 'east' and 'original' in completed_boundaries:
+            # Grid-specific boundary snapping logic
+            if grid_rows == 1 and grid_cols == 2:
+                # 1x2 grid boundary snapping logic (original + east only)
+                if location_name == 'east' and 'original' in completed_boundaries:
+                    # East: snap west boundary to original's east boundary
+                    adjacent_boundaries['west'] = completed_boundaries['original']['east']
+                    print(f"  BOUNDARY SNAP (1×2): {location_name} west → original east ({adjacent_boundaries['west']:.8f})")
+            
+            elif grid_rows == 2 and grid_cols == 3:
+                # 2x3 grid boundary snapping logic
+                if location_name == 'east' and 'original' in completed_boundaries:
                 # East: snap west boundary to original's east boundary
                 adjacent_boundaries['west'] = completed_boundaries['original']['east']
                 print(f"  BOUNDARY SNAP: {location_name} west → original east ({adjacent_boundaries['west']:.8f})")

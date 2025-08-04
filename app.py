@@ -1065,48 +1065,12 @@ with main_col1:
                     if st.session_state.filtered_wells is not None:
                         print(f"DEBUG DETAILED: filtered_wells length={len(st.session_state.filtered_wells)}")
                 
-                if has_selected_point and has_filtered_wells and wells_count > 0:
-                    try:
-                        print(f"AUTOMATIC SEQUENTIAL GENERATION: Triggering quad heatmap generation on click")
-                        
-                        # Use the dedicated sequential processing module for automatic generation
-                        from sequential_heatmap import generate_quad_heatmaps_sequential
-                        
-                        # Generate heatmaps sequentially with Banks Peninsula exclusion and selected grid size
-                        success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
-                            wells_data=st.session_state.wells_data,
-                            click_point=st.session_state.selected_point,
-                            search_radius=st.session_state.search_radius,
-                            interpolation_method=st.session_state.interpolation_method,
-                            polygon_db=st.session_state.polygon_db,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            banks_peninsula_coords=st.session_state.banks_peninsula_coords,
-                            grid_size=st.session_state.get('grid_size', (2, 3))
-                        )
-                        
-                        print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
-                        
-                        if success_count > 0:
-                            # Reload stored heatmaps to display the new ones
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            st.session_state.new_heatmap_added = True
-                            st.session_state.fresh_heatmap_displayed = False
-                            
-                            # For display purposes, get the first generated heatmap
-                            if stored_heatmap_ids:
-                                primary_heatmap = st.session_state.stored_heatmaps[0] if st.session_state.stored_heatmaps else None
-                                if primary_heatmap and primary_heatmap.get('geojson_data'):
-                                    geojson_data = primary_heatmap['geojson_data']
-                                    print(f"AUTOMATIC GENERATION: Using stored heatmap for display")
-                        
-                        # Sequential processing and storage handled by the dedicated module
-                    except Exception as e:
-                        print(f"CRITICAL ERROR in heatmap generation: {e}")
-                        st.error(f"Error generating heatmaps: {e}")
-                        geojson_data = {"type": "FeatureCollection", "features": []}
-                        geojson_data_east = None
-                else:
-                    geojson_data = {"type": "FeatureCollection", "features": []}
+                # OLD LOGIC DISABLED: Sequential generation now happens AFTER click processing
+                # This prevents timing issues where generation runs before click data is processed
+                print("OLD SEQUENTIAL GENERATION: Disabled - now runs after click processing")
+                
+                # Initialize empty geojson_data since sequential generation happens later
+                geojson_data = {"type": "FeatureCollection", "features": []}
 
                 # Ensure geojson_data is always defined
                 if 'geojson_data' not in locals():
@@ -1931,6 +1895,43 @@ with main_col1:
                 
                 print(f"COORDINATES UPDATED: Original wells={len(filtered_wells)}, East wells={len(filtered_wells_east)}, Northeast wells={len(filtered_wells_northeast)}, South wells={len(filtered_wells_south)}, Southeast wells={len(filtered_wells_southeast)}, Far Southeast wells={len(filtered_wells_far_southeast)}")
                 print("WELLS FILTERED: Ready for 6-heatmap grid generation")
+                
+                # NOW TRIGGER SEQUENTIAL HEATMAP GENERATION WITH BOUNDARY SNAPPING
+                # This happens AFTER click processing and session state updates
+                print("🔧 BOUNDARY SNAPPING: Triggering sequential generation after click processing")
+                
+                try:
+                    from sequential_heatmap import generate_quad_heatmaps_sequential
+                    
+                    # Generate heatmaps sequentially with boundary snapping
+                    success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
+                        wells_data=st.session_state.wells_data,
+                        click_point=st.session_state.selected_point,
+                        search_radius=st.session_state.search_radius,
+                        interpolation_method=st.session_state.interpolation_method,
+                        polygon_db=st.session_state.polygon_db,
+                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                        banks_peninsula_coords=st.session_state.banks_peninsula_coords,
+                        grid_size=st.session_state.get('grid_size', (2, 3))
+                    )
+                    
+                    print(f"🔧 BOUNDARY SNAPPING COMPLETE: {success_count} heatmaps generated with boundary snapping")
+                    
+                    if success_count > 0:
+                        # Force app to reload stored heatmaps with boundary snapping applied
+                        st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        st.session_state.new_heatmap_added = True
+                        st.session_state.fresh_heatmap_displayed = False
+                        print("🔧 BOUNDARY SNAPPING: Stored heatmaps updated with seamless boundaries")
+                        
+                        # Force page refresh to display new boundary-snapped heatmaps
+                        st.rerun()
+                    else:
+                        print("❌ BOUNDARY SNAPPING: No heatmaps generated")
+                        
+                except Exception as e:
+                    print(f"❌ BOUNDARY SNAPPING ERROR: {e}")
+                    st.error(f"Error generating heatmaps with boundary snapping: {e}")
                 
                 # Force session state flag to ensure heatmap generation triggers
                 st.session_state.force_heatmap_generation = True

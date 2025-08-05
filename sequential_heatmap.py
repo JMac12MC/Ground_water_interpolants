@@ -583,13 +583,41 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Generate heatmap with Banks Peninsula exclusion AND edge-aligned boundaries
-            # Add boundary vertex sharing for seamless edges
-            boundary_vertices = None
-            if adjacent_boundaries and len(completed_boundaries) > 0:
-                # Create shared boundary vertices from completed heatmaps
-                boundary_vertices = extract_boundary_vertices(completed_boundaries, location_name, adjacent_boundaries)
-                print(f"  🔗 BOUNDARY VERTICES: Using {len(boundary_vertices) if boundary_vertices else 0} shared vertices for seamless edges")
+            # Extract vertices from stored heatmaps for vertex-to-vertex snapping
+            boundary_vertices = []
+            if location_name != 'original' and stored_heatmap_ids:
+                print(f"  🎯 EXTRACTING VERTICES: Finding triangle vertices from adjacent heatmaps for {location_name}")
+                
+                # Get vertices from previously stored heatmaps
+                for stored_name, stored_id in stored_heatmap_ids:
+                    if stored_name != location_name:  # Don't snap to self
+                        try:
+                            # Fetch heatmap from database
+                            stored_heatmaps = polygon_db.get_all_stored_heatmaps()
+                            for heatmap in stored_heatmaps:
+                                if heatmap['id'] == stored_id and heatmap.get('geojson_data'):
+                                    geojson = heatmap['geojson_data']
+                                    
+                                    # Extract all triangle vertices from adjacent boundary area only
+                                    vertex_count = 0
+                                    for feature in geojson.get('features', []):
+                                        if 'geometry' in feature and feature['geometry']['type'] == 'Polygon':
+                                            coords = feature['geometry']['coordinates'][0]
+                                            for coord in coords[:-1]:  # Skip duplicate last coordinate
+                                                # Only include vertices near the boundary for efficiency
+                                                if location_name == 'east' and coord[0] > center_point[1] - 0.05:  # Eastern edge of stored heatmap
+                                                    boundary_vertices.append((coord[0], coord[1]))
+                                                    vertex_count += 1
+                                                elif location_name in ['south', 'southeast'] and coord[1] < center_point[0] + 0.05:  # Southern edge
+                                                    boundary_vertices.append((coord[0], coord[1]))
+                                                    vertex_count += 1
+                                    
+                                    print(f"    📐 EXTRACTED: {vertex_count} boundary vertices from {stored_name} heatmap (ID {stored_id})")
+                                    break
+                        except Exception as e:
+                            print(f"    ⚠️  Failed to extract vertices from {stored_name}: {e}")
+                
+                print(f"  🎯 TOTAL BOUNDARY VERTICES: {len(boundary_vertices)} available for vertex snapping")
             
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
@@ -683,25 +711,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         
                         print(f"  📐 BOUNDARIES STORED for {location_name.upper()}: N={boundary_max_lat:.8f}, S={boundary_min_lat:.8f}, E={boundary_max_lon:.8f}, W={boundary_min_lon:.8f}")
                         
-                        # IMPLEMENT BIDIRECTIONAL BOUNDARY SNAPPING
-                        # Update previously stored heatmaps to align with this heatmap's boundaries
-                        if location_name == 'east' and 'original' in [name for name, _ in stored_heatmap_ids]:
-                            # Find the original heatmap ID
-                            original_heatmap_id = None
-                            for stored_name, stored_id in stored_heatmap_ids:
-                                if stored_name == 'original':
-                                    original_heatmap_id = stored_id
-                                    break
-                            
-                            if original_heatmap_id:
-                                # Update original heatmap's EAST boundary to align with east heatmap's WEST boundary
-                                east_west_boundary = boundary_min_lon  # This is the east heatmap's west boundary
-                                boundary_updates = {'east': east_west_boundary}
-                                success = polygon_db.update_stored_heatmap_boundaries(original_heatmap_id, boundary_updates)
-                                if success:
-                                    print(f"  🔄 BIDIRECTIONAL SNAPPING: Updated original heatmap ID {original_heatmap_id} east boundary to {east_west_boundary:.8f}")
-                                else:
-                                    print(f"  ⚠️  Failed to update original heatmap boundaries")
+
                         
                         # STORE ACTUAL 0.5 CLIPPING POLYGON FOR VISUALIZATION
                         if 'clipping_polygons' not in st.session_state:

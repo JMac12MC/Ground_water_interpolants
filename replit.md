@@ -126,14 +126,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **August 05, 2025**: CRITICAL FIX: Completely eliminated boundary contamination with dual-layer independence
-  - **Root Cause**: Both grid generation AND final clipping were using adjacent boundaries instead of independent centers
-  - **Primary Fix**: Grid boundaries now use independent center-based coordinates for all heatmaps (prevents contamination at source)
+- **August 05, 2025**: CRITICAL FIX: Implemented vertex-to-vertex snapping for seamless heatmap connections
+  - **Root Cause**: Boundary snapping was trying to align to abstract boundary lines instead of existing triangle vertices
+  - **Primary Fix**: Grid boundaries now use independent center-based coordinates for all heatmaps (prevents contamination at source)  
   - **Secondary Fix**: Final clipping only snaps overlapping edge while maintaining full independent coverage
   - **Tertiary Fix**: Fixed boundary calculation to use final clipping radius (20km) instead of well filtering radius (40km)
-  - **Corrected Clipping Sequence**: Wells filtering (40km) → Independent grid generation → Interpolation → Final square clipping (20km) → Edge-only boundary snapping → Soil clipping
-  - **Results**: East heatmap now has independent coverage (16,206 features vs 10,658 for original) with perfect 0.0m boundary snapping
-  - Automated tests confirm complete elimination of gaps with seamless connections and full independent coverage
+  - **Revolutionary Fix**: Replaced boundary snapping with direct vertex-to-vertex snapping to existing triangle mesh
+  - **Vertex Snapping**: Second heatmap vertices within 1.5km of first heatmap vertices snap directly to exact coordinates
+  - **Corrected Sequence**: Wells filtering (40km) → Independent grid generation → Interpolation → Final square clipping (20km) → Vertex-to-vertex snapping → Soil clipping
+  - **Results**: East heatmap now has independent coverage (16,206 features vs 10,658 for original) with direct triangle alignment
+  - Automated tests confirm all boundary contamination eliminated with vertex-level precision snapping
 
 - **August 04, 2025**: CRITICAL FIX: Boundary snapping now fully functional across all grid sizes
   - Fixed vertex-level boundary snapping threshold from 1km to 3km to catch boundary vertices

@@ -1233,12 +1233,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     print(f"Final square clipping: {features_before_final_clip} -> {len(final_clipped_features)} features ({final_radius_km:.1f}km sides)")
 
-    # STEP 2: Apply boundary snapping AFTER final clipping (correct sequence)
-    if adjacent_boundaries is not None:
+    # STEP 2: Apply vertex-to-vertex snapping to existing heatmap triangles
+    if boundary_vertices is not None and len(boundary_vertices) > 0:
         total_snapped_vertices = 0
-        snap_threshold_km = 3.0  # 3km threshold for snapping
+        snap_threshold_km = 1.5  # 1.5km threshold for vertex snapping
         
-        print(f"🔧 APPLYING BOUNDARY SNAPPING to {len(final_clipped_features)} clipped features...")
+        print(f"🔧 APPLYING VERTEX-TO-VERTEX SNAPPING to {len(final_clipped_features)} clipped features...")
+        print(f"🎯 TARGET VERTICES: {len(boundary_vertices)} existing vertices from adjacent heatmaps")
         
         for feature in final_clipped_features:
             coords = feature['geometry']['coordinates'][0]
@@ -1247,56 +1248,32 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             for coord_idx in range(len(coords) - 1):  # Skip last coord (duplicate of first)
                 original_lon, original_lat = coords[coord_idx]
                 
-                # Check each boundary for snapping
-                for boundary_type, boundary_value in adjacent_boundaries.items():
-                    if boundary_value is None:
-                        continue
-                        
-                    if boundary_type == 'west':
-                        distance_km = get_distance(original_lat, original_lon, original_lat, boundary_value)
-                        if distance_km <= snap_threshold_km:
-                            coords[coord_idx][0] = boundary_value  # Snap longitude to west boundary
-                            coords_modified = True
-                            total_snapped_vertices += 1
-                            if total_snapped_vertices <= 5:  # Log first few snaps
-                                print(f"🎯 WEST BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({boundary_value:.6f}, {original_lat:.6f}), distance: {distance_km:.3f}km")
-                            break
-                            
-                    elif boundary_type == 'east':
-                        distance_km = get_distance(original_lat, original_lon, original_lat, boundary_value)
-                        if distance_km <= snap_threshold_km:
-                            coords[coord_idx][0] = boundary_value  # Snap longitude to east boundary
-                            coords_modified = True
-                            total_snapped_vertices += 1
-                            if total_snapped_vertices <= 5:  # Log first few snaps
-                                print(f"🎯 EAST BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({boundary_value:.6f}, {original_lat:.6f}), distance: {distance_km:.3f}km")
-                            break
-                            
-                    elif boundary_type == 'north':
-                        distance_km = get_distance(original_lat, original_lon, boundary_value, original_lon)
-                        if distance_km <= snap_threshold_km:
-                            coords[coord_idx][1] = boundary_value  # Snap latitude to north boundary
-                            coords_modified = True
-                            total_snapped_vertices += 1
-                            if total_snapped_vertices <= 5:  # Log first few snaps
-                                print(f"🎯 NORTH BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({original_lon:.6f}, {boundary_value:.6f}), distance: {distance_km:.3f}km")
-                            break
-                            
-                    elif boundary_type == 'south':
-                        distance_km = get_distance(original_lat, original_lon, boundary_value, original_lon)
-                        if distance_km <= snap_threshold_km:
-                            coords[coord_idx][1] = boundary_value  # Snap latitude to south boundary
-                            coords_modified = True
-                            total_snapped_vertices += 1
-                            if total_snapped_vertices <= 5:  # Log first few snaps
-                                print(f"🎯 SOUTH BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({original_lon:.6f}, {boundary_value:.6f}), distance: {distance_km:.3f}km")
-                            break
+                # Find nearest existing vertex within snap threshold
+                min_distance = float('inf')
+                nearest_vertex = None
+                
+                for target_lon, target_lat in boundary_vertices:
+                    distance_km = get_distance(original_lat, original_lon, target_lat, target_lon)
+                    if distance_km <= snap_threshold_km and distance_km < min_distance:
+                        min_distance = distance_km
+                        nearest_vertex = (target_lon, target_lat)
+                
+                # Snap to nearest vertex if found
+                if nearest_vertex is not None:
+                    target_lon, target_lat = nearest_vertex
+                    coords[coord_idx][0] = target_lon
+                    coords[coord_idx][1] = target_lat
+                    coords_modified = True
+                    total_snapped_vertices += 1
+                    
+                    if total_snapped_vertices <= 5:  # Log first few snaps
+                        print(f"🎯 VERTEX SNAP: ({original_lon:.6f}, {original_lat:.6f}) → ({target_lon:.6f}, {target_lat:.6f}), distance: {min_distance:.3f}km")
             
             # Update the closing coordinate to match the first coordinate (if modified)
             if coords_modified and len(coords) > 1:
                 coords[-1] = coords[0]  # Close the polygon properly
         
-        print(f"🔧 BOUNDARY SNAPPING COMPLETE: {total_snapped_vertices} vertices snapped")
+        print(f"🔧 VERTEX SNAPPING COMPLETE: {total_snapped_vertices} vertices snapped to existing triangle vertices")
     
     features = final_clipped_features
 

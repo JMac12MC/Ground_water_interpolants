@@ -11,7 +11,6 @@ import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
-from simple_boundary_test import generate_clean_1x2_heatmaps
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
@@ -61,9 +60,7 @@ session_defaults = {
     'colormap_updated': False,
     'show_banks_peninsula': True,
     'banks_peninsula_coords': None,
-    'heatmap_visualization_mode': 'triangular_mesh',  # 'triangular_mesh' or 'smooth_raster'
-    'use_clean_test': False,  # For clean test mode
-    'grid_size': (2, 3)  # Default grid size
+    'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
 }
 
 # Initialize all session state variables
@@ -306,27 +303,20 @@ with st.sidebar:
     st.subheader("Heatmap Grid Options")
     grid_option = st.selectbox(
         "Heatmap Grid Size",
-        options=["1×2 Grid (2 heatmaps)", "1×2 Clean Test", "2×3 Grid (6 heatmaps)", "10×10 Grid (100 heatmaps)"],
+        options=["1×2 Grid (2 heatmaps)", "2×3 Grid (6 heatmaps)", "10×10 Grid (100 heatmaps)"],
         index=1,  # Default to 2x3
-        help="Choose the grid size for automatic heatmap generation. 1×2 creates just original + east heatmap for quick testing, Clean Test uses simplified logic, 2×3 is standard layout, 10×10 creates comprehensive regional coverage."
+        help="Choose the grid size for automatic heatmap generation. 1×2 creates just original + east heatmap for quick testing, 2×3 is standard layout, 10×10 creates comprehensive regional coverage."
     )
     
     # Convert selection to grid_size tuple and store in session state
-    if "1×2" in grid_option and "Clean" not in grid_option:
+    if "1×2" in grid_option:
         st.session_state.grid_size = (1, 2)
-        st.session_state.use_clean_test = False
         st.info("🚀 **Quick Mode**: Will generate 2 heatmaps (original + east) for rapid boundary testing")
-    elif "Clean Test" in grid_option:
-        st.session_state.grid_size = (1, 2)
-        st.session_state.use_clean_test = True
-        st.success("🧪 **Clean Test Mode**: Using simplified boundary snapping logic that bypasses complex code paths")
     elif "10×10" in grid_option:
         st.session_state.grid_size = (10, 10)
-        st.session_state.use_clean_test = False
         st.info("📊 **Extended Mode**: Will generate 100 heatmaps covering 178km south × 178km east area")
     else:
         st.session_state.grid_size = (2, 3)
-        st.session_state.use_clean_test = False
         st.info("📊 **Standard Mode**: Will generate 6 heatmaps in compact 2×3 layout")
 
     # Display options
@@ -1914,34 +1904,19 @@ with main_col1:
                 print("🔧 BOUNDARY SNAPPING: Triggering sequential generation after click processing")
                 
                 try:
-                    # Check if we should use clean test mode
-                    if st.session_state.get('use_clean_test', False):
-                        print("🧪 CLEAN TEST MODE: Using simplified boundary snapping logic")
-                        
-                        # Use the clean test function for 1x2 heatmap generation
-                        success_count, stored_heatmaps = generate_clean_1x2_heatmaps(
-                            wells_data=st.session_state.wells_data,
-                            click_point=st.session_state.selected_point,
-                            interpolation_method=st.session_state.interpolation_method,
-                            polygon_db=st.session_state.polygon_db,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None
-                        )
-                        stored_heatmap_ids = [hm['id'] for hm in stored_heatmaps] if stored_heatmaps else []
-                        error_messages = []
-                    else:
-                        from sequential_heatmap import generate_quad_heatmaps_sequential
-                        
-                        # Generate heatmaps sequentially with boundary snapping
-                        success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
-                            wells_data=st.session_state.wells_data,
-                            click_point=st.session_state.selected_point,
-                            search_radius=st.session_state.search_radius,
-                            interpolation_method=st.session_state.interpolation_method,
-                            polygon_db=st.session_state.polygon_db,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            banks_peninsula_coords=st.session_state.banks_peninsula_coords,
-                            grid_size=st.session_state.get('grid_size', (2, 3))
-                        )
+                    from sequential_heatmap import generate_quad_heatmaps_sequential
+                    
+                    # Generate heatmaps sequentially with boundary snapping
+                    success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
+                        wells_data=st.session_state.wells_data,
+                        click_point=st.session_state.selected_point,
+                        search_radius=st.session_state.search_radius,
+                        interpolation_method=st.session_state.interpolation_method,
+                        polygon_db=st.session_state.polygon_db,
+                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                        banks_peninsula_coords=st.session_state.banks_peninsula_coords,
+                        grid_size=st.session_state.get('grid_size', (2, 3))
+                    )
                     
                     print(f"🔧 BOUNDARY SNAPPING COMPLETE: {success_count} heatmaps generated with boundary snapping")
                     

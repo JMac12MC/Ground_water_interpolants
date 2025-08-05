@@ -1084,7 +1084,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         include_triangle = merged_soil_geometry.contains(triangle_polygon)
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
-                    if include_triangle and indicator_geometry is not None and indicator_mask is not None:
+                    # CRITICAL FIX: Skip indicator clipping when boundary snapping is active
+                    # Boundary snapping takes precedence over indicator geometry restrictions
+                    if include_triangle and indicator_geometry is not None and indicator_mask is not None and adjacent_boundaries is None:
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         was_included = include_triangle

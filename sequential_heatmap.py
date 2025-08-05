@@ -568,13 +568,12 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             
             if interpolation_method in methods_requiring_mask:
                 try:
-                    # CRITICAL FIX: Use final clipping radius (50% of search radius) for indicator mask
-                    # This prevents 40km boundary contamination in adjacent heatmaps
-                    final_clip_radius = search_radius * 0.5  # Same 0.5 factor used in interpolation.py
+                    # Use search radius for indicator mask (not final clip radius)
+                    # The final clipping will handle boundary restrictions properly
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
                         center_point,
-                        final_clip_radius,  # Use clipping radius, not full search radius
+                        search_radius,  # Use full search radius for indicator mask
                         resolution=100,
                         soil_polygons=soil_polygons,
                         threshold=0.7

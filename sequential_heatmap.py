@@ -420,6 +420,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     }
     
     for i, (location_name, center_point) in enumerate(locations):
+        print(f"🔄 PROCESSING HEATMAP {i+1}/{len(locations)}: {location_name.upper()} - Starting generation")
         try:
             st.write(f"🔄 Building heatmap {i+1}/{len(locations)}: {location_name.title()} location...")
             

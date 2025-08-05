@@ -421,11 +421,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         default_min_lon = center_lon - (radius_km / km_per_degree_lon)
         default_max_lon = center_lon + (radius_km / km_per_degree_lon)
         
-        # Use adjacent boundaries where available, defaults otherwise
-        min_lat = south_boundary if south_boundary is not None else default_min_lat
-        max_lat = north_boundary if north_boundary is not None else default_max_lat
-        min_lon = west_boundary if west_boundary is not None else default_min_lon
-        max_lon = east_boundary if east_boundary is not None else default_max_lon
+        # CRITICAL FIX: Grid boundaries must be independent - only snap the final edge
+        # Use center-based defaults for grid generation, boundary snapping happens later
+        min_lat = default_min_lat  # Always use own center-based boundaries for grid
+        max_lat = default_max_lat  # Always use own center-based boundaries for grid
+        min_lon = default_min_lon  # Always use own center-based boundaries for grid
+        max_lon = default_max_lon  # Always use own center-based boundaries for grid
         
         print(f"  West edge: {'ALIGNED' if west_boundary is not None else 'DEFAULT'} ({min_lon:.8f})")
         print(f"  East edge: {'ALIGNED' if east_boundary is not None else 'DEFAULT'} ({max_lon:.8f})")

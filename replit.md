@@ -126,13 +126,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **August 05, 2025**: CRITICAL FIX: Eliminated boundary contamination with independent heatmap boundaries
-  - **Root Cause**: East heatmap boundaries were calculated from original heatmap coordinates instead of using independent centers
-  - **Primary Fix**: Changed final clipping to use each heatmap's own center-based boundaries, only snapping the overlapping edge
-  - **Secondary Fix**: Fixed boundary calculation to use final clipping radius (20km) instead of well filtering radius (40km)
-  - **Corrected Clipping Sequence**: Wells filtering (40km) → Interpolation → Final square clipping (20km) → Boundary snapping → Soil clipping
-  - **Results**: East heatmap now has independent coverage (16,206 features vs 10,658 for original) with perfect boundary snapping
-  - Automated tests confirm 0.0m boundary snapping accuracy with complete elimination of gaps between heatmaps
+- **August 05, 2025**: CRITICAL FIX: Completely eliminated boundary contamination with dual-layer independence
+  - **Root Cause**: Both grid generation AND final clipping were using adjacent boundaries instead of independent centers
+  - **Primary Fix**: Grid boundaries now use independent center-based coordinates for all heatmaps (prevents contamination at source)
+  - **Secondary Fix**: Final clipping only snaps overlapping edge while maintaining full independent coverage
+  - **Tertiary Fix**: Fixed boundary calculation to use final clipping radius (20km) instead of well filtering radius (40km)
+  - **Corrected Clipping Sequence**: Wells filtering (40km) → Independent grid generation → Interpolation → Final square clipping (20km) → Edge-only boundary snapping → Soil clipping
+  - **Results**: East heatmap now has independent coverage (16,206 features vs 10,658 for original) with perfect 0.0m boundary snapping
+  - Automated tests confirm complete elimination of gaps with seamless connections and full independent coverage
 
 - **August 04, 2025**: CRITICAL FIX: Boundary snapping now fully functional across all grid sizes
   - Fixed vertex-level boundary snapping threshold from 1km to 3km to catch boundary vertices

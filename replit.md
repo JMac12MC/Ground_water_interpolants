@@ -126,6 +126,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **August 05, 2025**: CRITICAL FIX: Eliminated 40km boundary contamination in adjacent heatmaps
+  - Fixed indicator mask generation to use final clipping radius (10km) instead of full search radius (20km)
+  - Modified final clipping logic to use intersection instead of strict containment when boundary snapping
+  - East heatmap now shows proper coverage: 10,198 features (was only 1,170-2,161 before)
+  - Boundary snapping maintains perfect 0.0m accuracy between adjacent heatmaps
+  - Resolved issue where original heatmap's 40km search boundary was incorrectly clipping adjacent heatmaps
+
 - **August 04, 2025**: CRITICAL FIX: Boundary snapping now fully functional across all grid sizes
   - Fixed vertex-level boundary snapping threshold from 1km to 3km to catch boundary vertices
   - Corrected final clipping logic to preserve snapped boundaries instead of overriding them

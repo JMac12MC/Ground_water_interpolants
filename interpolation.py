@@ -941,13 +941,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         final_min_lat = south_boundary if south_boundary is not None else default_final_min_lat
         final_max_lat = north_boundary if north_boundary is not None else default_final_max_lat
         
-        # For longitude: if we have a snapped west boundary, use it and calculate east from it
+        # CRITICAL FIX: Each heatmap uses its OWN center-based boundaries
+        # Only snap the overlapping edge to adjacent heatmap, maintain independent sizing
         if west_boundary is not None:
+            # Snap west edge, but use own center for east edge
             final_min_lon = west_boundary  
-            final_max_lon = west_boundary + (2 * final_clip_lon_radius)  # Full width eastward
+            final_max_lon = default_final_max_lon  # Use own center-based east boundary
         elif east_boundary is not None:
+            # Snap east edge, but use own center for west edge
             final_max_lon = east_boundary
-            final_min_lon = east_boundary - (2 * final_clip_lon_radius)  # Full width westward  
+            final_min_lon = default_final_min_lon  # Use own center-based west boundary
         else:
             final_min_lon = default_final_min_lon
             final_max_lon = default_final_max_lon

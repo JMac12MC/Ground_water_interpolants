@@ -61,7 +61,9 @@ session_defaults = {
     'colormap_updated': False,
     'show_banks_peninsula': True,
     'banks_peninsula_coords': None,
-    'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
+    'heatmap_visualization_mode': 'triangular_mesh',  # 'triangular_mesh' or 'smooth_raster'
+    'use_clean_test': False,  # For clean test mode
+    'grid_size': (2, 3)  # Default grid size
 }
 
 # Initialize all session state variables

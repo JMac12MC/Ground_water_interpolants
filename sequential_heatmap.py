@@ -522,9 +522,9 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             elif grid_rows == 2 and grid_cols == 3:
                 # 2x3 grid boundary snapping logic
                 if location_name == 'east' and 'original' in completed_boundaries:
-                # East: snap west boundary to original's east boundary
-                adjacent_boundaries['west'] = completed_boundaries['original']['east']
-                print(f"  BOUNDARY SNAP: {location_name} west → original east ({adjacent_boundaries['west']:.8f})")
+                    # East: snap west boundary to original's east boundary
+                    adjacent_boundaries['west'] = completed_boundaries['original']['east']
+                    print(f"  BOUNDARY SNAP: {location_name} west → original east ({adjacent_boundaries['west']:.8f})")
                 
             elif location_name == 'northeast' and 'east' in completed_boundaries:
                 # Northeast: snap west boundary to east's east boundary
@@ -741,6 +741,13 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                             clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
                             clip_north = southeast_bounds['north']  # Same north boundary
                             clip_south = southeast_bounds['south']  # Same south boundary
+                        else:
+                            # Default case for unsupported locations - use center-based clipping
+                            center_lat, center_lon = center_point
+                            clip_north = center_lat + polygon_half_width_lat
+                            clip_south = center_lat - polygon_half_width_lat
+                            clip_east = center_lon + polygon_half_width_lon
+                            clip_west = center_lon - polygon_half_width_lon
                         
                         # Store the 0.5 clipping zone for visualization
                         clipping_polygon = {

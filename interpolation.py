@@ -1016,62 +1016,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                 # Only add triangles with meaningful values and within our radius
                 if avg_yield > effective_threshold:
-                    # STEP 1: Apply boundary snapping BEFORE soil polygon clipping
-                    snapped_vertices = 0
-                    if adjacent_boundaries is not None:
-                        # Apply boundary snapping to triangle vertices
-                        snap_threshold_km = 3.0  # 3km threshold for snapping (covers typical boundary gaps)
-                        
-                        for vertex_idx in range(3):  # 3 vertices per triangle
-                            vertex_lon, vertex_lat = vertices[vertex_idx]
-                            original_lon, original_lat = vertex_lon, vertex_lat
-                            
-                            # Check each boundary for snapping
-                            for boundary_type, boundary_value in adjacent_boundaries.items():
-                                if boundary_value is None:
-                                    continue
-                                    
-                                if boundary_type == 'west':
-                                    distance_km = get_distance(vertex_lat, vertex_lon, vertex_lat, boundary_value)
-                                    if distance_km <= snap_threshold_km:
-                                        vertices[vertex_idx, 0] = boundary_value  # Snap longitude to west boundary
-                                        snapped_vertices += 1
-                                        total_snapped_vertices += 1
-                                        if total_snapped_vertices <= 5:  # Log first few snaps for debugging
-                                            print(f"🎯 WEST BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({boundary_value:.6f}, {original_lat:.6f}), distance: {distance_km:.3f}km")
-                                        break  # Only snap to one boundary per vertex
-                                        
-                                elif boundary_type == 'east':
-                                    distance_km = get_distance(vertex_lat, vertex_lon, vertex_lat, boundary_value)
-                                    if distance_km <= snap_threshold_km:
-                                        vertices[vertex_idx, 0] = boundary_value  # Snap longitude to east boundary
-                                        snapped_vertices += 1
-                                        total_snapped_vertices += 1
-                                        if total_snapped_vertices <= 5:  # Log first few snaps for debugging
-                                            print(f"🎯 EAST BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({boundary_value:.6f}, {original_lat:.6f}), distance: {distance_km:.3f}km")
-                                        break  # Only snap to one boundary per vertex
-                                        
-                                elif boundary_type == 'north':
-                                    distance_km = get_distance(vertex_lat, vertex_lon, boundary_value, vertex_lon)
-                                    if distance_km <= snap_threshold_km:
-                                        vertices[vertex_idx, 1] = boundary_value  # Snap latitude to north boundary
-                                        snapped_vertices += 1
-                                        total_snapped_vertices += 1
-                                        if total_snapped_vertices <= 5:  # Log first few snaps for debugging
-                                            print(f"🎯 NORTH BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({original_lon:.6f}, {boundary_value:.6f}), distance: {distance_km:.3f}km")
-                                        break  # Only snap to one boundary per vertex
-                                        
-                                elif boundary_type == 'south':
-                                    distance_km = get_distance(vertex_lat, vertex_lon, boundary_value, vertex_lon)
-                                    if distance_km <= snap_threshold_km:
-                                        vertices[vertex_idx, 1] = boundary_value  # Snap latitude to south boundary
-                                        snapped_vertices += 1
-                                        total_snapped_vertices += 1
-                                        if total_snapped_vertices <= 5:  # Log first few snaps for debugging
-                                            print(f"🎯 SOUTH BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({original_lon:.6f}, {boundary_value:.6f}), distance: {distance_km:.3f}km")
-                                        break  # Only snap to one boundary per vertex
-
-                    # STEP 2: Check if triangle should be included based on soil polygons (AFTER snapping)
+                    # STEP 1: Check if triangle should be included based on soil polygons (BEFORE boundary snapping)
                     include_triangle = True
 
                     if merged_soil_geometry is not None:
@@ -1157,17 +1102,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         if not should_exclude:
                             features.append(poly)
         
-        # Summary of boundary snapping results
-        if adjacent_boundaries is not None:
-            print(f"🔧 BOUNDARY SNAPPING SUMMARY:")
-            print(f"  📊 Total triangles processed: {total_triangles_processed}")
-            print(f"  📊 Total vertices snapped: {total_snapped_vertices}")
-            if total_snapped_vertices > 0:
-                snap_percentage = (total_snapped_vertices / (total_triangles_processed * 3)) * 100 if total_triangles_processed > 0 else 0
-                print(f"  📊 Snap percentage: {snap_percentage:.1f}% of vertices")
-                print(f"  🎯 Adjacent boundaries used: {list(adjacent_boundaries.keys())}")
-            else:
-                print(f"  ⚠️  No vertices were close enough to boundaries for snapping")
+        # Triangulation complete - boundary snapping handled later
                 
     except Exception as e:
         # If triangulation fails, fall back to the simpler grid method
@@ -1260,7 +1195,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     if merged_soil_geometry is not None:
         print(f"GeoJSON features filtered by soil drainage areas: {len(features)} polygons displayed")
     
-    # Apply final square clipping to existing features (triangle removal, not re-interpolation)
+    # STEP 1: Apply final square clipping FIRST (correct sequence)
     features_before_final_clip = len(features)
     final_clipped_features = []
     
@@ -1278,15 +1213,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 if len(triangle_coords) >= 3:
                     triangle_polygon = ShapelyPolygon(triangle_coords)
                     
-                    # CRITICAL FIX: When using boundary snapping, allow triangles that intersect boundary
-                    if adjacent_boundaries is not None:
-                        # With boundary snapping: keep triangles that intersect or are contained
-                        if final_clip_geometry.intersects(triangle_polygon):
-                            final_clipped_features.append(feature)
-                    else:
-                        # Without boundary snapping: strict containment only
-                        if final_clip_geometry.contains(triangle_polygon):
-                            final_clipped_features.append(feature)
+                    # Standard containment check for final clipping (no boundary considerations yet)
+                    if final_clip_geometry.contains(triangle_polygon):
+                        final_clipped_features.append(feature)
                 else:
                     # If we can't create a proper triangle, keep the feature
                     final_clipped_features.append(feature)
@@ -1294,8 +1223,74 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # If centroid calculation fails, keep the feature
             final_clipped_features.append(feature)
     
+    print(f"Final square clipping: {features_before_final_clip} -> {len(final_clipped_features)} features ({final_radius_km:.1f}km sides)")
+
+    # STEP 2: Apply boundary snapping AFTER final clipping (correct sequence)
+    if adjacent_boundaries is not None:
+        total_snapped_vertices = 0
+        snap_threshold_km = 3.0  # 3km threshold for snapping
+        
+        print(f"🔧 APPLYING BOUNDARY SNAPPING to {len(final_clipped_features)} clipped features...")
+        
+        for feature in final_clipped_features:
+            coords = feature['geometry']['coordinates'][0]
+            coords_modified = False
+            
+            for coord_idx in range(len(coords) - 1):  # Skip last coord (duplicate of first)
+                original_lon, original_lat = coords[coord_idx]
+                
+                # Check each boundary for snapping
+                for boundary_type, boundary_value in adjacent_boundaries.items():
+                    if boundary_value is None:
+                        continue
+                        
+                    if boundary_type == 'west':
+                        distance_km = get_distance(original_lat, original_lon, original_lat, boundary_value)
+                        if distance_km <= snap_threshold_km:
+                            coords[coord_idx][0] = boundary_value  # Snap longitude to west boundary
+                            coords_modified = True
+                            total_snapped_vertices += 1
+                            if total_snapped_vertices <= 5:  # Log first few snaps
+                                print(f"🎯 WEST BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({boundary_value:.6f}, {original_lat:.6f}), distance: {distance_km:.3f}km")
+                            break
+                            
+                    elif boundary_type == 'east':
+                        distance_km = get_distance(original_lat, original_lon, original_lat, boundary_value)
+                        if distance_km <= snap_threshold_km:
+                            coords[coord_idx][0] = boundary_value  # Snap longitude to east boundary
+                            coords_modified = True
+                            total_snapped_vertices += 1
+                            if total_snapped_vertices <= 5:  # Log first few snaps
+                                print(f"🎯 EAST BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({boundary_value:.6f}, {original_lat:.6f}), distance: {distance_km:.3f}km")
+                            break
+                            
+                    elif boundary_type == 'north':
+                        distance_km = get_distance(original_lat, original_lon, boundary_value, original_lon)
+                        if distance_km <= snap_threshold_km:
+                            coords[coord_idx][1] = boundary_value  # Snap latitude to north boundary
+                            coords_modified = True
+                            total_snapped_vertices += 1
+                            if total_snapped_vertices <= 5:  # Log first few snaps
+                                print(f"🎯 NORTH BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({original_lon:.6f}, {boundary_value:.6f}), distance: {distance_km:.3f}km")
+                            break
+                            
+                    elif boundary_type == 'south':
+                        distance_km = get_distance(original_lat, original_lon, boundary_value, original_lon)
+                        if distance_km <= snap_threshold_km:
+                            coords[coord_idx][1] = boundary_value  # Snap latitude to south boundary
+                            coords_modified = True
+                            total_snapped_vertices += 1
+                            if total_snapped_vertices <= 5:  # Log first few snaps
+                                print(f"🎯 SOUTH BOUNDARY SNAP: vertex ({original_lon:.6f}, {original_lat:.6f}) → ({original_lon:.6f}, {boundary_value:.6f}), distance: {distance_km:.3f}km")
+                            break
+            
+            # Update the closing coordinate to match the first coordinate (if modified)
+            if coords_modified and len(coords) > 1:
+                coords[-1] = coords[0]  # Close the polygon properly
+        
+        print(f"🔧 BOUNDARY SNAPPING COMPLETE: {total_snapped_vertices} vertices snapped")
+    
     features = final_clipped_features
-    print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
 
     # Create the full GeoJSON object
     geojson = {

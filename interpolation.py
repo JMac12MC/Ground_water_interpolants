@@ -1275,9 +1275,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 triangle_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
                 if len(triangle_coords) >= 3:
                     triangle_polygon = ShapelyPolygon(triangle_coords)
-                    # Only keep features that are completely within the smaller square
-                    if final_clip_geometry.contains(triangle_polygon):
-                        final_clipped_features.append(feature)
+                    
+                    # CRITICAL FIX: When using boundary snapping, allow triangles that intersect boundary
+                    if adjacent_boundaries is not None:
+                        # With boundary snapping: keep triangles that intersect or are contained
+                        if final_clip_geometry.intersects(triangle_polygon):
+                            final_clipped_features.append(feature)
+                    else:
+                        # Without boundary snapping: strict containment only
+                        if final_clip_geometry.contains(triangle_polygon):
+                            final_clipped_features.append(feature)
                 else:
                     # If we can't create a proper triangle, keep the feature
                     final_clipped_features.append(feature)

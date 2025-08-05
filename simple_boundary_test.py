@@ -159,11 +159,12 @@ def generate_clean_1x2_heatmaps(wells_data, click_point, interpolation_method, p
         original_id = polygon_db.store_heatmap(
             heatmap_name="Original (Clean)",
             center_lat=original_lat,
-            center_lng=original_lng,
-            geojson_data=original_geojson,
+            center_lon=original_lng,
+            radius_km=20.0,
             interpolation_method=interpolation_method,
-            heatmap_type="yield",
-            feature_count=len(original_geojson['features'])
+            heatmap_data=[],  # Empty for GeoJSON-only storage
+            geojson_data=original_geojson,
+            well_count=len(original_geojson['features'])
         )
         stored_heatmaps.append({
             'id': original_id,
@@ -175,11 +176,12 @@ def generate_clean_1x2_heatmaps(wells_data, click_point, interpolation_method, p
         east_id = polygon_db.store_heatmap(
             heatmap_name="East (Clean)",
             center_lat=east_lat,
-            center_lng=east_lng,
-            geojson_data=east_geojson,
+            center_lon=east_lng,
+            radius_km=20.0,
             interpolation_method=interpolation_method,
-            heatmap_type="yield",
-            feature_count=len(east_geojson['features'])
+            heatmap_data=[],  # Empty for GeoJSON-only storage
+            geojson_data=east_geojson,
+            well_count=len(east_geojson['features'])
         )
         stored_heatmaps.append({
             'id': east_id,

@@ -963,6 +963,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             [final_min_lon, final_min_lat]   # Close
         ]
         print(f"Final clipping using SNAPPED BOUNDARIES: W={final_min_lon:.8f}, E={final_max_lon:.8f}")
+        print(f"  BOUNDARY DEBUG: center=({center_lon:.8f}, {center_lat:.8f})")
+        print(f"  BOUNDARY DEBUG: default_range=({default_final_min_lon:.8f} to {default_final_max_lon:.8f})")
+        print(f"  BOUNDARY DEBUG: west_boundary={west_boundary}, east_boundary={east_boundary}")
+        print(f"  BOUNDARY DEBUG: final_range=({final_min_lon:.8f} to {final_max_lon:.8f})")
     else:
         # Standard center-based clipping when no boundaries are snapped
         final_clip_polygon_coords = [

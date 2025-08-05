@@ -936,11 +936,21 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         default_final_min_lon = center_lon - final_clip_lon_radius
         default_final_max_lon = center_lon + final_clip_lon_radius
         
-        # Use snapped boundaries where available, defaults otherwise
+        # CRITICAL FIX: Only use snapped boundaries for grid edges, maintain full heatmap size
+        # The final clipping should maintain the standard size, but align one edge when snapping
         final_min_lat = south_boundary if south_boundary is not None else default_final_min_lat
         final_max_lat = north_boundary if north_boundary is not None else default_final_max_lat
-        final_min_lon = west_boundary if west_boundary is not None else default_final_min_lon
-        final_max_lon = east_boundary if east_boundary is not None else default_final_max_lon
+        
+        # For longitude: if we have a snapped west boundary, use it and calculate east from it
+        if west_boundary is not None:
+            final_min_lon = west_boundary  
+            final_max_lon = west_boundary + (2 * final_clip_lon_radius)  # Full width eastward
+        elif east_boundary is not None:
+            final_max_lon = east_boundary
+            final_min_lon = east_boundary - (2 * final_clip_lon_radius)  # Full width westward  
+        else:
+            final_min_lon = default_final_min_lon
+            final_max_lon = default_final_max_lon
         
         final_clip_polygon_coords = [
             [final_min_lon, final_min_lat],  # SW

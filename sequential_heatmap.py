@@ -683,6 +683,26 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         
                         print(f"  📐 BOUNDARIES STORED for {location_name.upper()}: N={boundary_max_lat:.8f}, S={boundary_min_lat:.8f}, E={boundary_max_lon:.8f}, W={boundary_min_lon:.8f}")
                         
+                        # IMPLEMENT BIDIRECTIONAL BOUNDARY SNAPPING
+                        # Update previously stored heatmaps to align with this heatmap's boundaries
+                        if location_name == 'east' and 'original' in [name for name, _ in stored_heatmap_ids]:
+                            # Find the original heatmap ID
+                            original_heatmap_id = None
+                            for stored_name, stored_id in stored_heatmap_ids:
+                                if stored_name == 'original':
+                                    original_heatmap_id = stored_id
+                                    break
+                            
+                            if original_heatmap_id:
+                                # Update original heatmap's EAST boundary to align with east heatmap's WEST boundary
+                                east_west_boundary = boundary_min_lon  # This is the east heatmap's west boundary
+                                boundary_updates = {'east': east_west_boundary}
+                                success = polygon_db.update_stored_heatmap_boundaries(original_heatmap_id, boundary_updates)
+                                if success:
+                                    print(f"  🔄 BIDIRECTIONAL SNAPPING: Updated original heatmap ID {original_heatmap_id} east boundary to {east_west_boundary:.8f}")
+                                else:
+                                    print(f"  ⚠️  Failed to update original heatmap boundaries")
+                        
                         # STORE ACTUAL 0.5 CLIPPING POLYGON FOR VISUALIZATION
                         if 'clipping_polygons' not in st.session_state:
                             st.session_state.clipping_polygons = []

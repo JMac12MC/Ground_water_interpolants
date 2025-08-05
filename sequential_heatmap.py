@@ -502,7 +502,9 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             km_per_deg_lat, km_per_deg_lon = get_precise_boundary_factors(center_lat, center_lon)
             
             # Calculate exact boundary coordinates for seamless snapping
-            radius_km = search_radius
+            # CRITICAL FIX: Use FINAL CLIPPING RADIUS (20km), not search radius (40km)
+            final_clip_radius_km = search_radius * 0.5  # 20km for boundary snapping
+            radius_km = final_clip_radius_km
             min_lat = center_lat - (radius_km / km_per_deg_lat)
             max_lat = center_lat + (radius_km / km_per_deg_lat)
             min_lon = center_lon - (radius_km / km_per_deg_lon)

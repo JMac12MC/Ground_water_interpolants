@@ -126,13 +126,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **August 05, 2025**: CRITICAL FIX: Resolved clipping sequence confusion and boundary contamination
-  - **Root Cause**: Indicator geometry clipping was interfering with boundary snapping in adjacent heatmaps
-  - **Solution**: Disabled indicator geometry clipping when boundary snapping is active (boundary snapping takes precedence)
-  - **Corrected Clipping Sequence**: Wells filtering (40km) → Interpolation → Boundary snapping → Soil polygon clipping → Final square clipping (10km) with intersection
-  - Modified final clipping logic to use intersection instead of strict containment when boundary snapping
-  - Adjacent heatmaps now have proper feature coverage with seamless boundary connections
-  - Boundary snapping maintains perfect 0.0m accuracy between adjacent heatmaps
+- **August 05, 2025**: CRITICAL FIX: Resolved boundary contamination by separating well filtering and clipping boundaries
+  - **Root Cause**: Boundary snapping was using 40km well filtering boundaries instead of 20km final clipping boundaries
+  - **Solution**: Fixed boundary calculation to use final clipping radius (search_radius × 0.5 = 20km) for adjacent heatmap snapping
+  - **Corrected Clipping Sequence**: Wells filtering (40km) → Interpolation → Final square clipping (20km) → Boundary snapping → Soil clipping
+  - **Additional Fixes**: Disabled indicator geometry clipping when boundary snapping is active; moved boundary snapping to post-clipping phase
+  - Adjacent heatmaps now snap to correct 20km boundaries instead of 40km well filtering boundaries
+  - Boundary snapping maintains perfect 0.0m accuracy with proper feature coverage
 
 - **August 04, 2025**: CRITICAL FIX: Boundary snapping now fully functional across all grid sizes
   - Fixed vertex-level boundary snapping threshold from 1km to 3km to catch boundary vertices

@@ -656,11 +656,12 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         print(f"  ✅ {location_name.upper()}: Stored as ID {stored_heatmap_id}")
                         
                         # STORE BOUNDARY COORDINATES for next adjacent heatmaps
-                        # Calculate this heatmap's exact boundaries for alignment
-                        boundary_min_lat = center_lat - (search_radius / km_per_deg_lat)
-                        boundary_max_lat = center_lat + (search_radius / km_per_deg_lat)
-                        boundary_min_lon = center_lon - (search_radius / km_per_deg_lon)
-                        boundary_max_lon = center_lon + (search_radius / km_per_deg_lon)
+                        # CRITICAL FIX: Use FINAL CLIPPING RADIUS (20km), not search radius (40km)
+                        final_clip_radius_km = search_radius * 0.5  # 20km for boundary snapping
+                        boundary_min_lat = center_lat - (final_clip_radius_km / km_per_deg_lat)
+                        boundary_max_lat = center_lat + (final_clip_radius_km / km_per_deg_lat)
+                        boundary_min_lon = center_lon - (final_clip_radius_km / km_per_deg_lon)
+                        boundary_max_lon = center_lon + (final_clip_radius_km / km_per_deg_lon)
                         
                         # If this heatmap used adjacent boundaries, update with the aligned values
                         if adjacent_boundaries:

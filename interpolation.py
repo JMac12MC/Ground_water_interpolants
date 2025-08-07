@@ -17,7 +17,6 @@ import base64
 from PIL import Image
 import matplotlib.colors as mcolors
 from scipy.interpolate import griddata
-from utils import get_distance
 
 def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
     """
@@ -121,13 +120,11 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         
         # Use same high-precision conversion factors as main interpolation
         from utils import get_distance
-        TOLERANCE_KM = 0.0001  # 10cm tolerance - SAME as sequential_heatmap.py
-        MAX_ITERATIONS = 200   # SAME as sequential_heatmap.py
-        ADAPTIVE_STEP_SIZE = 0.000001  # SAME dynamic precision as sequential_heatmap.py
+        TOLERANCE_KM = 0.0001  # 10cm tolerance
+        MAX_ITERATIONS = 100
         
         def get_precise_conversion_factors(reference_lat, reference_lon):
             """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
-            import numpy as np
             test_distance = 1.0  # 1km test distance
             
             # Ultra-precise latitude conversion
@@ -148,16 +145,10 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
                 if error < TOLERANCE_KM:
                     break
                     
-                # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py
-                if error > 0.001:  # > 1 meter error - proportional adjustment
-                    adjustment_factor = test_distance / actual_distance  
-                    lat_offset_initial *= adjustment_factor
-                else:  # Precision phase - adaptive micro-adjustments
-                    step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
-                    if actual_distance > test_distance:
-                        lat_offset_initial -= step_size
-                    else:
-                        lat_offset_initial += step_size
+                if actual_distance > test_distance:
+                    lat_offset_initial *= 0.999
+                else:
+                    lat_offset_initial *= 1.001
             
             # Ultra-precise longitude conversion
             lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
@@ -177,16 +168,10 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
                 if error < TOLERANCE_KM:
                     break
                     
-                # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py  
-                if error > 0.001:  # > 1 meter error - proportional adjustment
-                    adjustment_factor = test_distance / actual_distance
-                    lon_offset_initial *= adjustment_factor
-                else:  # Precision phase - adaptive micro-adjustments
-                    step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
-                    if actual_distance > test_distance:
-                        lon_offset_initial -= step_size
-                    else:
-                        lon_offset_initial += step_size
+                if actual_distance > test_distance:
+                    lon_offset_initial *= 0.999
+                else:
+                    lon_offset_initial *= 1.001
             
             return best_lat_factor, best_lon_factor
         
@@ -233,7 +218,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None, adjacent_boundaries=None, boundary_vertices=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -324,16 +309,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Use same ultra-precise geodetic calculations as sequential_heatmap.py
     # This ensures perfect alignment between heatmap centroids and clipping boundaries
     from utils import get_distance
+    import numpy as np
     
     # Ultra-precise conversion factors using iterative refinement
     # Target: Match sequential_heatmap.py precision (10cm accuracy)
-    TOLERANCE_KM = 0.0001  # 10cm tolerance - SAME as sequential_heatmap.py
-    MAX_ITERATIONS = 200   # SAME as sequential_heatmap.py
-    ADAPTIVE_STEP_SIZE = 0.000001  # SAME dynamic precision as sequential_heatmap.py
+    TOLERANCE_KM = 0.0001  # 10cm tolerance
+    MAX_ITERATIONS = 100
     
     def get_precise_conversion_factors(reference_lat, reference_lon):
         """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
-        import numpy as np
         
         # Step 1: Ultra-precise latitude conversion
         test_distance = 1.0  # 1km test distance
@@ -355,16 +339,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if error < TOLERANCE_KM:
                 break
                 
-            # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py
-            if error > 0.001:  # > 1 meter error - proportional adjustment
-                adjustment_factor = test_distance / actual_distance  
-                lat_offset_initial *= adjustment_factor
-            else:  # Precision phase - adaptive micro-adjustments
-                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
-                if actual_distance > test_distance:
-                    lat_offset_initial -= step_size
-                else:
-                    lat_offset_initial += step_size
+            # Adaptive refinement
+            if actual_distance > test_distance:
+                lat_offset_initial *= 0.999  # Smaller offset needed
+            else:
+                lat_offset_initial *= 1.001  # Larger offset needed
         
         # Step 2: Ultra-precise longitude conversion (latitude-dependent)
         lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
@@ -385,16 +364,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if error < TOLERANCE_KM:
                 break
                 
-            # ENHANCED ADAPTIVE REFINEMENT - Same algorithm as sequential_heatmap.py
-            if error > 0.001:  # > 1 meter error - proportional adjustment
-                adjustment_factor = test_distance / actual_distance
-                lon_offset_initial *= adjustment_factor
-            else:  # Precision phase - adaptive micro-adjustments
-                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)  # Dynamic step based on error
-                if actual_distance > test_distance:
-                    lon_offset_initial -= step_size
-                else:
-                    lon_offset_initial += step_size
+            # Adaptive refinement
+            if actual_distance > test_distance:
+                lon_offset_initial *= 0.999
+            else:
+                lon_offset_initial *= 1.001
         
         print(f"HIGH-PRECISION CONVERSION: lat_factor={best_lat_factor:.8f} km/deg (error: {best_lat_error:.8f}km)")
         print(f"HIGH-PRECISION CONVERSION: lon_factor={best_lon_factor:.8f} km/deg (error: {best_lon_error:.8f}km)")
@@ -404,42 +378,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Calculate ultra-precise conversion factors
     km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
 
-    # Create grid in lat/lon space with EXACT EDGE ALIGNMENT for adjacent heatmaps
-    if adjacent_boundaries is not None:
-        # Use adjacent boundaries to ensure perfect edge alignment
-        print(f"EDGE-ALIGNED CLIPPING: Using adjacent boundaries for seamless joining")
-        
-        # Extract adjacent boundary information
-        west_boundary = adjacent_boundaries.get('west')
-        east_boundary = adjacent_boundaries.get('east') 
-        north_boundary = adjacent_boundaries.get('north')
-        south_boundary = adjacent_boundaries.get('south')
-        
-        # Calculate default boundaries first
-        default_min_lat = center_lat - (radius_km / km_per_degree_lat)
-        default_max_lat = center_lat + (radius_km / km_per_degree_lat)
-        default_min_lon = center_lon - (radius_km / km_per_degree_lon)
-        default_max_lon = center_lon + (radius_km / km_per_degree_lon)
-        
-        # CRITICAL FIX: Grid boundaries must be independent - only snap the final edge
-        # Use center-based defaults for grid generation, boundary snapping happens later
-        min_lat = default_min_lat  # Always use own center-based boundaries for grid
-        max_lat = default_max_lat  # Always use own center-based boundaries for grid
-        min_lon = default_min_lon  # Always use own center-based boundaries for grid
-        max_lon = default_max_lon  # Always use own center-based boundaries for grid
-        
-        print(f"  West edge: {'ALIGNED' if west_boundary is not None else 'DEFAULT'} ({min_lon:.8f})")
-        print(f"  East edge: {'ALIGNED' if east_boundary is not None else 'DEFAULT'} ({max_lon:.8f})")
-        print(f"  North edge: {'ALIGNED' if north_boundary is not None else 'DEFAULT'} ({max_lat:.8f})")
-        print(f"  South edge: {'ALIGNED' if south_boundary is not None else 'DEFAULT'} ({min_lat:.8f})")
-        
-    else:
-        # Standard centroid-based boundaries
-        min_lat = center_lat - (radius_km / km_per_degree_lat)
-        max_lat = center_lat + (radius_km / km_per_degree_lat)
-        min_lon = center_lon - (radius_km / km_per_degree_lon)
-        max_lon = center_lon + (radius_km / km_per_degree_lon)
-        print(f"STANDARD CLIPPING: Using centroid-based boundaries")
+    # Create grid in lat/lon space
+    min_lat = center_lat - (radius_km / km_per_degree_lat)
+    max_lat = center_lat + (radius_km / km_per_degree_lat)
+    min_lon = center_lon - (radius_km / km_per_degree_lon)
+    max_lon = center_lon + (radius_km / km_per_degree_lon)
 
     # High resolution grid for smooth professional visualization
     # Increase resolution significantly for smoother appearance like kriging software
@@ -919,64 +862,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     final_clip_factor = 0.5
     final_radius_km = radius_km * final_clip_factor
     
-    # Create final square clipping polygon - RESPECT BOUNDARY SNAPPING
+    # Create final square clipping polygon centered on the original center
     final_clip_lat_radius = final_radius_km / km_per_degree_lat
     final_clip_lon_radius = final_radius_km / km_per_degree_lon
     
-    # Use snapped boundaries if available, otherwise use center-based calculation
-    if adjacent_boundaries is not None:
-        # Use the same boundaries that were used for grid creation
-        west_boundary = adjacent_boundaries.get('west')
-        east_boundary = adjacent_boundaries.get('east') 
-        north_boundary = adjacent_boundaries.get('north')
-        south_boundary = adjacent_boundaries.get('south')
-        
-        # Calculate default final clip boundaries
-        default_final_min_lat = center_lat - final_clip_lat_radius
-        default_final_max_lat = center_lat + final_clip_lat_radius
-        default_final_min_lon = center_lon - final_clip_lon_radius
-        default_final_max_lon = center_lon + final_clip_lon_radius
-        
-        # CRITICAL FIX: Only use snapped boundaries for grid edges, maintain full heatmap size
-        # The final clipping should maintain the standard size, but align one edge when snapping
-        final_min_lat = south_boundary if south_boundary is not None else default_final_min_lat
-        final_max_lat = north_boundary if north_boundary is not None else default_final_max_lat
-        
-        # CRITICAL FIX: Each heatmap uses its OWN center-based boundaries
-        # Only snap the overlapping edge to adjacent heatmap, maintain independent sizing
-        if west_boundary is not None:
-            # Snap west edge, but use own center for east edge
-            final_min_lon = west_boundary  
-            final_max_lon = default_final_max_lon  # Use own center-based east boundary
-        elif east_boundary is not None:
-            # Snap east edge, but use own center for west edge
-            final_max_lon = east_boundary
-            final_min_lon = default_final_min_lon  # Use own center-based west boundary
-        else:
-            final_min_lon = default_final_min_lon
-            final_max_lon = default_final_max_lon
-        
-        final_clip_polygon_coords = [
-            [final_min_lon, final_min_lat],  # SW
-            [final_max_lon, final_min_lat],  # SE
-            [final_max_lon, final_max_lat],  # NE
-            [final_min_lon, final_max_lat],  # NW
-            [final_min_lon, final_min_lat]   # Close
-        ]
-        print(f"Final clipping using SNAPPED BOUNDARIES: W={final_min_lon:.8f}, E={final_max_lon:.8f}")
-        print(f"  BOUNDARY DEBUG: center=({center_lon:.8f}, {center_lat:.8f})")
-        print(f"  BOUNDARY DEBUG: default_range=({default_final_min_lon:.8f} to {default_final_max_lon:.8f})")
-        print(f"  BOUNDARY DEBUG: west_boundary={west_boundary}, east_boundary={east_boundary}")
-        print(f"  BOUNDARY DEBUG: final_range=({final_min_lon:.8f} to {final_max_lon:.8f})")
-    else:
-        # Standard center-based clipping when no boundaries are snapped
-        final_clip_polygon_coords = [
-            [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
-            [center_lon + final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SE
-            [center_lon + final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NE
-            [center_lon - final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NW
-            [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius]   # Close
-        ]
+    final_clip_polygon_coords = [
+        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
+        [center_lon + final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SE
+        [center_lon + final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NE
+        [center_lon - final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NW
+        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius]   # Close
+    ]
     
     from shapely.geometry import Polygon as ShapelyPolygon
     final_clip_geometry = ShapelyPolygon(final_clip_polygon_coords)
@@ -992,17 +888,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # Create a Delaunay triangulation of the interpolation points
         points_2d = np.vstack([grid_lons, grid_lats]).T
 
-        # Initialize boundary snapping counters
-        total_snapped_vertices = 0
-        total_triangles_processed = 0
-
         # Only create triangulation if we have enough points
         if len(points_2d) > 3:
             tri = Delaunay(points_2d)
 
             # Process each triangle to create a polygon
             for simplex in tri.simplices:
-                total_triangles_processed += 1
                 # Get the three points of this triangle
                 vertices = points_2d[simplex]
 
@@ -1024,7 +915,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
                 # Only add triangles with meaningful values and within our radius
                 if avg_yield > effective_threshold:
-                    # STEP 1: Check if triangle should be included based on soil polygons (BEFORE boundary snapping)
+                    # Check if triangle should be included based on soil polygons
                     include_triangle = True
 
                     if merged_soil_geometry is not None:
@@ -1037,9 +928,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         include_triangle = merged_soil_geometry.contains(triangle_polygon)
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
-                    # CRITICAL FIX: Skip indicator clipping when boundary snapping is active
-                    # Boundary snapping takes precedence over indicator geometry restrictions
-                    if include_triangle and indicator_geometry is not None and indicator_mask is not None and adjacent_boundaries is None:
+                    if include_triangle and indicator_geometry is not None and indicator_mask is not None:
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
                         was_included = include_triangle
@@ -1109,9 +998,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         # Only add feature if it's not excluded
                         if not should_exclude:
                             features.append(poly)
-        
-        # Triangulation complete - boundary snapping handled later
-                
     except Exception as e:
         # If triangulation fails, fall back to the simpler grid method
         print(f"Triangulation error: {e}, using grid method")
@@ -1203,7 +1089,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     if merged_soil_geometry is not None:
         print(f"GeoJSON features filtered by soil drainage areas: {len(features)} polygons displayed")
     
-    # STEP 1: Apply final square clipping FIRST (correct sequence)
+    # Apply final square clipping to existing features (triangle removal, not re-interpolation)
     features_before_final_clip = len(features)
     final_clipped_features = []
     
@@ -1220,8 +1106,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 triangle_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
                 if len(triangle_coords) >= 3:
                     triangle_polygon = ShapelyPolygon(triangle_coords)
-                    
-                    # Standard containment check for final clipping (no boundary considerations yet)
+                    # Only keep features that are completely within the smaller square
                     if final_clip_geometry.contains(triangle_polygon):
                         final_clipped_features.append(feature)
                 else:
@@ -1231,51 +1116,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # If centroid calculation fails, keep the feature
             final_clipped_features.append(feature)
     
-    print(f"Final square clipping: {features_before_final_clip} -> {len(final_clipped_features)} features ({final_radius_km:.1f}km sides)")
-
-    # STEP 2: Apply vertex-to-vertex snapping to existing heatmap triangles
-    if boundary_vertices is not None and len(boundary_vertices) > 0:
-        total_snapped_vertices = 0
-        snap_threshold_km = 1.5  # 1.5km threshold for vertex snapping
-        
-        print(f"🔧 APPLYING VERTEX-TO-VERTEX SNAPPING to {len(final_clipped_features)} clipped features...")
-        print(f"🎯 TARGET VERTICES: {len(boundary_vertices)} existing vertices from adjacent heatmaps")
-        
-        for feature in final_clipped_features:
-            coords = feature['geometry']['coordinates'][0]
-            coords_modified = False
-            
-            for coord_idx in range(len(coords) - 1):  # Skip last coord (duplicate of first)
-                original_lon, original_lat = coords[coord_idx]
-                
-                # Find nearest existing vertex within snap threshold
-                min_distance = float('inf')
-                nearest_vertex = None
-                
-                for target_lon, target_lat in boundary_vertices:
-                    distance_km = get_distance(original_lat, original_lon, target_lat, target_lon)
-                    if distance_km <= snap_threshold_km and distance_km < min_distance:
-                        min_distance = distance_km
-                        nearest_vertex = (target_lon, target_lat)
-                
-                # Snap to nearest vertex if found
-                if nearest_vertex is not None:
-                    target_lon, target_lat = nearest_vertex
-                    coords[coord_idx][0] = target_lon
-                    coords[coord_idx][1] = target_lat
-                    coords_modified = True
-                    total_snapped_vertices += 1
-                    
-                    if total_snapped_vertices <= 5:  # Log first few snaps
-                        print(f"🎯 VERTEX SNAP: ({original_lon:.6f}, {original_lat:.6f}) → ({target_lon:.6f}, {target_lat:.6f}), distance: {min_distance:.3f}km")
-            
-            # Update the closing coordinate to match the first coordinate (if modified)
-            if coords_modified and len(coords) > 1:
-                coords[-1] = coords[0]  # Close the polygon properly
-        
-        print(f"🔧 VERTEX SNAPPING COMPLETE: {total_snapped_vertices} vertices snapped to existing triangle vertices")
-    
     features = final_clipped_features
+    print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
 
     # Create the full GeoJSON object
     geojson = {

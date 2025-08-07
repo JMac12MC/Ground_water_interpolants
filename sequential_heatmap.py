@@ -23,79 +23,6 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     from utils import is_within_square, get_distance
     import numpy as np
     
-    def get_clipping_polygon_color(location_name):
-        """Get color for clipping polygon visualization"""
-        colors = {
-            'original': '#FF0000',      # Red - First/centroid-based
-            'east': '#FF8800',          # Orange - Edge-aligned
-            'northeast': '#FFDD00',     # Yellow - Edge-aligned  
-            'south': '#88FF00',         # Lime - Edge-aligned
-            'southeast': '#00FF88',     # Green - Edge-aligned
-            'far_southeast': '#0088FF'  # Blue - Edge-aligned
-        }
-        return colors.get(location_name, '#CCCCCC')
-
-    def extract_boundary_vertices(completed_boundaries, current_location, adjacent_boundaries):
-        """Extract shared boundary vertices from completed heatmaps to ensure seamless edges"""
-        boundary_vertices = []
-        
-        try:
-            # For each adjacent boundary, extract vertices that should be shared
-            for boundary_type, boundary_coord in adjacent_boundaries.items():
-                # Get the source heatmap that provides this boundary
-                source_location = None
-                
-                if current_location == 'east' and boundary_type == 'west':
-                    source_location = 'original'
-                elif current_location == 'northeast' and boundary_type == 'west':
-                    source_location = 'east'
-                elif current_location == 'south' and boundary_type == 'north':
-                    source_location = 'original'
-                elif current_location == 'southeast':
-                    if boundary_type == 'west':
-                        source_location = 'east'
-                    elif boundary_type == 'north':
-                        source_location = 'south'
-                elif current_location == 'far_southeast':
-                    if boundary_type == 'west':
-                        source_location = 'northeast'
-                    elif boundary_type == 'north':
-                        source_location = 'southeast'
-                
-                if source_location and source_location in completed_boundaries:
-                    source_bounds = completed_boundaries[source_location]
-                    
-                    # Generate vertices along the shared boundary
-                    # Create 20 evenly spaced vertices along each boundary edge
-                    num_vertices = 20
-                    
-                    if boundary_type in ['north', 'south']:
-                        # Horizontal boundary - vary longitude
-                        lat = boundary_coord
-                        lon_start = source_bounds['west']
-                        lon_end = source_bounds['east']
-                        
-                        for i in range(num_vertices):
-                            lon = lon_start + (lon_end - lon_start) * i / (num_vertices - 1)
-                            boundary_vertices.append((lat, lon))
-                            
-                    elif boundary_type in ['east', 'west']:
-                        # Vertical boundary - vary latitude
-                        lon = boundary_coord
-                        lat_start = source_bounds['south']
-                        lat_end = source_bounds['north']
-                        
-                        for i in range(num_vertices):
-                            lat = lat_start + (lat_end - lat_start) * i / (num_vertices - 1)
-                            boundary_vertices.append((lat, lon))
-            
-            print(f"    EXTRACTED {len(boundary_vertices)} boundary vertices for {current_location}")
-            return boundary_vertices
-            
-        except Exception as e:
-            print(f"    Warning: Could not extract boundary vertices for {current_location}: {e}")
-            return []
-    
     # Calculate positions for all heatmaps using PERFECT 19.82km spacing
     # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
     # This creates overlapping coverage for seamless visual joining
@@ -249,13 +176,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             lng = clicked_lng + (col * row_longitude_offsets[row])
             
             # Generate descriptive names for grid positions
-            if grid_rows == 1 and grid_cols == 2:
-                # Use simple naming for 1x2 grid (original + east)
-                names_1x2 = [
-                    ['original', 'east']
-                ]
-                name = names_1x2[row][col]
-            elif grid_rows == 2 and grid_cols == 3:
+            if grid_rows == 2 and grid_cols == 3:
                 # Use original naming for 2x3 grid
                 names_2x3 = [
                     ['original', 'east', 'northeast'],
@@ -338,14 +259,10 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         if max_error < 0.0001:  # < 10cm
             print(f"  🎖️ SURVEY PRECISION: Exceeds industry standards for seamless mapping")
     
-    # Process each location sequentially with EDGE-ALIGNED BOUNDARIES
+    # Process each location sequentially
     generated_heatmaps = []
     stored_heatmap_ids = []
     error_messages = []
-    
-    # Track boundary coordinates for adjacent heatmap alignment
-    completed_boundaries = {}  # Store exact boundaries from completed heatmaps
-    print(f"🔧 BOUNDARY SNAPPING: Starting sequential generation with empty completed_boundaries")
     
     # Calculate GLOBAL colormap range ONCE for ALL heatmaps to ensure consistency
     print(f"🎨 CALCULATING GLOBAL COLORMAP RANGE for all {len(locations)} heatmaps...")
@@ -420,9 +337,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     }
     
     for i, (location_name, center_point) in enumerate(locations):
-        print(f"🔄 PROCESSING HEATMAP {i+1}/{len(locations)}: {location_name.upper()} - Starting generation")
         try:
-            st.write(f"🔄 Building heatmap {i+1}/{len(locations)}: {location_name.title()} location...")
+            st.write(f"🔄 Building heatmap {i+1}/6: {location_name.title()} location...")
             
             # Filter wells for this location
             wells_df = wells_data.copy()
@@ -445,122 +361,6 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 
             print(f"  {location_name.upper()}: {len(filtered_wells)} wells found")
             
-            # CALCULATE ADJACENT BOUNDARIES for edge-aligned clipping
-            adjacent_boundaries = None
-            center_lat, center_lon = center_point
-            
-            # Calculate high-precision conversion factors for this location
-            from utils import get_distance
-            TOLERANCE_KM = 0.0001
-            MAX_ITERATIONS = 50
-            ADAPTIVE_STEP_SIZE = 0.000001
-            
-            def get_precise_boundary_factors(ref_lat, ref_lon):
-                test_distance = 1.0
-                lat_offset = test_distance / 111.0
-                best_lat_factor = 111.0
-                
-                for iter in range(MAX_ITERATIONS):
-                    test_lat = ref_lat + lat_offset
-                    actual_dist = get_distance(ref_lat, ref_lon, test_lat, ref_lon)
-                    error = abs(actual_dist - test_distance)
-                    
-                    if error < TOLERANCE_KM:
-                        break
-                    if error > 0.001:
-                        lat_offset *= test_distance / actual_dist
-                    else:
-                        step = max(ADAPTIVE_STEP_SIZE, error / 10.0)
-                        if actual_dist > test_distance:
-                            lat_offset -= step
-                        else:
-                            lat_offset += step
-                    best_lat_factor = test_distance / lat_offset
-                
-                lon_offset = test_distance / (111.0 * abs(np.cos(np.radians(ref_lat))))
-                best_lon_factor = 111.0 * abs(np.cos(np.radians(ref_lat)))
-                
-                for iter in range(MAX_ITERATIONS):
-                    test_lon = ref_lon + lon_offset  
-                    actual_dist = get_distance(ref_lat, ref_lon, ref_lat, test_lon)
-                    error = abs(actual_dist - test_distance)
-                    
-                    if error < TOLERANCE_KM:
-                        break
-                    if error > 0.001:
-                        lon_offset *= test_distance / actual_dist
-                    else:
-                        step = max(ADAPTIVE_STEP_SIZE, error / 10.0)
-                        if actual_dist > test_distance: 
-                            lon_offset -= step
-                        else:
-                            lon_offset += step
-                    best_lon_factor = test_distance / lon_offset
-                    
-                return best_lat_factor, best_lon_factor
-            
-            km_per_deg_lat, km_per_deg_lon = get_precise_boundary_factors(center_lat, center_lon)
-            
-            # Calculate exact boundary coordinates for seamless snapping
-            # CRITICAL FIX: Use FINAL CLIPPING RADIUS (20km), not search radius (40km)
-            final_clip_radius_km = search_radius * 0.5  # 20km for boundary snapping
-            radius_km = final_clip_radius_km
-            min_lat = center_lat - (radius_km / km_per_deg_lat)
-            max_lat = center_lat + (radius_km / km_per_deg_lat)
-            min_lon = center_lon - (radius_km / km_per_deg_lon)
-            max_lon = center_lon + (radius_km / km_per_deg_lon)
-            
-            # Determine which boundaries to snap to based on grid position
-            adjacent_boundaries = {}
-            print(f"🔧 BOUNDARY CHECK: Processing {location_name}, completed_boundaries has: {list(completed_boundaries.keys())}")
-            
-            # Grid-specific boundary snapping logic
-            if grid_rows == 1 and grid_cols == 2:
-                # 1x2 grid boundary snapping logic (original + east only)
-                if location_name == 'east' and 'original' in completed_boundaries:
-                    # East: snap west boundary to original's east boundary
-                    adjacent_boundaries['west'] = completed_boundaries['original']['east']
-                    print(f"  BOUNDARY SNAP (1×2): {location_name} west → original east ({adjacent_boundaries['west']:.8f})")
-            
-            elif grid_rows == 2 and grid_cols == 3:
-                # 2x3 grid boundary snapping logic
-                if location_name == 'east' and 'original' in completed_boundaries:
-                    # East: snap west boundary to original's east boundary
-                    adjacent_boundaries['west'] = completed_boundaries['original']['east']
-                    print(f"  BOUNDARY SNAP: {location_name} west → original east ({adjacent_boundaries['west']:.8f})")
-                
-            elif location_name == 'northeast' and 'east' in completed_boundaries:
-                # Northeast: snap west boundary to east's east boundary
-                adjacent_boundaries['west'] = completed_boundaries['east']['east']
-                print(f"  BOUNDARY SNAP: {location_name} west → east east ({adjacent_boundaries['west']:.8f})")
-                
-            elif location_name == 'south' and 'original' in completed_boundaries:
-                # South: snap north boundary to original's south boundary
-                adjacent_boundaries['north'] = completed_boundaries['original']['south']
-                print(f"  BOUNDARY SNAP: {location_name} north → original south ({adjacent_boundaries['north']:.8f})")
-                
-            elif location_name == 'southeast':
-                # Southeast: snap to both south and east if available
-                if 'south' in completed_boundaries:
-                    adjacent_boundaries['north'] = completed_boundaries['south']['south']
-                    print(f"  BOUNDARY SNAP: {location_name} north → south south ({adjacent_boundaries['north']:.8f})")
-                if 'east' in completed_boundaries:
-                    adjacent_boundaries['west'] = completed_boundaries['east']['east']
-                    print(f"  BOUNDARY SNAP: {location_name} west → east east ({adjacent_boundaries['west']:.8f})")
-                    
-            elif location_name == 'far_southeast':
-                # Far Southeast: snap to southeast boundaries
-                if 'southeast' in completed_boundaries:
-                    adjacent_boundaries['west'] = completed_boundaries['southeast']['east']
-                    print(f"  BOUNDARY SNAP: {location_name} west → southeast east ({adjacent_boundaries['west']:.8f})")
-                if 'south' in completed_boundaries:
-                    adjacent_boundaries['north'] = completed_boundaries['south']['south'] 
-                    print(f"  BOUNDARY SNAP: {location_name} north → south south ({adjacent_boundaries['north']:.8f})")
-            
-            # Set to None if no boundaries to snap
-            if not adjacent_boundaries:
-                adjacent_boundaries = None
-            
             # Generate indicator mask if needed
             indicator_mask = None
             methods_requiring_mask = [
@@ -570,12 +370,10 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             
             if interpolation_method in methods_requiring_mask:
                 try:
-                    # Use search radius for indicator mask (not final clip radius)
-                    # The final clipping will handle boundary restrictions properly
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
                         center_point,
-                        search_radius,  # Use full search radius for indicator mask
+                        search_radius,
                         resolution=100,
                         soil_polygons=soil_polygons,
                         threshold=0.7
@@ -583,42 +381,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 except Exception as e:
                     print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
-            # Extract vertices from stored heatmaps for vertex-to-vertex snapping
-            boundary_vertices = []
-            if location_name != 'original' and stored_heatmap_ids:
-                print(f"  🎯 EXTRACTING VERTICES: Finding triangle vertices from adjacent heatmaps for {location_name}")
-                
-                # Get vertices from previously stored heatmaps
-                for stored_name, stored_id in stored_heatmap_ids:
-                    if stored_name != location_name:  # Don't snap to self
-                        try:
-                            # Fetch heatmap from database
-                            stored_heatmaps = polygon_db.get_all_stored_heatmaps()
-                            for heatmap in stored_heatmaps:
-                                if heatmap['id'] == stored_id and heatmap.get('geojson_data'):
-                                    geojson = heatmap['geojson_data']
-                                    
-                                    # Extract all triangle vertices from adjacent boundary area only
-                                    vertex_count = 0
-                                    for feature in geojson.get('features', []):
-                                        if 'geometry' in feature and feature['geometry']['type'] == 'Polygon':
-                                            coords = feature['geometry']['coordinates'][0]
-                                            for coord in coords[:-1]:  # Skip duplicate last coordinate
-                                                # Only include vertices near the boundary for efficiency
-                                                if location_name == 'east' and coord[0] > center_point[1] - 0.05:  # Eastern edge of stored heatmap
-                                                    boundary_vertices.append((coord[0], coord[1]))
-                                                    vertex_count += 1
-                                                elif location_name in ['south', 'southeast'] and coord[1] < center_point[0] + 0.05:  # Southern edge
-                                                    boundary_vertices.append((coord[0], coord[1]))
-                                                    vertex_count += 1
-                                    
-                                    print(f"    📐 EXTRACTED: {vertex_count} boundary vertices from {stored_name} heatmap (ID {stored_id})")
-                                    break
-                        except Exception as e:
-                            print(f"    ⚠️  Failed to extract vertices from {stored_name}: {e}")
-                
-                print(f"  🎯 TOTAL BOUNDARY VERTICES: {len(boundary_vertices)} available for vertex snapping")
-            
+            # Generate heatmap with Banks Peninsula exclusion
             geojson_data = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
@@ -630,9 +393,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 variogram_model='spherical',
                 soil_polygons=soil_polygons,
                 indicator_mask=indicator_mask,
-                banks_peninsula_coords=banks_peninsula_coords,
-                adjacent_boundaries=adjacent_boundaries,
-                boundary_vertices=boundary_vertices
+                banks_peninsula_coords=banks_peninsula_coords
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:
@@ -682,128 +443,6 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     if stored_heatmap_id:
                         stored_heatmap_ids.append((location_name, stored_heatmap_id))
                         print(f"  ✅ {location_name.upper()}: Stored as ID {stored_heatmap_id}")
-                        
-                        # STORE BOUNDARY COORDINATES for next adjacent heatmaps
-                        # CRITICAL FIX: Use FINAL CLIPPING RADIUS (20km), not search radius (40km)
-                        final_clip_radius_km = search_radius * 0.5  # 20km for boundary snapping
-                        boundary_min_lat = center_lat - (final_clip_radius_km / km_per_deg_lat)
-                        boundary_max_lat = center_lat + (final_clip_radius_km / km_per_deg_lat)
-                        boundary_min_lon = center_lon - (final_clip_radius_km / km_per_deg_lon)
-                        boundary_max_lon = center_lon + (final_clip_radius_km / km_per_deg_lon)
-                        
-                        # If this heatmap used adjacent boundaries, update with the aligned values
-                        if adjacent_boundaries:
-                            if 'west' in adjacent_boundaries:
-                                boundary_min_lon = adjacent_boundaries['west']
-                            if 'east' in adjacent_boundaries:
-                                boundary_max_lon = adjacent_boundaries['east']
-                            if 'north' in adjacent_boundaries:
-                                boundary_max_lat = adjacent_boundaries['north']
-                            if 'south' in adjacent_boundaries:
-                                boundary_min_lat = adjacent_boundaries['south']
-                        
-                        completed_boundaries[location_name] = {
-                            'north': boundary_max_lat,
-                            'south': boundary_min_lat,
-                            'east': boundary_max_lon,
-                            'west': boundary_min_lon
-                        }
-                        
-                        print(f"  📐 BOUNDARIES STORED for {location_name.upper()}: N={boundary_max_lat:.8f}, S={boundary_min_lat:.8f}, E={boundary_max_lon:.8f}, W={boundary_min_lon:.8f}")
-                        
-
-                        
-                        # STORE ACTUAL 0.5 CLIPPING POLYGON FOR VISUALIZATION
-                        if 'clipping_polygons' not in st.session_state:
-                            st.session_state.clipping_polygons = []
-                        
-                        # SIMPLIFIED APPROACH: Use identical polygon size, just move the position
-                        radius_km = st.session_state.search_radius
-                        final_clip_factor = 0.5
-                        final_radius_km = radius_km * final_clip_factor
-                        
-                        # Get the standard polygon dimensions (same for all)
-                        km_per_degree_lat = 111.0
-                        km_per_degree_lon = 111.0 * np.cos(np.radians(center_point[0]))
-                        
-                        polygon_half_width_lat = final_radius_km / km_per_degree_lat
-                        polygon_half_width_lon = final_radius_km / km_per_degree_lon
-                        
-                        if location_name == 'original':
-                            # First polygon - position around clicked center
-                            center_lat, center_lon = center_point
-                            clip_north = center_lat + polygon_half_width_lat
-                            clip_south = center_lat - polygon_half_width_lat
-                            clip_east = center_lon + polygon_half_width_lon
-                            clip_west = center_lon - polygon_half_width_lon
-                            
-                        elif location_name == 'east':
-                            # Move original polygon exactly east - share west/east boundaries
-                            original_bounds = completed_boundaries['original']
-                            clip_west = original_bounds['east']  # Share exact boundary
-                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
-                            clip_north = original_bounds['north']  # Same north boundary
-                            clip_south = original_bounds['south']  # Same south boundary
-                            
-                        elif location_name == 'northeast':
-                            # Move east polygon exactly east - share west/east boundaries  
-                            east_bounds = completed_boundaries['east']
-                            clip_west = east_bounds['east']  # Share exact boundary
-                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
-                            clip_north = east_bounds['north']  # Same north boundary
-                            clip_south = east_bounds['south']  # Same south boundary
-                            
-                        elif location_name == 'south':
-                            # Move original polygon exactly south - share north/south boundaries
-                            original_bounds = completed_boundaries['original']
-                            clip_north = original_bounds['south']  # Share exact boundary
-                            clip_south = clip_north - (2 * polygon_half_width_lat)  # Move polygon height south
-                            clip_west = original_bounds['west']  # Same west boundary
-                            clip_east = original_bounds['east']  # Same east boundary
-                            
-                        elif location_name == 'southeast':
-                            # Position at intersection - share boundaries with both east and south
-                            east_bounds = completed_boundaries['east']
-                            south_bounds = completed_boundaries['south']
-                            clip_west = east_bounds['east']  # Share east's right boundary
-                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
-                            clip_north = south_bounds['south']  # Share south's bottom boundary
-                            clip_south = clip_north - (2 * polygon_half_width_lat)  # Move polygon height south
-                            
-                        elif location_name == 'far_southeast':
-                            # Move southeast polygon exactly east - share west/east boundaries
-                            southeast_bounds = completed_boundaries['southeast']
-                            clip_west = southeast_bounds['east']  # Share exact boundary
-                            clip_east = clip_west + (2 * polygon_half_width_lon)  # Move polygon width east
-                            clip_north = southeast_bounds['north']  # Same north boundary
-                            clip_south = southeast_bounds['south']  # Same south boundary
-                        else:
-                            # Default case for unsupported locations - use center-based clipping
-                            center_lat, center_lon = center_point
-                            clip_north = center_lat + polygon_half_width_lat
-                            clip_south = center_lat - polygon_half_width_lat
-                            clip_east = center_lon + polygon_half_width_lon
-                            clip_west = center_lon - polygon_half_width_lon
-                        
-                        # Store the 0.5 clipping zone for visualization
-                        clipping_polygon = {
-                            'name': location_name,
-                            'boundaries': {
-                                'north': clip_north,
-                                'south': clip_south, 
-                                'east': clip_east,
-                                'west': clip_west
-                            },
-                            'center': center_point,
-                            'aligned': location_name != 'original',
-                            'color': get_clipping_polygon_color(location_name),
-                            'radius_km': final_radius_km
-                        }
-                        st.session_state.clipping_polygons.append(clipping_polygon)
-                        
-                        print(f"  📐 0.5 CLIPPING ZONE for {location_name.upper()}: N={clip_north:.8f}, S={clip_south:.8f}, E={clip_east:.8f}, W={clip_west:.8f} (size={final_radius_km*2}km×{final_radius_km*2}km)")
-                        if location_name != 'original':
-                            print(f"      EXACT BOUNDARY SHARING: Moved identical polygon to new position")
                     else:
                         print(f"  ⚠️  {location_name.upper()}: Already exists in database")
                         

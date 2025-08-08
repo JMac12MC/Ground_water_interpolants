@@ -278,6 +278,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
         print(f"Indicator mask grid shape: {mask_values.shape if mask_values is not None else 'None'}")
         if mask_values is not None:
+            import numpy as np  # Ensure numpy is available in this scope
             high_prob_count = np.sum(mask_values >= 0.7)
             print(f"Mask has {high_prob_count} high-probability points (≥0.7) out of {mask_values.size} total")
             # Create polygon geometry from indicator mask for clipping

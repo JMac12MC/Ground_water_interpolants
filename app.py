@@ -1134,13 +1134,16 @@ with main_col1:
                 ).add_to(m)
 
         # Display heatmap - use pre-computed if available, otherwise generate on-demand
+        # Initialize geojson_data to prevent NameError
+        geojson_data = {"type": "FeatureCollection", "features": []}
+        
         if st.session_state.heat_map_visibility:
             if heatmap_data:
                 # Display pre-computed heatmap
                 st.success("⚡ Displaying pre-computed heatmap - instant loading!")
 
                 # Convert pre-computed data to GeoJSON for display
-                geojson_data = {"type": "FeatureCollection", "features": []}
+                # geojson_data already initialized above
 
                 # Determine the value field based on heatmap type
                 if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
@@ -1229,6 +1232,9 @@ with main_col1:
                                 if primary_heatmap and primary_heatmap.get('geojson_data'):
                                     geojson_data = primary_heatmap['geojson_data']
                                     print(f"AUTOMATIC GENERATION: Using stored heatmap for display")
+                            else:
+                                # Ensure geojson_data is still defined if no stored heatmaps
+                                geojson_data = {"type": "FeatureCollection", "features": []}
                         
                         # Sequential processing and storage handled by the dedicated module
                     except Exception as e:
@@ -1236,8 +1242,7 @@ with main_col1:
                         st.error(f"Error generating heatmaps: {e}")
                         geojson_data = {"type": "FeatureCollection", "features": []}
                         geojson_data_east = None
-                else:
-                    geojson_data = {"type": "FeatureCollection", "features": []}
+                # else clause removed as geojson_data is already initialized
 
                 print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
                 if geojson_data:

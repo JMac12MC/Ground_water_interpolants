@@ -126,14 +126,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **August 08, 2025**: MAJOR FIX: Implemented high-precision coordinate conversion and tile boundary snapping
+- **August 08, 2025**: MAJOR FIX: Implemented high-precision coordinate conversion and boundary-only tile snapping
   - Created ultra-precise coordinate conversion system using iterative refinement (10cm accuracy)
   - Fixed alignment issues between heatmap centroids and clipping boundaries using consistent geodetic calculations
-  - Built comprehensive tile boundary snapping system to eliminate gaps and overlaps between adjacent heatmap tiles
-  - Added 100-meter vertex snapping algorithm using KDTree spatial indexing for efficient neighbor detection
-  - Successfully processed 216,511 vertices across 38 stored heatmap tiles, dramatically reducing boundary artifacts
-  - Integrated boundary optimization interface into stored heatmaps section with "Snap Tile Boundaries" button
-  - Enhanced triangle mesh precision from ~133m average spacing to perfectly aligned boundaries
+  - Built boundary-only snapping system that identifies and snaps only vertices on tile edges, preserving internal triangles
+  - Added 100-meter vertex snapping algorithm using KDTree spatial indexing and Shapely geometric analysis
+  - Successfully processed 598 boundary vertices across 27 tiles while leaving internal triangle vertices unchanged
+  - Integrated boundary optimization interface into stored heatmaps section with "Snap Boundary Vertices Only" button
+  - Enhanced tile connections without distorting internal heatmap accuracy or triangle mesh structure
 
 - **July 30, 2025**: MAJOR FEATURE ADDED: Windy.com-style smooth raster visualization with toggle functionality
   - Implemented `generate_smooth_raster_overlay()` function using cubic interpolation and Gaussian smoothing

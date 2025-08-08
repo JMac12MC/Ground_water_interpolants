@@ -435,9 +435,9 @@ with st.sidebar:
 
         # Tile Boundary Snapping section
         st.subheader("🔧 Tile Boundary Optimization")
-        st.write("Fix gaps and overlaps between adjacent heatmap tiles by snapping nearby vertices (within 100m).")
+        st.write("Fix gaps and overlaps between adjacent heatmap tiles by snapping only boundary vertices (within 100m). Internal triangle vertices remain unchanged.")
         
-        if st.button("🎯 Snap Tile Boundaries", type="primary"):
+        if st.button("🎯 Snap Boundary Vertices Only", type="primary"):
             print("\n" + "="*50)
             print("🎯 SNAP TILE BOUNDARIES BUTTON CLICKED!")
             print("="*50)
@@ -459,8 +459,8 @@ with st.sidebar:
                 with st.spinner("Snapping tile boundaries to reduce gaps and overlaps..."):
                     print("🔄 ENTERING SPINNER CONTEXT")
                     try:
-                        print("📦 IMPORTING tile_boundary_snapping module...")
-                        from tile_boundary_snapping import run_boundary_snapping
+                        print("📦 IMPORTING boundary_only_snapping module...")
+                        from boundary_only_snapping import run_boundary_only_snapping
                         print("✅ Module imported successfully")
                         
                         # Capture the snapping process output
@@ -472,9 +472,9 @@ with st.sidebar:
                         old_stdout = sys.stdout
                         sys.stdout = captured_output = io.StringIO()
                         
-                        print("🎯 CALLING run_boundary_snapping()...")
-                        # Run the boundary snapping
-                        run_boundary_snapping()
+                        print("🎯 CALLING run_boundary_only_snapping()...")
+                        # Run the boundary-only snapping
+                        run_boundary_only_snapping()
                         
                         # Restore stdout and get the output
                         sys.stdout = old_stdout
@@ -485,7 +485,7 @@ with st.sidebar:
                         print(f"📄 OUTPUT PREVIEW: {output[:200]}..." if len(output) > 200 else output)
                         
                         # Display results
-                        if "BOUNDARY SNAPPING COMPLETE" in output:
+                        if "BOUNDARY-ONLY SNAPPING COMPLETE" in output or "BOUNDARY SNAPPING COMPLETE" in output:
                             print("✅ SUCCESS: Found 'BOUNDARY SNAPPING COMPLETE' in output")
                             st.success("Tile boundaries snapped successfully!")
                             
@@ -508,7 +508,7 @@ with st.sidebar:
                             print("🔄 CALLING st.rerun()...")
                             st.rerun()
                             
-                        elif "NO SNAPPING NEEDED" in output:
+                        elif "NO BOUNDARY SNAPPING NEEDED" in output or "NO SNAPPING NEEDED" in output:
                             print("ℹ️ INFO: Found 'NO SNAPPING NEEDED' in output")
                             st.info("All tiles are already well-aligned (within 100m tolerance)")
                         else:

@@ -433,6 +433,60 @@ with st.sidebar:
                 else:
                     st.error("Database not available")
 
+        # Tile Boundary Snapping section
+        st.subheader("🔧 Tile Boundary Optimization")
+        st.write("Fix gaps and overlaps between adjacent heatmap tiles by snapping nearby vertices (within 100m).")
+        
+        if st.button("🎯 Snap Tile Boundaries", type="primary"):
+            if st.session_state.stored_heatmaps:
+                with st.spinner("Snapping tile boundaries to reduce gaps and overlaps..."):
+                    try:
+                        from tile_boundary_snapping import run_boundary_snapping
+                        
+                        # Capture the snapping process output
+                        import io
+                        import sys
+                        
+                        # Redirect stdout to capture print statements
+                        old_stdout = sys.stdout
+                        sys.stdout = captured_output = io.StringIO()
+                        
+                        # Run the boundary snapping
+                        run_boundary_snapping()
+                        
+                        # Restore stdout and get the output
+                        sys.stdout = old_stdout
+                        output = captured_output.getvalue()
+                        
+                        # Display results
+                        if "BOUNDARY SNAPPING COMPLETE" in output:
+                            st.success("Tile boundaries snapped successfully!")
+                            
+                            # Extract statistics from output
+                            lines = output.split('\n')
+                            for line in lines:
+                                if "vertices snapped across" in line:
+                                    st.info(f"📊 {line.strip()}")
+                                elif "Tile " in line and ": " in line and "vertices snapped" in line:
+                                    st.write(f"  • {line.strip()}")
+                            
+                            # Refresh stored heatmaps to show updated data
+                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            st.experimental_rerun()
+                            
+                        elif "NO SNAPPING NEEDED" in output:
+                            st.info("All tiles are already well-aligned (within 100m tolerance)")
+                        else:
+                            st.warning("Boundary snapping completed but no clear status was reported")
+                            
+                    except Exception as e:
+                        st.error(f"Error during boundary snapping: {e}")
+                        print(f"Boundary snapping error: {e}")
+            else:
+                st.warning("No stored heatmaps available for boundary snapping")
+
+        st.divider()
+
         # Display each stored heatmap with details
         for heatmap in st.session_state.stored_heatmaps:
             with st.expander(f"📍 {heatmap['heatmap_name']}"):

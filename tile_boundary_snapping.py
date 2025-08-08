@@ -281,43 +281,37 @@ def load_stored_heatmaps_for_snapping():
     tiles = {}
     
     try:
-        conn = get_database_connection()
-        cursor = conn.cursor()
+        # Use the same database system as the main app
+        from database import PolygonDatabase
         
-        # Get all stored heatmaps
-        cursor.execute("""
-            SELECT heatmap_id, geojson_data, center_lat, center_lon, method_name
-            FROM stored_heatmaps 
-            WHERE geojson_data IS NOT NULL
-            ORDER BY heatmap_id
-        """)
+        db = PolygonDatabase()
+        stored_heatmaps = db.get_all_stored_heatmaps()
         
-        for row in cursor.fetchall():
-            heatmap_id, geojson_data, center_lat, center_lon, method_name = row
+        print(f"Found {len(stored_heatmaps)} stored heatmaps in database")
+        
+        for heatmap in stored_heatmaps:
+            heatmap_id = heatmap['id']
+            geojson_data = heatmap.get('geojson_data')
             
-            try:
-                geojson = json.loads(geojson_data)
-                feature_count = len(geojson.get('features', []))
+            if geojson_data and isinstance(geojson_data, dict):
+                feature_count = len(geojson_data.get('features', []))
                 
                 if feature_count > 0:
                     tiles[heatmap_id] = {
-                        'geojson': geojson,
-                        'center_lat': center_lat,
-                        'center_lon': center_lon,
-                        'method_name': method_name,
+                        'geojson': geojson_data,
+                        'center_lat': heatmap['center_lat'],
+                        'center_lon': heatmap['center_lon'],
+                        'method_name': heatmap['interpolation_method'],
                         'feature_count': feature_count
                     }
                     
-            except json.JSONDecodeError:
-                print(f"Error parsing GeoJSON for heatmap {heatmap_id}")
-                continue
-        
-        conn.close()
-        print(f"Loaded {len(tiles)} tiles for boundary snapping")
+        print(f"Loaded {len(tiles)} tiles with GeoJSON data for boundary snapping")
         return tiles
         
     except Exception as e:
         print(f"Error loading stored heatmaps: {e}")
+        import traceback
+        print(traceback.format_exc())
         return {}
 
 def save_snapped_heatmaps(snapped_tiles):
@@ -328,30 +322,36 @@ def save_snapped_heatmaps(snapped_tiles):
         snapped_tiles: dict of tiles with snapped vertices
     """
     try:
-        conn = get_database_connection()
-        cursor = conn.cursor()
+        from database import PolygonDatabase
+        from sqlalchemy import text
         
+        db = PolygonDatabase()
         updated_count = 0
         
-        for tile_id, tile_data in snapped_tiles.items():
-            geojson_str = json.dumps(tile_data['geojson'])
+        with db.engine.connect() as conn:
+            for tile_id, tile_data in snapped_tiles.items():
+                geojson_str = json.dumps(tile_data['geojson'])
+                
+                result = conn.execute(text("""
+                    UPDATE stored_heatmaps 
+                    SET geojson_data = :geojson_data
+                    WHERE id = :heatmap_id
+                """), {
+                    'geojson_data': geojson_str,
+                    'heatmap_id': tile_id
+                })
+                
+                if result.rowcount > 0:
+                    updated_count += 1
             
-            cursor.execute("""
-                UPDATE stored_heatmaps 
-                SET geojson_data = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE heatmap_id = ?
-            """, (geojson_str, tile_id))
-            
-            if cursor.rowcount > 0:
-                updated_count += 1
-        
-        conn.commit()
-        conn.close()
+            conn.commit()
         
         print(f"Updated {updated_count} heatmaps in database with snapped vertices")
         
     except Exception as e:
         print(f"Error saving snapped heatmaps: {e}")
+        import traceback
+        print(traceback.format_exc())
 
 def run_boundary_snapping():
     """

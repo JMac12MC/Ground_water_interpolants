@@ -472,7 +472,7 @@ with st.sidebar:
                             
                             # Refresh stored heatmaps to show updated data
                             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            st.experimental_rerun()
+                            st.rerun()
                             
                         elif "NO SNAPPING NEEDED" in output:
                             st.info("All tiles are already well-aligned (within 100m tolerance)")

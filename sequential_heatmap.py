@@ -22,6 +22,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     from interpolation import generate_geo_json_grid, generate_indicator_kriging_mask
     from utils import is_within_square, get_distance
     import numpy as np
+    import math
     
     # Calculate positions for all heatmaps using PERFECT 19.82km spacing
     # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
@@ -303,7 +304,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         print(f"🎨 GLOBAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (from {len(global_values)} values across all areas)")
         
         # Calculate percentile-based color mapping for enhanced data discrimination
-        import numpy as np
+        # numpy already imported at top
         global_percentiles = np.percentile(global_values, np.linspace(0, 100, num=256))
         percentile_25 = np.percentile(global_values, 25)
         percentile_50 = np.percentile(global_values, 50)

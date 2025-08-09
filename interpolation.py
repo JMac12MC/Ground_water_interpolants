@@ -2681,7 +2681,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         print(f"Fast sampling: {points_inside} points within {150}m of triangulated data out of {total_points} total grid points")
         
-        if not grid_values:
+        if points_inside == 0:
             return None
         
         # Create raster array and populate with sampled values

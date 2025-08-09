@@ -2626,18 +2626,26 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         y = np.linspace(south, north, height)
         xi, yi = np.meshgrid(x, y)
         
-        # Interpolate values onto high-resolution grid using cubic interpolation
+        # Interpolate values onto high-resolution grid using multiple methods for complete coverage
         try:
-            # Use cubic interpolation for smoothest results
+            # Start with cubic interpolation for smooth results
             zi = griddata(coords, values, (xi, yi), method='cubic', fill_value=np.nan)
             
-            # Fill any remaining NaN values with linear interpolation
+            # Fill NaN values with linear interpolation
             nan_mask = np.isnan(zi)
             if np.any(nan_mask):
                 zi_linear = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
                 zi[nan_mask] = zi_linear[nan_mask]
                 
-            # Final pass with nearest neighbor for any remaining NaN
+            # Final pass: fill remaining NaN with nearest neighbor to ensure complete coverage
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
+                zi[nan_mask] = zi_nearest[nan_mask]
+            
+            # Apply Gaussian smoothing to create seamless blending between tiles
+            from scipy.ndimage import gaussian_filter
+            zi = gaussian_filter(zi, sigma=1.5)  # Increased smoothing for better tile blending
             nan_mask = np.isnan(zi)
             if np.any(nan_mask):
                 zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
@@ -2653,14 +2661,17 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             if np.any(nan_mask):
                 zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
                 zi[nan_mask] = zi_nearest[nan_mask]
+            
+            # Apply Gaussian smoothing to fallback too
+            from scipy.ndimage import gaussian_filter
+            zi = gaussian_filter(zi, sigma=1.5)
         
         # Apply natural boundary clipping - keep the natural interpolation boundaries 
         # No artificial rectangular clipping, let interpolation naturally fade to NaN at edges
         print(f"Smooth raster using natural interpolation boundaries (no artificial clipping)")
         
-        # Apply Gaussian smoothing for even smoother appearance
-        from scipy.ndimage import gaussian_filter
-        zi_smooth = gaussian_filter(zi, sigma=1.0, mode='nearest')
+        # Use the already smoothed zi for display
+        zi_smooth = zi
         
         # Convert values to colors using global colormap function
         if global_colormap_func:

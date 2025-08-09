@@ -2616,24 +2616,14 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         values = np.array(values)
         coords = np.array(coords)
         
-        # Create high-resolution grid for smooth interpolation with extended boundaries
+        # Create high-resolution grid for smooth interpolation
         width, height = raster_size
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
-        # Extend boundaries by 5% to ensure overlap between tiles (eliminates gaps)
-        lon_range = east - west
-        lat_range = north - south
-        extension_factor = 0.05
-        
-        west_extended = west - (lon_range * extension_factor)
-        east_extended = east + (lon_range * extension_factor)
-        south_extended = south - (lat_range * extension_factor)
-        north_extended = north + (lat_range * extension_factor)
-        
-        # Create coordinate grids with extended boundaries
-        x = np.linspace(west_extended, east_extended, width)
-        y = np.linspace(south_extended, north_extended, height)
+        # Create coordinate grids
+        x = np.linspace(west, east, width)
+        y = np.linspace(south, north, height)
         xi, yi = np.meshgrid(x, y)
         
         # Interpolate values onto high-resolution grid using multiple methods for complete coverage
@@ -2739,7 +2729,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         return {
             'image_base64': img_base64,
-            'bounds': [[south_extended, west_extended], [north_extended, east_extended]],
+            'bounds': [[south, west], [north, east]],
             'opacity': opacity
         }
         

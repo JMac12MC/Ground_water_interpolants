@@ -2583,22 +2583,32 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             return None
             
         # Extract values and coordinates from triangular mesh
+        # Use all triangle vertices (not just centroids) for better boundary coverage
         values = []
         coords = []
+        vertex_values = {}  # Track values at each unique vertex
         
         for feature in geojson_data['features']:
             if feature.get('properties', {}).get('value') is not None:
                 value = feature['properties']['value']
                 
-                # Get triangle centroid
                 if feature['geometry']['type'] == 'Polygon':
-                    triangle_coords = feature['geometry']['coordinates'][0]
-                    if len(triangle_coords) >= 3:
-                        centroid_lon = sum(coord[0] for coord in triangle_coords) / len(triangle_coords)
-                        centroid_lat = sum(coord[1] for coord in triangle_coords) / len(triangle_coords)
+                    triangle_coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
+                    
+                    # Add all triangle vertices with their interpolated values
+                    for coord in triangle_coords:
+                        coord_key = (round(coord[0], 6), round(coord[1], 6))  # Round to avoid floating point issues
                         
-                        values.append(value)
-                        coords.append([centroid_lon, centroid_lat])
+                        if coord_key in vertex_values:
+                            # Average values if vertex appears in multiple triangles
+                            vertex_values[coord_key] = (vertex_values[coord_key] + value) / 2
+                        else:
+                            vertex_values[coord_key] = value
+        
+        # Convert vertex dictionary to arrays
+        for (lon, lat), val in vertex_values.items():
+            coords.append([lon, lat])
+            values.append(val)
         
         if not values or not coords:
             return None

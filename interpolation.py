@@ -2585,7 +2585,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         if not geojson_data or not geojson_data.get('features'):
             return None
             
-        # Extract all triangle vertices and values for interpolation
+        # Extract triangle vertices with higher density for smooth interpolation
         vertices = []
         values = []
         triangle_bounds = {'west': float('inf'), 'east': float('-inf'), 
@@ -2599,11 +2599,16 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                     triangle_coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
                     
                     if len(triangle_coords) >= 3:
-                        # Add triangle centroid as interpolation point
+                        # Add triangle centroid
                         centroid_lon = np.mean([coord[0] for coord in triangle_coords])
                         centroid_lat = np.mean([coord[1] for coord in triangle_coords])
                         vertices.append([centroid_lon, centroid_lat])
                         values.append(value)
+                        
+                        # Add all triangle vertices to increase data density for smoother interpolation
+                        for coord in triangle_coords:
+                            vertices.append([coord[0], coord[1]])
+                            values.append(value)
                         
                         # Update overall bounds
                         for lon, lat in triangle_coords:
@@ -2639,31 +2644,37 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         vertices = np.array(vertices)
         values = np.array(values)
         
-        # Interpolate triangulated data onto regular 100m grid using scipy
+        # Create smooth weather-map style interpolation
         from scipy.spatial import griddata
+        from scipy.ndimage import gaussian_filter
         
         try:
-            # Use linear interpolation to sample triangulated data onto regular grid
-            zi = griddata(vertices, values, (xi, yi), method='linear', fill_value=np.nan)
+            # Use cubic interpolation for maximum smoothness
+            zi = griddata(vertices, values, (xi, yi), method='cubic', fill_value=np.nan)
             
-            # Apply light Gaussian smoothing for weather-map appearance
-            from scipy.ndimage import gaussian_filter
+            # Fill any remaining NaN gaps with linear interpolation
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_linear = griddata(vertices, values, (xi, yi), method='linear', fill_value=np.nan)
+                zi[nan_mask] = zi_linear[nan_mask]
             
-            # Only smooth where we have valid data
-            valid_mask = ~np.isnan(zi)
-            if np.any(valid_mask):
-                zi_smoothed = zi.copy()
-                zi_smoothed = gaussian_filter(zi_smoothed, sigma=1.2, mode='constant', cval=np.nan)
-                # Preserve NaN boundaries by only keeping smoothed values where original data existed
-                zi[valid_mask] = zi_smoothed[valid_mask]
+            # Apply strong Gaussian smoothing for weather-map appearance (like Windy.com)
+            zi = gaussian_filter(zi, sigma=2.5, mode='constant', cval=np.nan)
+            
+            # Secondary smoothing pass for even smoother gradients
+            zi = gaussian_filter(zi, sigma=1.5, mode='constant', cval=np.nan)
             
             height, width = zi.shape
-            print(f"Interpolated onto {width}x{height} regular grid at {sampling_distance_meters}m spacing")
+            print(f"Generated smooth weather-map style raster: {width}x{height} at {sampling_distance_meters}m spacing")
+            print(f"Applied multi-pass Gaussian smoothing for seamless gradients")
             print(f"Valid pixels: {np.sum(~np.isnan(zi))} out of {zi.size} total pixels")
             
         except Exception as e:
-            print(f"Linear interpolation failed: {e}")
-            return None
+            print(f"Cubic interpolation failed, using linear fallback: {e}")
+            # Fallback to linear with enhanced smoothing
+            zi = griddata(vertices, values, (xi, yi), method='linear', fill_value=np.nan)
+            zi = gaussian_filter(zi, sigma=3.0, mode='constant', cval=np.nan)
+            height, width = zi.shape
         
         # Use the sampled zi for display
         zi_smooth = zi

@@ -2635,53 +2635,33 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling points at {sampling_distance_meters}m spacing")
         
-        # Extract triangle vertices and values for fast interpolation
-        triangle_points = []
-        triangle_values = []
+        # Sample triangulated data at regular grid points
+        grid_values = []
+        grid_coords = []
         
-        for prepared_triangle, triangle_poly, triangle_value in triangles:
-            # Get triangle vertices
-            coords = list(triangle_poly.exterior.coords)[:-1]  # Remove duplicate last point
-            if len(coords) == 3:
-                triangle_points.extend(coords)
-                triangle_values.extend([triangle_value] * 3)
+        total_points = len(lats) * len(lons)
+        points_inside = 0
         
-        if not triangle_points:
-            return None
-            
-        triangle_points = np.array(triangle_points)
-        triangle_values = np.array(triangle_values)
+        for lat in lats:
+            for lon in lons:
+                sample_point = Point(lon, lat)
+                value_found = None
+                
+                # Check which triangle contains this point
+                for prepared_triangle, triangle_poly, triangle_value in triangles:
+                    if prepared_triangle.contains(sample_point):
+                        value_found = triangle_value
+                        points_inside += 1
+                        break
+                
+                # Only add points that fall within triangulated data
+                if value_found is not None:
+                    grid_coords.append([lon, lat])
+                    grid_values.append(value_found)
         
-        print(f"Extracted {len(triangle_points)} vertices from {len(triangles)} triangles for fast interpolation")
+        print(f"Sampled {points_inside} points inside triangulated data out of {total_points} total grid points")
         
-        # Create dense sampling grid for high-quality interpolation
-        xi, yi = np.meshgrid(lons, lats)
-        xi_flat = xi.flatten()
-        yi_flat = yi.flatten()
-        
-        # Use scipy's fast griddata interpolation with nearest neighbor to respect boundaries
-        from scipy.spatial import cKDTree
-        
-        # Build KDTree for fast nearest neighbor queries
-        tree = cKDTree(triangle_points)
-        
-        # For each grid point, find nearest triangle vertex and use its value if within reasonable distance
-        grid_points = np.column_stack([xi_flat, yi_flat])
-        distances, indices = tree.query(grid_points, k=1)
-        
-        # Convert distance threshold to degrees (approximately 150 meters)
-        distance_threshold = 150 / 111000  # 150m in degrees
-        
-        # Only keep points within threshold distance of triangulated data
-        valid_mask = distances <= distance_threshold
-        valid_values = triangle_values[indices[valid_mask]]
-        
-        points_inside = np.sum(valid_mask)
-        total_points = len(grid_points)
-        
-        print(f"Fast sampling: {points_inside} points within {150}m of triangulated data out of {total_points} total grid points")
-        
-        if points_inside == 0:
+        if not grid_values:
             return None
         
         # Create raster array and populate with sampled values
@@ -2689,10 +2669,16 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         height = len(lats)
         zi = np.full((height, width), np.nan, dtype=float)
         
-        # Reshape valid values back to grid
-        zi_flat = np.full(len(grid_points), np.nan)
-        zi_flat[valid_mask] = valid_values
-        zi = zi_flat.reshape((height, width))
+        # Map sampled points to raster grid indices
+        grid_coords = np.array(grid_coords)
+        grid_values = np.array(grid_values)
+        
+        for coord, value in zip(grid_coords, grid_values):
+            lon, lat = coord
+            # Find closest grid indices
+            lon_idx = np.argmin(np.abs(lons - lon))
+            lat_idx = np.argmin(np.abs(lats - lat))
+            zi[lat_idx, lon_idx] = value
         
         # Apply minimal smoothing only to valid data points (preserves NaN boundaries)
         from scipy.ndimage import gaussian_filter

@@ -1642,7 +1642,26 @@ with main_col1:
                                     stored_heatmap_count += 1
                                     print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
                                 else:
-                                print(f"  Failed to generate smooth raster, falling back to triangle mesh")
+                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh")
+                                    # Fallback to triangle mesh
+                                    folium.GeoJson(
+                                        geojson_data,
+                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                        style_function=lambda feature, method=method: {
+                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                            'color': 'none',
+                                            'weight': 0,
+                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                        },
+                                        tooltip=folium.GeoJsonTooltip(
+                                            fields=['yield'],
+                                            aliases=['Value:'],
+                                            localize=True
+                                        )
+                                    ).add_to(m)
+                                    stored_heatmap_count += 1
+                            else:
+                                print(f"  No valid coordinates found for smooth raster, using triangle mesh")
                                 # Fallback to triangle mesh
                                 folium.GeoJson(
                                     geojson_data,
@@ -1661,8 +1680,7 @@ with main_col1:
                                 ).add_to(m)
                                 stored_heatmap_count += 1
                         else:
-                            print(f"  No valid coordinates found for smooth raster, using triangle mesh")
-                            # Fallback to triangle mesh
+                            # Default: Triangle Mesh (Scientific) visualization
                             folium.GeoJson(
                                 geojson_data,
                                 name=f"Stored: {stored_heatmap['heatmap_name']}",
@@ -1673,30 +1691,12 @@ with main_col1:
                                     'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                 },
                                 tooltip=folium.GeoJsonTooltip(
-                                    fields=['yield'],
+                                    fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
                                     aliases=['Value:'],
                                     localize=True
                                 )
                             ).add_to(m)
                             stored_heatmap_count += 1
-                    else:
-                        # Default: Triangle Mesh (Scientific) visualization
-                        folium.GeoJson(
-                            geojson_data,
-                            name=f"Stored: {stored_heatmap['heatmap_name']}",
-                            style_function=lambda feature, method=method: {
-                                'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                'color': 'none',
-                                'weight': 0,
-                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                            },
-                            tooltip=folium.GeoJsonTooltip(
-                                fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                                aliases=['Value:'],
-                                localize=True
-                            )
-                        ).add_to(m)
-                        stored_heatmap_count += 1
 
                     elif heatmap_data and len(heatmap_data) > 0:
                         print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")

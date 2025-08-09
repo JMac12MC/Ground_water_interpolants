@@ -94,6 +94,7 @@ def find_heatmap_boundaries(tiles):
 def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
     """
     Snap only vertices that are on boundaries between different heatmap tiles.
+    Uses direct lat/lon distance calculations for accuracy.
     
     Args:
         tiles: dict with tile_id as key and tile data as values
@@ -108,65 +109,50 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
     # Step 1: Identify boundary vertices
     tile_boundaries = find_heatmap_boundaries(tiles)
     
-    # Step 2: Convert boundary vertices to meters for accurate distance calculations
-    tile_boundary_meters = {}
-    for tile_id, boundary_vertices in tile_boundaries.items():
-        if len(boundary_vertices) > 0:
-            vertices_array = np.array(boundary_vertices)
-            reference_lat = tiles[tile_id].get('center_lat', -43.5)
-            
-            # Convert to meters
-            vertices_meters = convert_to_meters(vertices_array, reference_lat)
-            tile_boundary_meters[tile_id] = {
-                'vertices_latlon': vertices_array,
-                'vertices_meters': vertices_meters,
-                'reference_lat': reference_lat
-            }
-    
-    # Step 3: Snap boundary vertices between tiles
+    # Step 2: Direct distance-based snapping using lat/lon coordinates
     snap_stats = {'total_snaps': 0, 'tiles_modified': 0}
     vertex_mappings = {}  # Maps (tile_id, original_vertex) -> snapped_vertex
     
+    # Convert snap distance from meters to degrees (rough approximation)
+    snap_distance_degrees = snap_distance / 111000.0  # ~111km per degree
+    
     for tile_id in tile_boundaries.keys():
-        if tile_id not in tile_boundary_meters:
+        if tile_id not in tile_boundaries or len(tile_boundaries[tile_id]) == 0:
             continue
             
-        current_boundary = tile_boundary_meters[tile_id]
-        current_vertices_meters = current_boundary['vertices_meters']
+        current_vertices = np.array(tile_boundaries[tile_id])
         tile_snaps = 0
         
         # Compare with all other tiles
         for other_tile_id in tile_boundaries.keys():
-            if tile_id == other_tile_id or other_tile_id not in tile_boundary_meters:
+            if tile_id == other_tile_id or other_tile_id not in tile_boundaries:
                 continue
             
-            other_boundary = tile_boundary_meters[other_tile_id]
-            other_vertices_meters = other_boundary['vertices_meters']
+            other_vertices = np.array(tile_boundaries[other_tile_id])
             
-            if len(other_vertices_meters) == 0:
+            if len(other_vertices) == 0:
                 continue
             
-            # Build KDTree for efficient neighbor search
-            tree = KDTree(other_vertices_meters)
-            
-            # Find nearby vertices and snap them
-            for vertex_idx, vertex_meters in enumerate(current_vertices_meters):
-                distances, neighbor_indices = tree.query(vertex_meters, k=1)
+            # Direct lat/lon distance comparison
+            for vertex_idx, vertex in enumerate(current_vertices):
+                # Calculate distances to all vertices in the other tile
+                distances = np.sqrt(
+                    (vertex[0] - other_vertices[:, 0])**2 + 
+                    (vertex[1] - other_vertices[:, 1])**2
+                )
                 
-                if distances <= snap_distance:
-                    # Create mapping from original vertex to snapped vertex
-                    original_vertex = tuple(current_boundary['vertices_latlon'][vertex_idx])
-                    snapped_vertex_meters = other_vertices_meters[neighbor_indices]
+                min_distance_idx = np.argmin(distances)
+                min_distance = distances[min_distance_idx]
+                
+                if min_distance <= snap_distance_degrees:
+                    # Snap to the closest vertex in the other tile
+                    original_vertex = tuple(vertex)
+                    snapped_vertex = tuple(other_vertices[min_distance_idx])
                     
-                    # Convert back to lat/lon
-                    snapped_vertex_latlon = convert_from_meters(
-                        snapped_vertex_meters.reshape(1, -1),
-                        np.mean(current_boundary['vertices_latlon'], axis=0),
-                        current_boundary['reference_lat']
-                    )[0]
-                    
-                    vertex_mappings[(tile_id, original_vertex)] = snapped_vertex_latlon
+                    vertex_mappings[(tile_id, original_vertex)] = snapped_vertex
                     tile_snaps += 1
+                    
+                    print(f"    Snapping vertex {original_vertex} → {snapped_vertex} (distance: {min_distance*111000:.1f}m)")
         
         if tile_snaps > 0:
             print(f"  Tile {tile_id}: {tile_snaps} boundary vertices snapped")

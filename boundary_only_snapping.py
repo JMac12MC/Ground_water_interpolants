@@ -10,7 +10,7 @@ from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import unary_union
 import geopandas as gpd
 
-SNAP_DISTANCE_METERS = 100
+SNAP_DISTANCE_METERS = 200
 
 # Boundary detection removed - now processing all vertices directly
 
@@ -72,7 +72,17 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
         current_vertices = np.array(tile_vertices[current_tile_id])
         tile_snaps = 0
         
+        print(f"\n🔗 PROCESSING TILE {i+1}/{len(sorted_tile_ids)}: {current_tile_id}")
+        print(f"   This tile has {len(current_vertices)} vertices to potentially snap")
+        
         # Snap current tile to ALL previously processed tiles (older tiles)
+        older_tiles_count = i  # Number of older tiles to check against
+        if older_tiles_count == 0:
+            print(f"   → This is the first tile (no older tiles to snap to)")
+            continue
+            
+        print(f"   → Checking against {older_tiles_count} older tiles...")
+        
         for j in range(i):  # Only look at older tiles
             older_tile_id = sorted_tile_ids[j]
             if older_tile_id not in tile_vertices:
@@ -85,7 +95,14 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
             print(f"    Checking {current_tile_id} vertices against older tile {older_tile_id}")
             
             # Check each vertex in current tile against all vertices in older tile
+            snaps_with_this_tile = 0
             for vertex_idx, vertex in enumerate(current_vertices):
+                # Skip if this vertex is already mapped to avoid overriding
+                original_vertex = tuple(vertex)
+                mapping_key = (current_tile_id, original_vertex)
+                if mapping_key in vertex_mappings:
+                    continue
+                
                 # Calculate distances to all vertices in the older tile
                 distances = np.sqrt(
                     (vertex[0] - older_vertices[:, 0])**2 + 
@@ -97,16 +114,16 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
                 
                 if min_distance <= snap_distance_degrees:
                     # Snap to the closest vertex in the older tile
-                    original_vertex = tuple(vertex)
                     snapped_vertex = tuple(older_vertices[min_distance_idx])
                     
-                    # Only snap if not already mapped
-                    mapping_key = (current_tile_id, original_vertex)
-                    if mapping_key not in vertex_mappings:
-                        vertex_mappings[mapping_key] = snapped_vertex
-                        tile_snaps += 1
-                        
-                        print(f"      Snapped {original_vertex} → {snapped_vertex} (distance: {min_distance*111000:.1f}m)")
+                    vertex_mappings[mapping_key] = snapped_vertex
+                    tile_snaps += 1
+                    snaps_with_this_tile += 1
+                    
+                    print(f"      Snapped {original_vertex} → {snapped_vertex} (distance: {min_distance*111000:.1f}m)")
+            
+            if snaps_with_this_tile > 0:
+                print(f"    → {snaps_with_this_tile} vertices from {current_tile_id} snapped to {older_tile_id}")
         
         if tile_snaps > 0:
             print(f"  Tile {current_tile_id}: {tile_snaps} vertices snapped to older tiles")

@@ -257,41 +257,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         try:
             # Use the comprehensive clipping polygon (Canterbury Plains coverage)
             print(f"🗺️ Using comprehensive clipping polygon with {len(new_clipping_polygon)} features")
-            
-            # Separate exterior (inclusion) and interior (exclusion) polygons
-            exterior_polygons = new_clipping_polygon[new_clipping_polygon['is_exterior'] == True]
-            interior_polygons = new_clipping_polygon[new_clipping_polygon['is_exterior'] == False]
-            
-            print(f"📍 Found {len(exterior_polygons)} exterior (inclusion) and {len(interior_polygons)} interior (exclusion) polygons")
-            
+            # Convert to a single unified geometry for clipping
             from shapely.ops import unary_union
-            
-            # Create inclusion geometry from exterior polygons
-            inclusion_geometries = [geom for geom in exterior_polygons.geometry if geom.is_valid]
-            inclusion_geometry = None
-            if inclusion_geometries:
-                inclusion_geometry = unary_union(inclusion_geometries)
-                print(f"✅ Inclusion geometry created from {len(inclusion_geometries)} exterior polygons")
-            
-            # Create exclusion geometry from interior polygons  
-            exclusion_geometries = [geom for geom in interior_polygons.geometry if geom.is_valid]
-            exclusion_geometry = None
-            if exclusion_geometries:
-                exclusion_geometry = unary_union(exclusion_geometries)
-                print(f"🚫 Exclusion geometry created from {len(exclusion_geometries)} interior polygons")
-            
-            # Combine: include exterior areas but exclude interior areas
-            if inclusion_geometry is not None:
-                if exclusion_geometry is not None:
-                    clipping_geometry = inclusion_geometry.difference(exclusion_geometry)
-                    print(f"✅ Final clipping geometry: inclusion areas MINUS exclusion areas")
-                else:
-                    clipping_geometry = inclusion_geometry
-                    print(f"✅ Final clipping geometry: inclusion areas only (no exclusions)")
+            all_geometries = [geom for geom in new_clipping_polygon.geometry if geom.is_valid]
+            if all_geometries:
+                clipping_geometry = unary_union(all_geometries)
+                print(f"✅ Comprehensive clipping geometry created from {len(all_geometries)} valid polygons")
             else:
-                print("⚠️ No valid exterior geometries found")
-                clipping_geometry = None
-                
+                print("⚠️ No valid geometries found in new clipping polygon")
         except Exception as e:
             print(f"❌ Error creating comprehensive clipping geometry: {e}")
             clipping_geometry = None

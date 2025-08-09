@@ -122,9 +122,9 @@ def import_all_polygons_no_merge(esri_json_path, output_geojson_path):
         return False
 
 if __name__ == "__main__":
-    # Use the new polygon file
-    input_file = "attached_assets/big_1754735278782.json"
-    output_file = "all_polygons_no_merge.geojson"
+    # Use the NEWEST polygon file
+    input_file = "attached_assets/big_1754735961105.json"
+    output_file = "all_polygons_complete_latest.geojson"
     
     print("🚀 Starting COMPLETE polygon import (no merging)...")
     

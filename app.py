@@ -86,21 +86,22 @@ def load_new_clipping_polygon():
     """Load and cache new clipping polygon from processed GeoJSON"""
     try:
         import os
-        geojson_path = "processed_clipping_polygons.geojson"
+        geojson_path = "all_polygons_complete_latest.geojson"
         
         if not os.path.exists(geojson_path):
-            print(f"New clipping polygon file not found: {geojson_path}")
+            print(f"Comprehensive polygon file not found: {geojson_path}")
             return None
         
         gdf = gpd.read_file(geojson_path)
         
         if gdf is not None and not gdf.empty:
-            print(f"New clipping polygon loaded: {len(gdf)} features")
-            print(f"Bounds: {gdf.total_bounds}")
+            print(f"✅ COMPREHENSIVE POLYGON DATA LOADED: {len(gdf)} features")
+            print(f"📍 Coordinate bounds: {gdf.total_bounds}")
+            print(f"🗺️  Total area coverage: {gdf.geometry.area.sum():.8f} square degrees")
             
             # Calculate centroid for display
             centroid = gdf.dissolve().centroid.iloc[0]
-            print(f"Clipping polygon centroid: ({centroid.y:.6f}, {centroid.x:.6f})")
+            print(f"📍 Polygon centroid: ({centroid.y:.6f}, {centroid.x:.6f})")
             
             return gdf
         else:
@@ -131,12 +132,14 @@ def load_banks_peninsula_coords():
 if 'polygon_db' not in st.session_state:
     st.session_state.polygon_db = get_database_connection()
 
-# Force reload new clipping polygon to get complete data (197 polygons)
-# Clear cached data to ensure we load the comprehensive polygon file
-if st.session_state.new_clipping_polygon is None or len(st.session_state.new_clipping_polygon) < 100:
-    print("🔄 FORCING RELOAD of complete polygon data...")
-    st.session_state.new_clipping_polygon = None  # Clear cache
-    st.session_state.new_clipping_polygon = load_new_clipping_polygon()
+# Force complete reload and clear ALL caches for comprehensive polygon data
+print("🔄 CLEARING ALL CACHED POLYGON DATA...")
+st.cache_data.clear()  # Clear all cached data including load_new_clipping_polygon cache
+st.session_state.new_clipping_polygon = None  # Clear session state
+
+# Now reload fresh comprehensive polygon data
+print("📥 LOADING FRESH COMPREHENSIVE POLYGON DATA...")
+st.session_state.new_clipping_polygon = load_new_clipping_polygon()
 
 # Load Banks Peninsula coordinates if not already loaded (LEGACY)
 if st.session_state.banks_peninsula_coords is None:

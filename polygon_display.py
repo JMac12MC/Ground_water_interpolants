@@ -4,6 +4,9 @@ import pandas as pd
 import re
 import folium
 import json
+import geopandas as gpd
+from pathlib import Path
+import subprocess
 
 def parse_coordinates_file(file_path):
     """
@@ -110,6 +113,68 @@ def add_polygon_to_map(folium_map, coordinates, name="Banks Peninsula", color="r
     print(f"                   Lon {min(coord[1] for coord in coordinates):.6f} to {max(coord[1] for coord in coordinates):.6f}")
     
     return folium_map, (center_lat, center_lon)
+
+def load_new_clipping_polygon():
+    """Load the comprehensive clipping polygon data (all 197 rings as separate polygons)."""
+    
+    try:
+        # Check if comprehensive polygon file exists
+        comprehensive_file = "comprehensive_clipping_polygons.geojson"
+        if Path(comprehensive_file).exists():
+            # Load comprehensive polygon data
+            print(f"Loading comprehensive clipping polygons from {comprehensive_file}")
+            gdf = gpd.read_file(comprehensive_file)
+            
+            if not gdf.empty:
+                print(f"✅ Loaded {len(gdf)} comprehensive clipping polygons")
+                print(f"   Coverage area: {gdf.geometry.area.sum():.8f} square degrees")
+                print(f"   Coordinate range: {gdf.bounds.minx.min():.4f} to {gdf.bounds.maxx.max():.4f} longitude")
+                print(f"                    {gdf.bounds.miny.min():.4f} to {gdf.bounds.maxy.max():.4f} latitude")
+                return gdf
+        
+        # If comprehensive file doesn't exist, create it
+        original_file = "attached_assets/myDrawing_1754734043555.json"
+        if Path(original_file).exists():
+            print(f"Creating comprehensive polygon data from {original_file}")
+            
+            # Run comprehensive import process
+            result = subprocess.run(['python3', 'import_all_polygon_rings.py'], 
+                                   capture_output=True, text=True, cwd='.')
+            
+            if result.returncode == 0:
+                print("✅ Comprehensive import completed successfully")
+                # Load the newly created comprehensive file
+                if Path(comprehensive_file).exists():
+                    gdf = gpd.read_file(comprehensive_file)
+                    print(f"✅ Loaded {len(gdf)} comprehensive polygons after import")
+                    return gdf
+            else:
+                print(f"❌ Comprehensive import failed: {result.stderr}")
+        
+        print("❌ No polygon data available - need comprehensive or processed polygon file")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error loading comprehensive clipping polygon: {e}")
+        return None
+
+def load_banks_peninsula_coords():
+    """LEGACY: Load Banks Peninsula coordinates from text file (kept for backward compatibility)."""
+    
+    try:
+        file_path = "attached_assets/banks peninsula_1753603323297.txt"
+        if Path(file_path).exists():
+            coordinates = parse_coordinates_file(file_path)
+            if coordinates:
+                print(f"✅ Loaded Banks Peninsula coordinates: {len(coordinates)} points")
+                return coordinates
+        
+        print("❌ Banks Peninsula coordinate file not found")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error loading Banks Peninsula coordinates: {e}")
+        return None
 
 if __name__ == "__main__":
     # Test the coordinate parsing

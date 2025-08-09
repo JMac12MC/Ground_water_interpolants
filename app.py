@@ -1288,7 +1288,7 @@ with main_col1:
                         # Use the dedicated sequential processing module for automatic generation
                         from sequential_heatmap import generate_quad_heatmaps_sequential
                         
-                        # Generate heatmaps sequentially with Banks Peninsula exclusion and selected grid size
+                        # Generate heatmaps sequentially with comprehensive clipping polygon
                         success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
                             wells_data=st.session_state.wells_data,
                             click_point=st.session_state.selected_point,
@@ -1297,6 +1297,7 @@ with main_col1:
                             polygon_db=st.session_state.polygon_db,
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                             banks_peninsula_coords=st.session_state.banks_peninsula_coords,
+                            new_clipping_polygon=st.session_state.new_clipping_polygon,
                             grid_size=st.session_state.get('grid_size', (2, 3))
                         )
                         

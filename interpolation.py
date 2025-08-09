@@ -218,7 +218,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None, new_clipping_polygon=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -250,9 +250,28 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
     indicator_geometry = None
     
-    # Create Banks Peninsula exclusion polygon if coordinates provided
+    # Create comprehensive clipping geometry (new comprehensive polygon takes priority)
+    clipping_geometry = None
+    
+    if new_clipping_polygon is not None:
+        try:
+            # Use the comprehensive clipping polygon (Canterbury Plains coverage)
+            print(f"🗺️ Using comprehensive clipping polygon with {len(new_clipping_polygon)} features")
+            # Convert to a single unified geometry for clipping
+            from shapely.ops import unary_union
+            all_geometries = [geom for geom in new_clipping_polygon.geometry if geom.is_valid]
+            if all_geometries:
+                clipping_geometry = unary_union(all_geometries)
+                print(f"✅ Comprehensive clipping geometry created from {len(all_geometries)} valid polygons")
+            else:
+                print("⚠️ No valid geometries found in new clipping polygon")
+        except Exception as e:
+            print(f"❌ Error creating comprehensive clipping geometry: {e}")
+            clipping_geometry = None
+    
+    # Fallback to Banks Peninsula exclusion if comprehensive polygon not available
     banks_peninsula_polygon = None
-    if banks_peninsula_coords and len(banks_peninsula_coords) > 3:
+    if clipping_geometry is None and banks_peninsula_coords and len(banks_peninsula_coords) > 3:
         try:
             from shapely.geometry import Polygon
             # Ensure the polygon is closed (first and last points are the same)
@@ -264,6 +283,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Note: banks_peninsula_coords should be in (latitude, longitude) format
             shapely_coords = [(coord[1], coord[0]) for coord in coords]  # Convert to (lon, lat)
             banks_peninsula_polygon = Polygon(shapely_coords)
+            clipping_geometry = banks_peninsula_polygon  # Use as clipping geometry
             print(f"Banks Peninsula exclusion polygon created with {len(coords)} points")
         except Exception as e:
             print(f"Error creating Banks Peninsula exclusion polygon: {e}")
@@ -981,23 +1001,27 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                             }
                         }
                         
-                        # Check if triangle should be excluded by Banks Peninsula
-                        should_exclude = False
-                        if banks_peninsula_polygon is not None:
+                        # Apply comprehensive clipping geometry (includes Canterbury Plains polygons)
+                        should_include = True
+                        if clipping_geometry is not None:
                             try:
-                                # Use the triangle centroid for exclusion check
+                                # Use the triangle centroid for clipping check
                                 centroid_lon = np.mean([vertices[0,0], vertices[1,0], vertices[2,0]])
                                 centroid_lat = np.mean([vertices[0,1], vertices[1,1], vertices[2,1]])
                                 center_point = Point(centroid_lon, centroid_lat)
                                 
-                                # Exclude if the center point is inside Banks Peninsula
-                                if banks_peninsula_polygon.contains(center_point):
-                                    should_exclude = True
+                                # Include only if the center point is inside the comprehensive clipping geometry
+                                should_include = clipping_geometry.contains(center_point)
+                                
+                                if not should_include:
+                                    print(f"🗺️ Triangle excluded by comprehensive clipping at ({centroid_lat:.4f}, {centroid_lon:.4f})")
                             except Exception as e:
-                                print(f"Error checking Banks Peninsula exclusion for triangle: {e}")
+                                print(f"❌ Error checking comprehensive clipping for triangle: {e}")
+                                # Default to include if clipping check fails
+                                should_include = True
                         
-                        # Only add feature if it's not excluded
-                        if not should_exclude:
+                        # Only add feature if it should be included
+                        if should_include:
                             features.append(poly)
     except Exception as e:
         # If triangulation fails, fall back to the simpler grid method

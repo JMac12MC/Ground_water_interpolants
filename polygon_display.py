@@ -118,40 +118,47 @@ def load_new_clipping_polygon():
     """Load the comprehensive clipping polygon data (all 197 rings as separate polygons)."""
     
     try:
-        # Check if comprehensive polygon file exists
-        comprehensive_file = "comprehensive_clipping_polygons.geojson"
-        if Path(comprehensive_file).exists():
-            # Load comprehensive polygon data
-            print(f"Loading comprehensive clipping polygons from {comprehensive_file}")
-            gdf = gpd.read_file(comprehensive_file)
+        # Check if complete polygon file exists (no merging)
+        complete_file = "all_polygons_no_merge.geojson"
+        if Path(complete_file).exists():
+            # Load complete polygon data
+            print(f"Loading ALL polygons from {complete_file}")
+            gdf = gpd.read_file(complete_file)
             
             if not gdf.empty:
-                print(f"✅ Loaded {len(gdf)} comprehensive clipping polygons")
+                print(f"✅ Loaded ALL {len(gdf)} polygons (no merging)")
                 print(f"   Coverage area: {gdf.geometry.area.sum():.8f} square degrees")
                 print(f"   Coordinate range: {gdf.bounds.minx.min():.4f} to {gdf.bounds.maxx.max():.4f} longitude")
                 print(f"                    {gdf.bounds.miny.min():.4f} to {gdf.bounds.maxy.max():.4f} latitude")
                 return gdf
         
-        # If comprehensive file doesn't exist, create it
-        original_file = "attached_assets/myDrawing_1754734043555.json"
-        if Path(original_file).exists():
-            print(f"Creating comprehensive polygon data from {original_file}")
+        # If complete file doesn't exist, create it from the new polygon file
+        new_file = "attached_assets/big_1754735278782.json"
+        if Path(new_file).exists():
+            print(f"Creating complete polygon data from {new_file}")
             
-            # Run comprehensive import process
-            result = subprocess.run(['python3', 'import_all_polygon_rings.py'], 
+            # Run complete import process (no merging)
+            result = subprocess.run(['python3', 'import_complete_polygons.py'], 
                                    capture_output=True, text=True, cwd='.')
             
             if result.returncode == 0:
-                print("✅ Comprehensive import completed successfully")
-                # Load the newly created comprehensive file
-                if Path(comprehensive_file).exists():
-                    gdf = gpd.read_file(comprehensive_file)
-                    print(f"✅ Loaded {len(gdf)} comprehensive polygons after import")
+                print("✅ Complete import finished successfully")
+                # Load the newly created complete file
+                if Path(complete_file).exists():
+                    gdf = gpd.read_file(complete_file)
+                    print(f"✅ Loaded ALL {len(gdf)} polygons after import")
                     return gdf
             else:
-                print(f"❌ Comprehensive import failed: {result.stderr}")
+                print(f"❌ Complete import failed: {result.stderr}")
         
-        print("❌ No polygon data available - need comprehensive or processed polygon file")
+        # Fallback to old files if available
+        old_file = "comprehensive_clipping_polygons.geojson"
+        if Path(old_file).exists():
+            print(f"Using fallback polygon data from {old_file}")
+            gdf = gpd.read_file(old_file)
+            return gdf
+        
+        print("❌ No polygon data available")
         return None
         
     except Exception as e:

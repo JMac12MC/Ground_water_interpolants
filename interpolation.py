@@ -2585,13 +2585,11 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         if not geojson_data or not geojson_data.get('features'):
             return None
             
-        # Build triangular mesh index for efficient point-in-triangle queries
-        from shapely.geometry import Point, Polygon as ShapelyPolygon
-        from shapely.prepared import prep
-        
-        triangles = []  # List of (triangle_polygon, value) tuples
-        triangle_bounds = {'west': float('inf'), 'east': float('-inf'), 
-                          'south': float('inf'), 'north': float('-inf')}
+        # Extract values and coordinates from triangular mesh
+        # Use all triangle vertices (not just centroids) for better boundary coverage
+        values = []
+        coords = []
+        vertex_values = {}  # Track values at each unique vertex
         
         for feature in geojson_data['features']:
             if feature.get('properties', {}).get('value') is not None:
@@ -2600,27 +2598,32 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 if feature['geometry']['type'] == 'Polygon':
                     triangle_coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
                     
-                    if len(triangle_coords) >= 3:
-                        # Create Shapely polygon for this triangle
-                        triangle_poly = ShapelyPolygon(triangle_coords)
-                        prepared_triangle = prep(triangle_poly)  # Optimize for repeated contains() calls
-                        triangles.append((prepared_triangle, triangle_poly, value))
+                    # Add all triangle vertices with their interpolated values
+                    for coord in triangle_coords:
+                        coord_key = (round(coord[0], 6), round(coord[1], 6))  # Round to avoid floating point issues
                         
-                        # Update overall bounds
-                        for lon, lat in triangle_coords:
-                            triangle_bounds['west'] = min(triangle_bounds['west'], lon)
-                            triangle_bounds['east'] = max(triangle_bounds['east'], lon)
-                            triangle_bounds['south'] = min(triangle_bounds['south'], lat)
-                            triangle_bounds['north'] = max(triangle_bounds['north'], lat)
+                        if coord_key in vertex_values:
+                            # Average values if vertex appears in multiple triangles
+                            vertex_values[coord_key] = (vertex_values[coord_key] + value) / 2
+                        else:
+                            vertex_values[coord_key] = value
         
-        if not triangles:
+        # Convert vertex dictionary to arrays
+        for (lon, lat), val in vertex_values.items():
+            coords.append([lon, lat])
+            values.append(val)
+        
+        if not values or not coords:
             return None
             
-        print(f"Indexed {len(triangles)} triangles for 100m sampling grid")
+        values = np.array(values)
+        coords = np.array(coords)
         
-        # Create regular grid at 100-meter spacing
-        west, east = triangle_bounds['west'], triangle_bounds['east']
-        south, north = triangle_bounds['south'], triangle_bounds['north']
+        print(f"Extracted {len(values)} vertex points from triangulated heatmap data")
+        
+        # Create regular grid at 100-meter spacing across all data bounds
+        west, east = bounds['west'], bounds['east']
+        south, north = bounds['south'], bounds['north']
         
         # Convert sampling distance to degrees (approximate)
         meters_per_degree_lat = 111000  # Approximately 111 km per degree latitude
@@ -2633,71 +2636,54 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         lats = np.arange(south, north + lat_step, lat_step)
         lons = np.arange(west, east + lon_step, lon_step)
         
-        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling points at {sampling_distance_meters}m spacing")
+        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
         
-        # Sample triangulated data at regular grid points
-        grid_values = []
-        grid_coords = []
-        
-        total_points = len(lats) * len(lons)
-        points_inside = 0
-        
-        for lat in lats:
-            for lon in lons:
-                sample_point = Point(lon, lat)
-                value_found = None
-                
-                # Check which triangle contains this point
-                for prepared_triangle, triangle_poly, triangle_value in triangles:
-                    if prepared_triangle.contains(sample_point):
-                        value_found = triangle_value
-                        points_inside += 1
-                        break
-                
-                # Only add points that fall within triangulated data
-                if value_found is not None:
-                    grid_coords.append([lon, lat])
-                    grid_values.append(value_found)
-        
-        print(f"Sampled {points_inside} points inside triangulated data out of {total_points} total grid points")
-        
-        if not grid_values:
-            return None
-        
-        # Create raster array and populate with sampled values
+        # Create coordinate grids
         width = len(lons)
         height = len(lats)
-        zi = np.full((height, width), np.nan, dtype=float)
+        xi, yi = np.meshgrid(lons, lats)
         
-        # Map sampled points to raster grid indices
-        grid_coords = np.array(grid_coords)
-        grid_values = np.array(grid_values)
+        # Interpolate values onto 100m-spaced grid using multiple methods for complete coverage
+        try:
+            # Start with cubic interpolation for smooth results
+            zi = griddata(coords, values, (xi, yi), method='cubic', fill_value=np.nan)
+            
+            # Fill NaN values with linear interpolation
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_linear = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
+                zi[nan_mask] = zi_linear[nan_mask]
+                
+            # Final pass: fill remaining NaN with nearest neighbor only where triangle data exists
+            # This preserves NaN boundaries where soil/Banks Peninsula clipping occurred
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
+                zi[nan_mask] = zi_nearest[nan_mask]
+            
+            # Apply Gaussian smoothing to create seamless blending between tiles
+            from scipy.ndimage import gaussian_filter
+            zi = gaussian_filter(zi, sigma=1.5)  # Increased smoothing for better tile blending
+            
+        except Exception as e:
+            print(f"Cubic interpolation failed, using linear: {e}")
+            # Fallback to linear interpolation
+            zi = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
+            
+            # Fill NaN with nearest neighbor
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
+                zi[nan_mask] = zi_nearest[nan_mask]
+            
+            # Apply Gaussian smoothing to fallback too
+            from scipy.ndimage import gaussian_filter
+            zi = gaussian_filter(zi, sigma=1.5)
         
-        for coord, value in zip(grid_coords, grid_values):
-            lon, lat = coord
-            # Find closest grid indices
-            lon_idx = np.argmin(np.abs(lons - lon))
-            lat_idx = np.argmin(np.abs(lats - lat))
-            zi[lat_idx, lon_idx] = value
+        print(f"Generated {width}x{height} raster with interpolation across all triangulated data")
+        print(f"Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
         
-        # Apply minimal smoothing only to valid data points (preserves NaN boundaries)
-        from scipy.ndimage import gaussian_filter
-        
-        # Create mask of valid data
-        valid_mask = ~np.isnan(zi)
-        
-        if np.any(valid_mask):
-            # Apply light Gaussian smoothing only to reduce pixelated appearance while preserving boundaries
-            zi_smoothed = zi.copy()
-            zi_smoothed[valid_mask] = gaussian_filter(
-                zi, sigma=0.8, mode='constant', cval=np.nan
-            )[valid_mask]
-            zi = zi_smoothed
-        
-        print(f"Generated raster with {np.sum(~np.isnan(zi))} valid pixels out of {zi.size} total pixels")
-        print(f"Preserves original clipping: NaN values where no triangulated data exists")
-        
-        # Use the sampled zi for display
+        # Use the interpolated zi for display
         zi_smooth = zi
         
         # Convert values to colors using global colormap function

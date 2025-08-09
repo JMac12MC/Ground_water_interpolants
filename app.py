@@ -60,6 +60,8 @@ session_defaults = {
     'colormap_updated': False,
     'show_banks_peninsula': True,
     'banks_peninsula_coords': None,
+    'new_clipping_polygon': None,
+    'show_new_clipping_polygon': True,
     'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
 }
 
@@ -78,7 +80,38 @@ def get_database_connection():
         st.error(f"Database connection failed: {e}")
         return None
 
-# Load Banks Peninsula coordinates once and cache them
+# Load new clipping polygon to replace Banks Peninsula and soil drainage
+@st.cache_data
+def load_new_clipping_polygon():
+    """Load and cache new clipping polygon from processed GeoJSON"""
+    try:
+        import os
+        geojson_path = "processed_clipping_polygons.geojson"
+        
+        if not os.path.exists(geojson_path):
+            print(f"New clipping polygon file not found: {geojson_path}")
+            return None
+        
+        gdf = gpd.read_file(geojson_path)
+        
+        if gdf is not None and not gdf.empty:
+            print(f"New clipping polygon loaded: {len(gdf)} features")
+            print(f"Bounds: {gdf.total_bounds}")
+            
+            # Calculate centroid for display
+            centroid = gdf.dissolve().centroid.iloc[0]
+            print(f"Clipping polygon centroid: ({centroid.y:.6f}, {centroid.x:.6f})")
+            
+            return gdf
+        else:
+            print("New clipping polygon GeoDataFrame is empty")
+            return None
+        
+    except Exception as e:
+        print(f"Error loading new clipping polygon: {e}")
+        return None
+
+# Load Banks Peninsula coordinates once and cache them (LEGACY - will be replaced)
 @st.cache_data
 def load_banks_peninsula_coords():
     """Load and cache Banks Peninsula polygon coordinates"""
@@ -98,7 +131,11 @@ def load_banks_peninsula_coords():
 if 'polygon_db' not in st.session_state:
     st.session_state.polygon_db = get_database_connection()
 
-# Load Banks Peninsula coordinates if not already loaded
+# Load new clipping polygon if not already loaded
+if st.session_state.new_clipping_polygon is None:
+    st.session_state.new_clipping_polygon = load_new_clipping_polygon()
+
+# Load Banks Peninsula coordinates if not already loaded (LEGACY)
 if st.session_state.banks_peninsula_coords is None:
     st.session_state.banks_peninsula_coords = load_banks_peninsula_coords()
 
@@ -388,8 +425,16 @@ with st.sidebar:
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
-    # Banks Peninsula polygon display option
-    st.session_state.show_banks_peninsula = st.checkbox("Show Banks Peninsula Boundary", value=st.session_state.show_banks_peninsula, help="Display the Banks Peninsula coastline boundary")
+    # NEW CLIPPING POLYGON display option (takes priority)
+    if st.session_state.new_clipping_polygon is not None:
+        st.session_state.show_new_clipping_polygon = st.checkbox(
+            "🟢 Show NEW Clipping Polygon", 
+            value=st.session_state.show_new_clipping_polygon, 
+            help="Display the NEW clipping polygon that replaces Banks Peninsula and soil drainage areas"
+        )
+    
+    # Banks Peninsula polygon display option (LEGACY)
+    st.session_state.show_banks_peninsula = st.checkbox("Show Banks Peninsula Boundary (Legacy)", value=st.session_state.show_banks_peninsula, help="Display the Banks Peninsula coastline boundary")
 
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -626,6 +671,37 @@ with main_col1:
             print(f"Banks Peninsula polygon added to map (center: {peninsula_center})")
         except Exception as e:
             print(f"Error adding Banks Peninsula to map: {e}")
+
+    # Add NEW CLIPPING POLYGON if available and enabled (REPLACES Banks Peninsula and soil drainage)
+    if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:
+        try:
+            # Convert to GeoJSON and add to map with distinctive styling
+            folium.GeoJson(
+                st.session_state.new_clipping_polygon.__geo_interface__,
+                name="NEW Clipping Polygon",
+                style_function=lambda feature: {
+                    'fillColor': '#32CD32',  # Lime green for new polygon
+                    'color': '#228B22',      # Forest green border
+                    'weight': 3,
+                    'fillOpacity': 0.2,
+                    'opacity': 0.9
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=['area_deg2'] if 'area_deg2' in st.session_state.new_clipping_polygon.columns else [],
+                    aliases=['Area (sq deg):'] if 'area_deg2' in st.session_state.new_clipping_polygon.columns else [],
+                    labels=True,
+                    sticky=False
+                )
+            ).add_to(m)
+            
+            # Calculate and print center
+            centroid = st.session_state.new_clipping_polygon.dissolve().centroid.iloc[0]
+            polygon_center = (centroid.y, centroid.x)
+            print(f"NEW CLIPPING POLYGON added to map (center: {polygon_center})")
+            print(f"Area covered: {st.session_state.new_clipping_polygon.geometry.area.sum():.8f} square degrees")
+            
+        except Exception as e:
+            print(f"Error adding new clipping polygon to map: {e}")
 
     # Add soil drainage polygons if available and enabled
     if st.session_state.soil_polygons is not None and st.session_state.show_soil_polygons:

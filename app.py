@@ -131,8 +131,11 @@ def load_banks_peninsula_coords():
 if 'polygon_db' not in st.session_state:
     st.session_state.polygon_db = get_database_connection()
 
-# Load new clipping polygon if not already loaded
-if st.session_state.new_clipping_polygon is None:
+# Force reload new clipping polygon to get complete data (197 polygons)
+# Clear cached data to ensure we load the comprehensive polygon file
+if st.session_state.new_clipping_polygon is None or len(st.session_state.new_clipping_polygon) < 100:
+    print("🔄 FORCING RELOAD of complete polygon data...")
+    st.session_state.new_clipping_polygon = None  # Clear cache
     st.session_state.new_clipping_polygon = load_new_clipping_polygon()
 
 # Load Banks Peninsula coordinates if not already loaded (LEGACY)

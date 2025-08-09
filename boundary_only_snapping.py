@@ -12,89 +12,12 @@ import geopandas as gpd
 
 SNAP_DISTANCE_METERS = 100
 
-def find_heatmap_boundaries(tiles):
-    """
-    Find the actual boundary lines between different heatmap tiles.
-    
-    Args:
-        tiles: dict of tile data with GeoJSON
-        
-    Returns:
-        dict: {tile_id: boundary_vertices} where boundary_vertices are vertices on tile edges
-    """
-    print("🔍 ANALYZING HEATMAP BOUNDARIES...")
-    
-    tile_boundaries = {}
-    tile_polygons = {}
-    
-    # Create overall polygons for each tile
-    for tile_id, tile_data in tiles.items():
-        geojson = tile_data['geojson']
-        
-        # Extract all triangular polygons from this tile
-        polygons = []
-        for feature in geojson.get('features', []):
-            if feature['geometry']['type'] == 'Polygon':
-                coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
-                if len(coords) >= 3:
-                    polygons.append(Polygon(coords))
-        
-        if polygons:
-            # Create the overall boundary of this heatmap tile
-            tile_boundary = unary_union(polygons)
-            tile_polygons[tile_id] = tile_boundary
-            print(f"  Tile {tile_id}: {len(polygons)} triangles → boundary polygon")
-    
-    print(f"📊 CREATED BOUNDARIES: {len(tile_polygons)} tile boundaries")
-    
-    # Find vertices that are on boundaries between different tiles
-    for tile_id, tile_data in tiles.items():
-        if tile_id not in tile_polygons:
-            continue
-            
-        boundary_vertices = []
-        geojson = tile_data['geojson']
-        
-        # Check each vertex in each triangle
-        for feature in geojson.get('features', []):
-            if feature['geometry']['type'] == 'Polygon':
-                coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
-                
-                for vertex_coord in coords:
-                    vertex_point = Point(vertex_coord)
-                    
-                    # Check if this vertex is on the boundary with any other tile
-                    is_boundary_vertex = False
-                    
-                    for other_tile_id, other_boundary in tile_polygons.items():
-                        if other_tile_id == tile_id:
-                            continue
-                            
-                        # Check if vertex is very close to the other tile's boundary
-                        distance_to_other = vertex_point.distance(other_boundary.boundary)
-                        
-                        # Convert degrees to meters (rough approximation)
-                        distance_meters = distance_to_other * 111000  # Very rough conversion
-                        
-                        if distance_meters < SNAP_DISTANCE_METERS * 2:  # Within 200m of another tile
-                            is_boundary_vertex = True
-                            break
-                    
-                    if is_boundary_vertex:
-                        boundary_vertices.append(vertex_coord)
-        
-        # Remove duplicates
-        boundary_vertices = list(set(tuple(v) for v in boundary_vertices))
-        tile_boundaries[tile_id] = [list(v) for v in boundary_vertices]
-        
-        print(f"  Tile {tile_id}: {len(boundary_vertices)} boundary vertices identified")
-    
-    return tile_boundaries
+# Boundary detection removed - now processing all vertices directly
 
 def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
     """
     Snap only vertices that are on boundaries between different heatmap tiles.
-    Uses direct lat/lon distance calculations for accuracy.
+    Uses sequential processing: newer heatmaps snap to older ones to avoid conflicts.
     
     Args:
         tiles: dict with tile_id as key and tile data as values
@@ -103,59 +26,90 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
     Returns:
         Updated tiles with snapped boundary vertices only
     """
-    print(f"\n=== BOUNDARY-ONLY VERTEX SNAPPING ===")
+    print(f"\n=== SEQUENTIAL BOUNDARY-ONLY VERTEX SNAPPING ===")
     print(f"Processing {len(tiles)} tiles with {snap_distance}m snap distance")
     
-    # Step 1: Identify boundary vertices
-    tile_boundaries = find_heatmap_boundaries(tiles)
+    # Step 1: Sort tiles by ID (older heatmaps have lower IDs)
+    sorted_tile_ids = sorted(tiles.keys())
+    print(f"Processing order (oldest→newest): {sorted_tile_ids}")
     
-    # Step 2: Direct distance-based snapping using lat/lon coordinates
+    # Step 2: Extract ALL triangle vertices from each tile (not just boundary estimates)
+    tile_vertices = {}
+    for tile_id in sorted_tile_ids:
+        tile_data = tiles[tile_id]
+        geojson = tile_data['geojson']
+        
+        # Extract every vertex from every triangle
+        all_vertices = []
+        for feature in geojson.get('features', []):
+            if feature['geometry']['type'] == 'Polygon':
+                coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
+                all_vertices.extend(coords)
+        
+        # Remove exact duplicates but keep all unique vertices
+        unique_vertices = []
+        vertex_set = set()
+        for vertex in all_vertices:
+            vertex_tuple = tuple(vertex)
+            if vertex_tuple not in vertex_set:
+                unique_vertices.append(vertex)
+                vertex_set.add(vertex_tuple)
+        
+        tile_vertices[tile_id] = unique_vertices
+        print(f"  Tile {tile_id}: {len(unique_vertices)} unique triangle vertices extracted")
+    
+    # Step 3: Sequential snapping - each tile snaps to ALL previously processed tiles
     snap_stats = {'total_snaps': 0, 'tiles_modified': 0}
     vertex_mappings = {}  # Maps (tile_id, original_vertex) -> snapped_vertex
     
-    # Convert snap distance from meters to degrees (rough approximation)
+    # Convert snap distance from meters to degrees
     snap_distance_degrees = snap_distance / 111000.0  # ~111km per degree
     
-    for tile_id in tile_boundaries.keys():
-        if tile_id not in tile_boundaries or len(tile_boundaries[tile_id]) == 0:
+    for i, current_tile_id in enumerate(sorted_tile_ids):
+        if current_tile_id not in tile_vertices:
             continue
             
-        current_vertices = np.array(tile_boundaries[tile_id])
+        current_vertices = np.array(tile_vertices[current_tile_id])
         tile_snaps = 0
         
-        # Compare with all other tiles
-        for other_tile_id in tile_boundaries.keys():
-            if tile_id == other_tile_id or other_tile_id not in tile_boundaries:
+        # Snap current tile to ALL previously processed tiles (older tiles)
+        for j in range(i):  # Only look at older tiles
+            older_tile_id = sorted_tile_ids[j]
+            if older_tile_id not in tile_vertices:
                 continue
             
-            other_vertices = np.array(tile_boundaries[other_tile_id])
-            
-            if len(other_vertices) == 0:
+            older_vertices = np.array(tile_vertices[older_tile_id])
+            if len(older_vertices) == 0:
                 continue
             
-            # Direct lat/lon distance comparison
+            print(f"    Checking {current_tile_id} vertices against older tile {older_tile_id}")
+            
+            # Check each vertex in current tile against all vertices in older tile
             for vertex_idx, vertex in enumerate(current_vertices):
-                # Calculate distances to all vertices in the other tile
+                # Calculate distances to all vertices in the older tile
                 distances = np.sqrt(
-                    (vertex[0] - other_vertices[:, 0])**2 + 
-                    (vertex[1] - other_vertices[:, 1])**2
+                    (vertex[0] - older_vertices[:, 0])**2 + 
+                    (vertex[1] - older_vertices[:, 1])**2
                 )
                 
                 min_distance_idx = np.argmin(distances)
                 min_distance = distances[min_distance_idx]
                 
                 if min_distance <= snap_distance_degrees:
-                    # Snap to the closest vertex in the other tile
+                    # Snap to the closest vertex in the older tile
                     original_vertex = tuple(vertex)
-                    snapped_vertex = tuple(other_vertices[min_distance_idx])
+                    snapped_vertex = tuple(older_vertices[min_distance_idx])
                     
-                    vertex_mappings[(tile_id, original_vertex)] = snapped_vertex
-                    tile_snaps += 1
-                    
-                    print(f"    Snapping vertex {original_vertex} → {snapped_vertex} (distance: {min_distance*111000:.1f}m)")
+                    # Only snap if not already mapped
+                    mapping_key = (current_tile_id, original_vertex)
+                    if mapping_key not in vertex_mappings:
+                        vertex_mappings[mapping_key] = snapped_vertex
+                        tile_snaps += 1
+                        
+                        print(f"      Snapped {original_vertex} → {snapped_vertex} (distance: {min_distance*111000:.1f}m)")
         
         if tile_snaps > 0:
-            print(f"  Tile {tile_id}: {tile_snaps} boundary vertices snapped")
+            print(f"  Tile {current_tile_id}: {tile_snaps} vertices snapped to older tiles")
             snap_stats['total_snaps'] += tile_snaps
             snap_stats['tiles_modified'] += 1
     

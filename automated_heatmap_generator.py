@@ -19,33 +19,72 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
     print(f"📋 Available columns: {list(wells_data.columns)}")
     
     # Find the southwest corner of wells data to start our grid from
-    if 'X' in wells_data.columns and 'Y' in wells_data.columns:
-        # Data is in NZTM format, convert to lat/lon
-        valid_wells = wells_data.dropna(subset=['X', 'Y'])
+    # Check for different possible coordinate column names
+    if 'latitude' in wells_data.columns and 'longitude' in wells_data.columns:
+        # Data already has lat/lon columns
+        valid_wells = wells_data.dropna(subset=['latitude', 'longitude'])
         
         if len(valid_wells) == 0:
             return {"success": False, "error": "No valid well coordinates found"}
         
-        # Convert NZTM coordinates to lat/lon for bounds calculation
+        lat_coords = valid_wells['latitude'].astype(float)
+        lon_coords = valid_wells['longitude'].astype(float)
+        
+        # Get bounds directly from lat/lon
+        sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
+        sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
+        
+        print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
+        print(f"📊 Processing {len(valid_wells)} wells")
+        
+    elif 'nztm_x' in wells_data.columns and 'nztm_y' in wells_data.columns:
+        # Data has NZTM coordinates, convert to lat/lon
+        valid_wells = wells_data.dropna(subset=['nztm_x', 'nztm_y'])
+        
+        if len(valid_wells) == 0:
+            return {"success": False, "error": "No valid well coordinates found"}
+        
         from pyproj import Transformer
         transformer = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
         
-        x_coords = valid_wells['X'].astype(float)
-        y_coords = valid_wells['Y'].astype(float)
+        x_coords = valid_wells['nztm_x'].astype(float)
+        y_coords = valid_wells['nztm_y'].astype(float)
         
         # Get bounds and convert to lat/lon
         min_x, max_x = x_coords.min(), x_coords.max()
         min_y, max_y = y_coords.min(), y_coords.max()
         
         # Convert corners to lat/lon
-        sw_lon, sw_lat = transformer.transform(min_x, min_y)  # Southwest corner
-        ne_lon, ne_lat = transformer.transform(max_x, max_y)  # Northeast corner
+        sw_lon, sw_lat = transformer.transform(min_x, min_y)
+        ne_lon, ne_lat = transformer.transform(max_x, max_y)
+        
+        print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
+        print(f"📊 Processing {len(valid_wells)} wells")
+        
+    elif 'X' in wells_data.columns and 'Y' in wells_data.columns:
+        # Legacy data format
+        valid_wells = wells_data.dropna(subset=['X', 'Y'])
+        
+        if len(valid_wells) == 0:
+            return {"success": False, "error": "No valid well coordinates found"}
+        
+        from pyproj import Transformer
+        transformer = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+        
+        x_coords = valid_wells['X'].astype(float)
+        y_coords = valid_wells['Y'].astype(float)
+        
+        min_x, max_x = x_coords.min(), x_coords.max()
+        min_y, max_y = y_coords.min(), y_coords.max()
+        
+        sw_lon, sw_lat = transformer.transform(min_x, min_y)
+        ne_lon, ne_lat = transformer.transform(max_x, max_y)
         
         print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
         print(f"📊 Processing {len(valid_wells)} wells")
         
     else:
-        return {"success": False, "error": f"Expected X,Y columns for NZTM coordinates. Available: {list(wells_data.columns)}"}
+        return {"success": False, "error": f"Could not find coordinate columns. Available: {list(wells_data.columns)}"}
     
     # Calculate how many grid positions we need using 19.82km spacing
     # Each heatmap covers 40km diameter, centers are 19.82km apart

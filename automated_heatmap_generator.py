@@ -132,14 +132,14 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
     
     try:
         result = generate_quad_heatmaps_sequential(
-            wells_data=wells_data,
-            click_point=start_point,
-            search_radius=20,  # 20km radius as used in sequential system
-            interpolation_method=interpolation_method,
-            polygon_db=polygon_db,
-            soil_polygons=soil_polygons,
-            new_clipping_polygon=new_clipping_polygon,
-            grid_size=actual_grid  # Use calculated grid size
+            wells_data, 
+            start_point, 
+            20,  # search_radius in km
+            interpolation_method, 
+            polygon_db, 
+            soil_polygons, 
+            new_clipping_polygon, 
+            actual_grid
         )
         
         # Extract results
@@ -241,14 +241,14 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     
     try:
         result = generate_quad_heatmaps_sequential(
-            wells_data=wells_data,
-            click_point=start_point,
-            search_radius=20,
-            interpolation_method=interpolation_method,
-            polygon_db=polygon_db,
-            soil_polygons=soil_polygons,
-            new_clipping_polygon=new_clipping_polygon,
-            grid_size=actual_grid
+            wells_data, 
+            start_point, 
+            20,  # search_radius in km
+            interpolation_method, 
+            polygon_db, 
+            soil_polygons, 
+            new_clipping_polygon, 
+            actual_grid
         )
         
         if isinstance(result, tuple) and len(result) >= 3:

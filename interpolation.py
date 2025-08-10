@@ -255,26 +255,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     if new_clipping_polygon is not None:
         try:
-            # Handle the comprehensive clipping polygon with interior holes (bedrock areas)
-            print(f"🗺️ Using comprehensive clipping polygon with {len(new_clipping_polygon)} features")
+            # Handle the comprehensive clipping polygon (separate polygons for different drainage areas)
+            print(f"🗺️ Using comprehensive clipping polygon with {len(new_clipping_polygon)} separate polygons")
             
-            # Check if this is our special comprehensive polygon with rings structure
-            first_geom = new_clipping_polygon.geometry.iloc[0]
-            if hasattr(first_geom, 'exterior') and hasattr(first_geom, 'interiors'):
-                # This is already a proper polygon with holes
-                clipping_geometry = first_geom
-                hole_count = len(list(first_geom.interiors))
-                print(f"✅ Using polygon with {hole_count} interior holes (bedrock exclusions)")
-            else:
-                # Fallback: treat as separate polygons and union them
-                from shapely.ops import unary_union
-                all_geometries = [geom for geom in new_clipping_polygon.geometry if geom.is_valid]
-                if all_geometries:
-                    clipping_geometry = unary_union(all_geometries)
-                    print(f"✅ Comprehensive clipping geometry created from {len(all_geometries)} valid polygons")
+            # Create unified geometry from all separate polygons (main Canterbury Plains + smaller drainage areas)
+            from shapely.ops import unary_union
+            all_geometries = [geom for geom in new_clipping_polygon.geometry if geom.is_valid]
+            if all_geometries:
+                clipping_geometry = unary_union(all_geometries)
+                print(f"✅ Comprehensive clipping geometry created from {len(all_geometries)} separate drainage polygons")
+                print(f"   - Includes main Canterbury Plains area plus smaller separate drainage polygons")
+                
+                # Check if result is MultiPolygon (disconnected areas) or single Polygon
+                if hasattr(clipping_geometry, 'geoms'):
+                    print(f"   - Result: MultiPolygon with {len(clipping_geometry.geoms)} disconnected areas")
                 else:
-                    print("⚠️ No valid geometries found in new clipping polygon")
-                    clipping_geometry = None
+                    print(f"   - Result: Single unified polygon")
+            else:
+                print("⚠️ No valid geometries found in new clipping polygon")
+                clipping_geometry = None
                     
         except Exception as e:
             print(f"❌ Error creating comprehensive clipping geometry: {e}")

@@ -94,8 +94,9 @@ def load_new_clipping_polygon():
         if os.path.exists(geojson_path):
             gdf = gpd.read_file(geojson_path)
             if gdf is not None and not gdf.empty:
-                print(f"✅ COMPREHENSIVE POLYGON DATA LOADED: {len(gdf)} features from GeoJSON")
+                print(f"✅ COMPREHENSIVE POLYGON DATA LOADED: {len(gdf)} separate polygon features from GeoJSON")
                 print(f"📍 Coordinate bounds: {gdf.total_bounds}")
+                print(f"🗺️ Individual polygons include main Canterbury Plains area plus {len(gdf)-1} separate drainage areas")
                 return gdf
         
         # Fallback to ring-structured JSON with holes

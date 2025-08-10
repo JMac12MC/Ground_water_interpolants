@@ -68,8 +68,15 @@ def get_wells_bounds_nztm(wells_data):
     for idx, well in wells_data.iterrows():
         try:
             if pd.notna(well[lat_col]) and pd.notna(well[lon_col]):
-                lat, lon = float(well[lat_col]), float(well[lon_col])
-                x, y = convert_degrees_to_nztm(lat, lon)
+                x_val, y_val = float(well[lon_col]), float(well[lat_col])
+                
+                # Check if coordinates are already in NZTM format (large numbers) or WGS84 (decimal degrees)
+                if x_val > 1000000:  # NZTM coordinates are > 1,000,000
+                    x, y = x_val, y_val  # Already NZTM
+                else:
+                    # Convert from WGS84 degrees to NZTM
+                    x, y = convert_degrees_to_nztm(y_val, x_val)  # Note: Y is lat, X is lon
+                
                 nztm_coords.append((x, y))
                 valid_wells.append(well)
         except Exception as e:
@@ -132,7 +139,19 @@ def filter_wells_for_tile(wells_data, tile_center_x, tile_center_y, tile_size, s
     center_point = [center_lat, center_lon]
     
     # Use existing well filtering logic with search radius
-    from utils import haversine_distance
+    def haversine_distance(lat1, lon1, lat2, lon2):
+        """Calculate great circle distance between two points on Earth (specified in decimal degrees)"""
+        import math
+        # Convert decimal degrees to radians
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        r = 6371  # Radius of earth in kilometers
+        return c * r
     
     filtered_wells = []
     # Find coordinate columns dynamically
@@ -156,9 +175,17 @@ def filter_wells_for_tile(wells_data, tile_center_x, tile_center_y, tile_size, s
     for idx, well in wells_data.iterrows():
         try:
             if pd.notna(well[lat_col]) and pd.notna(well[lon_col]):
+                x_val, y_val = float(well[lon_col]), float(well[lat_col])
+                
+                # Convert to WGS84 if needed for distance calculation
+                if x_val > 1000000:  # NZTM coordinates
+                    well_lat, well_lon = convert_nztm_to_degrees(x_val, y_val)
+                else:
+                    well_lat, well_lon = y_val, x_val  # Already WGS84
+                
                 distance = haversine_distance(
                     center_point[0], center_point[1],
-                    float(well[lat_col]), float(well[lon_col])
+                    well_lat, well_lon
                 )
                 if distance <= search_radius_km:
                     filtered_wells.append(well)

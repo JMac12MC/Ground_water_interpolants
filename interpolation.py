@@ -218,7 +218,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, banks_peninsula_coords=None, new_clipping_polygon=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -1108,22 +1108,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         }
                     }
                     
-                    # Check if polygon should be excluded by Banks Peninsula
-                    should_exclude = False
-                    if banks_peninsula_polygon is not None:
-                        try:
-                            # Use the grid point as the center for exclusion check
-                            center_point = Point(grid_lons[i], grid_lats[i])
-                            
-                            # Exclude if the center point is inside Banks Peninsula
-                            if banks_peninsula_polygon.contains(center_point):
-                                should_exclude = True
-                        except Exception as e:
-                            print(f"Error checking Banks Peninsula exclusion: {e}")
-                    
-                    # Only add feature if it's not excluded
-                    if not should_exclude:
-                        features.append(poly)
+                    # Add feature (Banks Peninsula exclusion removed)
+                    features.append(poly)
 
     # Log filtering results
     if merged_soil_geometry is not None:

@@ -58,8 +58,7 @@ session_defaults = {
     'fresh_heatmap_displayed': False,
     'new_heatmap_added': False,
     'colormap_updated': False,
-    'show_banks_peninsula': True,
-    'banks_peninsula_coords': None,
+
     'new_clipping_polygon': None,
     'show_new_clipping_polygon': True,
     'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
@@ -80,7 +79,7 @@ def get_database_connection():
         st.error(f"Database connection failed: {e}")
         return None
 
-# Load new clipping polygon to replace Banks Peninsula and soil drainage
+# Load comprehensive clipping polygon
 @st.cache_data
 def load_new_clipping_polygon():
     """Load comprehensive polygon with holes from ring-structured JSON data"""
@@ -119,22 +118,7 @@ def load_new_clipping_polygon():
         print(f"Error loading new clipping polygon: {e}")
         return None
 
-# Load Banks Peninsula coordinates once and cache them (LEGACY - will be replaced)
-@st.cache_data
-def load_banks_peninsula_coords():
-    """Load and cache Banks Peninsula polygon coordinates"""
-    try:
-        file_path = "attached_assets/banks peninsula_1753603323297.txt"
-        coordinates = parse_coordinates_file(file_path)
-        if coordinates:
-            print(f"Loaded {len(coordinates)} Banks Peninsula coordinates")
-            return coordinates
-        else:
-            print("No valid coordinates found in Banks Peninsula file")
-            return None
-    except Exception as e:
-        print(f"Error loading Banks Peninsula coordinates: {e}")
-        return None
+
 
 if 'polygon_db' not in st.session_state:
     st.session_state.polygon_db = get_database_connection()
@@ -148,9 +132,7 @@ st.session_state.new_clipping_polygon = None  # Clear session state
 print("📥 LOADING FRESH COMPREHENSIVE POLYGON DATA...")
 st.session_state.new_clipping_polygon = load_new_clipping_polygon()
 
-# Load Banks Peninsula coordinates if not already loaded (LEGACY)
-if st.session_state.banks_peninsula_coords is None:
-    st.session_state.banks_peninsula_coords = load_banks_peninsula_coords()
+
 
 # Add banner
 add_banner()
@@ -443,11 +425,10 @@ with st.sidebar:
         st.session_state.show_new_clipping_polygon = st.checkbox(
             "🟢 Show NEW Clipping Polygon", 
             value=st.session_state.show_new_clipping_polygon, 
-            help="Display the NEW clipping polygon that replaces Banks Peninsula and soil drainage areas"
+            help="Display the comprehensive clipping polygon for Canterbury Plains drainage areas"
         )
     
-    # Banks Peninsula polygon display option (LEGACY)
-    st.session_state.show_banks_peninsula = st.checkbox("Show Banks Peninsula Boundary (Legacy)", value=st.session_state.show_banks_peninsula, help="Display the Banks Peninsula coastline boundary")
+
 
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -668,24 +649,7 @@ with main_col1:
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
 
-    # Add Banks Peninsula polygon if enabled and coordinates are available
-    if st.session_state.show_banks_peninsula and st.session_state.banks_peninsula_coords:
-        try:
-            # Add the polygon to the map with distinctive styling
-            m, peninsula_center = add_polygon_to_map(
-                m, 
-                st.session_state.banks_peninsula_coords,
-                name="Banks Peninsula",
-                color="#FF6B35",  # Distinctive orange-red color
-                weight=3,
-                opacity=0.8,
-                fill_opacity=0.15
-            )
-            print(f"Banks Peninsula polygon added to map (center: {peninsula_center})")
-        except Exception as e:
-            print(f"Error adding Banks Peninsula to map: {e}")
-
-    # Add NEW CLIPPING POLYGON if available and enabled (REPLACES Banks Peninsula and soil drainage)
+    # Add comprehensive clipping polygon if available and enabled
     if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:
         try:
             # Convert to GeoJSON and add to map with distinctive styling
@@ -1303,7 +1267,7 @@ with main_col1:
                             interpolation_method=st.session_state.interpolation_method,
                             polygon_db=st.session_state.polygon_db,
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            banks_peninsula_coords=st.session_state.banks_peninsula_coords,
+                            banks_peninsula_coords=None,
                             new_clipping_polygon=st.session_state.new_clipping_polygon,
                             grid_size=st.session_state.get('grid_size', (2, 3))
                         )

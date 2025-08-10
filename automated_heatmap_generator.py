@@ -110,15 +110,25 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
     print(f"📐 Grid needed: {rows_needed} × {cols_needed} = {rows_needed * cols_needed} heatmaps")
     print(f"📐 Using {min(num_tiles, rows_needed * cols_needed)} tiles for this test")
     
-    # Use the existing sequential system but start from southwest corner of data
-    # and extend in the proven grid pattern
-    start_point = [sw_lat - 0.05, sw_lon - 0.05]  # Start slightly southwest of data
+    # Use the existing sequential system but start from a position that will cover the well data
+    # Position the starting point so that the grid will encompass the well data area
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
+    
+    # Start from center of data area for better coverage
+    start_point = [center_lat, center_lon]
     
     # Call the proven sequential generation function with appropriate grid size
-    test_grid_size = int(np.ceil(np.sqrt(num_tiles)))  # Make a square grid for test
-    actual_grid = (min(test_grid_size, rows_needed), min(test_grid_size, cols_needed))
+    # For test, use a smaller grid that will fit within the data area
+    if num_tiles <= 4:
+        actual_grid = (2, 2)  # 2x2 grid for small tests
+    elif num_tiles <= 6:
+        actual_grid = (2, 3)  # 2x3 grid (original default)
+    else:
+        test_grid_size = int(np.ceil(np.sqrt(num_tiles)))
+        actual_grid = (min(test_grid_size, 3), min(test_grid_size, 3))  # Cap at 3x3 for testing
     
-    print(f"📐 Test grid size: {actual_grid[0]} × {actual_grid[1]}")
+    print(f"📐 Test grid size: {actual_grid[0]} × {actual_grid[1]} (center-positioned for data coverage)")
     
     try:
         result = generate_quad_heatmaps_sequential(

@@ -258,19 +258,24 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Handle the comprehensive clipping polygon (separate polygons for different drainage areas)
             print(f"🗺️ Using comprehensive clipping polygon with {len(new_clipping_polygon)} separate polygons")
             
-            # Create unified geometry from all separate polygons (main Canterbury Plains + smaller drainage areas)
+            # Create unified geometry from all separate polygons
+            # Note: The polygons should already have holes removed via containment detection
             from shapely.ops import unary_union
             all_geometries = [geom for geom in new_clipping_polygon.geometry if geom.is_valid]
             if all_geometries:
                 clipping_geometry = unary_union(all_geometries)
-                print(f"✅ Comprehensive clipping geometry created from {len(all_geometries)} separate drainage polygons")
-                print(f"   - Includes main Canterbury Plains area plus smaller separate drainage polygons")
+                print(f"✅ Comprehensive clipping geometry created from {len(all_geometries)} processed polygons")
+                
+                # Check polygon types if available
+                if 'polygon_type' in new_clipping_polygon.columns:
+                    type_counts = new_clipping_polygon['polygon_type'].value_counts().to_dict()
+                    print(f"   - Polygon types: {type_counts}")
                 
                 # Check if result is MultiPolygon (disconnected areas) or single Polygon
                 if hasattr(clipping_geometry, 'geoms'):
-                    print(f"   - Result: MultiPolygon with {len(clipping_geometry.geoms)} disconnected areas")
+                    print(f"   - Result: MultiPolygon with {len(clipping_geometry.geoms)} disconnected drainage areas")
                 else:
-                    print(f"   - Result: Single unified polygon")
+                    print(f"   - Result: Single unified polygon (holes already removed)")
             else:
                 print("⚠️ No valid geometries found in new clipping polygon")
                 clipping_geometry = None

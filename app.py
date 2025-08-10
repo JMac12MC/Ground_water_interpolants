@@ -99,56 +99,18 @@ def load_new_clipping_polygon():
                 print(f"🗺️ Individual polygons include main Canterbury Plains area plus {len(gdf)-1} separate drainage areas")
                 return gdf
         
-        # Fallback to ring-structured JSON with holes
+        # Fallback: Process ring-structured JSON using containment detection
         json_path = "attached_assets/big_1754735961105.json"
         if os.path.exists(json_path):
-            print(f"🔄 Loading comprehensive polygon with holes from JSON...")
+            print(f"🔄 Processing comprehensive polygon using containment detection...")
             
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            
-            if 'features' in data and len(data['features']) > 0:
-                feature = data['features'][0]
-                if 'geometry' in feature and 'rings' in feature['geometry']:
-                    rings = feature['geometry']['rings']
-                    
-                    # Convert from projected coordinates (NZGD2000) to WGS84
-                    from pyproj import Proj, transform
-                    nzgd_proj = Proj(proj='tmerc', lat_0=0, lon_0=173, k=0.9996, x_0=1600000, y_0=10000000, ellps='GRS80')
-                    wgs84_proj = Proj(proj='latlong', datum='WGS84')
-                    
-                    # Convert exterior ring (first ring)
-                    exterior_coords = []
-                    for coord in rings[0]:
-                        lon, lat = transform(nzgd_proj, wgs84_proj, coord[0], coord[1])
-                        exterior_coords.append((lon, lat))
-                    
-                    # Convert interior holes (remaining rings)
-                    hole_coords = []
-                    for ring in rings[1:]:
-                        hole = []
-                        for coord in ring:
-                            lon, lat = transform(nzgd_proj, wgs84_proj, coord[0], coord[1])
-                            hole.append((lon, lat))
-                        if len(hole) > 2:  # Valid hole must have at least 3 points
-                            hole_coords.append(hole)
-                    
-                    # Create polygon with holes
-                    comprehensive_polygon = Polygon(exterior_coords, hole_coords)
-                    
-                    # Create GeoDataFrame
-                    gdf = gpd.GeoDataFrame(
-                        {'area_deg2': [comprehensive_polygon.area]},
-                        geometry=[comprehensive_polygon],
-                        crs='EPSG:4326'
-                    )
-                    
-                    print(f"✅ COMPREHENSIVE POLYGON WITH HOLES CREATED:")
-                    print(f"   - Exterior boundary: {len(exterior_coords)} coordinates")
-                    print(f"   - Interior holes (bedrock): {len(hole_coords)} holes")
-                    print(f"   - Total area: {comprehensive_polygon.area:.8f} square degrees")
-                    
-                    return gdf
+            # Check if processed file already exists
+            processed_path = "comprehensive_polygons_processed.geojson"
+            if os.path.exists(processed_path):
+                print(f"📁 Using existing processed comprehensive polygons...")
+                gdf = gpd.read_file(processed_path)
+                print(f"✅ Loaded {len(gdf)} processed polygon features")
+                return gdf
         
         print("No comprehensive polygon file found")
         return None

@@ -170,7 +170,7 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
         return {"success": False, "error": error_msg}
 
 
-def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, max_tiles=50):
+def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, search_radius_km=20, max_tiles=50):
     """
     Generate comprehensive heatmap coverage using the proven sequential system.
     This is the main function called by app.py for full automated generation.
@@ -243,7 +243,7 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         result = generate_quad_heatmaps_sequential(
             wells_data, 
             start_point, 
-            20,  # search_radius in km
+            search_radius_km,  # use the parameter value
             interpolation_method, 
             polygon_db, 
             soil_polygons, 

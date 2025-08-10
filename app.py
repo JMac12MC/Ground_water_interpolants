@@ -83,30 +83,74 @@ def get_database_connection():
 # Load new clipping polygon to replace Banks Peninsula and soil drainage
 @st.cache_data
 def load_new_clipping_polygon():
-    """Load and cache new clipping polygon from processed GeoJSON"""
+    """Load comprehensive polygon with holes from ring-structured JSON data"""
     try:
         import os
+        import json
+        from shapely.geometry import Polygon
+        
+        # Try the processed GeoJSON first
         geojson_path = "all_polygons_complete_latest.geojson"
+        if os.path.exists(geojson_path):
+            gdf = gpd.read_file(geojson_path)
+            if gdf is not None and not gdf.empty:
+                print(f"✅ COMPREHENSIVE POLYGON DATA LOADED: {len(gdf)} features from GeoJSON")
+                print(f"📍 Coordinate bounds: {gdf.total_bounds}")
+                return gdf
         
-        if not os.path.exists(geojson_path):
-            print(f"Comprehensive polygon file not found: {geojson_path}")
-            return None
-        
-        gdf = gpd.read_file(geojson_path)
-        
-        if gdf is not None and not gdf.empty:
-            print(f"✅ COMPREHENSIVE POLYGON DATA LOADED: {len(gdf)} features")
-            print(f"📍 Coordinate bounds: {gdf.total_bounds}")
-            print(f"🗺️  Total area coverage: {gdf.geometry.area.sum():.8f} square degrees")
+        # Fallback to ring-structured JSON with holes
+        json_path = "attached_assets/big_1754735961105.json"
+        if os.path.exists(json_path):
+            print(f"🔄 Loading comprehensive polygon with holes from JSON...")
             
-            # Calculate centroid for display
-            centroid = gdf.dissolve().centroid.iloc[0]
-            print(f"📍 Polygon centroid: ({centroid.y:.6f}, {centroid.x:.6f})")
+            with open(json_path, 'r') as f:
+                data = json.load(f)
             
-            return gdf
-        else:
-            print("New clipping polygon GeoDataFrame is empty")
-            return None
+            if 'features' in data and len(data['features']) > 0:
+                feature = data['features'][0]
+                if 'geometry' in feature and 'rings' in feature['geometry']:
+                    rings = feature['geometry']['rings']
+                    
+                    # Convert from projected coordinates (NZGD2000) to WGS84
+                    from pyproj import Proj, transform
+                    nzgd_proj = Proj(proj='tmerc', lat_0=0, lon_0=173, k=0.9996, x_0=1600000, y_0=10000000, ellps='GRS80')
+                    wgs84_proj = Proj(proj='latlong', datum='WGS84')
+                    
+                    # Convert exterior ring (first ring)
+                    exterior_coords = []
+                    for coord in rings[0]:
+                        lon, lat = transform(nzgd_proj, wgs84_proj, coord[0], coord[1])
+                        exterior_coords.append((lon, lat))
+                    
+                    # Convert interior holes (remaining rings)
+                    hole_coords = []
+                    for ring in rings[1:]:
+                        hole = []
+                        for coord in ring:
+                            lon, lat = transform(nzgd_proj, wgs84_proj, coord[0], coord[1])
+                            hole.append((lon, lat))
+                        if len(hole) > 2:  # Valid hole must have at least 3 points
+                            hole_coords.append(hole)
+                    
+                    # Create polygon with holes
+                    comprehensive_polygon = Polygon(exterior_coords, hole_coords)
+                    
+                    # Create GeoDataFrame
+                    gdf = gpd.GeoDataFrame(
+                        {'area_deg2': [comprehensive_polygon.area]},
+                        geometry=[comprehensive_polygon],
+                        crs='EPSG:4326'
+                    )
+                    
+                    print(f"✅ COMPREHENSIVE POLYGON WITH HOLES CREATED:")
+                    print(f"   - Exterior boundary: {len(exterior_coords)} coordinates")
+                    print(f"   - Interior holes (bedrock): {len(hole_coords)} holes")
+                    print(f"   - Total area: {comprehensive_polygon.area:.8f} square degrees")
+                    
+                    return gdf
+        
+        print("No comprehensive polygon file found")
+        return None
         
     except Exception as e:
         print(f"Error loading new clipping polygon: {e}")

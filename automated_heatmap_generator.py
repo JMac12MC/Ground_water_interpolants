@@ -41,10 +41,35 @@ def get_wells_bounds_nztm(wells_data):
     nztm_coords = []
     valid_wells = []
     
+    # Check what columns are available
+    print(f"📋 Available columns: {list(wells_data.columns)}")
+    
+    # Try different possible column names for coordinates
+    lat_col = None
+    lon_col = None
+    
+    for col in wells_data.columns:
+        col_upper = col.upper()
+        if col_upper == 'Y':  # Y is latitude in this dataset
+            lat_col = col
+        elif col_upper == 'X':  # X is longitude in this dataset
+            lon_col = col
+        elif 'LAT' in col_upper and lat_col is None:
+            lat_col = col
+        elif 'LON' in col_upper and lon_col is None:
+            lon_col = col
+    
+    print(f"📍 Using latitude column: {lat_col}")
+    print(f"📍 Using longitude column: {lon_col}")
+    
+    if not lat_col or not lon_col:
+        raise ValueError(f"Could not find latitude/longitude columns. Available: {list(wells_data.columns)}")
+    
     for idx, well in wells_data.iterrows():
         try:
-            if pd.notna(well['LATITUDE']) and pd.notna(well['LONGITUDE']):
-                x, y = convert_degrees_to_nztm(well['LATITUDE'], well['LONGITUDE'])
+            if pd.notna(well[lat_col]) and pd.notna(well[lon_col]):
+                lat, lon = float(well[lat_col]), float(well[lon_col])
+                x, y = convert_degrees_to_nztm(lat, lon)
                 nztm_coords.append((x, y))
                 valid_wells.append(well)
         except Exception as e:
@@ -110,12 +135,30 @@ def filter_wells_for_tile(wells_data, tile_center_x, tile_center_y, tile_size, s
     from utils import haversine_distance
     
     filtered_wells = []
+    # Find coordinate columns dynamically
+    lat_col = None
+    lon_col = None
+    
+    for col in wells_data.columns:
+        col_upper = col.upper()
+        if col_upper == 'Y':  # Y is latitude in this dataset
+            lat_col = col
+        elif col_upper == 'X':  # X is longitude in this dataset
+            lon_col = col
+        elif 'LAT' in col_upper and lat_col is None:
+            lat_col = col
+        elif 'LON' in col_upper and lon_col is None:
+            lon_col = col
+    
+    if not lat_col or not lon_col:
+        return pd.DataFrame()  # Return empty if no coordinates found
+    
     for idx, well in wells_data.iterrows():
         try:
-            if pd.notna(well['LATITUDE']) and pd.notna(well['LONGITUDE']):
+            if pd.notna(well[lat_col]) and pd.notna(well[lon_col]):
                 distance = haversine_distance(
                     center_point[0], center_point[1],
-                    well['LATITUDE'], well['LONGITUDE']
+                    float(well[lat_col]), float(well[lon_col])
                 )
                 if distance <= search_radius_km:
                     filtered_wells.append(well)

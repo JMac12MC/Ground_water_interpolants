@@ -200,182 +200,76 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     else:
         return 0, [], [f"Could not find coordinate columns. Available: {list(wells_data.columns)}"]
     
-    # SMART WELL-DENSITY BASED POSITIONING
-    # Instead of rigid grid, find areas with highest well density
+    # Calculate optimal grid size for full coverage
     from utils import get_distance
-    from sklearn.cluster import KMeans
     
-    print(f"🧠 SMART POSITIONING: Analyzing well distribution for optimal heatmap placement...")
+    lat_span = ne_lat - sw_lat
+    lon_span = ne_lon - sw_lon
     
-    # Create coordinate pairs for clustering
-    well_coords = valid_wells[['latitude', 'longitude']].values
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
     
-    # Use K-means clustering to find optimal heatmap centers
-    n_clusters = min(max_tiles, len(valid_wells) // 50)  # At least 50 wells per heatmap
-    n_clusters = max(1, n_clusters)  # At least 1 cluster
+    # Convert to approximate km
+    lat_km = lat_span * 111.0
+    lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
     
-    print(f"📊 Clustering {len(valid_wells)} wells into {n_clusters} optimal heatmap locations...")
+    # Calculate optimal grid size (19.82km spacing)
+    grid_spacing_km = 19.82
     
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
-    cluster_centers = kmeans.fit(well_coords).cluster_centers_
+    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 1)
+    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 1)
     
-    # Verify each cluster center has enough wells within search radius
-    optimal_centers = []
-    for i, center in enumerate(cluster_centers):
-        center_lat, center_lon = center[0], center[1]
-        
-        # Count wells within search radius of this center
-        wells_in_range = 0
-        for _, well in valid_wells.iterrows():
-            distance = get_distance(center_lat, center_lon, well['latitude'], well['longitude'])
-            if distance <= search_radius_km:
-                wells_in_range += 1
-        
-        if wells_in_range >= 10:  # Minimum 10 wells for viable heatmap
-            optimal_centers.append([center_lat, center_lon])
-            print(f"  📍 Center {i+1}: ({center_lat:.3f}, {center_lon:.3f}) - {wells_in_range} wells within {search_radius_km}km")
-        else:
-            print(f"  ❌ Center {i+1}: ({center_lat:.3f}, {center_lon:.3f}) - Only {wells_in_range} wells (insufficient)")
+    total_needed = rows_needed * cols_needed
     
-    if not optimal_centers:
-        # Fallback to center-based approach if clustering fails
-        center_lat = (sw_lat + ne_lat) / 2
-        center_lon = (sw_lon + ne_lon) / 2
-        optimal_centers = [[center_lat, center_lon]]
-        print(f"⚠️  Clustering produced no viable centers, using fallback center approach")
+    print(f"📐 Data extent: {lat_km:.1f}km × {lon_km:.1f}km")
+    print(f"📐 Optimal grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
     
-    print(f"✅ Selected {len(optimal_centers)} optimal heatmap locations based on well density")
+    # Limit to max_tiles
+    if total_needed > max_tiles:
+        # Scale down proportionally
+        scale_factor = np.sqrt(max_tiles / total_needed)
+        rows_limited = max(1, int(rows_needed * scale_factor))
+        cols_limited = max(1, int(cols_needed * scale_factor))
+        actual_grid = (rows_limited, cols_limited)
+        print(f"📐 Limited to: {rows_limited} × {cols_limited} = {rows_limited * cols_limited} heatmaps (max {max_tiles})")
+    else:
+        actual_grid = (rows_needed, cols_needed)
+        print(f"📐 Using full grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps")
     
-    # Convert to individual heatmap generation calls instead of grid-based
-    # This ensures each heatmap is placed where wells actually exist
+    # Use the same center-based positioning as the test generation (which works)
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
+    start_point = [center_lat, center_lon]  # Start from center like test generation
     
     try:
-        # Generate heatmaps individually at optimal locations instead of grid-based
-        from interpolation import generate_geo_json_grid, generate_indicator_kriging_mask
+        result = generate_quad_heatmaps_sequential(
+            wells_data, 
+            start_point, 
+            search_radius_km,  # use the parameter value
+            interpolation_method, 
+            polygon_db, 
+            soil_polygons, 
+            new_clipping_polygon, 
+            actual_grid
+        )
         
-        generated_heatmaps = []
-        stored_heatmap_ids = []
-        error_messages = []
-        
-        total_centers = len(optimal_centers)
-        
-        for i, center_point in enumerate(optimal_centers):
-            try:
-                center_lat, center_lon = center_point
-                print(f"🔄 Building heatmap {i+1}/{total_centers}: Location ({center_lat:.3f}, {center_lon:.3f})...")
-                
-                # Filter wells for this location
-                wells_df = wells_data.copy()
-                wells_df['within_range'] = wells_df.apply(
-                    lambda row: get_distance(
-                        row['latitude'], row['longitude'], 
-                        center_lat, center_lon
-                    ) <= search_radius_km, 
-                    axis=1
-                )
-                
-                filtered_wells = wells_df[wells_df['within_range']]
-                
-                if len(filtered_wells) < 10:
-                    error_messages.append(f"Location {i+1}: Insufficient wells ({len(filtered_wells)}) within range")
-                    continue
-                
-                print(f"  ✅ Location {i+1}: {len(filtered_wells)} wells found within {search_radius_km}km")
-                
-                # Generate indicator mask if needed
-                indicator_mask = None
-                methods_requiring_mask = [
-                    'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
-                    'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
-                ]
-                
-                if interpolation_method in methods_requiring_mask:
-                    try:
-                        indicator_mask = generate_indicator_kriging_mask(
-                            filtered_wells.copy(),
-                            center_point,
-                            search_radius_km,
-                            resolution=100,
-                            soil_polygons=soil_polygons,
-                            threshold=0.7
-                        )
-                    except Exception as e:
-                        print(f"  Warning: Could not generate indicator mask for location {i+1}: {e}")
-                
-                # Generate heatmap
-                geojson_data = generate_geo_json_grid(
-                    filtered_wells.copy(),
-                    center_point,
-                    search_radius_km,
-                    resolution=100,
-                    method=interpolation_method,
-                    show_variance=False,
-                    auto_fit_variogram=True,
-                    variogram_model='spherical',
-                    soil_polygons=soil_polygons,
-                    indicator_mask=indicator_mask,
-                    new_clipping_polygon=new_clipping_polygon
-                )
-                
-                if geojson_data and len(geojson_data.get('features', [])) > 0:
-                    print(f"  ✅ Location {i+1}: Generated {len(geojson_data.get('features', []))} features")
-                    
-                    # Store in database
-                    heatmap_name = f"{interpolation_method}_smart_{center_lat:.3f}_{center_lon:.3f}"
-                    
-                    # Convert to heatmap data format
-                    heatmap_data = []
-                    for feature in geojson_data.get('features', []):
-                        if 'geometry' in feature and 'properties' in feature:
-                            geom = feature['geometry']
-                            if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                coords = geom['coordinates'][0]
-                                if len(coords) >= 3:
-                                    lat = sum(coord[1] for coord in coords) / len(coords)
-                                    lon = sum(coord[0] for coord in coords) / len(coords)
-                                    value = feature['properties'].get('yield', 0)
-                                    heatmap_data.append([lat, lon, value])
-                    
-                    # Store in database
-                    stored_heatmap_id = polygon_db.store_heatmap(
-                        heatmap_name=heatmap_name,
-                        center_lat=float(center_lat),
-                        center_lon=float(center_lon),
-                        radius_km=search_radius_km,
-                        interpolation_method=interpolation_method,
-                        heatmap_data=heatmap_data,
-                        geojson_data=geojson_data,
-                        well_count=len(filtered_wells),
-                        colormap_metadata=None  # Will be calculated globally later
-                    )
-                    
-                    if stored_heatmap_id:
-                        stored_heatmap_ids.append((f"smart_location_{i+1}", stored_heatmap_id))
-                        print(f"  💾 Location {i+1}: Stored as ID {stored_heatmap_id}")
-                    else:
-                        print(f"  ⚠️  Location {i+1}: Already exists in database")
-                        
-                else:
-                    error_messages.append(f"Location {i+1}: Failed to generate heatmap features")
-                    print(f"  ❌ Location {i+1}: Generation failed")
-                    
-            except Exception as e:
-                error_messages.append(f"Location {i+1}: {str(e)}")
-                print(f"  ❌ Location {i+1}: Exception - {e}")
-                continue
-        
-        success_count = len(stored_heatmap_ids)
-        
-        print(f"📋 SMART GENERATION RESULTS:")
-        print(f"   Optimal locations processed: {total_centers}")
-        print(f"   Successful heatmaps: {success_count}")
-        print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
-        print(f"   Errors: {len(error_messages)}")
-        
-        return success_count, stored_heatmap_ids, error_messages
-        
+        if isinstance(result, tuple) and len(result) >= 3:
+            success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
+            
+            print(f"📋 FULL GENERATION RESULTS:")
+            print(f"   Grid processed: {actual_grid[0]} × {actual_grid[1]}")
+            print(f"   Successful heatmaps: {success_count}")
+            print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
+            print(f"   Errors: {len(error_messages)}")
+            
+            return success_count, stored_heatmap_ids, error_messages
+        else:
+            error_msg = "Unexpected result format from sequential generation"
+            print(f"❌ {error_msg}")
+            return 0, [], [error_msg]
+            
     except Exception as e:
-        error_msg = f"Error in smart automated generation: {str(e)}"
+        error_msg = f"Error in full automated generation: {str(e)}"
         print(f"❌ {error_msg}")
         return 0, [], [error_msg]
 

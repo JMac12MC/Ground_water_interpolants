@@ -430,6 +430,74 @@ with st.sidebar:
     
 
 
+    # Automated Heatmap Generation Section
+    st.markdown("---")
+    st.subheader("🤖 Automated Heatmap Generation")
+    
+    st.write("Generate heatmaps automatically covering all available well data without manual clicking.")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🧪 Test Auto Generation (5 tiles)", help="Test automated generation with 5 tiles"):
+            if st.session_state.wells_data is not None and st.session_state.polygon_db is not None:
+                with st.spinner("Testing automated heatmap generation..."):
+                    try:
+                        from automated_heatmap_generator import test_automated_generation
+                        
+                        success = test_automated_generation(
+                            st.session_state.wells_data,
+                            st.session_state.polygon_db,
+                            max_tiles=5
+                        )
+                        
+                        if success:
+                            st.success("✅ Test completed! Check console for details.")
+                            # Reload stored heatmaps
+                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        else:
+                            st.error("❌ Test failed. Check console for details.")
+                            
+                    except Exception as e:
+                        st.error(f"Test error: {e}")
+            else:
+                st.error("Wells data or database not available")
+    
+    with col2:
+        max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=200, value=50, step=10,
+                                        help="Limit number of tiles to prevent long processing times")
+        
+        if st.button("🚀 Full Auto Generation", help="Generate heatmaps for all well data (limited by max tiles)"):
+            if st.session_state.wells_data is not None and st.session_state.polygon_db is not None:
+                with st.spinner(f"Generating up to {max_tiles_full} automated heatmaps..."):
+                    try:
+                        from automated_heatmap_generator import generate_automated_heatmaps
+                        
+                        success_count, stored_ids, errors = generate_automated_heatmaps(
+                            wells_data=st.session_state.wells_data,
+                            interpolation_method=st.session_state.interpolation_method,
+                            polygon_db=st.session_state.polygon_db,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                            new_clipping_polygon=st.session_state.new_clipping_polygon,
+                            search_radius_km=st.session_state.search_radius,
+                            max_tiles=max_tiles_full
+                        )
+                        
+                        if success_count > 0:
+                            st.success(f"✅ Generated {success_count} heatmaps successfully!")
+                            if errors:
+                                st.warning(f"⚠️ {len(errors)} tiles had errors")
+                            
+                            # Reload stored heatmaps
+                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        else:
+                            st.error("❌ No heatmaps generated. Check console for details.")
+                            
+                    except Exception as e:
+                        st.error(f"Generation error: {e}")
+            else:
+                st.error("Wells data or database not available")
+    
     # Stored Heatmaps Management Section
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")

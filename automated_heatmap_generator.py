@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-def automated_test_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, num_tiles=5):
+def test_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, num_tiles=5):
     """
     Generate test heatmaps automatically using the proven sequential system.
     Uses the existing sequential_heatmap.py logic which already handles coordinate conversion correctly.
@@ -142,7 +142,7 @@ def automated_test_generation(wells_data, interpolation_method, polygon_db, soil
         return {"success": False, "error": error_msg}
 
 
-def automated_full_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):
+def full_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):
     """
     Generate comprehensive heatmap coverage using the proven sequential system.
     Creates a larger grid covering the full data extent.
@@ -153,7 +153,7 @@ def automated_full_generation(wells_data, interpolation_method, polygon_db, soil
     # Use the test generation logic but with a larger grid
     # This would be implemented similarly but with more positions
     
-    return automated_test_generation(
+    return test_automated_generation(
         wells_data=wells_data,
         interpolation_method=interpolation_method, 
         polygon_db=polygon_db,

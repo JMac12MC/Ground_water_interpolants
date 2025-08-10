@@ -445,11 +445,16 @@ with st.sidebar:
                     try:
                         from automated_heatmap_generator import test_automated_generation
                         
-                        success = test_automated_generation(
-                            st.session_state.wells_data,
-                            st.session_state.polygon_db,
-                            max_tiles=5
+                        result = test_automated_generation(
+                            wells_data=st.session_state.wells_data,
+                            interpolation_method=st.session_state.interpolation_method,
+                            polygon_db=st.session_state.polygon_db,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                            new_clipping_polygon=st.session_state.new_clipping_polygon if st.session_state.show_new_clipping_polygon else None,
+                            num_tiles=5
                         )
+                        
+                        success = result.get("success", False)
                         
                         if success:
                             st.success("✅ Test completed! Check console for details.")

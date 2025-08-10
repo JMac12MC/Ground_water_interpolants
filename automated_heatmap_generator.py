@@ -8,7 +8,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point, box
-from interpolation import generate_geo_json_grid, generate_indicator_mask
+from interpolation import generate_geo_json_grid
 import pyproj
 from pyproj import Transformer
 
@@ -191,16 +191,11 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db,
         print(f"   🎯 Found {len(tile_wells)} wells in tile")
         
         try:
-            # Generate indicator mask if needed
+            # Generate indicator mask if needed (use None for now, let interpolation handle it)
             indicator_mask = None
+            print(f"   📊 Using interpolation method: {interpolation_method}")
             if interpolation_method in ['indicator_kriging', 'ground_water_level_kriging']:
-                try:
-                    indicator_mask, viable_wells, total_wells, viable_ratio, combined_criteria = generate_indicator_mask(
-                        tile_wells, center_point, search_radius_km
-                    )
-                    print(f"   📊 Indicator mask: {viable_wells}/{total_wells} wells viable ({viable_ratio:.1%})")
-                except Exception as e:
-                    print(f"   ⚠️ Warning: Could not generate indicator mask: {e}")
+                print(f"   📊 Indicator kriging will be handled by interpolation function")
             
             # Generate heatmap using existing interpolation system
             print(f"   🎨 Generating {interpolation_method} heatmap...")

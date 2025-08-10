@@ -236,8 +236,10 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         actual_grid = (rows_needed, cols_needed)
         print(f"📐 Using full grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps")
     
-    # Start from southwest corner and cover systematically
-    start_point = [sw_lat - 0.1, sw_lon - 0.1]  # Start slightly southwest
+    # Use the same center-based positioning as the test generation (which works)
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
+    start_point = [center_lat, center_lon]  # Start from center like test generation
     
     try:
         result = generate_quad_heatmaps_sequential(

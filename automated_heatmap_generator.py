@@ -170,22 +170,117 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
         return {"success": False, "error": error_msg}
 
 
-def full_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):
+def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, max_tiles=50):
     """
     Generate comprehensive heatmap coverage using the proven sequential system.
-    Creates a larger grid covering the full data extent.
+    This is the main function called by app.py for full automated generation.
     """
     
-    print("🚀 AUTOMATED FULL GENERATION: Comprehensive coverage")
+    print(f"🚀 FULL AUTOMATED GENERATION: Covering all well data with up to {max_tiles} heatmaps")
+    print(f"📋 Available columns: {list(wells_data.columns)}")
     
-    # Use the test generation logic but with a larger grid
-    # This would be implemented similarly but with more positions
+    from sequential_heatmap import generate_quad_heatmaps_sequential
     
-    return test_automated_generation(
+    # Find the bounds of wells data 
+    if 'latitude' in wells_data.columns and 'longitude' in wells_data.columns:
+        valid_wells = wells_data.dropna(subset=['latitude', 'longitude'])
+        
+        if len(valid_wells) == 0:
+            return 0, [], ["No valid well coordinates found"]
+        
+        lat_coords = valid_wells['latitude'].astype(float)
+        lon_coords = valid_wells['longitude'].astype(float)
+        
+        sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
+        sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
+        
+        print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
+        print(f"📊 Processing {len(valid_wells)} wells")
+        
+    else:
+        return 0, [], [f"Could not find coordinate columns. Available: {list(wells_data.columns)}"]
+    
+    # Calculate optimal grid size for full coverage
+    from utils import get_distance
+    
+    lat_span = ne_lat - sw_lat
+    lon_span = ne_lon - sw_lon
+    
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
+    
+    # Convert to approximate km
+    lat_km = lat_span * 111.0
+    lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
+    
+    # Calculate optimal grid size (19.82km spacing)
+    grid_spacing_km = 19.82
+    
+    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 1)
+    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 1)
+    
+    total_needed = rows_needed * cols_needed
+    
+    print(f"📐 Data extent: {lat_km:.1f}km × {lon_km:.1f}km")
+    print(f"📐 Optimal grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
+    
+    # Limit to max_tiles
+    if total_needed > max_tiles:
+        # Scale down proportionally
+        scale_factor = np.sqrt(max_tiles / total_needed)
+        rows_limited = max(1, int(rows_needed * scale_factor))
+        cols_limited = max(1, int(cols_needed * scale_factor))
+        actual_grid = (rows_limited, cols_limited)
+        print(f"📐 Limited to: {rows_limited} × {cols_limited} = {rows_limited * cols_limited} heatmaps (max {max_tiles})")
+    else:
+        actual_grid = (rows_needed, cols_needed)
+        print(f"📐 Using full grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps")
+    
+    # Start from southwest corner and cover systematically
+    start_point = [sw_lat - 0.1, sw_lon - 0.1]  # Start slightly southwest
+    
+    try:
+        result = generate_quad_heatmaps_sequential(
+            wells_data=wells_data,
+            click_point=start_point,
+            search_radius=20,
+            interpolation_method=interpolation_method,
+            polygon_db=polygon_db,
+            soil_polygons=soil_polygons,
+            new_clipping_polygon=new_clipping_polygon,
+            grid_size=actual_grid
+        )
+        
+        if isinstance(result, tuple) and len(result) >= 3:
+            success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
+            
+            print(f"📋 FULL GENERATION RESULTS:")
+            print(f"   Grid processed: {actual_grid[0]} × {actual_grid[1]}")
+            print(f"   Successful heatmaps: {success_count}")
+            print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
+            print(f"   Errors: {len(error_messages)}")
+            
+            return success_count, stored_heatmap_ids, error_messages
+        else:
+            error_msg = "Unexpected result format from sequential generation"
+            print(f"❌ {error_msg}")
+            return 0, [], [error_msg]
+            
+    except Exception as e:
+        error_msg = f"Error in full automated generation: {str(e)}"
+        print(f"❌ {error_msg}")
+        return 0, [], [error_msg]
+
+
+def full_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):
+    """
+    Legacy function name - redirect to generate_automated_heatmaps
+    """
+    return generate_automated_heatmaps(
         wells_data=wells_data,
         interpolation_method=interpolation_method, 
         polygon_db=polygon_db,
         soil_polygons=soil_polygons,
         new_clipping_polygon=new_clipping_polygon,
-        num_tiles=25  # 5x5 grid for full coverage
+        max_tiles=100
     )

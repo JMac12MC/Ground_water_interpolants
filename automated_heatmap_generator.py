@@ -9,135 +9,114 @@ import numpy as np
 
 def test_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, num_tiles=5):
     """
-    Generate test heatmaps automatically using the proven sequential system.
-    Uses the existing sequential_heatmap.py logic which already handles coordinate conversion correctly.
+    Generate heatmaps automatically using the exact sequential system logic but extended to cover all well data.
+    Uses the proven 19.82km spacing and coordinate conversion from sequential_heatmap.py.
     """
     
     from sequential_heatmap import generate_quad_heatmaps_sequential
-    from utils import get_distance
     
-    print(f"🚀 AUTOMATED TEST GENERATION: Processing {num_tiles} tiles")
+    print(f"🚀 AUTOMATED GENERATION: Using proven sequential system to cover all well data")
     print(f"📋 Available columns: {list(wells_data.columns)}")
     
-    # Find the center of the wells data for starting point
+    # Find the southwest corner of wells data to start our grid from
     if 'X' in wells_data.columns and 'Y' in wells_data.columns:
-        # Data is in NZTM format, convert to lat/lon for center calculation
+        # Data is in NZTM format, convert to lat/lon
         valid_wells = wells_data.dropna(subset=['X', 'Y'])
         
         if len(valid_wells) == 0:
             return {"success": False, "error": "No valid well coordinates found"}
         
-        # Convert NZTM coordinates to lat/lon for the center calculation
+        # Convert NZTM coordinates to lat/lon for bounds calculation
         from pyproj import Transformer
-        
-        # NZTM2000 to WGS84 transformer
         transformer = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
         
-        # Get bounds in NZTM
         x_coords = valid_wells['X'].astype(float)
         y_coords = valid_wells['Y'].astype(float)
         
-        # Calculate center in NZTM
-        center_x = (x_coords.min() + x_coords.max()) / 2
-        center_y = (y_coords.min() + y_coords.max()) / 2
+        # Get bounds and convert to lat/lon
+        min_x, max_x = x_coords.min(), x_coords.max()
+        min_y, max_y = y_coords.min(), y_coords.max()
         
-        # Convert center to lat/lon
-        center_lon, center_lat = transformer.transform(center_x, center_y)
+        # Convert corners to lat/lon
+        sw_lon, sw_lat = transformer.transform(min_x, min_y)  # Southwest corner
+        ne_lon, ne_lat = transformer.transform(max_x, max_y)  # Northeast corner
         
-        print(f"📍 Data center point: {center_lat:.6f}, {center_lon:.6f}")
+        print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
         print(f"📊 Processing {len(valid_wells)} wells")
         
     else:
-        # Try other coordinate column names
-        lat_cols = [col for col in wells_data.columns if 'lat' in col.lower()]
-        lon_cols = [col for col in wells_data.columns if 'lon' in col.lower()]
-        
-        if not lat_cols or not lon_cols:
-            return {"success": False, "error": f"Could not find coordinate columns. Available: {list(wells_data.columns)}"}
-        
-        lat_col, lon_col = lat_cols[0], lon_cols[0]
-        valid_wells = wells_data.dropna(subset=[lat_col, lon_col])
-        
-        if len(valid_wells) == 0:
-            return {"success": False, "error": "No valid well coordinates found"}
-        
-        center_lat = valid_wells[lat_col].mean()
-        center_lon = valid_wells[lon_col].mean()
-        
-        print(f"📍 Data center point: {center_lat:.6f}, {center_lon:.6f}")
-        print(f"📊 Processing {len(valid_wells)} wells")
+        return {"success": False, "error": f"Expected X,Y columns for NZTM coordinates. Available: {list(wells_data.columns)}"}
     
-    # Use the proven sequential generation system with a grid pattern
-    # Generate test tiles in a small pattern around the data center
+    # Calculate how many grid positions we need using 19.82km spacing
+    # Each heatmap covers 40km diameter, centers are 19.82km apart
+    from utils import get_distance
     
-    success_count = 0
-    stored_heatmap_ids = []
-    error_messages = []
+    # Calculate grid dimensions needed
+    lat_span = ne_lat - sw_lat
+    lon_span = ne_lon - sw_lon
+    
+    # Convert to approximate km using center point
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
+    
+    lat_km = lat_span * 111.0  # degrees to km
+    lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
+    
+    # Calculate grid size needed (with 19.82km spacing)
+    grid_spacing_km = 19.82
+    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 1)
+    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 1)
+    
+    print(f"📐 Data extent: {lat_km:.1f}km × {lon_km:.1f}km")
+    print(f"📐 Grid needed: {rows_needed} × {cols_needed} = {rows_needed * cols_needed} heatmaps")
+    print(f"📐 Using {min(num_tiles, rows_needed * cols_needed)} tiles for this test")
+    
+    # Use the existing sequential system but start from southwest corner of data
+    # and extend in the proven grid pattern
+    start_point = [sw_lat - 0.05, sw_lon - 0.05]  # Start slightly southwest of data
+    
+    # Call the proven sequential generation function with appropriate grid size
+    test_grid_size = int(np.ceil(np.sqrt(num_tiles)))  # Make a square grid for test
+    actual_grid = (min(test_grid_size, rows_needed), min(test_grid_size, cols_needed))
+    
+    print(f"📐 Test grid size: {actual_grid[0]} × {actual_grid[1]}")
     
     try:
-        # Use a 3x2 grid for 5 tiles (skip one position to test coverage)
-        positions = [
-            (center_lat, center_lon, "Center"),
-            (center_lat - 0.2, center_lon, "South"), 
-            (center_lat + 0.2, center_lon, "North"),
-            (center_lat, center_lon + 0.2, "East"),
-            (center_lat, center_lon - 0.2, "West")
-        ]
+        result = generate_quad_heatmaps_sequential(
+            wells_data=wells_data,
+            click_point=start_point,
+            search_radius=20,  # 20km radius as used in sequential system
+            interpolation_method=interpolation_method,
+            polygon_db=polygon_db,
+            soil_polygons=soil_polygons,
+            new_clipping_polygon=new_clipping_polygon,
+            grid_size=actual_grid  # Use calculated grid size
+        )
         
-        for i, (lat, lon, name) in enumerate(positions[:num_tiles]):
-            print(f"   🎯 Generating tile {i+1}/{num_tiles}: {name} at ({lat:.6f}, {lon:.6f})")
+        # Extract results
+        if isinstance(result, tuple) and len(result) >= 2:
+            success_count, stored_heatmap_ids = result[0], result[1]
             
-            # Use the working sequential system for each tile
-            click_point = [lat, lon]
-            search_radius = 20  # 20km radius as used in sequential system
+            print(f"📋 GENERATION RESULTS:")
+            print(f"   Grid processed: {actual_grid[0]} × {actual_grid[1]}")
+            print(f"   Successful heatmaps: {success_count}")
+            print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
             
-            # Call the proven sequential generation function for a single heatmap
-            try:
-                result = generate_quad_heatmaps_sequential(
-                    wells_data=wells_data,
-                    click_point=click_point, 
-                    search_radius=search_radius,
-                    interpolation_method=interpolation_method,
-                    polygon_db=polygon_db,
-                    soil_polygons=soil_polygons,
-                    new_clipping_polygon=new_clipping_polygon,
-                    grid_size=(1, 1)  # Single heatmap only
-                )
-                
-                # Extract results
-                if isinstance(result, tuple) and len(result) >= 2:
-                    tile_success_count, tile_heatmap_ids = result[0], result[1]
-                    success_count += tile_success_count
-                    stored_heatmap_ids.extend(tile_heatmap_ids)
-                    print(f"   ✅ Tile {i+1} completed successfully")
-                else:
-                    error_messages.append(f"Tile {i+1}: Unexpected result format")
-                    print(f"   ❌ Tile {i+1} failed: Unexpected result format")
-                    
-            except Exception as e:
-                error_messages.append(f"Tile {i+1}: {str(e)}")
-                print(f"   ❌ Tile {i+1} failed: {e}")
-                continue
-        
-        print(f"📋 TEST RESULTS:")
-        print(f"   Tiles processed: {num_tiles}")
-        print(f"   Successful: {success_count}")
-        print(f"   Errors: {len(error_messages)}")
-        if error_messages:
-            print(f"   Error details:")
-            for error in error_messages:
-                print(f"     • {error}")
-        
-        return {
-            "success": success_count > 0,
-            "success_count": success_count,
-            "total_heatmaps": len(stored_heatmap_ids),
-            "heatmap_ids": stored_heatmap_ids,
-            "errors": error_messages
-        }
-        
+            return {
+                "success": success_count > 0,
+                "success_count": success_count,
+                "total_heatmaps": len(stored_heatmap_ids),
+                "heatmap_ids": stored_heatmap_ids,
+                "grid_size": actual_grid,
+                "errors": []
+            }
+        else:
+            error_msg = "Unexpected result format from sequential generation"
+            print(f"❌ {error_msg}")
+            return {"success": False, "error": error_msg}
+            
     except Exception as e:
-        error_msg = f"Error processing well coordinates: {str(e)}"
+        error_msg = f"Error in sequential generation: {str(e)}"
         print(f"❌ {error_msg}")
         return {"success": False, "error": error_msg}
 

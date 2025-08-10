@@ -48,7 +48,7 @@ session_defaults = {
     'well_markers_visibility': True,
     'search_radius': 20,
     'soil_polygons': None,
-    'show_soil_polygons': True,
+    'show_soil_polygons': False,
     'stored_heatmaps': [],
     'interpolation_method': 'kriging',
     'show_kriging_variance': False,
@@ -60,7 +60,7 @@ session_defaults = {
     'colormap_updated': False,
 
     'new_clipping_polygon': None,
-    'show_new_clipping_polygon': True,
+    'show_new_clipping_polygon': False,
     'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
 }
 
@@ -382,7 +382,7 @@ with st.sidebar:
             "viag (Purple→Green)",
             "crest (Blue→Teal→Yellow)"
         ],
-        index=13,  # Default to crest colormap
+        index=11,  # Default to mako colormap
         help="Choose from professional scientific colormaps. Each offers different visual emphasis for your data."
     )
     

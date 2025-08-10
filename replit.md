@@ -120,8 +120,10 @@ This is a Streamlit-based groundwater visualization application that allows user
 Preferred communication style: Simple, everyday language.
 
 **Default Settings**:
-- Default colormap: crest (Blue→Teal→Yellow) 
+- Default colormap: mako (Black→Blue→Green) 
 - Default visualization method: Ground Water Level (Spherical Kriging)
+- Soil Drainage Areas: Unchecked by default
+- NEW Clipping Polygon: Unchecked by default
 - User prefers these as the application defaults for new sessions
 
 ## Recent Changes

@@ -128,14 +128,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **August 11, 2025**: CRITICAL FIX: Fixed automated generation coordinate handling and bounds calculation
+- **August 11, 2025**: MAJOR ENHANCEMENT: Implemented smart incremental automated generation with convex hull boundary checking
   - Fixed coordinate system handling to properly use NZTMX/NZTMY columns from raw data
-  - Corrected convex hull calculation to use actual well distribution spanning full New Zealand range
-  - Fixed bounds calculation: Wells span -44.957° to -41.997° (329km) × 169.627° to 174.002° (362km)
-  - Previous heatmaps only covered 24% of latitude range and 28% of longitude range
-  - Enhanced automated_heatmap_generator.py to handle both lat/lon and NZTM coordinate systems
-  - Eliminated well sampling - convex hull now uses ALL 27,657 wells for accurate boundary
-  - Fixed coverage gaps that were missing 163km north, 87km south, 81km east, and 180km west
+  - Implemented incremental expansion from start point with 10km convex hull boundary testing
+  - Added priority queue system for efficient outward expansion (north, south, east, west)
+  - Only generates heatmaps if centroid is within 10km of convex hull boundary
+  - Stops expansion when no valid positions remain or max tile limit reached
+  - Enhanced automated_heatmap_generator.py with boundary-aware generation system
+  - Added generate_single_heatmap function for individual heatmap creation
+  - Fixed coverage to use actual well distribution spanning -44.957° to -41.997° × 169.627° to 174.002°
 
 - **August 11, 2025**: ENHANCED: Automated generation system improvements for comprehensive coverage
   - Increased max tile limit from 50 to 1000 tiles for large-scale regional analysis

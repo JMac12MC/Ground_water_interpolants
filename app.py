@@ -1797,12 +1797,14 @@ with main_col1:
                 print(f"Attempting to display {len(heatmaps_to_display)} of {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
                 print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
                 
+                # Initialize variables for smooth raster processing
+                combined_geojson = {"type": "FeatureCollection", "features": []}
+                overall_bounds = {'north': float('-inf'), 'south': float('inf'), 
+                                 'east': float('-inf'), 'west': float('inf')}
+                valid_heatmaps_for_raster = []
+                
                 # For smooth raster style, collect ALL triangulated data first for unified processing
                 if heatmap_style == "Smooth Raster (Windy.com Style)":
-                    combined_geojson = {"type": "FeatureCollection", "features": []}
-                    overall_bounds = {'north': float('-inf'), 'south': float('inf'), 
-                                     'east': float('-inf'), 'west': float('inf')}
-                    valid_heatmaps_for_raster = []
                     
                     # Collect all triangulated data from stored heatmaps (limited set)
                     for i, stored_heatmap in enumerate(heatmaps_to_display):

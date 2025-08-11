@@ -434,7 +434,7 @@ def generate_incremental_heatmaps_with_boundary_check(wells_data, start_point, s
                 f"auto_r{success_count//20}c{success_count%20}"  # Generate unique ID
             )
             
-            if result and len(result) >= 2:
+            if result and len(result) >= 2 and result[0]:  # Check success status
                 heatmap_id = result[1]  # Get the stored heatmap ID
                 stored_heatmap_ids.append(heatmap_id)
                 generated_heatmaps.add(pos_key)
@@ -457,7 +457,11 @@ def generate_incremental_heatmaps_with_boundary_check(wells_data, start_point, s
                         distance_from_start = get_distance(start_point[0], start_point[1], neighbor_lat, neighbor_lon)
                         expansion_queue.put((distance_from_start, neighbor_lat, neighbor_lon))
             else:
-                error_messages.append(f"Failed to generate heatmap at ({lat:.6f}, {lon:.6f})")
+                error_msg = f"Failed to generate heatmap at ({lat:.6f}, {lon:.6f})"
+                if result and len(result) >= 2:
+                    error_msg += f" - {result[1]}"  # Include error message
+                error_messages.append(error_msg)
+                print(f"❌ {error_msg}")
                 
         except Exception as e:
             error_msg = f"Error generating heatmap at ({lat:.6f}, {lon:.6f}): {str(e)}"

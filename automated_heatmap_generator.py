@@ -349,18 +349,34 @@ def generate_incremental_heatmaps_with_boundary_check(wells_data, start_point, s
     hull_points = np.array(nztm_coords)[hull_boundary.vertices]
     
     def is_centroid_valid(lat, lon):
-        """Check if a heatmap centroid is within 10km of the convex hull boundary"""
+        """Check if a heatmap centroid is within 10km of the convex hull boundary or inside the hull"""
         # Convert centroid to NZTM
         x, y = transformer_to_nztm.transform(lon, lat)
-        centroid_point = np.array([[x, y]])
+        centroid_point = np.array([x, y])
         
-        # Calculate minimum distance to hull boundary
-        distances = cdist(centroid_point, hull_points)
+        # First check if point is inside the convex hull (always valid)
+        from scipy.spatial import ConvexHull
+        try:
+            # Create a new hull with the test point added
+            test_points = np.vstack([hull_points, centroid_point.reshape(1, -1)])
+            test_hull = ConvexHull(test_points)
+            
+            # If adding the point doesn't change the hull, it's inside
+            if len(test_hull.vertices) == len(hull_boundary.vertices):
+                print(f"✅ Point ({lat:.6f}, {lon:.6f}) is INSIDE convex hull")
+                return True
+        except:
+            pass
+        
+        # If not inside, check if within 10km of boundary
+        distances = cdist(centroid_point.reshape(1, -1), hull_points)
         min_distance = np.min(distances)
-        
-        # Convert to km and check if within 10km
         min_distance_km = min_distance / 1000.0
-        return min_distance_km <= 10.0
+        
+        is_valid = min_distance_km <= 10.0
+        status = "✅ VALID" if is_valid else "❌ REJECTED"
+        print(f"{status} Point ({lat:.6f}, {lon:.6f}) - distance to hull: {min_distance_km:.2f}km")
+        return is_valid
     
     print(f"🎯 INCREMENTAL GENERATION: Starting from {start_point} with {max_tiles} tile limit")
     print(f"🔷 Boundary check: Centroids must be within 10km of convex hull")
@@ -399,7 +415,6 @@ def generate_incremental_heatmaps_with_boundary_check(wells_data, start_point, s
         
         # Check if centroid is within boundary
         if not is_centroid_valid(lat, lon):
-            print(f"❌ Skipping ({lat:.6f}, {lon:.6f}) - centroid >10km outside hull boundary")
             continue
         
         print(f"✅ Generating heatmap at ({lat:.6f}, {lon:.6f}) - within boundary")

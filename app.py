@@ -470,9 +470,9 @@ with st.sidebar:
     
     with col2:
         max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=1000, value=100, step=10,
-                                        help="Smart generation creates heatmaps only where wells exist (up to this limit)")
+                                        help="Automated generation continues until reaching actual well data bounds (up to this limit)")
         
-        if st.button("🚀 Smart Auto Generation", help="Generate heatmaps only where wells exist (intelligent positioning)"):
+        if st.button("🚀 Full Auto Generation", help="Generate heatmaps for all well data (limited by max tiles)"):
             if st.session_state.wells_data is not None and st.session_state.polygon_db is not None:
                 with st.spinner(f"Generating up to {max_tiles_full} automated heatmaps..."):
                     try:

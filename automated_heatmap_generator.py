@@ -172,15 +172,14 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
 
 def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, search_radius_km=20, max_tiles=1000):
     """
-    Generate comprehensive heatmap coverage using well-density-based positioning.
-    Only generates heatmaps where wells actually exist within the search radius.
+    Generate comprehensive heatmap coverage using the proven sequential system.
+    This is the main function called by app.py for full automated generation.
     """
     
-    print(f"🚀 SMART AUTOMATED GENERATION: Covering areas with actual well data (up to {max_tiles} heatmaps)")
+    print(f"🚀 FULL AUTOMATED GENERATION: Covering all well data with up to {max_tiles} heatmaps")
     print(f"📋 Available columns: {list(wells_data.columns)}")
     
-    from utils import get_distance
-    import numpy as np
+    from sequential_heatmap import generate_quad_heatmaps_sequential
     
     # Find the bounds of wells data 
     if 'latitude' in wells_data.columns and 'longitude' in wells_data.columns:
@@ -201,137 +200,80 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     else:
         return 0, [], [f"Could not find coordinate columns. Available: {list(wells_data.columns)}"]
     
-    # NEW APPROACH: Generate heatmaps based on well density, not empty grid
-    # Create a grid of potential heatmap positions with 19.82km spacing
-    grid_spacing_km = 19.82
+    # Calculate optimal grid size for full coverage
+    from utils import get_distance
     
-    # Calculate grid dimensions
     lat_span = ne_lat - sw_lat
     lon_span = ne_lon - sw_lon
+    
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
+    
+    # Convert to approximate km
     lat_km = lat_span * 111.0
-    lon_km = lon_span * 111.0 * np.cos(np.radians((sw_lat + ne_lat) / 2))
+    lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
     
-    # Calculate grid spacing in degrees
-    lat_spacing = grid_spacing_km / 111.0  # degrees
-    lon_spacing = grid_spacing_km / (111.0 * np.cos(np.radians((sw_lat + ne_lat) / 2)))  # degrees
+    # Calculate optimal grid size (19.82km spacing) to FULLY cover all well data
+    grid_spacing_km = 19.82
     
-    # Generate potential grid positions
-    potential_positions = []
+    # Add buffer to ensure complete coverage beyond the furthest wells
+    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 2)  # +2 for buffer coverage
+    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 2)  # +2 for buffer coverage
     
-    # Start from southwest corner and work across the entire area
-    current_lat = sw_lat
-    while current_lat <= ne_lat + lat_spacing:  # Extra buffer
-        current_lon = sw_lon
-        while current_lon <= ne_lon + lon_spacing:  # Extra buffer
-            potential_positions.append([current_lat, current_lon])
-            current_lon += lon_spacing
-        current_lat += lat_spacing
+    total_needed = rows_needed * cols_needed
     
     print(f"📐 Data extent: {lat_km:.1f}km × {lon_km:.1f}km")
-    print(f"🎯 Generated {len(potential_positions)} potential heatmap positions")
-    
-    # Filter positions to only those with wells within search radius
-    valid_positions = []
-    for pos in potential_positions:
-        pos_lat, pos_lon = pos
-        
-        # Check if there are wells within search_radius_km of this position
-        wells_in_range = 0
-        for _, well in valid_wells.iterrows():
-            well_lat, well_lon = well['latitude'], well['longitude']
-            distance = get_distance(pos_lat, pos_lon, well_lat, well_lon)
-            
-            if distance <= search_radius_km:
-                wells_in_range += 1
-                if wells_in_range >= 5:  # Need at least 5 wells for good interpolation
-                    valid_positions.append(pos)
-                    break
-    
-    print(f"🎯 Found {len(valid_positions)} positions with sufficient well data (≥5 wells within {search_radius_km}km)")
+    print(f"📐 Optimal grid with buffer: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
+    print(f"📍 This ensures complete coverage beyond the furthest wells")
     
     # Limit to max_tiles
-    if len(valid_positions) > max_tiles:
-        print(f"📐 Limiting to {max_tiles} positions (from {len(valid_positions)} valid positions)")
-        valid_positions = valid_positions[:max_tiles]
+    if total_needed > max_tiles:
+        # Scale down proportionally
+        scale_factor = np.sqrt(max_tiles / total_needed)
+        rows_limited = max(1, int(rows_needed * scale_factor))
+        cols_limited = max(1, int(cols_needed * scale_factor))
+        actual_grid = (rows_limited, cols_limited)
+        print(f"📐 Limited to: {rows_limited} × {cols_limited} = {rows_limited * cols_limited} heatmaps (max {max_tiles})")
+    else:
+        actual_grid = (rows_needed, cols_needed)
+        print(f"📐 Using full grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps")
     
-    # Generate individual heatmaps at each valid position
-    success_count = 0
-    stored_heatmap_ids = []
-    error_messages = []
+    # Use the same center-based positioning as the test generation (which works)
+    center_lat = (sw_lat + ne_lat) / 2
+    center_lon = (sw_lon + ne_lon) / 2
+    start_point = [center_lat, center_lon]  # Start from center like test generation
     
-    print(f"🚀 Starting generation of {len(valid_positions)} heatmaps...")
-    
-    for i, position in enumerate(valid_positions):
-        try:
-            print(f"📍 Generating heatmap {i+1}/{len(valid_positions)} at {position[0]:.6f}, {position[1]:.6f}")
+    try:
+        result = generate_quad_heatmaps_sequential(
+            wells_data, 
+            start_point, 
+            search_radius_km,  # use the parameter value
+            interpolation_method, 
+            polygon_db, 
+            soil_polygons, 
+            new_clipping_polygon, 
+            actual_grid
+        )
+        
+        if isinstance(result, tuple) and len(result) >= 3:
+            success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
             
-            # Use the interpolation system to generate individual heatmap
-            from interpolation import generate_geo_json_grid
+            print(f"📋 FULL GENERATION RESULTS:")
+            print(f"   Grid processed: {actual_grid[0]} × {actual_grid[1]}")
+            print(f"   Successful heatmaps: {success_count}")
+            print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
+            print(f"   Errors: {len(error_messages)}")
             
-            # Generate the heatmap at this position
-            center_point = [position[0], position[1]]
-            
-            geojson_data = generate_geo_json_grid(
-                wells_df=wells_data,
-                center_point=center_point,
-                radius_km=search_radius_km,
-                resolution=100,  # Use consistent resolution
-                method=interpolation_method,
-                soil_polygons=soil_polygons,
-                new_clipping_polygon=new_clipping_polygon
-            )
-            
-            if geojson_data and len(geojson_data.get('features', [])) > 0:
-                # Store the heatmap in database
-                heatmap_name = f"{interpolation_method}_{position[0]:.3f}_{position[1]:.3f}"
-                
-                try:
-                    heatmap_id = polygon_db.store_heatmap(
-                        name=heatmap_name,
-                        geojson_data=geojson_data,
-                        center_lat=position[0],
-                        center_lon=position[1],
-                        interpolation_method=interpolation_method
-                    )
-                    
-                    result = {
-                        'success': True,
-                        'heatmap_id': heatmap_id,
-                        'triangles': len(geojson_data.get('features', []))
-                    }
-                except Exception as store_error:
-                    result = {
-                        'success': False,
-                        'error': f"Failed to store heatmap: {str(store_error)}"
-                    }
-            else:
-                result = {
-                    'success': False,
-                    'error': "No triangular features generated"
-                }
-            
-            if result and result.get('success', False):
-                success_count += 1
-                if 'heatmap_id' in result:
-                    stored_heatmap_ids.append(result['heatmap_id'])
-                print(f"✅ Success: {result.get('triangles', 0)} triangles generated")
-            else:
-                error_msg = f"Failed at position {position[0]:.6f}, {position[1]:.6f}: {result.get('error', 'Unknown error')}"
-                error_messages.append(error_msg)
-                print(f"❌ {error_msg}")
-                
-        except Exception as e:
-            error_msg = f"Exception at position {position[0]:.6f}, {position[1]:.6f}: {str(e)}"
-            error_messages.append(error_msg)
+            return success_count, stored_heatmap_ids, error_messages
+        else:
+            error_msg = "Unexpected result format from sequential generation"
             print(f"❌ {error_msg}")
-    
-    print(f"📋 SMART GENERATION RESULTS:")
-    print(f"   Positions evaluated: {len(valid_positions)}")
-    print(f"   Successful heatmaps: {success_count}")
-    print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
-    print(f"   Errors: {len(error_messages)}")
-    
-    return success_count, stored_heatmap_ids, error_messages
+            return 0, [], [error_msg]
+            
+    except Exception as e:
+        error_msg = f"Error in full automated generation: {str(e)}"
+        print(f"❌ {error_msg}")
+        return 0, [], [error_msg]
 
 
 def full_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):

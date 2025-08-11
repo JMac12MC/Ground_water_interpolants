@@ -1785,7 +1785,11 @@ with main_col1:
         fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
     if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
-        print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
+        # Apply performance limiting - display only first N heatmaps
+        max_display = getattr(st.session_state, 'max_heatmaps_display', 20)
+        heatmaps_to_display = st.session_state.stored_heatmaps[:max_display]
+        
+        print(f"Attempting to display {len(heatmaps_to_display)} of {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
         # For smooth raster style, collect ALL triangulated data first for unified processing
@@ -1795,8 +1799,8 @@ with main_col1:
                              'east': float('-inf'), 'west': float('inf')}
             valid_heatmaps_for_raster = []
             
-            # Collect all triangulated data from stored heatmaps
-            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
+            # Collect all triangulated data from stored heatmaps (limited set)
+            for i, stored_heatmap in enumerate(heatmaps_to_display):
                 # Skip fresh heatmap to avoid duplication
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     continue
@@ -1865,7 +1869,7 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster OR if unified failed
         if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
+            for i, stored_heatmap in enumerate(heatmaps_to_display):
                 try:
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders
@@ -2026,7 +2030,7 @@ with main_col1:
                 except Exception as e:
                     print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
 
-        print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
+        print(f"Successfully displayed {stored_heatmap_count} of {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         
         # Add colormap legend AFTER all heatmaps are processed
         if stored_heatmap_count > 0:
@@ -2077,7 +2081,8 @@ with main_col1:
 
     # Show summary of displayed heatmaps
     total_displayed = stored_heatmap_count
-    print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (All via stored heatmaps)")
+    total_available = len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 0
+    print(f"TOTAL HEATMAPS ON MAP: {total_displayed} of {total_available} available (Performance limited)")
 
     # Show wells that overlap with displayed heatmap areas
     if st.session_state.well_markers_visibility:

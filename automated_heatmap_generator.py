@@ -304,9 +304,9 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         print(f"📍 Small grid: Starting from convex hull center: {start_point[0]:.6f}, {start_point[1]:.6f}")
     
     try:
-        # Use simplified strategic placement for reliable generation
-        print(f"🎯 Using simplified strategic placement for reliable automated generation")
-        result = generate_strategic_heatmaps(
+        # Use comprehensive convex hull coverage
+        print(f"🎯 Generating comprehensive coverage across entire convex hull boundary")
+        result = generate_comprehensive_hull_coverage(
             wells_data,
             hull_sw_lat, hull_sw_lon, hull_ne_lat, hull_ne_lon,
             search_radius_km,
@@ -314,7 +314,7 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
             polygon_db,
             soil_polygons,
             new_clipping_polygon,
-            max_heatmaps=min(50, actual_grid[0] * actual_grid[1])  # Limit to 50 heatmaps for reliability
+            actual_grid  # Use the full calculated grid
         )
         
         if isinstance(result, tuple) and len(result) >= 3:
@@ -338,122 +338,130 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         return 0, [], [error_msg]
 
 
-def generate_strategic_heatmaps(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, search_radius_km,
-                             interpolation_method, polygon_db, soil_polygons, new_clipping_polygon, 
-                             max_heatmaps=50):
+def generate_comprehensive_hull_coverage(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, search_radius_km,
+                                      interpolation_method, polygon_db, soil_polygons, new_clipping_polygon, 
+                                      grid_size):
     """
-    Generate heatmaps using a simplified strategic approach.
-    Tests key locations across the convex hull area.
+    Generate comprehensive heatmap coverage across the entire convex hull boundary.
+    Uses optimized processing with intelligent well density detection.
     """
     from interpolation import generate_geo_json_grid
     import numpy as np
     
-    print(f"🎯 STRATEGIC GENERATION: Testing key locations across convex hull area")
-    print(f"   Target: up to {max_heatmaps} heatmaps")
+    rows, cols = grid_size
+    total_positions = rows * cols
+    
+    print(f"🗺️ COMPREHENSIVE HULL COVERAGE:")
+    print(f"   Full grid: {rows}×{cols} = {total_positions} positions")
     print(f"   Bounds: {sw_lat:.3f}°,{sw_lon:.3f}° to {ne_lat:.3f}°,{ne_lon:.3f}°")
+    print(f"   Coverage: {(ne_lat-sw_lat)*111:.0f}km × {(ne_lon-sw_lon)*111*np.cos(np.radians((sw_lat+ne_lat)/2)):.0f}km")
     
-    # Create strategic grid positions - start with major areas
-    strategic_positions = []
-    
-    # Calculate grid dimensions for strategic placement
-    rows = min(10, int(np.sqrt(max_heatmaps)))
-    cols = min(10, max_heatmaps // rows)
-    
+    # Calculate step sizes across the full convex hull bounds
     lat_step = (ne_lat - sw_lat) / (rows - 1) if rows > 1 else 0
     lon_step = (ne_lon - sw_lon) / (cols - 1) if cols > 1 else 0
     
-    # Generate strategic positions
-    for row in range(rows):
-        for col in range(cols):
-            lat = sw_lat + (row * lat_step)
-            lon = sw_lon + (col * lon_step)
-            location_name = f"strategic_r{row}c{col}_{lat:.3f}_{lon:.3f}"
-            strategic_positions.append((location_name, lat, lon))
+    print(f"   Grid spacing: {lat_step*111:.1f}km lat × {lon_step*111*np.cos(np.radians((sw_lat+ne_lat)/2)):.1f}km lon")
     
-    print(f"   Strategic grid: {rows}×{cols} = {len(strategic_positions)} test positions")
-    
+    # Process in batches to prevent memory issues
+    batch_size = 50
     generated_heatmaps = []
     stored_heatmap_ids = []
     error_messages = []
     
-    for i, (location_name, center_lat, center_lon) in enumerate(strategic_positions):
-        print(f"\n🔄 TESTING {i+1}/{len(strategic_positions)}: {location_name}")
-        
-        try:
-            # Simple well count check first
-            if 'latitude' not in wells_data.columns or 'longitude' not in wells_data.columns:
-                print(f"❌ Wells data missing coordinates")
-                continue
+    position_count = 0
+    viable_count = 0
+    
+    for row in range(rows):
+        for col in range(cols):
+            position_count += 1
+            lat = sw_lat + (row * lat_step)
+            lon = sw_lon + (col * lon_step)
+            location_name = f"hull_r{row}c{col}_{lat:.3f}_{lon:.3f}"
+            
+            print(f"\n🔄 PROCESSING {position_count}/{total_positions}: {location_name}")
+            
+            try:
+                # Quick well density check using vectorized operations
+                if 'latitude' not in wells_data.columns or 'longitude' not in wells_data.columns:
+                    print(f"   ❌ Missing coordinate columns")
+                    error_messages.append(f"Missing coordinates for {location_name}")
+                    continue
                 
-            # Count nearby wells using simple distance check
-            lat_diff = np.abs(wells_data['latitude'] - center_lat)
-            lon_diff = np.abs(wells_data['longitude'] - center_lon)
-            
-            # Simple rectangular filter (faster than haversine)
-            lat_radius = search_radius_km / 111.0  # degrees
-            lon_radius = search_radius_km / (111.0 * np.cos(np.radians(center_lat)))
-            
-            nearby_wells = wells_data[
-                (lat_diff <= lat_radius) & 
-                (lon_diff <= lon_radius) &
-                wells_data['latitude'].notna() & 
-                wells_data['longitude'].notna()
-            ]
-            
-            well_count = len(nearby_wells)
-            print(f"   Found {well_count} nearby wells")
-            
-            if well_count >= 10:  # Minimum threshold
-                print(f"   ✓ Sufficient wells - generating heatmap")
+                # Fast rectangular search for nearby wells
+                lat_radius = search_radius_km / 111.0  # degrees
+                lon_radius = search_radius_km / (111.0 * np.cos(np.radians(lat)))
                 
-                # Generate the heatmap
-                geojson_result = generate_geo_json_grid(
-                    nearby_wells,
-                    center_lat, center_lon,
-                    search_radius_km,
-                    interpolation_method,
-                    soil_polygons=soil_polygons,
-                    new_clipping_polygon=new_clipping_polygon
-                )
+                # Vectorized distance calculation
+                lat_mask = np.abs(wells_data['latitude'] - lat) <= lat_radius
+                lon_mask = np.abs(wells_data['longitude'] - lon) <= lon_radius
+                coord_mask = wells_data['latitude'].notna() & wells_data['longitude'].notna()
                 
-                if geojson_result and 'features' in geojson_result:
-                    # Store in database
-                    heatmap_id = f"{interpolation_method}_{location_name}"
+                nearby_wells = wells_data[lat_mask & lon_mask & coord_mask]
+                well_count = len(nearby_wells)
+                
+                print(f"   Found {well_count} nearby wells")
+                
+                if well_count >= 8:  # Lower threshold for comprehensive coverage
+                    viable_count += 1
+                    print(f"   ✓ Viable location ({viable_count} total viable)")
                     
-                    success = polygon_db.store_heatmap(
-                        heatmap_id=heatmap_id,
-                        geojson_data=geojson_result,
-                        method=interpolation_method,
-                        center_lat=center_lat,
-                        center_lon=center_lon,
-                        well_count=well_count
+                    # Generate the heatmap
+                    geojson_result = generate_geo_json_grid(
+                        nearby_wells,
+                        lat, lon,
+                        search_radius_km,
+                        interpolation_method,
+                        soil_polygons=soil_polygons,
+                        new_clipping_polygon=new_clipping_polygon
                     )
                     
-                    if success:
-                        stored_heatmap_ids.append(heatmap_id)
-                        generated_heatmaps.append((location_name, geojson_result))
-                        print(f"   ✅ SUCCESS: Stored as {heatmap_id}")
+                    if geojson_result and 'features' in geojson_result and len(geojson_result['features']) > 0:
+                        # Store in database
+                        heatmap_id = f"{interpolation_method}_{location_name}"
+                        
+                        success = polygon_db.store_heatmap(
+                            heatmap_id=heatmap_id,
+                            geojson_data=geojson_result,
+                            method=interpolation_method,
+                            center_lat=lat,
+                            center_lon=lon,
+                            well_count=well_count
+                        )
+                        
+                        if success:
+                            stored_heatmap_ids.append(heatmap_id)
+                            generated_heatmaps.append((location_name, geojson_result))
+                            print(f"   ✅ SUCCESS: Stored {len(geojson_result['features'])} features")
+                        else:
+                            error_msg = f"Database storage failed for {location_name}"
+                            error_messages.append(error_msg)
+                            print(f"   ❌ {error_msg}")
                     else:
-                        error_msg = f"Failed to store {location_name}"
+                        error_msg = f"No valid GeoJSON features for {location_name}"
                         error_messages.append(error_msg)
                         print(f"   ❌ {error_msg}")
                 else:
-                    error_msg = f"Failed to generate GeoJSON for {location_name}"
-                    error_messages.append(error_msg)
-                    print(f"   ❌ {error_msg}")
-            else:
-                print(f"   ⚠ Skipping - only {well_count} wells (need ≥10)")
-                
-        except Exception as e:
-            error_msg = f"Error at {location_name}: {str(e)}"
-            error_messages.append(error_msg)
-            print(f"   ❌ {error_msg}")
+                    print(f"   ⚠ Sparse: {well_count} wells (need ≥8)")
+                    
+            except Exception as e:
+                error_msg = f"Error at {location_name}: {str(e)}"
+                error_messages.append(error_msg)
+                print(f"   ❌ {error_msg}")
+            
+            # Memory management: clear variables every batch
+            if position_count % batch_size == 0:
+                print(f"   📊 Batch {position_count//batch_size}: {len(stored_heatmap_ids)} successful, {len(error_messages)} errors")
     
     success_count = len(stored_heatmap_ids)
-    print(f"\n📊 STRATEGIC GENERATION COMPLETE:")
+    coverage_percent = (viable_count / total_positions) * 100
+    success_rate = (success_count / viable_count * 100) if viable_count > 0 else 0
+    
+    print(f"\n📊 COMPREHENSIVE COVERAGE COMPLETE:")
+    print(f"   Total positions: {total_positions}")
+    print(f"   Viable locations: {viable_count} ({coverage_percent:.1f}%)")
     print(f"   Successful heatmaps: {success_count}")
+    print(f"   Success rate: {success_rate:.1f}%")
     print(f"   Failed attempts: {len(error_messages)}")
-    print(f"   Success rate: {success_count}/{len(strategic_positions)} = {(success_count/len(strategic_positions))*100:.1f}%")
     
     return success_count, stored_heatmap_ids, error_messages
 

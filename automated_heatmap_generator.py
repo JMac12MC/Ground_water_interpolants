@@ -304,32 +304,18 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         print(f"📍 Small grid: Starting from convex hull center: {start_point[0]:.6f}, {start_point[1]:.6f}")
     
     try:
-        # For large automated generation, use adaptive approach that skips sparse areas
-        if actual_grid[0] * actual_grid[1] > 50:  # Large grid - use adaptive generation
-            print(f"🔍 Using adaptive generation for large grid - will skip areas with insufficient well density")
-            result = generate_adaptive_heatmaps(
-                wells_data,
-                hull_sw_lat, hull_sw_lon, hull_ne_lat, hull_ne_lon,
-                search_radius_km,
-                interpolation_method,
-                polygon_db,
-                soil_polygons,
-                new_clipping_polygon,
-                actual_grid,
-                min_wells_required=10  # Minimum wells needed for interpolation
-            )
-        else:
-            # Small grid - use original sequential approach
-            result = generate_quad_heatmaps_sequential(
-                wells_data, 
-                start_point, 
-                search_radius_km,  # use the parameter value
-                interpolation_method, 
-                polygon_db, 
-                soil_polygons, 
-                new_clipping_polygon, 
-                actual_grid
-            )
+        # Use simplified strategic placement for reliable generation
+        print(f"🎯 Using simplified strategic placement for reliable automated generation")
+        result = generate_strategic_heatmaps(
+            wells_data,
+            hull_sw_lat, hull_sw_lon, hull_ne_lat, hull_ne_lon,
+            search_radius_km,
+            interpolation_method,
+            polygon_db,
+            soil_polygons,
+            new_clipping_polygon,
+            max_heatmaps=min(50, actual_grid[0] * actual_grid[1])  # Limit to 50 heatmaps for reliability
+        )
         
         if isinstance(result, tuple) and len(result) >= 3:
             success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
@@ -352,122 +338,77 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         return 0, [], [error_msg]
 
 
-def generate_adaptive_heatmaps(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, search_radius_km, 
+def generate_strategic_heatmaps(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, search_radius_km,
                              interpolation_method, polygon_db, soil_polygons, new_clipping_polygon, 
-                             grid_size, min_wells_required=10):
+                             max_heatmaps=50):
     """
-    Generate heatmaps adaptively across the convex hull area, only creating heatmaps 
-    where there's sufficient well density.
+    Generate heatmaps using a simplified strategic approach.
+    Tests key locations across the convex hull area.
     """
-    from utils import is_within_square, get_distance
     from interpolation import generate_geo_json_grid
     import numpy as np
-    import pandas as pd
     
-    rows, cols = grid_size
-    print(f"🔍 ADAPTIVE GENERATION: Scanning {rows}×{cols} grid for viable heatmap locations")
+    print(f"🎯 STRATEGIC GENERATION: Testing key locations across convex hull area")
+    print(f"   Target: up to {max_heatmaps} heatmaps")
+    print(f"   Bounds: {sw_lat:.3f}°,{sw_lon:.3f}° to {ne_lat:.3f}°,{ne_lon:.3f}°")
     
-    # Calculate step sizes across the convex hull bounds
+    # Create strategic grid positions - start with major areas
+    strategic_positions = []
+    
+    # Calculate grid dimensions for strategic placement
+    rows = min(10, int(np.sqrt(max_heatmaps)))
+    cols = min(10, max_heatmaps // rows)
+    
     lat_step = (ne_lat - sw_lat) / (rows - 1) if rows > 1 else 0
     lon_step = (ne_lon - sw_lon) / (cols - 1) if cols > 1 else 0
     
-    viable_locations = []
-    skipped_locations = []
-    
-    # Scan the entire grid area for viable locations
+    # Generate strategic positions
     for row in range(rows):
         for col in range(cols):
-            # Calculate position in the convex hull area
             lat = sw_lat + (row * lat_step)
             lon = sw_lon + (col * lon_step)
-            
-            # Check well density at this location
-            try:
-                wells_df_temp = wells_data.copy()
-                
-                # Ensure we have valid coordinate columns
-                if 'latitude' not in wells_df_temp.columns or 'longitude' not in wells_df_temp.columns:
-                    print(f"❌ Missing lat/lon columns in wells_data. Available columns: {list(wells_df_temp.columns)}")
-                    well_count = 0
-                else:
-                    # Filter out wells with NaN coordinates
-                    valid_coords = wells_df_temp['latitude'].notna() & wells_df_temp['longitude'].notna()
-                    wells_valid = wells_df_temp[valid_coords]
-                    
-                    if len(wells_valid) == 0:
-                        well_count = 0
-                    else:
-                        wells_valid['within_square'] = wells_valid.apply(
-                            lambda row_data: is_within_square(
-                                row_data['latitude'], 
-                                row_data['longitude'],
-                                lat, lon, search_radius_km
-                            ), 
-                            axis=1
-                        )
-                        
-                        local_wells = wells_valid[wells_valid['within_square']]
-                        well_count = len(local_wells)
-            except Exception as e:
-                print(f"❌ Error checking well density at {lat:.3f}, {lon:.3f}: {str(e)}")
-                well_count = 0
-            
-            location_name = f"r{row}c{col}_{lat:.3f}_{lon:.3f}"
-            
-            if well_count >= min_wells_required:
-                viable_locations.append((location_name, [lat, lon], well_count))
-                print(f"  ✓ Viable: {location_name} ({well_count} wells)")
-            else:
-                skipped_locations.append((location_name, [lat, lon], well_count))
-                if well_count > 0:
-                    print(f"  ⚠ Sparse: {location_name} ({well_count} wells, need {min_wells_required})")
+            location_name = f"strategic_r{row}c{col}_{lat:.3f}_{lon:.3f}"
+            strategic_positions.append((location_name, lat, lon))
     
-    print(f"🎯 ADAPTIVE RESULTS: {len(viable_locations)} viable locations, {len(skipped_locations)} skipped")
-    print(f"   Efficiency: {len(viable_locations)}/{rows*cols} = {(len(viable_locations)/(rows*cols))*100:.1f}% coverage")
+    print(f"   Strategic grid: {rows}×{cols} = {len(strategic_positions)} test positions")
     
-    # Now generate heatmaps only for viable locations
     generated_heatmaps = []
     stored_heatmap_ids = []
     error_messages = []
     
-    for i, (location_name, center_point, well_count) in enumerate(viable_locations):
-        print(f"\n🔄 GENERATING {i+1}/{len(viable_locations)}: {location_name} with {well_count} wells")
+    for i, (location_name, center_lat, center_lon) in enumerate(strategic_positions):
+        print(f"\n🔄 TESTING {i+1}/{len(strategic_positions)}: {location_name}")
         
         try:
-            # Generate heatmap for this viable location
-            center_lat, center_lon = center_point
-            
-            # Filter wells for this specific location
-            wells_df_filtered = wells_data.copy()
-            
-            # Ensure we have valid coordinate columns and data
-            if 'latitude' not in wells_df_filtered.columns or 'longitude' not in wells_df_filtered.columns:
-                print(f"❌ Missing lat/lon columns for {location_name}")
-                filtered_wells = pd.DataFrame()
-            else:
-                # Filter out wells with NaN coordinates
-                valid_coords = wells_df_filtered['latitude'].notna() & wells_df_filtered['longitude'].notna()
-                wells_valid = wells_df_filtered[valid_coords]
+            # Simple well count check first
+            if 'latitude' not in wells_data.columns or 'longitude' not in wells_data.columns:
+                print(f"❌ Wells data missing coordinates")
+                continue
                 
-                if len(wells_valid) == 0:
-                    filtered_wells = pd.DataFrame()
-                else:
-                    wells_valid['within_square'] = wells_valid.apply(
-                        lambda row: is_within_square(
-                            row['latitude'], 
-                            row['longitude'],
-                            center_lat, center_lon,
-                            search_radius_km
-                        ), 
-                        axis=1
-                    )
-                    
-                    filtered_wells = wells_valid[wells_valid['within_square']]
+            # Count nearby wells using simple distance check
+            lat_diff = np.abs(wells_data['latitude'] - center_lat)
+            lon_diff = np.abs(wells_data['longitude'] - center_lon)
             
-            if len(filtered_wells) >= min_wells_required:
+            # Simple rectangular filter (faster than haversine)
+            lat_radius = search_radius_km / 111.0  # degrees
+            lon_radius = search_radius_km / (111.0 * np.cos(np.radians(center_lat)))
+            
+            nearby_wells = wells_data[
+                (lat_diff <= lat_radius) & 
+                (lon_diff <= lon_radius) &
+                wells_data['latitude'].notna() & 
+                wells_data['longitude'].notna()
+            ]
+            
+            well_count = len(nearby_wells)
+            print(f"   Found {well_count} nearby wells")
+            
+            if well_count >= 10:  # Minimum threshold
+                print(f"   ✓ Sufficient wells - generating heatmap")
+                
                 # Generate the heatmap
                 geojson_result = generate_geo_json_grid(
-                    filtered_wells,
+                    nearby_wells,
                     center_lat, center_lon,
                     search_radius_km,
                     interpolation_method,
@@ -485,36 +426,34 @@ def generate_adaptive_heatmaps(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, searc
                         method=interpolation_method,
                         center_lat=center_lat,
                         center_lon=center_lon,
-                        well_count=len(filtered_wells)
+                        well_count=well_count
                     )
                     
                     if success:
                         stored_heatmap_ids.append(heatmap_id)
                         generated_heatmaps.append((location_name, geojson_result))
-                        print(f"✅ SUCCESS: {location_name} stored as {heatmap_id}")
+                        print(f"   ✅ SUCCESS: Stored as {heatmap_id}")
                     else:
-                        error_msg = f"Failed to store {location_name} in database"
+                        error_msg = f"Failed to store {location_name}"
                         error_messages.append(error_msg)
-                        print(f"❌ {error_msg}")
+                        print(f"   ❌ {error_msg}")
                 else:
-                    error_msg = f"Failed to generate valid GeoJSON for {location_name}"
+                    error_msg = f"Failed to generate GeoJSON for {location_name}"
                     error_messages.append(error_msg)
-                    print(f"❌ {error_msg}")
+                    print(f"   ❌ {error_msg}")
             else:
-                error_msg = f"Insufficient wells for {location_name}: {len(filtered_wells)} < {min_wells_required}"
-                error_messages.append(error_msg)
-                print(f"❌ {error_msg}")
+                print(f"   ⚠ Skipping - only {well_count} wells (need ≥10)")
                 
         except Exception as e:
-            error_msg = f"Error generating {location_name}: {str(e)}"
+            error_msg = f"Error at {location_name}: {str(e)}"
             error_messages.append(error_msg)
-            print(f"❌ {error_msg}")
+            print(f"   ❌ {error_msg}")
     
     success_count = len(stored_heatmap_ids)
-    print(f"\n📊 ADAPTIVE GENERATION COMPLETE:")
+    print(f"\n📊 STRATEGIC GENERATION COMPLETE:")
     print(f"   Successful heatmaps: {success_count}")
     print(f"   Failed attempts: {len(error_messages)}")
-    print(f"   Coverage efficiency: {success_count}/{rows*cols} grid positions")
+    print(f"   Success rate: {success_count}/{len(strategic_positions)} = {(success_count/len(strategic_positions))*100:.1f}%")
     
     return success_count, stored_heatmap_ids, error_messages
 

@@ -181,24 +181,45 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     
     from sequential_heatmap import generate_quad_heatmaps_sequential
     
-    # Find the bounds of wells data 
+    # Find the bounds of wells data - handle both lat/lon and NZTM coordinates
+    valid_wells = None
+    
     if 'latitude' in wells_data.columns and 'longitude' in wells_data.columns:
+        # Already has lat/lon coordinates
         valid_wells = wells_data.dropna(subset=['latitude', 'longitude'])
+        if len(valid_wells) > 0:
+            lat_coords = valid_wells['latitude'].astype(float)
+            lon_coords = valid_wells['longitude'].astype(float)
+            print(f"📍 Using existing lat/lon coordinates")
         
-        if len(valid_wells) == 0:
-            return 0, [], ["No valid well coordinates found"]
+    elif 'NZTMX' in wells_data.columns and 'NZTMY' in wells_data.columns:
+        # Convert NZTM to lat/lon
+        from pyproj import Transformer
+        transformer = Transformer.from_crs('EPSG:2193', 'EPSG:4326', always_xy=True)
         
-        lat_coords = valid_wells['latitude'].astype(float)
-        lon_coords = valid_wells['longitude'].astype(float)
-        
-        sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
-        sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
-        
-        print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
-        print(f"📊 Processing {len(valid_wells)} wells")
-        
-    else:
-        return 0, [], [f"Could not find coordinate columns. Available: {list(wells_data.columns)}"]
+        valid_wells = wells_data.dropna(subset=['NZTMX', 'NZTMY'])
+        if len(valid_wells) > 0:
+            nztm_x = valid_wells['NZTMX'].astype(float).values
+            nztm_y = valid_wells['NZTMY'].astype(float).values
+            lon_coords, lat_coords = transformer.transform(nztm_x, nztm_y)
+            
+            # Add converted coordinates to dataframe
+            valid_wells = valid_wells.copy()
+            valid_wells['latitude'] = lat_coords
+            valid_wells['longitude'] = lon_coords
+            print(f"📍 Converted NZTM coordinates to lat/lon")
+    
+    if valid_wells is None or len(valid_wells) == 0:
+        return 0, [], [f"No valid well coordinates found. Available columns: {list(wells_data.columns)}"]
+    
+    lat_coords = valid_wells['latitude'].astype(float)
+    lon_coords = valid_wells['longitude'].astype(float)
+    
+    sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
+    sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
+    
+    print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
+    print(f"📊 Processing {len(valid_wells)} wells with span: {ne_lat-sw_lat:.6f}° × {ne_lon-sw_lon:.6f}°")
     
     # Calculate optimal grid size using CONVEX HULL for efficient coverage
     from utils import get_distance
@@ -213,8 +234,8 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     transformer_to_latlon = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
     
     # Convert ALL wells to NZTM for accurate convex hull
-    all_lons = valid_wells['longitude'].astype(float)
-    all_lats = valid_wells['latitude'].astype(float)
+    all_lons = lon_coords
+    all_lats = lat_coords
     nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(all_lats, all_lons)]
     nztm_x = [coord[0] for coord in nztm_coords]
     nztm_y = [coord[1] for coord in nztm_coords]

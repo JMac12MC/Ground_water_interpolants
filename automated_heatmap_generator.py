@@ -208,23 +208,14 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     # Create convex hull around well data for smarter boundary calculation
     print(f"🔷 Calculating convex hull boundary around {len(valid_wells)} wells...")
     
-    # Sample wells for performance if dataset is very large
-    sample_size = min(10000, len(valid_wells))
-    if len(valid_wells) > sample_size:
-        sample_indices = np.random.choice(len(valid_wells), sample_size, replace=False)
-        sample_wells = valid_wells.iloc[sample_indices]
-        print(f"🔷 Using {sample_size} sampled wells for convex hull calculation")
-    else:
-        sample_wells = valid_wells
-    
-    # Convert lat/lon to NZTM for accurate area calculation
+    # Convert lat/lon to NZTM for accurate area calculation - use ALL wells, no sampling
     transformer_to_nztm = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
     transformer_to_latlon = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
     
-    # Convert sample wells to NZTM
-    sample_lons = sample_wells['longitude'].astype(float)
-    sample_lats = sample_wells['latitude'].astype(float)
-    nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(sample_lats, sample_lons)]
+    # Convert ALL wells to NZTM for accurate convex hull
+    all_lons = valid_wells['longitude'].astype(float)
+    all_lats = valid_wells['latitude'].astype(float)
+    nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(all_lats, all_lons)]
     nztm_x = [coord[0] for coord in nztm_coords]
     nztm_y = [coord[1] for coord in nztm_coords]
     

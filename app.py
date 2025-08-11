@@ -420,7 +420,7 @@ with st.sidebar:
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
-    st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary that follows actual well distribution (62% more efficient than rectangular bounds)")
+    st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary calculated from ALL wells (62% more efficient than rectangular bounds)")
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
@@ -818,22 +818,14 @@ with main_col1:
                     from scipy.spatial import ConvexHull
                     from pyproj import Transformer
                     
-                    # Sample wells for performance if dataset is very large
-                    sample_size = min(5000, len(valid_wells))
-                    if len(valid_wells) > sample_size:
-                        sample_indices = np.random.choice(len(valid_wells), sample_size, replace=False)
-                        sample_wells = valid_wells.iloc[sample_indices]
-                    else:
-                        sample_wells = valid_wells
-                    
-                    # Convert lat/lon to NZTM for accurate hull calculation
+                    # Convert lat/lon to NZTM for accurate hull calculation - use ALL wells
                     transformer_to_nztm = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
                     transformer_to_latlon = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
                     
-                    # Convert sample wells to NZTM
-                    sample_lons = sample_wells['longitude'].astype(float)
-                    sample_lats = sample_wells['latitude'].astype(float)
-                    nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(sample_lats, sample_lons)]
+                    # Convert ALL wells to NZTM for accurate convex hull
+                    all_lons = valid_wells['longitude'].astype(float)
+                    all_lats = valid_wells['latitude'].astype(float)
+                    nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(all_lats, all_lons)]
                     nztm_x = [coord[0] for coord in nztm_coords]
                     nztm_y = [coord[1] for coord in nztm_coords]
                     
@@ -870,7 +862,7 @@ with main_col1:
                         color='blue',
                         weight=3,
                         opacity=0.8,
-                        popup=f"Convex Hull Boundary<br>Efficient boundary following data distribution<br>Area: {hull_area_km2:.0f} km² ({reduction_percent:.1f}% smaller than rectangle)<br>Based on {sample_size} wells"
+                        popup=f"Convex Hull Boundary<br>Efficient boundary following data distribution<br>Area: {hull_area_km2:.0f} km² ({reduction_percent:.1f}% smaller than rectangle)<br>Based on ALL {len(valid_wells)} wells"
                     ).add_to(m)
                     
                     # Add markers for first few hull vertices

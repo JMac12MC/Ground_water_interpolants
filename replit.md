@@ -133,7 +133,7 @@ Preferred communication style: Simple, everyday language.
   - Achieved 60.6% area reduction (46,131 km² vs 117,139 km²) and 62% tile reduction for comprehensive coverage
   - Added "Show Convex Hull Boundary" visualization feature with blue boundary line and vertex markers
   - Integrated NZTM coordinate transformation for accurate area calculations
-  - Enhanced automated_heatmap_generator.py with performance-optimized sampling (10,000 wells max for hull calculation)
+  - Enhanced automated_heatmap_generator.py with accurate convex hull calculation using ALL wells (no sampling)
   - Added efficiency statistics showing potential tile savings: ~763 fewer tiles for 10km resolution
   - Convex hull boundary follows actual well distribution instead of empty rectangular areas
 

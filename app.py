@@ -417,6 +417,21 @@ with st.sidebar:
     )
     st.session_state.heatmap_opacity = opacity
     
+    # Performance Controls
+    st.subheader("🚀 Performance Controls") 
+    
+    max_heatmaps = st.slider(
+        "Max Heatmaps to Display",
+        min_value=1,
+        max_value=len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 100,
+        value=min(20, len(st.session_state.stored_heatmaps)) if st.session_state.stored_heatmaps else 20,
+        help="Limit number of heatmaps displayed simultaneously for better performance. Use map zoom to focus on specific areas."
+    )
+    st.session_state.max_heatmaps_display = max_heatmaps
+    
+    if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > max_heatmaps:
+        st.info(f"📊 Displaying first {max_heatmaps} of {len(st.session_state.stored_heatmaps)} heatmaps for performance")
+    
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")

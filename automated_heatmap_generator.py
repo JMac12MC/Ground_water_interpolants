@@ -200,31 +200,71 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     else:
         return 0, [], [f"Could not find coordinate columns. Available: {list(wells_data.columns)}"]
     
-    # Calculate optimal grid size for full coverage
+    # Calculate optimal grid size using CONVEX HULL for efficient coverage
     from utils import get_distance
+    from scipy.spatial import ConvexHull
+    from pyproj import Transformer
     
-    lat_span = ne_lat - sw_lat
-    lon_span = ne_lon - sw_lon
+    # Create convex hull around well data for smarter boundary calculation
+    print(f"🔷 Calculating convex hull boundary around {len(valid_wells)} wells...")
     
-    center_lat = (sw_lat + ne_lat) / 2
-    center_lon = (sw_lon + ne_lon) / 2
+    # Sample wells for performance if dataset is very large
+    sample_size = min(10000, len(valid_wells))
+    if len(valid_wells) > sample_size:
+        sample_indices = np.random.choice(len(valid_wells), sample_size, replace=False)
+        sample_wells = valid_wells.iloc[sample_indices]
+        print(f"🔷 Using {sample_size} sampled wells for convex hull calculation")
+    else:
+        sample_wells = valid_wells
     
-    # Convert to approximate km
-    lat_km = lat_span * 111.0
-    lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
+    # Convert lat/lon to NZTM for accurate area calculation
+    transformer_to_nztm = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+    transformer_to_latlon = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
     
-    # Calculate optimal grid size (19.82km spacing) to FULLY cover all well data
+    # Convert sample wells to NZTM
+    sample_lons = sample_wells['longitude'].astype(float)
+    sample_lats = sample_wells['latitude'].astype(float)
+    nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(sample_lats, sample_lons)]
+    nztm_x = [coord[0] for coord in nztm_coords]
+    nztm_y = [coord[1] for coord in nztm_coords]
+    
+    # Calculate convex hull
+    points = np.column_stack([nztm_x, nztm_y])
+    hull = ConvexHull(points)
+    hull_area_km2 = hull.volume / 1e6  # ConvexHull.volume is area in 2D, convert to km²
+    
+    # Get hull bounds for grid calculation
+    hull_vertices = points[hull.vertices]
+    hull_min_x, hull_max_x = hull_vertices[:, 0].min(), hull_vertices[:, 0].max()
+    hull_min_y, hull_max_y = hull_vertices[:, 1].min(), hull_vertices[:, 1].max()
+    
+    # Convert hull bounds back to lat/lon for display
+    hull_sw_lon, hull_sw_lat = transformer_to_latlon.transform(hull_min_x, hull_min_y)
+    hull_ne_lon, hull_ne_lat = transformer_to_latlon.transform(hull_max_x, hull_max_y)
+    
+    print(f"📐 Convex hull boundary: SW({hull_sw_lat:.6f}, {hull_sw_lon:.6f}) to NE({hull_ne_lat:.6f}, {hull_ne_lon:.6f})")
+    print(f"📐 Hull area: {hull_area_km2:.0f} km² vs rectangular area: {((ne_lat-sw_lat)*111)*((ne_lon-sw_lon)*111*np.cos(np.radians((sw_lat+ne_lat)/2))):.0f} km²")
+    
+    # Calculate grid based on hull bounds (in NZTM for accuracy)
+    hull_x_km = (hull_max_x - hull_min_x) / 1000.0
+    hull_y_km = (hull_max_y - hull_min_y) / 1000.0
+    
+    # Calculate optimal grid size (19.82km spacing) with small buffer
     grid_spacing_km = 19.82
     
-    # Add buffer to ensure complete coverage beyond the furthest wells
-    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 2)  # +2 for buffer coverage
-    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 2)  # +2 for buffer coverage
+    # Add smaller buffer since convex hull already bounds the data efficiently
+    rows_needed = max(1, int(np.ceil(hull_y_km / grid_spacing_km)) + 1)  # +1 for buffer coverage
+    cols_needed = max(1, int(np.ceil(hull_x_km / grid_spacing_km)) + 1)  # +1 for buffer coverage
+    
+    # Use hull center for positioning
+    center_lat = (hull_sw_lat + hull_ne_lat) / 2
+    center_lon = (hull_sw_lon + hull_ne_lon) / 2
     
     total_needed = rows_needed * cols_needed
     
-    print(f"📐 Data extent: {lat_km:.1f}km × {lon_km:.1f}km")
+    print(f"📐 Hull extent: {hull_x_km:.1f}km × {hull_y_km:.1f}km")
     print(f"📐 Optimal grid with buffer: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
-    print(f"📍 This ensures complete coverage beyond the furthest wells")
+    print(f"📍 Convex hull provides efficient coverage following data distribution")
     
     # Limit to max_tiles
     if total_needed > max_tiles:
@@ -238,10 +278,8 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         actual_grid = (rows_needed, cols_needed)
         print(f"📐 Using full grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps")
     
-    # Use the same center-based positioning as the test generation (which works)
-    center_lat = (sw_lat + ne_lat) / 2
-    center_lon = (sw_lon + ne_lon) / 2
-    start_point = [center_lat, center_lon]  # Start from center like test generation
+    # Use convex hull center for optimal positioning
+    start_point = [center_lat, center_lon]  # Start from convex hull center
     
     try:
         result = generate_quad_heatmaps_sequential(

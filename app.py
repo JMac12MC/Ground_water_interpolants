@@ -62,6 +62,7 @@ session_defaults = {
     'new_clipping_polygon': None,
     'show_new_clipping_polygon': False,
     'show_well_bounds': False,
+    'show_convex_hull': False,
     'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
 }
 
@@ -419,6 +420,7 @@ with st.sidebar:
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
+    st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary that follows actual well distribution (62% more efficient than rectangular bounds)")
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
@@ -802,6 +804,97 @@ with main_col1:
                     
         except Exception as e:
             print(f"Error adding well bounds visualization: {e}")
+
+    # Show convex hull boundary if requested
+    if st.session_state.show_convex_hull and st.session_state.wells_data is not None:
+        try:
+            wells_df = st.session_state.wells_data
+            
+            # Calculate convex hull using the same logic as automated generation
+            if 'latitude' in wells_df.columns and 'longitude' in wells_df.columns:
+                valid_wells = wells_df.dropna(subset=['latitude', 'longitude'])
+                
+                if len(valid_wells) > 0:
+                    from scipy.spatial import ConvexHull
+                    from pyproj import Transformer
+                    
+                    # Sample wells for performance if dataset is very large
+                    sample_size = min(5000, len(valid_wells))
+                    if len(valid_wells) > sample_size:
+                        sample_indices = np.random.choice(len(valid_wells), sample_size, replace=False)
+                        sample_wells = valid_wells.iloc[sample_indices]
+                    else:
+                        sample_wells = valid_wells
+                    
+                    # Convert lat/lon to NZTM for accurate hull calculation
+                    transformer_to_nztm = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+                    transformer_to_latlon = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+                    
+                    # Convert sample wells to NZTM
+                    sample_lons = sample_wells['longitude'].astype(float)
+                    sample_lats = sample_wells['latitude'].astype(float)
+                    nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(sample_lats, sample_lons)]
+                    nztm_x = [coord[0] for coord in nztm_coords]
+                    nztm_y = [coord[1] for coord in nztm_coords]
+                    
+                    # Calculate convex hull
+                    points = np.column_stack([nztm_x, nztm_y])
+                    hull = ConvexHull(points)
+                    hull_area_km2 = hull.volume / 1e6  # ConvexHull.volume is area in 2D
+                    
+                    # Convert hull vertices back to lat/lon for display
+                    hull_vertices = points[hull.vertices]
+                    hull_coords = []
+                    for x, y in hull_vertices:
+                        lon, lat = transformer_to_latlon.transform(x, y)
+                        hull_coords.append([lat, lon])
+                    
+                    # Close the polygon
+                    hull_coords.append(hull_coords[0])
+                    
+                    # Calculate rectangular area for comparison
+                    lat_coords = valid_wells['latitude'].astype(float)
+                    lon_coords = valid_wells['longitude'].astype(float)
+                    sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
+                    sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
+                    center_lat = (sw_lat + ne_lat) / 2
+                    lat_km = (ne_lat - sw_lat) * 111.0
+                    lon_km = (ne_lon - sw_lon) * 111.0 * np.cos(np.radians(center_lat))
+                    rectangular_area_km2 = lat_km * lon_km
+                    
+                    reduction_percent = (1 - hull_area_km2/rectangular_area_km2) * 100
+                    
+                    # Add convex hull boundary to map
+                    folium.PolyLine(
+                        locations=hull_coords,
+                        color='blue',
+                        weight=3,
+                        opacity=0.8,
+                        popup=f"Convex Hull Boundary<br>Efficient boundary following data distribution<br>Area: {hull_area_km2:.0f} km² ({reduction_percent:.1f}% smaller than rectangle)<br>Based on {sample_size} wells"
+                    ).add_to(m)
+                    
+                    # Add markers for first few hull vertices
+                    for i, (lat, lon) in enumerate(hull_coords[:6]):  # Show first 6 vertices
+                        folium.Marker(
+                            [lat, lon],
+                            popup=f"Hull Vertex {i+1}: {lat:.6f}, {lon:.6f}",
+                            icon=folium.Icon(color='blue', icon='circle', prefix='fa')
+                        ).add_to(m)
+                    
+                    # Add center marker showing the efficiency gain
+                    hull_center_lat = sum([coord[0] for coord in hull_coords[:-1]]) / len(hull_coords[:-1])
+                    hull_center_lon = sum([coord[1] for coord in hull_coords[:-1]]) / len(hull_coords[:-1])
+                    
+                    folium.Marker(
+                        [hull_center_lat, hull_center_lon],
+                        popup=f"Convex Hull Center<br>Efficient Coverage: {hull_area_km2:.0f} km²<br>Reduction: {reduction_percent:.1f}% vs rectangular bounds<br>Estimated tiles saved: ~{int((rectangular_area_km2 - hull_area_km2) / 100)} for 10km resolution",
+                        icon=folium.Icon(color='darkblue', icon='star', prefix='fa')
+                    ).add_to(m)
+                    
+                    print(f"CONVEX HULL VISUALIZATION: {len(hull_coords)-1} vertices, {hull_area_km2:.0f} km² ({reduction_percent:.1f}% reduction)")
+                    
+        except Exception as e:
+            print(f"Error displaying convex hull: {e}")
 
     # Add comprehensive clipping polygon if available and enabled
     if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:

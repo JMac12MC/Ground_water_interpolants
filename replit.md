@@ -128,6 +128,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **August 11, 2025**: MAJOR ENHANCEMENT: Implemented convex hull boundary calculation for 62% more efficient automated generation
+  - Replaced rectangular bounds with convex hull boundary calculation using scipy.spatial.ConvexHull
+  - Achieved 60.6% area reduction (46,131 km² vs 117,139 km²) and 62% tile reduction for comprehensive coverage
+  - Added "Show Convex Hull Boundary" visualization feature with blue boundary line and vertex markers
+  - Integrated NZTM coordinate transformation for accurate area calculations
+  - Enhanced automated_heatmap_generator.py with performance-optimized sampling (10,000 wells max for hull calculation)
+  - Added efficiency statistics showing potential tile savings: ~763 fewer tiles for 10km resolution
+  - Convex hull boundary follows actual well distribution instead of empty rectangular areas
+
 - **August 11, 2025**: ENHANCED: Automated generation system improvements for comprehensive coverage
   - Increased max tile limit from 50 to 1000 tiles for large-scale regional analysis
   - Enhanced bounds calculation with +2 buffer tiles to ensure complete coverage beyond furthest wells

@@ -55,7 +55,8 @@ def generate_single_heatmap(wells_data, center_point, search_radius, interpolati
             auto_fit_variogram=True,
             variogram_model='spherical',
             soil_polygons=soil_polygons,
-            new_clipping_polygon=new_clipping_polygon
+            new_clipping_polygon=new_clipping_polygon,
+            banks_peninsula_coords=None
         )
         
         if geojson_data and 'features' in geojson_data and len(geojson_data['features']) > 0:
@@ -65,8 +66,14 @@ def generate_single_heatmap(wells_data, center_point, search_radius, interpolati
             
             # Store in database
             success = polygon_db.store_heatmap(
-                heatmap_id=heatmap_id,
+                heatmap_name=heatmap_id,
+                center_lat=lat,
+                center_lon=lon,
+                radius_km=search_radius,
+                interpolation_method=interpolation_method,
+                heatmap_data=[],  # Empty list for now - can be populated if needed
                 geojson_data=geojson_data,
+                well_count=len(filtered_wells_df),
                 colormap_metadata={
                     'method': interpolation_method,
                     'center_lat': lat,

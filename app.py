@@ -469,8 +469,8 @@ with st.sidebar:
                 st.error("Wells data or database not available")
     
     with col2:
-        max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=200, value=50, step=10,
-                                        help="Limit number of tiles to prevent long processing times")
+        max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=1000, value=100, step=10,
+                                        help="Automated generation continues until reaching actual well data bounds (up to this limit)")
         
         if st.button("🚀 Full Auto Generation", help="Generate heatmaps for all well data (limited by max tiles)"):
             if st.session_state.wells_data is not None and st.session_state.polygon_db is not None:

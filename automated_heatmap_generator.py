@@ -170,7 +170,7 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
         return {"success": False, "error": error_msg}
 
 
-def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, search_radius_km=20, max_tiles=50):
+def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, search_radius_km=20, max_tiles=1000):
     """
     Generate comprehensive heatmap coverage using the proven sequential system.
     This is the main function called by app.py for full automated generation.
@@ -213,16 +213,18 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     lat_km = lat_span * 111.0
     lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
     
-    # Calculate optimal grid size (19.82km spacing)
+    # Calculate optimal grid size (19.82km spacing) to FULLY cover all well data
     grid_spacing_km = 19.82
     
-    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 1)
-    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 1)
+    # Add buffer to ensure complete coverage beyond the furthest wells
+    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 2)  # +2 for buffer coverage
+    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 2)  # +2 for buffer coverage
     
     total_needed = rows_needed * cols_needed
     
     print(f"📐 Data extent: {lat_km:.1f}km × {lon_km:.1f}km")
-    print(f"📐 Optimal grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
+    print(f"📐 Optimal grid with buffer: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
+    print(f"📍 This ensures complete coverage beyond the furthest wells")
     
     # Limit to max_tiles
     if total_needed > max_tiles:

@@ -420,11 +420,16 @@ with st.sidebar:
     # Performance Controls
     st.subheader("🚀 Performance Controls") 
     
+    # Calculate safe max value and default value
+    total_heatmaps = len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 0
+    safe_max = max(100, total_heatmaps) if total_heatmaps > 0 else 100
+    safe_default = min(50, total_heatmaps) if total_heatmaps > 0 else 50
+    
     max_heatmaps = st.slider(
         "Max Heatmaps to Display",
         min_value=1,
-        max_value=len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 100,
-        value=min(20, len(st.session_state.stored_heatmaps)) if st.session_state.stored_heatmaps else 20,
+        max_value=safe_max,
+        value=safe_default,
         help="Limit number of heatmaps displayed simultaneously for better performance. Use map zoom to focus on specific areas."
     )
     st.session_state.max_heatmaps_display = max_heatmaps

@@ -362,6 +362,7 @@ def generate_adaptive_heatmaps(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, searc
     from utils import is_within_square, get_distance
     from interpolation import generate_geo_json_grid
     import numpy as np
+    import pandas as pd
     
     rows, cols = grid_size
     print(f"🔍 ADAPTIVE GENERATION: Scanning {rows}×{cols} grid for viable heatmap locations")
@@ -381,18 +382,35 @@ def generate_adaptive_heatmaps(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, searc
             lon = sw_lon + (col * lon_step)
             
             # Check well density at this location
-            wells_df_temp = wells_data.copy()
-            wells_df_temp['within_square'] = wells_df_temp.apply(
-                lambda row_data: is_within_square(
-                    row_data['latitude'], 
-                    row_data['longitude'],
-                    lat, lon, search_radius_km
-                ), 
-                axis=1
-            )
-            
-            local_wells = wells_df_temp[wells_df_temp['within_square']]
-            well_count = len(local_wells)
+            try:
+                wells_df_temp = wells_data.copy()
+                
+                # Ensure we have valid coordinate columns
+                if 'latitude' not in wells_df_temp.columns or 'longitude' not in wells_df_temp.columns:
+                    print(f"❌ Missing lat/lon columns in wells_data. Available columns: {list(wells_df_temp.columns)}")
+                    well_count = 0
+                else:
+                    # Filter out wells with NaN coordinates
+                    valid_coords = wells_df_temp['latitude'].notna() & wells_df_temp['longitude'].notna()
+                    wells_valid = wells_df_temp[valid_coords]
+                    
+                    if len(wells_valid) == 0:
+                        well_count = 0
+                    else:
+                        wells_valid['within_square'] = wells_valid.apply(
+                            lambda row_data: is_within_square(
+                                row_data['latitude'], 
+                                row_data['longitude'],
+                                lat, lon, search_radius_km
+                            ), 
+                            axis=1
+                        )
+                        
+                        local_wells = wells_valid[wells_valid['within_square']]
+                        well_count = len(local_wells)
+            except Exception as e:
+                print(f"❌ Error checking well density at {lat:.3f}, {lon:.3f}: {str(e)}")
+                well_count = 0
             
             location_name = f"r{row}c{col}_{lat:.3f}_{lon:.3f}"
             
@@ -421,17 +439,30 @@ def generate_adaptive_heatmaps(wells_data, sw_lat, sw_lon, ne_lat, ne_lon, searc
             
             # Filter wells for this specific location
             wells_df_filtered = wells_data.copy()
-            wells_df_filtered['within_square'] = wells_df_filtered.apply(
-                lambda row: is_within_square(
-                    row['latitude'], 
-                    row['longitude'],
-                    center_lat, center_lon,
-                    search_radius_km
-                ), 
-                axis=1
-            )
             
-            filtered_wells = wells_df_filtered[wells_df_filtered['within_square']]
+            # Ensure we have valid coordinate columns and data
+            if 'latitude' not in wells_df_filtered.columns or 'longitude' not in wells_df_filtered.columns:
+                print(f"❌ Missing lat/lon columns for {location_name}")
+                filtered_wells = pd.DataFrame()
+            else:
+                # Filter out wells with NaN coordinates
+                valid_coords = wells_df_filtered['latitude'].notna() & wells_df_filtered['longitude'].notna()
+                wells_valid = wells_df_filtered[valid_coords]
+                
+                if len(wells_valid) == 0:
+                    filtered_wells = pd.DataFrame()
+                else:
+                    wells_valid['within_square'] = wells_valid.apply(
+                        lambda row: is_within_square(
+                            row['latitude'], 
+                            row['longitude'],
+                            center_lat, center_lon,
+                            search_radius_km
+                        ), 
+                        axis=1
+                    )
+                    
+                    filtered_wells = wells_valid[wells_valid['within_square']]
             
             if len(filtered_wells) >= min_wells_required:
                 # Generate the heatmap

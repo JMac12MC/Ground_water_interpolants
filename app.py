@@ -1781,208 +1781,122 @@ with main_col1:
                         st.session_state.new_heatmap_added = False  # Reset the flag
                         print("Colormap range updated - will apply to all displayed heatmaps")
 
-    # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
-    # But skip stored heatmaps that match the current fresh heatmap location
-    stored_heatmap_count = 0
-    fresh_heatmap_name = None
-    if st.session_state.selected_point:
-        center_lat, center_lon = st.session_state.selected_point
-        fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
+            # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
+            # But skip stored heatmaps that match the current fresh heatmap location
+            stored_heatmap_count = 0
+            fresh_heatmap_name = None
+            if st.session_state.selected_point:
+                center_lat, center_lon = st.session_state.selected_point
+                fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
-    if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
-        # Apply performance limiting - display only first N heatmaps
-        max_display = getattr(st.session_state, 'max_heatmaps_display', 20)
-        heatmaps_to_display = st.session_state.stored_heatmaps[:max_display]
-        
-        print(f"Attempting to display {len(heatmaps_to_display)} of {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
-        print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
-        
-        # For smooth raster style, collect ALL triangulated data first for unified processing
-        if heatmap_style == "Smooth Raster (Windy.com Style)":
-            combined_geojson = {"type": "FeatureCollection", "features": []}
-            overall_bounds = {'north': float('-inf'), 'south': float('inf'), 
-                             'east': float('-inf'), 'west': float('inf')}
-            valid_heatmaps_for_raster = []
-            
-            # Collect all triangulated data from stored heatmaps (limited set)
-            for i, stored_heatmap in enumerate(heatmaps_to_display):
-                # Skip fresh heatmap to avoid duplication
-                if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
-                    continue
-                    
-                geojson_data = stored_heatmap.get('geojson_data')
-                if geojson_data and geojson_data.get('features'):
-                    # Add features to combined dataset
-                    for feature in geojson_data['features']:
-                        # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
-                        if 'value' not in feature['properties'] and 'yield' in feature['properties']:
-                            feature['properties']['value'] = feature['properties']['yield']
-                        elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
-                            feature['properties']['yield'] = feature['properties']['value']
-                        combined_geojson['features'].append(feature)
-                    
-                    # Update overall bounds to cover all heatmaps
-                    for feature in geojson_data['features']:
-                        if feature['geometry']['type'] == 'Polygon':
-                            coords = feature['geometry']['coordinates'][0]
-                            for coord in coords:
-                                lon, lat = coord[0], coord[1]
-                                overall_bounds['west'] = min(overall_bounds['west'], lon)
-                                overall_bounds['east'] = max(overall_bounds['east'], lon)
-                                overall_bounds['south'] = min(overall_bounds['south'], lat)
-                                overall_bounds['north'] = max(overall_bounds['north'], lat)
-                    
-                    valid_heatmaps_for_raster.append(stored_heatmap['heatmap_name'])
-            
-            # Generate single unified smooth raster if we have combined data
-            if combined_geojson['features']:
-                print(f"🌬️  UNIFIED SMOOTH RASTER: Combining {len(combined_geojson['features'])} triangles from {len(valid_heatmaps_for_raster)} heatmaps")
-                print(f"🌬️  Heatmaps included: {', '.join(valid_heatmaps_for_raster)}")
-                print(f"🌬️  Overall bounds: N={overall_bounds['north']:.3f}, S={overall_bounds['south']:.3f}, E={overall_bounds['east']:.3f}, W={overall_bounds['west']:.3f}")
+            if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
+                # Apply performance limiting - display only first N heatmaps
+                max_display = getattr(st.session_state, 'max_heatmaps_display', 20)
+                heatmaps_to_display = st.session_state.stored_heatmaps[:max_display]
                 
-                # Use the stored heatmap's interpolation method for colormap consistency
-                method = st.session_state.stored_heatmaps[0].get('interpolation_method', 'kriging') if st.session_state.stored_heatmaps else 'kriging'
+                print(f"Attempting to display {len(heatmaps_to_display)} of {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
+                print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
                 
-                # Generate single unified smooth raster across ALL triangulated data
-                raster_overlay = generate_smooth_raster_overlay(
+                # For smooth raster style, collect ALL triangulated data first for unified processing
+                if heatmap_style == "Smooth Raster (Windy.com Style)":
+                    combined_geojson = {"type": "FeatureCollection", "features": []}
+                    overall_bounds = {'north': float('-inf'), 'south': float('inf'), 
+                                     'east': float('-inf'), 'west': float('inf')}
+                    valid_heatmaps_for_raster = []
+                    
+                    # Collect all triangulated data from stored heatmaps (limited set)
+                    for i, stored_heatmap in enumerate(heatmaps_to_display):
+                        # Skip fresh heatmap to avoid duplication
+                        if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
+                            continue
+                        
+                        geojson_data = stored_heatmap.get('geojson_data')
+                        if geojson_data and geojson_data.get('features'):
+                            # Add features to combined dataset
+                            for feature in geojson_data['features']:
+                                # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
+                                if 'value' not in feature['properties'] and 'yield' in feature['properties']:
+                                    feature['properties']['value'] = feature['properties']['yield']
+                                elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
+                                    feature['properties']['yield'] = feature['properties']['value']
+                                combined_geojson['features'].append(feature)
+                            
+                            # Update overall bounds to cover all heatmaps
+                            for feature in geojson_data['features']:
+                                if feature['geometry']['type'] == 'Polygon':
+                                    coords = feature['geometry']['coordinates'][0]
+                                    for coord in coords:
+                                        lon, lat = coord[0], coord[1]
+                                        overall_bounds['west'] = min(overall_bounds['west'], lon)
+                                        overall_bounds['east'] = max(overall_bounds['east'], lon)
+                                        overall_bounds['south'] = min(overall_bounds['south'], lat)
+                                        overall_bounds['north'] = max(overall_bounds['north'], lat)
+                            
+                            valid_heatmaps_for_raster.append(stored_heatmap['heatmap_name'])
+            
+                # Generate single unified smooth raster if we have combined data
+                if combined_geojson['features']:
+                        print(f"🌬️  UNIFIED SMOOTH RASTER: Combining {len(combined_geojson['features'])} triangles from {len(valid_heatmaps_for_raster)} heatmaps")
+                        print(f"🌬️  Heatmaps included: {', '.join(valid_heatmaps_for_raster)}")
+                        print(f"🌬️  Overall bounds: N={overall_bounds['north']:.3f}, S={overall_bounds['south']:.3f}, E={overall_bounds['east']:.3f}, W={overall_bounds['west']:.3f}")
+                
+                        # Use the stored heatmap's interpolation method for colormap consistency
+                        method = st.session_state.stored_heatmaps[0].get('interpolation_method', 'kriging') if st.session_state.stored_heatmaps else 'kriging'
+                
+                        # Generate single unified smooth raster across ALL triangulated data
+                        raster_overlay = generate_smooth_raster_overlay(
                     combined_geojson, 
                     overall_bounds, 
                     raster_size=(512, 512), 
                     global_colormap_func=lambda value: get_global_unified_color(value, method),
                     opacity=st.session_state.get('heatmap_opacity', 0.7)
-                )
+                        )
                 
-                if raster_overlay:
-                    # Add single unified raster overlay to map
-                    folium.raster_layers.ImageOverlay(
-                        image=f"data:image/png;base64,{raster_overlay['image_base64']}",
-                        bounds=raster_overlay['bounds'],
-                        opacity=raster_overlay['opacity'],
-                        name=f"Unified Smooth Raster ({len(valid_heatmaps_for_raster)} tiles)"
-                    ).add_to(m)
-                    stored_heatmap_count = len(valid_heatmaps_for_raster)
-                    print(f"🌬️  SUCCESS: Added unified smooth raster covering {len(valid_heatmaps_for_raster)} heatmap areas")
-                    print(f"🌬️  Using snapped boundary vertices from stored triangulated data - no gaps or overlaps")
-                else:
-                    print(f"🌬️  FAILED: Could not generate unified smooth raster, falling back to individual processing")
-            
-            # Skip individual loop if unified raster was successful
-            if stored_heatmap_count > 0:
-                print(f"🌬️  UNIFIED PROCESSING COMPLETE: Skipping individual raster generation to avoid overlaps")
-            else:
-                print(f"🌬️  UNIFIED PROCESSING FAILED: Falling back to individual triangle mesh display")
-        
-        # Only run individual loop if not using unified smooth raster OR if unified failed
-        if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            for i, stored_heatmap in enumerate(heatmaps_to_display):
-                try:
-                    # Don't skip the current fresh heatmap - let it display as a stored heatmap too
-                    # This ensures continuity when the page re-renders
-                    if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
-                        print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
-                    # All stored heatmaps should display
-
-                    # Prefer GeoJSON data for triangular mesh visualization
-                    geojson_data = stored_heatmap.get('geojson_data')
-                    heatmap_data = stored_heatmap.get('heatmap_data', [])
-
-                    if geojson_data and geojson_data.get('features'):
-                        print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
-
-                        # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
-                        for feature in geojson_data['features']:
-                            if 'properties' in feature:
-                                # If 'value' doesn't exist but 'yield' does, copy it
-                                if 'value' not in feature['properties'] and 'yield' in feature['properties']:
-                                    feature['properties']['value'] = feature['properties']['yield']
-                                # If 'yield' doesn't exist but 'value' does, copy it
-                                elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
-                                    feature['properties']['yield'] = feature['properties']['value']
-
-                        # Use the UPDATED global unified color function with method info
-                        method = stored_heatmap.get('interpolation_method', 'kriging')
+                        if raster_overlay:
+                            # Add single unified raster overlay to map
+                            folium.raster_layers.ImageOverlay(
+                                image=f"data:image/png;base64,{raster_overlay['image_base64']}",
+                                bounds=raster_overlay['bounds'],
+                                opacity=raster_overlay['opacity'],
+                                name=f"Unified Smooth Raster ({len(valid_heatmaps_for_raster)} tiles)"
+                            ).add_to(m)
+                            stored_heatmap_count = len(valid_heatmaps_for_raster)
+                            print(f"🌬️  SUCCESS: Added unified smooth raster covering {len(valid_heatmaps_for_raster)} heatmap areas")
+                            print(f"🌬️  Using snapped boundary vertices from stored triangulated data - no gaps or overlaps")
+                        else:
+                            print(f"🌬️  FAILED: Could not generate unified smooth raster, falling back to individual processing")
                         
-                        # Debug individual heatmap color mapping
-                        sample_values = []
-                        for feature in geojson_data['features'][:5]:  # Sample first 5 features
-                            value = feature['properties'].get('yield', 0)
-                            color = get_global_unified_color(value, method)
-                            sample_values.append(f"{value:.2f}→{color}")
-                        # Debug the actual value distribution in this heatmap
-                        all_values_in_heatmap = [feature['properties'].get('yield', 0) for feature in geojson_data['features']]
-                        if all_values_in_heatmap:
-                            heatmap_min = min(all_values_in_heatmap)
-                            heatmap_max = max(all_values_in_heatmap)
-                            heatmap_mean = sum(all_values_in_heatmap) / len(all_values_in_heatmap)
-                            print(f"  HEATMAP DATA RANGE for {stored_heatmap['heatmap_name']}: min={heatmap_min:.2f}, max={heatmap_max:.2f}, mean={heatmap_mean:.2f}, global_range=({global_min_value:.2f}-{global_max_value:.2f})")
-                        print(f"  COLORMAP SAMPLE for {stored_heatmap['heatmap_name']}: {', '.join(sample_values)}")
-
-                        # Choose visualization style based on user selection
-                        if heatmap_style == "Smooth Raster (Windy.com Style)":
-                            # Generate smooth raster overlay
-                            print(f"  Generating smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                        # Skip individual loop if unified raster was successful
+                        if stored_heatmap_count > 0:
+                            print(f"🌬️  UNIFIED PROCESSING COMPLETE: Skipping individual raster generation to avoid overlaps")
+                        else:
+                            print(f"🌬️  UNIFIED PROCESSING FAILED: Falling back to individual triangle mesh display")
+                
+                # Only run individual loop if not using unified smooth raster OR if unified failed
+                if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
+                    for i, stored_heatmap in enumerate(heatmaps_to_display):
+                        try:
+                            # All stored heatmaps should display
+                            geojson_data = stored_heatmap.get('geojson_data')
+                            heatmap_data = stored_heatmap.get('heatmap_data', [])
                             
-                            # Calculate bounds for the heatmap
-                            all_coords = []
-                            for feature in geojson_data['features']:
-                                if feature['geometry']['type'] == 'Polygon':
-                                    coords = feature['geometry']['coordinates'][0]
-                                    all_coords.extend(coords)
-                            
-                            if all_coords:
-                                lons = [coord[0] for coord in all_coords]
-                                lats = [coord[1] for coord in all_coords]
-                                bounds = {
-                                    'north': max(lats),
-                                    'south': min(lats),
-                                    'east': max(lons),
-                                    'west': min(lons)
-                                }
+                            if geojson_data and geojson_data.get('features'):
+                                print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
                                 
-                                # Generate smooth raster with global colormap function and configurable opacity
-                                raster_overlay = generate_smooth_raster_overlay(
-                                    geojson_data, 
-                                    bounds, 
-                                    raster_size=(512, 512), 
-                                    global_colormap_func=lambda value: get_global_unified_color(value, method),
-                                    opacity=st.session_state.get('heatmap_opacity', 0.7)
-                                )
+                                # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
+                                for feature in geojson_data['features']:
+                                    if 'properties' in feature:
+                                        if 'value' not in feature['properties'] and 'yield' in feature['properties']:
+                                            feature['properties']['value'] = feature['properties']['yield']
+                                        elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
+                                            feature['properties']['yield'] = feature['properties']['value']
                                 
-                                if raster_overlay:
-                                    # Add raster overlay to map
-                                    folium.raster_layers.ImageOverlay(
-                                        image=f"data:image/png;base64,{raster_overlay['image_base64']}",
-                                        bounds=raster_overlay['bounds'],
-                                        opacity=raster_overlay['opacity'],
-                                        name=f"Smooth: {stored_heatmap['heatmap_name']}"
-                                    ).add_to(m)
-                                    stored_heatmap_count += 1
-                                    print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
-                                else:
-                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh")
-                                    # Fallback to triangle mesh
-                                    folium.GeoJson(
-                                        geojson_data,
-                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                        style_function=lambda feature, method=method: {
-                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                            'color': 'none',
-                                            'weight': 0,
-                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                        },
-                                        tooltip=folium.GeoJsonTooltip(
-                                            fields=['yield'],
-                                            aliases=['Value:'],
-                                            localize=True
-                                        )
-                                    ).add_to(m)
-                                    stored_heatmap_count += 1
-                            else:
-                                print(f"  No valid coordinates found for smooth raster, using triangle mesh")
-                                # Fallback to triangle mesh
+                                # Use global unified color function
+                                method = stored_heatmap.get('interpolation_method', 'kriging')
+                                
+                                # Add triangular mesh to map
                                 folium.GeoJson(
                                     geojson_data,
-                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
                                     style_function=lambda feature, method=method: {
                                         'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
                                         'color': 'none',
@@ -1996,578 +1910,23 @@ with main_col1:
                                     )
                                 ).add_to(m)
                                 stored_heatmap_count += 1
-                        else:
-                            # Default: Triangle Mesh (Scientific) visualization
-                            folium.GeoJson(
-                                geojson_data,
-                                name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                style_function=lambda feature, method=method: {
-                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                    'color': 'none',
-                                    'weight': 0,
-                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                },
-                                tooltip=folium.GeoJsonTooltip(
-                                    fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                                    aliases=['Value:'],
-                                    localize=True
-                                )
-                            ).add_to(m)
-                            stored_heatmap_count += 1
-
-                    elif heatmap_data and len(heatmap_data) > 0:
-                        print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
-
-                        # Fallback to HeatMap if no GeoJSON
-                        HeatMap(heatmap_data, 
-                               radius=20, 
-                               blur=10, 
-                               name=f"Stored: {stored_heatmap['heatmap_name']}",
-                               overlay=True,
-                               control=True,
-                               max_zoom=1).add_to(m)
-                        stored_heatmap_count += 1
-                    else:
-                        print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
-
-                    # Removed centroid marker as per user request - no purple "i" icons needed
-
-                except Exception as e:
-                    print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
-
-        print(f"Successfully displayed {stored_heatmap_count} of {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
-        
-        # Add colormap legend AFTER all heatmaps are processed
-        if stored_heatmap_count > 0:
-            if st.session_state.interpolation_method == 'indicator_kriging':
-                # Three-tier indicator kriging legend
-                colormap = folium.StepColormap(
-                    colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
-                    vmin=0,
-                    vmax=1.0,
-                    index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
-                    caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
-                )
-            else:
-                # Determine appropriate caption based on method
-                if st.session_state.interpolation_method == 'ground_water_level_kriging':
-                    caption_text = f'Ground Water Level: {global_min_value:.1f} to {global_max_value:.1f} meters depth'
-                    unit_label = 'm'
-                elif 'depth' in st.session_state.interpolation_method:
-                    caption_text = f'Depth to Groundwater: {global_min_value:.1f} to {global_max_value:.1f} meters'
-                    unit_label = 'm'
-                else:
-                    caption_text = f'Groundwater Yield: {global_min_value:.1f} to {global_max_value:.1f} L/s'
-                    unit_label = 'L/s'
-                
-                # Enhanced PERCENTILE-based colormap legend using stored metadata
-                if stored_colormap_metadata and 'percentiles' in stored_colormap_metadata:
-                    percentiles = stored_colormap_metadata['percentiles']
-                    if percentiles:
-                        p25 = percentiles.get('25th', 0)
-                        p50 = percentiles.get('50th', 0)
-                        p75 = percentiles.get('75th', 0)
-                        caption_text = f'Data-Density Optimized: {global_min_value:.1f} → {p25:.1f} (25%) → {p50:.1f} (50%) → {p75:.1f} (75%) → {global_max_value:.1f} {unit_label}'
-                
-                colormap = folium.LinearColormap(
-                    colors=['#000033', '#000066', '#000099', '#0000CC', '#0000FF',
-                            '#0033FF', '#0066FF', '#0099FF', '#00CCFF', '#00FFFF',
-                            '#00FFCC', '#00FF99', '#00FF66', '#00FF33', '#00FF00',
-                            '#33FF00', '#66FF00', '#99FF00', '#CCFF00', '#FFFF00',
-                            '#FFCC00', '#FF9900', '#FF6600', '#FF3300', '#FF0000'],
-                    vmin=float(global_min_value),
-                    vmax=float(global_max_value),
-                    caption=caption_text
-                )
-            colormap.add_to(m)
-            print(f"Added colormap legend: {caption_text}")
-    else:
-        print("No stored heatmaps to display - list is empty or cleared")
-
-    # Show summary of displayed heatmaps
-    total_displayed = stored_heatmap_count
-    total_available = len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 0
-    print(f"TOTAL HEATMAPS ON MAP: {total_displayed} of {total_available} available (Performance limited)")
-
-    # Show wells that overlap with displayed heatmap areas
-    if st.session_state.well_markers_visibility:
-        wells_layer = folium.FeatureGroup(name="Heatmap Area Wells").add_to(m)
-        
-        # Collect all wells from stored heatmaps
-        all_heatmap_wells = []
-        
-        # Get wells from stored heatmaps
-        if st.session_state.stored_heatmaps:
-            for stored_heatmap in st.session_state.stored_heatmaps:
-                # Extract center coordinates and radius from stored heatmap
-                center_lat = stored_heatmap.get('center_lat')
-                center_lon = stored_heatmap.get('center_lon') 
-                radius_km = stored_heatmap.get('radius_km', 20)
-                
-                if center_lat and center_lon:
-                    # Use existing wells data from session state
-                    try:
-                        wells_df = st.session_state.wells_data
-                        
-                        if wells_df is not None and not wells_df.empty:
-                            # Filter wells within this heatmap's radius
-                            from utils import get_distance
-                            wells_in_area = []
                             
-                            for idx, well in wells_df.iterrows():
-                                distance = get_distance(
-                                    center_lat, center_lon,
-                                    well['latitude'], well['longitude']
-                                )
-                                if distance <= radius_km:
-                                    wells_in_area.append(well.to_dict())
-                            
-                            all_heatmap_wells.extend(wells_in_area)
-                            print(f"Found {len(wells_in_area)} wells in heatmap area: {stored_heatmap['heatmap_name']}")
-                    except Exception as e:
-                        print(f"Error loading wells for heatmap area: {e}")
-        
-        # Get wells from current filtered wells if available
-        if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
-            current_wells = st.session_state.filtered_wells.to_dict('records')
-            all_heatmap_wells.extend(current_wells)
-        
-        # Remove duplicates based on well_id and create display wells
-        if all_heatmap_wells:
-            import pandas as pd
-            display_wells_df = pd.DataFrame(all_heatmap_wells)
-            
-            # Remove duplicates by well_id if column exists
-            if 'well_id' in display_wells_df.columns:
-                display_wells_df = display_wells_df.drop_duplicates(subset=['well_id'])
-            else:
-                # Fallback: remove duplicates by coordinates
-                display_wells_df = display_wells_df.drop_duplicates(subset=['latitude', 'longitude'])
-            
-            # Filter out geotechnical/geological investigation wells
-            if 'well_use' in display_wells_df.columns:
-                geotechnical_mask = display_wells_df['well_use'].str.contains(
-                    'Geotechnical.*Investigation|Geological.*Investigation', 
-                    case=False, 
-                    na=False, 
-                    regex=True
-                )
-                display_wells_df = display_wells_df[~geotechnical_mask]
+                            elif heatmap_data and len(heatmap_data) > 0:
+                                print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
+                                
+                                # Fallback to HeatMap if no GeoJSON
+                                HeatMap(heatmap_data, 
+                                       radius=20, 
+                                       blur=10, 
+                                       name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                       overlay=True,
+                                       control=True,
+                                       max_zoom=1).add_to(m)
+                                stored_heatmap_count += 1
+                            else:
+                                print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
+                                
+                        except Exception as e:
+                            print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
+                            continue
 
-            # Filter out wells with no depth value (NaN or empty depth)
-            if 'depth' in display_wells_df.columns:
-                display_wells_df = display_wells_df[display_wells_df['depth'].notna() & (display_wells_df['depth'] > 0)]
-
-            # Create well markers for all wells in heatmap areas
-            print(f"Displaying {len(display_wells_df)} wells in heatmap areas")
-            for idx, row in display_wells_df.iterrows():
-                try:
-                    folium.CircleMarker(
-                        location=(float(row['latitude']), float(row['longitude'])),
-                        radius=3,
-                        color='gray',
-                        fill=True,
-                        fill_color='darkblue',
-                        fill_opacity=0.7,
-                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m"
-                    ).add_to(wells_layer)
-                except Exception as e:
-                    print(f"Error creating marker for well: {e}")
-        else:
-            print("No wells found in heatmap areas")
-
-    # Add click event to capture coordinates (only need this once)
-    folium.LatLngPopup().add_to(m)
-
-    # Add a simple click handler that manually tracks clicks
-    folium.LayerControl().add_to(m)
-
-    # Create a custom click handler
-    from folium.plugins import MousePosition
-    MousePosition().add_to(m)
-
-    # Display the map
-    st.subheader("Interactive Map")
-    st.caption("Click on the map to select a location and find nearby wells")
-    st.caption("🔧 App Version: Updated 2025-01-06")
-
-    # Use st_folium instead of folium_static to capture clicks
-    from streamlit_folium import st_folium
-
-    # Make sure we disable folium_static's existing click handlers
-    m.add_child(folium.Element("""
-    <script>
-    // Clear any existing click handlers
-    </script>
-    """))
-
-    # Layer control removed - all heatmaps display simultaneously
-
-    # Use st_folium with stability optimizations
-    try:
-        map_data = st_folium(
-            m,
-            use_container_width=True,
-            height=600,
-            key="main_map",
-            returned_objects=["last_clicked"]
-        )
-    except Exception as e:
-        print(f"Map rendering error: {e}")
-        map_data = None
-
-    # Process clicks from the map with better stability and error handling
-    try:
-        if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
-            # Get the coordinates from the click
-            clicked_lat = map_data["last_clicked"]["lat"]
-            clicked_lng = map_data["last_clicked"]["lng"]
-
-            print(f"RAW CLICK DETECTED: lat={clicked_lat:.6f}, lng={clicked_lng:.6f}")
-
-            # Allow all clicks to generate heatmaps (reduce threshold for more sensitive detection)
-            current_point = st.session_state.get('selected_point')
-            coordinate_threshold = 0.0001  # Very small threshold - almost any new click will generate heatmap
-
-            print(f"Current stored point: {current_point}")
-            print(f"Coordinate threshold: {coordinate_threshold}")
-
-            # More robust coordinate comparison
-            is_new_location = True
-            if current_point and len(current_point) >= 2:
-                lat_diff = abs(current_point[0] - clicked_lat)
-                lng_diff = abs(current_point[1] - clicked_lng)
-                print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
-                if lat_diff <= coordinate_threshold and lng_diff <= coordinate_threshold:
-                    is_new_location = False
-                    print(f"MAP CLICK: Same location detected - skipping duplicate (lat_diff={lat_diff:.6f}, lng_diff={lng_diff:.6f})")
-                else:
-                    print(f"MAP CLICK: Different location detected - will process (lat_diff={lat_diff:.6f}, lng_diff={lng_diff:.6f})")
-            else:
-                print("MAP CLICK: No previous point or invalid previous point - will process")
-
-            if is_new_location:
-                print(f"MAP CLICK: New location detected - updating coordinates to ({clicked_lat:.6f}, {clicked_lng:.6f})")
-                if current_point:
-                    print(f"Previous coordinates: ({current_point[0]:.6f}, {current_point[1]:.6f})")
-                    lat_diff = abs(current_point[0] - clicked_lat)
-                    lng_diff = abs(current_point[1] - clicked_lng)
-                    print(f"Coordinate differences: lat={lat_diff:.6f}, lng={lng_diff:.6f}")
-                else:
-                    print("No previous coordinates - this is the first click")
-
-                # Calculate east point for dual heatmaps (corrected based on actual gap measurement)
-                # Gap measurement showed 9.3km overlap, so increase offset to eliminate it
-                km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-                
-                # Latest measurement shows 0.211km gap - need to reduce offset slightly
-                # Previous: 20km offset gave 0.211km gap
-                # Reduce offset by gap amount to achieve seamless connection
-                gap_to_close_km = 0.21  # Measured gap from logs
-                base_offset_km = 20.0  # Current offset
-                east_offset_km = base_offset_km - gap_to_close_km  # 19.79km for seamless join
-                east_offset_degrees = east_offset_km / km_per_degree_lon
-                
-                clicked_east_lat = clicked_lat
-                clicked_east_lng = clicked_lng + east_offset_degrees
-                
-                # Calculate south and southeast positions for 2x2 grid
-                south_offset_km = east_offset_km  # Same distance (19.79km) south
-                km_per_degree_lat = 111.0  # Latitude degrees are constant
-                south_offset_degrees = south_offset_km / km_per_degree_lat
-                
-                clicked_south_lat = clicked_lat - south_offset_degrees
-                clicked_south_lng = clicked_lng
-                
-                clicked_southeast_lat = clicked_south_lat
-                clicked_southeast_lng = clicked_south_lng + east_offset_degrees
-                
-                # Detailed logging to understand quad heatmap positioning
-                search_radius_km = st.session_state.search_radius
-                clipped_width_km = search_radius_km * 0.5  # Each heatmap is clipped to 50% of search radius
-                
-                # Calculate additional positions for 6-heatmap grid
-                clicked_northeast_lat = clicked_lat
-                clicked_northeast_lng = clicked_lng + (2 * east_offset_degrees)
-                clicked_far_southeast_lat = clicked_south_lat
-                clicked_far_southeast_lng = clicked_south_lng + (2 * east_offset_degrees)
-                
-                print(f"6-HEATMAP GRID POSITIONING ANALYSIS:")
-                print(f"  Original center: ({clicked_lat:.6f}, {clicked_lng:.6f})")
-                print(f"  East center: ({clicked_east_lat:.6f}, {clicked_east_lng:.6f})")
-                print(f"  Northeast center: ({clicked_northeast_lat:.6f}, {clicked_northeast_lng:.6f})")
-                print(f"  South center: ({clicked_south_lat:.6f}, {clicked_south_lng:.6f})")
-                print(f"  Southeast center: ({clicked_southeast_lat:.6f}, {clicked_southeast_lng:.6f})")
-                print(f"  Far Southeast center: ({clicked_far_southeast_lat:.6f}, {clicked_far_southeast_lng:.6f})")
-                print(f"  Distance between centers: {east_offset_km:.2f}km (seamless connection)")
-                print(f"  Search radius: {search_radius_km:.1f}km")
-                print(f"  Clipped heatmap width: {clipped_width_km:.1f}km")
-
-                # Store all six points for 6-heatmap grid generation
-                st.session_state.selected_point = [clicked_lat, clicked_lng]
-                st.session_state.selected_point_east = [clicked_east_lat, clicked_east_lng]
-                st.session_state.selected_point_northeast = [clicked_northeast_lat, clicked_northeast_lng]
-                st.session_state.selected_point_south = [clicked_south_lat, clicked_south_lng]
-                st.session_state.selected_point_southeast = [clicked_southeast_lat, clicked_southeast_lng]
-                st.session_state.selected_point_far_southeast = [clicked_far_southeast_lat, clicked_far_southeast_lng]
-
-                # Immediately regenerate filtered wells for both locations
-                from utils import is_within_square
-                wells_df = st.session_state.wells_data
-                
-                # Filter wells for original location
-                wells_df['within_square'] = wells_df.apply(
-                    lambda row: is_within_square(
-                        row['latitude'], 
-                        row['longitude'],
-                        clicked_lat,
-                        clicked_lng,
-                        st.session_state.search_radius
-                    ), 
-                    axis=1
-                )
-                
-                # Calculate distances for display purposes
-                wells_df['distance'] = wells_df.apply(
-                    lambda row: get_distance(
-                        clicked_lat, 
-                        clicked_lng, 
-                        row['latitude'], 
-                        row['longitude']
-                    ), 
-                    axis=1
-                )
-                
-                # Store filtered wells for original location
-                filtered_wells = wells_df[wells_df['within_square']]
-                st.session_state.filtered_wells = filtered_wells.copy()
-                
-                # Filter wells for east location
-                wells_df['within_square_east'] = wells_df.apply(
-                    lambda row: is_within_square(
-                        row['latitude'], 
-                        row['longitude'],
-                        clicked_east_lat,
-                        clicked_east_lng,
-                        st.session_state.search_radius
-                    ), 
-                    axis=1
-                )
-                
-                # Store filtered wells for east location
-                filtered_wells_east = wells_df[wells_df['within_square_east']]
-                st.session_state.filtered_wells_east = filtered_wells_east.copy()
-
-                # Filter wells for south location
-                wells_df['within_square_south'] = wells_df.apply(
-                    lambda row: is_within_square(
-                        row['latitude'], 
-                        row['longitude'],
-                        clicked_south_lat,
-                        clicked_south_lng,
-                        st.session_state.search_radius
-                    ), 
-                    axis=1
-                )
-                filtered_wells_south = wells_df[wells_df['within_square_south']]
-                st.session_state.filtered_wells_south = filtered_wells_south.copy()
-
-                # Filter wells for southeast location
-                wells_df['within_square_southeast'] = wells_df.apply(
-                    lambda row: is_within_square(
-                        row['latitude'], 
-                        row['longitude'],
-                        clicked_southeast_lat,
-                        clicked_southeast_lng,
-                        st.session_state.search_radius
-                    ), 
-                    axis=1
-                )
-                filtered_wells_southeast = wells_df[wells_df['within_square_southeast']]
-                st.session_state.filtered_wells_southeast = filtered_wells_southeast.copy()
-
-                # Filter wells for northeast location
-                wells_df['within_square_northeast'] = wells_df.apply(
-                    lambda row: is_within_square(
-                        row['latitude'], 
-                        row['longitude'],
-                        clicked_northeast_lat,
-                        clicked_northeast_lng,
-                        st.session_state.search_radius
-                    ), 
-                    axis=1
-                )
-                filtered_wells_northeast = wells_df[wells_df['within_square_northeast']]
-                st.session_state.filtered_wells_northeast = filtered_wells_northeast.copy()
-
-                # Filter wells for far_southeast location
-                wells_df['within_square_far_southeast'] = wells_df.apply(
-                    lambda row: is_within_square(
-                        row['latitude'], 
-                        row['longitude'],
-                        clicked_far_southeast_lat,
-                        clicked_far_southeast_lng,
-                        st.session_state.search_radius
-                    ), 
-                    axis=1
-                )
-                filtered_wells_far_southeast = wells_df[wells_df['within_square_far_southeast']]
-                st.session_state.filtered_wells_far_southeast = filtered_wells_far_southeast.copy()
-                
-                print(f"COORDINATES UPDATED: Original wells={len(filtered_wells)}, East wells={len(filtered_wells_east)}, Northeast wells={len(filtered_wells_northeast)}, South wells={len(filtered_wells_south)}, Southeast wells={len(filtered_wells_southeast)}, Far Southeast wells={len(filtered_wells_far_southeast)}")
-                print("WELLS FILTERED: Ready for 6-heatmap grid generation")
-                
-                # Force session state flag to ensure heatmap generation triggers
-                st.session_state.force_heatmap_generation = True
-            else:
-                if 'lat_diff' in locals() and 'lng_diff' in locals():
-                    print(f"SKIPPING CLICK: Coordinate difference too small: lat={lat_diff:.6f}, lng={lng_diff:.6f} (threshold: {coordinate_threshold})")
-                else:
-                    print("SKIPPING CLICK: Location comparison failed")
-        else:
-            print("NO CLICK DATA: map_data or last_clicked is missing or empty")
-    except Exception as e:
-        print(f"ERROR in click processing: {e}")
-        # Don't rerun on error to prevent crash loops
-
-    # Add cache clearing and reset buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Clear Results", use_container_width=True):
-            print("🗑️ CLEAR RESULTS: User clicked Clear Results button")
-            
-            # Clear stored heatmaps from database
-            if st.session_state.polygon_db:
-                try:
-                    deleted_count = st.session_state.polygon_db.delete_all_stored_heatmaps()
-                    print(f"🗑️ DATABASE CLEAR: Deleted {deleted_count} stored heatmaps from database")
-                    st.success(f"Cleared {deleted_count} stored heatmaps from database")
-                except Exception as e:
-                    print(f"❌ DATABASE CLEAR ERROR: {e}")
-                    st.error(f"Error clearing stored heatmaps: {e}")
-            
-            # Reset session state for map and heatmaps
-            keys_to_clear = [
-                'selected_point', 'selected_point_east', 'selected_point_northeast', 'selected_point_south', 'selected_point_southeast', 'selected_point_far_southeast',
-                'filtered_wells', 'filtered_wells_east', 'filtered_wells_northeast', 'filtered_wells_south', 'filtered_wells_southeast', 'filtered_wells_far_southeast',
-                'stored_heatmaps', 'geojson_data',
-                'fresh_heatmap_displayed', 'new_heatmap_added'
-            ]
-            
-            for key in keys_to_clear:
-                if key in st.session_state:
-                    del st.session_state[key]
-                    print(f"🔄 SESSION CLEAR: Deleted {key}")
-            
-            st.success("Cleared all results and stored heatmaps")
-
-    with col2:
-        if st.button("🔄 Refresh App", use_container_width=True):
-            # Clear all caches and reset session state
-            st.cache_data.clear()
-            st.cache_resource.clear()
-            # Only clear non-essential keys to prevent restart loops
-            essential_keys = ['wells_data', 'soil_polygons', 'polygon_db']
-            for key in list(st.session_state.keys()):
-                if key not in essential_keys:
-                    del st.session_state[key]
-            print("🔄 REFRESH: App refreshed, session state reset")
-            # Removed rerun to prevent restart loops - page will refresh automatically
-
-with main_col2:
-    st.subheader("Analysis Results")
-
-    if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
-        # Show information about 6-heatmap generation
-        st.subheader("Heatmap Grid Analysis (2x3 Grid)")
-        
-        # Show all six heatmap locations
-        grid_count = 1  # Always have original
-        if st.session_state.selected_point:
-            st.write(f"**Original:** {st.session_state.selected_point[0]:.4f}, {st.session_state.selected_point[1]:.4f}")
-        
-        if st.session_state.selected_point_east:
-            grid_count += 1
-            st.write(f"**East (19.79km):** {st.session_state.selected_point_east[0]:.4f}, {st.session_state.selected_point_east[1]:.4f}")
-            
-        # Calculate northeast position (would be generated automatically)
-        if st.session_state.selected_point:
-            import numpy as np
-            clicked_lat, clicked_lng = st.session_state.selected_point
-            km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-            east_offset_km = 19.79
-            east_offset_degrees = east_offset_km / km_per_degree_lon
-            northeast_lat = clicked_lat
-            northeast_lng = clicked_lng + (2 * east_offset_degrees)
-            grid_count += 1
-            st.write(f"**Northeast (39.58km):** {northeast_lat:.4f}, {northeast_lng:.4f}")
-            
-        if st.session_state.selected_point_south:
-            grid_count += 1
-            st.write(f"**South (19.79km):** {st.session_state.selected_point_south[0]:.4f}, {st.session_state.selected_point_south[1]:.4f}")
-            
-        if st.session_state.selected_point_southeast:
-            grid_count += 1
-            st.write(f"**Southeast (19.79km E of S):** {st.session_state.selected_point_southeast[0]:.4f}, {st.session_state.selected_point_southeast[1]:.4f}")
-        
-        # Calculate far_southeast position (would be generated automatically)
-        if st.session_state.selected_point_south:
-            import numpy as np
-            clicked_lat, clicked_lng = st.session_state.selected_point
-            km_per_degree_lon = 111.0 * np.cos(np.radians(clicked_lat))
-            east_offset_km = 19.79
-            south_offset_degrees = east_offset_km / 111.0
-            east_offset_degrees = east_offset_km / km_per_degree_lon
-            far_southeast_lat = clicked_lat - south_offset_degrees
-            far_southeast_lng = clicked_lng + (2 * east_offset_degrees)
-            grid_count += 1
-            st.write(f"**Far Southeast (39.58km E):** {far_southeast_lat:.4f}, {far_southeast_lng:.4f}")
-        
-        st.success(f"✅ {grid_count} heatmaps generated in seamless 2x3 grid")
-        
-        # Add export data option
-        st.subheader("Export Data")
-        if st.button("Download Wells Data (Original)"):
-            csv_data = download_as_csv(st.session_state.filtered_wells)
-            st.download_button(
-                label="Download CSV (Original)",
-                data=csv_data,
-                file_name="nearby_wells_original.csv",
-                mime="text/csv"
-            )
-        
-        # Export east wells data if available
-        if 'filtered_wells_east' in st.session_state and st.session_state.filtered_wells_east is not None and len(st.session_state.filtered_wells_east) > 0:
-            if st.button("Download Wells Data (East)"):
-                csv_data_east = download_as_csv(st.session_state.filtered_wells_east)
-                st.download_button(
-                    label="Download CSV (East)",
-                    data=csv_data_east,
-                    file_name="nearby_wells_east.csv",
-                    mime="text/csv"
-                )
-    elif st.session_state.get('selected_point'):
-        st.info("Location selected. View the dual interpolated heatmaps on the left.")
-    else:
-        st.info("Click on the map to generate dual heatmaps: one at your location and one seamlessly connected to the east")
-
-    # Heatmaps are automatically saved - no manual action needed
-
-    # Add information about water well drilling - always display
-    st.subheader("Finding Groundwater")
-    st.write("""
-    Traditional methods like water divining lack scientific basis. Our tool uses actual well data 
-    to help you make informed decisions about where to drill based on:
-
-    * Proximity to existing successful wells
-    * Aquifer yield patterns in your area
-    * Depth trends for accessing groundwater
-    """)
-
-# Add footer
-st.markdown("""
-<div style="text-align: center; margin-top: 40px; padding: 20px; background-color: #f0f2f6; border-radius: 10px;">
-    <p>© 2023 Groundwater Finder |Data sourced from public well databases</p>
-    <p>This tool is designed to assist farmers in locating potential groundwater sources. Results are based on existing data and interpolation techniques.</p>
-</div>
-""", unsafe_allow_html=True)

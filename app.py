@@ -61,6 +61,7 @@ session_defaults = {
 
     'new_clipping_polygon': None,
     'show_new_clipping_polygon': False,
+    'show_well_bounds': False,
     'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
 }
 
@@ -417,6 +418,7 @@ with st.sidebar:
     
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
+    st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
@@ -721,6 +723,85 @@ with main_col1:
 
     m = folium.Map(location=center_location, zoom_start=st.session_state.zoom_level, 
                   tiles="OpenStreetMap")
+
+    # Add well data bounds visualization if enabled
+    if st.session_state.show_well_bounds and st.session_state.wells_data is not None:
+        try:
+            wells_df = st.session_state.wells_data
+            
+            # Calculate bounds using the same logic as automated generation
+            if 'latitude' in wells_df.columns and 'longitude' in wells_df.columns:
+                valid_wells = wells_df.dropna(subset=['latitude', 'longitude'])
+                
+                if len(valid_wells) > 0:
+                    lat_coords = valid_wells['latitude'].astype(float)
+                    lon_coords = valid_wells['longitude'].astype(float)
+                    
+                    sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
+                    sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
+                    
+                    # Create rectangle coordinates for the bounds
+                    bounds_coords = [
+                        [sw_lat, sw_lon],  # Southwest corner
+                        [sw_lat, ne_lon],  # Southeast corner
+                        [ne_lat, ne_lon],  # Northeast corner
+                        [ne_lat, sw_lon],  # Northwest corner
+                        [sw_lat, sw_lon]   # Close the rectangle
+                    ]
+                    
+                    # Add rectangle to map
+                    folium.PolyLine(
+                        locations=bounds_coords,
+                        color='red',
+                        weight=3,
+                        opacity=0.8,
+                        popup=f"Well Data Bounds<br>SW: {sw_lat:.6f}, {sw_lon:.6f}<br>NE: {ne_lat:.6f}, {ne_lon:.6f}<br>Area: {len(valid_wells)} wells"
+                    ).add_to(m)
+                    
+                    # Add corner markers for better visibility
+                    folium.Marker(
+                        [sw_lat, sw_lon],
+                        popup=f"SW Corner: {sw_lat:.6f}, {sw_lon:.6f}",
+                        icon=folium.Icon(color='red', icon='arrow-down', prefix='fa')
+                    ).add_to(m)
+                    
+                    folium.Marker(
+                        [ne_lat, ne_lon],
+                        popup=f"NE Corner: {ne_lat:.6f}, {ne_lon:.6f}",
+                        icon=folium.Icon(color='red', icon='arrow-up', prefix='fa')
+                    ).add_to(m)
+                    
+                    # Calculate and show the grid that would be generated
+                    import numpy as np
+                    lat_span = ne_lat - sw_lat
+                    lon_span = ne_lon - sw_lon
+                    center_lat = (sw_lat + ne_lat) / 2
+                    
+                    # Convert to approximate km
+                    lat_km = lat_span * 111.0
+                    lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
+                    
+                    # Calculate optimal grid size (19.82km spacing) with buffer
+                    grid_spacing_km = 19.82
+                    rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 2)
+                    cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 2)
+                    total_needed = rows_needed * cols_needed
+                    
+                    # Add center point marker
+                    center_lat_calc = (sw_lat + ne_lat) / 2
+                    center_lon_calc = (sw_lon + ne_lon) / 2
+                    folium.Marker(
+                        [center_lat_calc, center_lon_calc],
+                        popup=f"Grid Center<br>Calculated Grid: {rows_needed}×{cols_needed} = {total_needed} tiles<br>Data extent: {lat_km:.1f}km × {lon_km:.1f}km",
+                        icon=folium.Icon(color='orange', icon='crosshairs', prefix='fa')
+                    ).add_to(m)
+                    
+                    print(f"WELL BOUNDS VISUALIZATION: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
+                    print(f"Covering area with {len(valid_wells)} wells")
+                    print(f"Calculated grid: {rows_needed}×{cols_needed} = {total_needed} tiles needed for full coverage")
+                    
+        except Exception as e:
+            print(f"Error adding well bounds visualization: {e}")
 
     # Add comprehensive clipping polygon if available and enabled
     if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:

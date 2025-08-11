@@ -179,7 +179,6 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     print(f"🚀 SMART AUTOMATED GENERATION: Covering areas with actual well data (up to {max_tiles} heatmaps)")
     print(f"📋 Available columns: {list(wells_data.columns)}")
     
-    from sequential_heatmap import generate_single_heatmap_at_position
     from utils import get_distance
     import numpy as np
     

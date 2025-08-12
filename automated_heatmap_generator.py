@@ -288,6 +288,7 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         print(f"📐 Using all {total_grid_points} grid points")
     
     try:
+        from sequential_heatmap import generate_grid_heatmaps_from_points
         result = generate_grid_heatmaps_from_points(
             wells_data, 
             grid_points_latlon, 

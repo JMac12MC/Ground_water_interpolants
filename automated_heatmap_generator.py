@@ -290,7 +290,8 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         print(f"📐 Using all grid points: {total_needed} heatmaps")
     
     # Generate heatmaps at each grid point location
-    from interpolation import run_interpolation
+    from interpolation import generate_geo_json_grid
+    from database import store_heatmap
     
     success_count = 0
     stored_heatmap_ids = []
@@ -302,24 +303,36 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
             
             try:
                 # Use the exact same parameters as the proven sequential system
-                result = run_interpolation(
-                    wells_data=wells_data,
-                    center_lat=lat,
-                    center_lon=lon,
-                    search_radius_km=search_radius_km,
+                geojson_data = generate_geo_json_grid(
+                    wells_df=wells_data,
+                    center_point=(lat, lon),
+                    radius_km=search_radius_km,
+                    resolution=100,  # Use same resolution as sequential system
                     method=interpolation_method,
-                    polygon_db=polygon_db,
                     soil_polygons=soil_polygons if soil_polygons is not None else None,
                     new_clipping_polygon=new_clipping_polygon if new_clipping_polygon is not None else None
                 )
                 
-                if result and result.get('geojson_data'):
-                    success_count += 1
-                    if 'stored_heatmap_id' in result:
-                        stored_heatmap_ids.append(result['stored_heatmap_id'])
-                        print(f"✅ Successfully generated heatmap at grid point {i+1}")
+                if geojson_data and geojson_data.get('features'):
+                    # Store the heatmap in database
+                    stored_id = store_heatmap(
+                        polygon_db,
+                        heatmap_name=f"{interpolation_method}_r{i//100}c{i%100}_{lat:.3f}_{lon:.3f}",
+                        center_lat=lat,
+                        center_lon=lon,
+                        radius_km=search_radius_km,
+                        interpolation_method=interpolation_method,
+                        heatmap_data={},  # Empty dict for compatibility
+                        geojson_data=geojson_data,
+                        well_count=len(wells_data)
+                    )
+                    
+                    if stored_id:
+                        success_count += 1
+                        stored_heatmap_ids.append(stored_id)
+                        print(f"✅ Successfully generated and stored heatmap at grid point {i+1}")
                     else:
-                        print(f"⚠️ Generated heatmap at grid point {i+1} but not stored")
+                        print(f"⚠️ Generated heatmap at grid point {i+1} but storage failed")
                 else:
                     error_msg = f"No data generated for grid point {i+1} at ({lat:.6f}, {lon:.6f})"
                     error_messages.append(error_msg)

@@ -128,15 +128,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **August 11, 2025**: MAJOR ENHANCEMENT: Implemented smart incremental automated generation with convex hull boundary checking
-  - Fixed coordinate system handling to properly use NZTMX/NZTMY columns from raw data
-  - Implemented incremental expansion from start point with 10km convex hull boundary testing
-  - Added priority queue system for efficient outward expansion (north, south, east, west)
-  - Only generates heatmaps if centroid is within 10km of convex hull boundary
-  - Stops expansion when no valid positions remain or max tile limit reached
-  - Enhanced automated_heatmap_generator.py with boundary-aware generation system
-  - Added generate_single_heatmap function for individual heatmap creation
-  - Fixed coverage to use actual well distribution spanning -44.957° to -41.997° × 169.627° to 174.002°
+- **August 11, 2025**: MAJOR ENHANCEMENT: Implemented convex hull boundary calculation for 62% more efficient automated generation
+  - Replaced rectangular bounds with convex hull boundary calculation using scipy.spatial.ConvexHull
+  - Achieved 60.6% area reduction (46,131 km² vs 117,139 km²) and 62% tile reduction for comprehensive coverage
+  - Added "Show Convex Hull Boundary" visualization feature with blue boundary line and vertex markers
+  - Integrated NZTM coordinate transformation for accurate area calculations
+  - Enhanced automated_heatmap_generator.py with accurate convex hull calculation using ALL wells (no sampling)
+  - Added efficiency statistics showing potential tile savings: ~763 fewer tiles for 10km resolution
+  - Convex hull boundary follows actual well distribution instead of empty rectangular areas
 
 - **August 11, 2025**: ENHANCED: Automated generation system improvements for comprehensive coverage
   - Increased max tile limit from 50 to 1000 tiles for large-scale regional analysis

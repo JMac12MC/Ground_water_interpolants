@@ -181,45 +181,24 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     
     from sequential_heatmap import generate_quad_heatmaps_sequential
     
-    # Find the bounds of wells data - handle both lat/lon and NZTM coordinates
-    valid_wells = None
-    
+    # Find the bounds of wells data 
     if 'latitude' in wells_data.columns and 'longitude' in wells_data.columns:
-        # Already has lat/lon coordinates
         valid_wells = wells_data.dropna(subset=['latitude', 'longitude'])
-        if len(valid_wells) > 0:
-            lat_coords = valid_wells['latitude'].astype(float)
-            lon_coords = valid_wells['longitude'].astype(float)
-            print(f"📍 Using existing lat/lon coordinates")
         
-    elif 'NZTMX' in wells_data.columns and 'NZTMY' in wells_data.columns:
-        # Convert NZTM to lat/lon
-        from pyproj import Transformer
-        transformer = Transformer.from_crs('EPSG:2193', 'EPSG:4326', always_xy=True)
+        if len(valid_wells) == 0:
+            return 0, [], ["No valid well coordinates found"]
         
-        valid_wells = wells_data.dropna(subset=['NZTMX', 'NZTMY'])
-        if len(valid_wells) > 0:
-            nztm_x = valid_wells['NZTMX'].astype(float).values
-            nztm_y = valid_wells['NZTMY'].astype(float).values
-            lon_coords, lat_coords = transformer.transform(nztm_x, nztm_y)
-            
-            # Add converted coordinates to dataframe
-            valid_wells = valid_wells.copy()
-            valid_wells['latitude'] = lat_coords
-            valid_wells['longitude'] = lon_coords
-            print(f"📍 Converted NZTM coordinates to lat/lon")
-    
-    if valid_wells is None or len(valid_wells) == 0:
-        return 0, [], [f"No valid well coordinates found. Available columns: {list(wells_data.columns)}"]
-    
-    lat_coords = valid_wells['latitude'].astype(float)
-    lon_coords = valid_wells['longitude'].astype(float)
-    
-    sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
-    sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
-    
-    print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
-    print(f"📊 Processing {len(valid_wells)} wells with span: {ne_lat-sw_lat:.6f}° × {ne_lon-sw_lon:.6f}°")
+        lat_coords = valid_wells['latitude'].astype(float)
+        lon_coords = valid_wells['longitude'].astype(float)
+        
+        sw_lat, ne_lat = lat_coords.min(), lat_coords.max()
+        sw_lon, ne_lon = lon_coords.min(), lon_coords.max()
+        
+        print(f"📍 Well data bounds: SW({sw_lat:.6f}, {sw_lon:.6f}) to NE({ne_lat:.6f}, {ne_lon:.6f})")
+        print(f"📊 Processing {len(valid_wells)} wells")
+        
+    else:
+        return 0, [], [f"Could not find coordinate columns. Available: {list(wells_data.columns)}"]
     
     # Calculate optimal grid size using CONVEX HULL for efficient coverage
     from utils import get_distance
@@ -234,8 +213,8 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     transformer_to_latlon = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
     
     # Convert ALL wells to NZTM for accurate convex hull
-    all_lons = lon_coords
-    all_lats = lat_coords
+    all_lons = valid_wells['longitude'].astype(float)
+    all_lats = valid_wells['latitude'].astype(float)
     nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(all_lats, all_lons)]
     nztm_x = [coord[0] for coord in nztm_coords]
     nztm_y = [coord[1] for coord in nztm_coords]
@@ -294,20 +273,15 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     start_point = [center_lat, center_lon]  # Start from convex hull center
     
     try:
-        # Create convex hull boundary for centroid testing
-        hull_boundary = hull  # Pass the ConvexHull object for boundary testing
-        
-        result = generate_incremental_heatmaps_with_boundary_check(
+        result = generate_quad_heatmaps_sequential(
             wells_data, 
             start_point, 
-            search_radius_km,
+            search_radius_km,  # use the parameter value
             interpolation_method, 
             polygon_db, 
             soil_polygons, 
             new_clipping_polygon, 
-            max_tiles,
-            hull_boundary,
-            nztm_coords  # Pass the NZTM coordinates for distance calculations
+            actual_grid
         )
         
         if isinstance(result, tuple) and len(result) >= 3:
@@ -329,152 +303,6 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         error_msg = f"Error in full automated generation: {str(e)}"
         print(f"❌ {error_msg}")
         return 0, [], [error_msg]
-
-
-def generate_incremental_heatmaps_with_boundary_check(wells_data, start_point, search_radius_km, 
-                                                   interpolation_method, polygon_db, soil_polygons, 
-                                                   new_clipping_polygon, max_tiles, hull_boundary, nztm_coords):
-    """
-    Generate heatmaps incrementally outward from starting location with convex hull boundary checking.
-    Only create heatmaps if their centroid is within 10km of the convex hull boundary.
-    """
-    from utils import get_distance
-    from pyproj import Transformer
-    import numpy as np
-    from scipy.spatial.distance import cdist
-    
-    transformer_to_nztm = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
-    
-    # Convert hull boundary to a set of points for distance calculation
-    hull_points = np.array(nztm_coords)[hull_boundary.vertices]
-    
-    def is_centroid_valid(lat, lon):
-        """Check if a heatmap centroid is within 10km of the convex hull boundary or inside the hull"""
-        # Convert centroid to NZTM
-        x, y = transformer_to_nztm.transform(lon, lat)
-        centroid_point = np.array([x, y])
-        
-        # First check if point is inside the convex hull (always valid)
-        from scipy.spatial import ConvexHull
-        try:
-            # Create a new hull with the test point added
-            test_points = np.vstack([hull_points, centroid_point.reshape(1, -1)])
-            test_hull = ConvexHull(test_points)
-            
-            # If adding the point doesn't change the hull, it's inside
-            if len(test_hull.vertices) == len(hull_boundary.vertices):
-                print(f"✅ Point ({lat:.6f}, {lon:.6f}) is INSIDE convex hull")
-                return True
-        except:
-            pass
-        
-        # If not inside, check if within 10km of boundary
-        distances = cdist(centroid_point.reshape(1, -1), hull_points)
-        min_distance = np.min(distances)
-        min_distance_km = min_distance / 1000.0
-        
-        is_valid = min_distance_km <= 10.0
-        status = "✅ VALID" if is_valid else "❌ REJECTED"
-        print(f"{status} Point ({lat:.6f}, {lon:.6f}) - distance to hull: {min_distance_km:.2f}km")
-        return is_valid
-    
-    print(f"🎯 INCREMENTAL GENERATION: Starting from {start_point} with {max_tiles} tile limit")
-    print(f"🔷 Boundary check: Centroids must be within 10km of convex hull")
-    
-    # Grid spacing in degrees (19.82km)
-    grid_spacing_km = 19.82
-    lat_offset = grid_spacing_km / 111.0  # degrees latitude
-    lon_offset = grid_spacing_km / (111.0 * np.cos(np.radians(start_point[0])))  # degrees longitude
-    
-    # Track generated heatmaps and queue for expansion
-    generated_heatmaps = set()
-    success_count = 0
-    stored_heatmap_ids = []
-    error_messages = []
-    
-    # Priority queue: (priority, lat, lon) - start from center with priority 0
-    from queue import PriorityQueue
-    expansion_queue = PriorityQueue()
-    expansion_queue.put((0, start_point[0], start_point[1]))
-    
-    # Track attempted positions to avoid duplicates
-    attempted_positions = set()
-    
-    while not expansion_queue.empty() and success_count < max_tiles:
-        priority, lat, lon = expansion_queue.get()
-        
-        # Round coordinates to avoid floating point issues
-        lat_rounded = round(lat, 6)
-        lon_rounded = round(lon, 6)
-        pos_key = (lat_rounded, lon_rounded)
-        
-        if pos_key in attempted_positions:
-            continue
-        
-        attempted_positions.add(pos_key)
-        
-        # Check if centroid is within boundary
-        if not is_centroid_valid(lat, lon):
-            continue
-        
-        print(f"✅ Generating heatmap at ({lat:.6f}, {lon:.6f}) - within boundary")
-        
-        # Generate heatmap at this position
-        try:
-            from sequential_heatmap import generate_single_heatmap
-            
-            result = generate_single_heatmap(
-                wells_data, 
-                [lat, lon], 
-                search_radius_km,
-                interpolation_method, 
-                polygon_db, 
-                soil_polygons, 
-                new_clipping_polygon,
-                f"auto_r{success_count//20}c{success_count%20}"  # Generate unique ID
-            )
-            
-            if result and len(result) >= 2 and result[0]:  # Check success status
-                heatmap_id = result[1]  # Get the stored heatmap ID
-                stored_heatmap_ids.append(heatmap_id)
-                generated_heatmaps.add(pos_key)
-                success_count += 1
-                
-                print(f"🎯 SUCCESS {success_count}/{max_tiles}: Generated {heatmap_id}")
-                
-                # Add neighboring positions to expansion queue if not already attempted
-                neighbors = [
-                    (lat + lat_offset, lon),      # North
-                    (lat - lat_offset, lon),      # South
-                    (lat, lon + lon_offset),      # East
-                    (lat, lon - lon_offset),      # West
-                ]
-                
-                for neighbor_lat, neighbor_lon in neighbors:
-                    neighbor_key = (round(neighbor_lat, 6), round(neighbor_lon, 6))
-                    if neighbor_key not in attempted_positions:
-                        # Use distance from start as priority (closer = higher priority = lower number)
-                        distance_from_start = get_distance(start_point[0], start_point[1], neighbor_lat, neighbor_lon)
-                        expansion_queue.put((distance_from_start, neighbor_lat, neighbor_lon))
-            else:
-                error_msg = f"Failed to generate heatmap at ({lat:.6f}, {lon:.6f})"
-                if result and len(result) >= 2:
-                    error_msg += f" - {result[1]}"  # Include error message
-                error_messages.append(error_msg)
-                print(f"❌ {error_msg}")
-                
-        except Exception as e:
-            error_msg = f"Error generating heatmap at ({lat:.6f}, {lon:.6f}): {str(e)}"
-            error_messages.append(error_msg)
-            print(f"❌ {error_msg}")
-    
-    print(f"📋 INCREMENTAL GENERATION COMPLETE:")
-    print(f"   ✅ Generated: {success_count} heatmaps")
-    print(f"   🎯 Stored IDs: {len(stored_heatmap_ids)}")
-    print(f"   ❌ Errors: {len(error_messages)}")
-    print(f"   🔍 Attempted positions: {len(attempted_positions)}")
-    
-    return success_count, stored_heatmap_ids, error_messages
 
 
 def full_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):

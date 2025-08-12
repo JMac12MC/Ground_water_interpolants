@@ -519,7 +519,7 @@ class PolygonDatabase:
 
     def get_all_stored_heatmaps(self):
         """
-        Retrieve all stored heatmaps from the database with robust connection handling
+        Retrieve all stored heatmaps from the database
 
         Returns:
         --------
@@ -528,99 +528,84 @@ class PolygonDatabase:
         """
         print("📊 FETCH OPERATION START: Retrieving all stored heatmaps from database")
         
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Always recreate fresh connection to avoid SSL issues
-                print(f"🔄 Creating fresh database connection (attempt {attempt + 1})")
-                fresh_engine = create_engine(
-                    self.database_url,
-                    pool_pre_ping=True,
-                    pool_recycle=300,
-                    connect_args={"sslmode": "require"} if "postgresql" in self.database_url else {}
-                )
+        try:
+            # Recreate engine connection if needed
+            if not hasattr(self, 'engine') or self.engine is None:
+                print("🔄 Creating new database engine connection")
+                self.engine = create_engine(self.database_url)
+            
+            with self.engine.connect() as conn:
+                print("🔍 QUERYING DATABASE: Executing SELECT query for all heatmaps")
+                result = conn.execute(text("""
+                    SELECT id, heatmap_name, center_lat, center_lon, radius_km,
+                           interpolation_method, heatmap_data, geojson_data, well_count, created_at, colormap_metadata
+                    FROM stored_heatmaps
+                    ORDER BY created_at DESC
+                """))
                 
-                with fresh_engine.connect() as conn:
-                    print("🔍 QUERYING DATABASE: Executing SELECT query for all heatmaps")
-                    result = conn.execute(text("""
-                        SELECT id, heatmap_name, center_lat, center_lon, radius_km,
-                               interpolation_method, heatmap_data, geojson_data, well_count, created_at, colormap_metadata
-                        FROM stored_heatmaps
-                        ORDER BY created_at DESC
-                    """))
+                heatmaps = []
+                raw_rows = result.fetchall()
+                print(f"📋 RAW QUERY RESULT: Found {len(raw_rows)} rows in database")
+                
+                for i, row in enumerate(raw_rows):
+                    print(f"📄 PROCESSING ROW {i+1}: ID {row[0]} - {row[1]}")
                     
-                    heatmaps = []
-                    raw_rows = result.fetchall()
-                    print(f"📋 RAW QUERY RESULT: Found {len(raw_rows)} rows in database")
-                    
-                    for i, row in enumerate(raw_rows):
-                        print(f"📄 PROCESSING ROW {i+1}: ID {row[0]} - {row[1]}")
-                        
-                        # Handle JSON data that might already be parsed
-                        heatmap_data = row[6]
-                        if isinstance(heatmap_data, str):
-                            try:
-                                heatmap_data = json.loads(heatmap_data)
-                            except json.JSONDecodeError:
-                                print(f"⚠️  JSON decode error for heatmap_data in ID {row[0]}")
-                                heatmap_data = []
-                        elif not isinstance(heatmap_data, list):
-                            heatmap_data = []
-                        
-                        geojson_data = row[7]
-                        if isinstance(geojson_data, str):
-                            try:
-                                geojson_data = json.loads(geojson_data)
-                            except json.JSONDecodeError:
-                                print(f"⚠️  JSON decode error for geojson_data in ID {row[0]}")
-                                geojson_data = None
-                        
-                        # Parse colormap metadata if available
-                        colormap_metadata = None
+                    # Handle JSON data that might already be parsed
+                    heatmap_data = row[6]
+                    if isinstance(heatmap_data, str):
                         try:
-                            if len(row) > 10 and row[10]:  # colormap_metadata column
-                                if isinstance(row[10], str):
-                                    colormap_metadata = json.loads(row[10])
-                                else:
-                                    colormap_metadata = row[10]
-                                print(f"  🎨 LOADED COLORMAP METADATA: {colormap_metadata}")
-                        except (json.JSONDecodeError, IndexError) as e:
-                            print(f"  ⚠️ WARNING: Could not parse colormap_metadata for {row[1]}: {e}")
-                        
-                        heatmap = {
-                            'id': row[0],
-                            'heatmap_name': row[1],
-                            'center_lat': row[2],
-                            'center_lon': row[3],
-                            'radius_km': row[4],
-                            'interpolation_method': row[5],
-                            'heatmap_data': heatmap_data,
-                            'geojson_data': geojson_data,
-                            'well_count': row[8],
-                            'created_at': row[9],
-                            'colormap_metadata': colormap_metadata
-                        }
-                        heatmaps.append(heatmap)
-                        print(f"✅ PROCESSED: Heatmap ID {row[0]} added to result list")
+                            heatmap_data = json.loads(heatmap_data)
+                        except json.JSONDecodeError:
+                            print(f"⚠️  JSON decode error for heatmap_data in ID {row[0]}")
+                            heatmap_data = []
+                    elif not isinstance(heatmap_data, list):
+                        heatmap_data = []
                     
-                    print(f"📊 FETCH RESULT: Successfully retrieved {len(heatmaps)} stored heatmaps")
-                    print(f"📋 HEATMAP IDS: {[h['id'] for h in heatmaps]}")
+                    geojson_data = row[7]
+                    if isinstance(geojson_data, str):
+                        try:
+                            geojson_data = json.loads(geojson_data)
+                        except json.JSONDecodeError:
+                            print(f"⚠️  JSON decode error for geojson_data in ID {row[0]}")
+                            geojson_data = None
                     
-                    fresh_engine.dispose()  # Clean up connection
-                    return heatmaps
+                    # Parse colormap metadata if available
+                    colormap_metadata = None
+                    try:
+                        if len(row) > 10 and row[10]:  # colormap_metadata column
+                            if isinstance(row[10], str):
+                                colormap_metadata = json.loads(row[10])
+                            else:
+                                colormap_metadata = row[10]
+                            print(f"  🎨 LOADED COLORMAP METADATA: {colormap_metadata}")
+                    except (json.JSONDecodeError, IndexError) as e:
+                        print(f"  ⚠️ WARNING: Could not parse colormap_metadata for {row[1]}: {e}")
+                    
+                    heatmap = {
+                        'id': row[0],
+                        'heatmap_name': row[1],
+                        'center_lat': row[2],
+                        'center_lon': row[3],
+                        'radius_km': row[4],
+                        'interpolation_method': row[5],
+                        'heatmap_data': heatmap_data,
+                        'geojson_data': geojson_data,
+                        'well_count': row[8],
+                        'created_at': row[9],
+                        'colormap_metadata': colormap_metadata
+                    }
+                    heatmaps.append(heatmap)
+                    print(f"✅ PROCESSED: Heatmap ID {row[0]} added to result list")
                 
-            except Exception as e:
-                print(f"❌ FETCH ERROR on attempt {attempt + 1}: {e}")
-                if attempt < max_retries - 1:
-                    print(f"🔄 Retrying database connection...")
-                    import time
-                    time.sleep(1)
-                    continue
-                else:
-                    print(f"❌ Failed to fetch heatmaps after {max_retries} attempts")
-                    import traceback
-                    print(f"📍 STACK TRACE: {traceback.format_exc()}")
-                    return []
+                print(f"📊 FETCH RESULT: Successfully retrieved {len(heatmaps)} stored heatmaps")
+                print(f"📋 HEATMAP IDS: {[h['id'] for h in heatmaps]}")
+                return heatmaps
+
+        except Exception as e:
+            print(f"❌ FETCH ERROR: Error retrieving stored heatmaps: {e}")
+            import traceback
+            print(f"📍 STACK TRACE: {traceback.format_exc()}")
+            return []
 
     def delete_all_stored_heatmaps(self):
         """

@@ -291,7 +291,6 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     
     # Generate heatmaps at each grid point location
     from interpolation import generate_geo_json_grid
-    from database import store_heatmap
     
     success_count = 0
     stored_heatmap_ids = []
@@ -314,9 +313,8 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
                 )
                 
                 if geojson_data and geojson_data.get('features'):
-                    # Store the heatmap in database
-                    stored_id = store_heatmap(
-                        polygon_db,
+                    # Store the heatmap in database using the class method
+                    stored_id = polygon_db.store_heatmap(
                         heatmap_name=f"{interpolation_method}_r{i//100}c{i%100}_{lat:.3f}_{lon:.3f}",
                         center_lat=lat,
                         center_lon=lon,

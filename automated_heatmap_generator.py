@@ -236,121 +236,71 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     print(f"📐 Convex hull boundary: SW({hull_sw_lat:.6f}, {hull_sw_lon:.6f}) to NE({hull_ne_lat:.6f}, {hull_ne_lon:.6f})")
     print(f"📐 Hull area: {hull_area_km2:.0f} km² vs rectangular area: {((ne_lat-sw_lat)*111)*((ne_lon-sw_lon)*111*np.cos(np.radians((sw_lat+ne_lat)/2))):.0f} km²")
     
-    # Generate 19.82km grid points within convex hull boundary (same as app.py visualization)
-    from shapely.geometry import Point, Polygon
+    # Calculate grid based on hull bounds (in NZTM for accuracy)
+    hull_x_km = (hull_max_x - hull_min_x) / 1000.0
+    hull_y_km = (hull_max_y - hull_min_y) / 1000.0
     
-    # Create Shapely polygon from convex hull
-    hull_vertices_nztm = points[hull.vertices]
-    hull_polygon = Polygon(hull_vertices_nztm)
+    # Calculate optimal grid size (19.82km spacing) with small buffer
+    grid_spacing_km = 19.82
     
-    # Get bounds for grid generation
-    min_x, min_y, max_x, max_y = hull_polygon.bounds
+    # Add smaller buffer since convex hull already bounds the data efficiently
+    rows_needed = max(1, int(np.ceil(hull_y_km / grid_spacing_km)) + 1)  # +1 for buffer coverage
+    cols_needed = max(1, int(np.ceil(hull_x_km / grid_spacing_km)) + 1)  # +1 for buffer coverage
     
-    # Generate grid points at 19.82km spacing
-    grid_spacing = 19820  # 19.82km in meters (NZTM units)
+    # Use hull center for positioning
+    center_lat = (hull_sw_lat + hull_ne_lat) / 2
+    center_lon = (hull_sw_lon + hull_ne_lon) / 2
     
-    # Calculate grid bounds with padding
-    start_x = int(min_x // grid_spacing) * grid_spacing
-    start_y = int(min_y // grid_spacing) * grid_spacing
-    end_x = int(max_x // grid_spacing + 1) * grid_spacing
-    end_y = int(max_y // grid_spacing + 1) * grid_spacing
-    
-    # Generate all grid points within convex hull
-    grid_points_nztm = []
-    grid_points_latlon = []
-    
-    y = start_y
-    while y <= end_y:
-        x = start_x
-        while x <= end_x:
-            point_nztm = Point(x, y)
-            # Check if point is within convex hull
-            if hull_polygon.contains(point_nztm):
-                grid_points_nztm.append((x, y))
-                # Convert to lat/lon for heatmap generation
-                lon, lat = transformer_to_latlon.transform(x, y)
-                grid_points_latlon.append((lat, lon))
-            x += grid_spacing
-        y += grid_spacing
-    
-    total_needed = len(grid_points_latlon)
-    hull_x_km = (max_x - min_x) / 1000.0
-    hull_y_km = (max_y - min_y) / 1000.0
+    total_needed = rows_needed * cols_needed
     
     print(f"📐 Hull extent: {hull_x_km:.1f}km × {hull_y_km:.1f}km")
-    print(f"📐 Generated {total_needed} grid points at 19.82km spacing within convex hull")
-    print(f"📍 Grid points follow exact convex hull boundary for optimal coverage")
+    print(f"📐 Optimal grid with buffer: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
+    print(f"📍 Convex hull provides efficient coverage following data distribution")
     
-    # Limit to max_tiles if needed
+    # Limit to max_tiles
     if total_needed > max_tiles:
-        # Use first max_tiles points (they're well distributed across the hull)
-        grid_points_latlon = grid_points_latlon[:max_tiles]
-        print(f"📐 Limited to: {len(grid_points_latlon)} heatmaps (max {max_tiles})")
+        # Scale down proportionally
+        scale_factor = np.sqrt(max_tiles / total_needed)
+        rows_limited = max(1, int(rows_needed * scale_factor))
+        cols_limited = max(1, int(cols_needed * scale_factor))
+        actual_grid = (rows_limited, cols_limited)
+        print(f"📐 Limited to: {rows_limited} × {cols_limited} = {rows_limited * cols_limited} heatmaps (max {max_tiles})")
     else:
-        print(f"📐 Using all grid points: {total_needed} heatmaps")
+        actual_grid = (rows_needed, cols_needed)
+        print(f"📐 Using full grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps")
     
-    # Generate heatmaps at each grid point location
-    from interpolation import generate_geo_json_grid
-    
-    success_count = 0
-    stored_heatmap_ids = []
-    error_messages = []
+    # Use convex hull center for optimal positioning
+    start_point = [center_lat, center_lon]  # Start from convex hull center
     
     try:
-        for i, (lat, lon) in enumerate(grid_points_latlon):
-            print(f"🎯 Generating heatmap {i+1}/{len(grid_points_latlon)} at grid point ({lat:.6f}, {lon:.6f})")
+        result = generate_quad_heatmaps_sequential(
+            wells_data, 
+            start_point, 
+            search_radius_km,  # use the parameter value
+            interpolation_method, 
+            polygon_db, 
+            soil_polygons, 
+            new_clipping_polygon, 
+            actual_grid
+        )
+        
+        if isinstance(result, tuple) and len(result) >= 3:
+            success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
             
-            try:
-                # Use the exact same parameters as the proven sequential system
-                geojson_data = generate_geo_json_grid(
-                    wells_df=wells_data,
-                    center_point=(lat, lon),
-                    radius_km=search_radius_km,
-                    resolution=100,  # Use same resolution as sequential system
-                    method=interpolation_method,
-                    soil_polygons=soil_polygons if soil_polygons is not None else None,
-                    new_clipping_polygon=new_clipping_polygon if new_clipping_polygon is not None else None
-                )
-                
-                if geojson_data and geojson_data.get('features'):
-                    # Store the heatmap in database using the class method
-                    stored_id = polygon_db.store_heatmap(
-                        heatmap_name=f"{interpolation_method}_r{i//100}c{i%100}_{lat:.3f}_{lon:.3f}",
-                        center_lat=lat,
-                        center_lon=lon,
-                        radius_km=search_radius_km,
-                        interpolation_method=interpolation_method,
-                        heatmap_data={},  # Empty dict for compatibility
-                        geojson_data=geojson_data,
-                        well_count=len(wells_data)
-                    )
-                    
-                    if stored_id:
-                        success_count += 1
-                        stored_heatmap_ids.append(stored_id)
-                        print(f"✅ Successfully generated and stored heatmap at grid point {i+1}")
-                    else:
-                        print(f"⚠️ Generated heatmap at grid point {i+1} but storage failed")
-                else:
-                    error_msg = f"No data generated for grid point {i+1} at ({lat:.6f}, {lon:.6f})"
-                    error_messages.append(error_msg)
-                    print(f"❌ {error_msg}")
-                    
-            except Exception as e:
-                error_msg = f"Error at grid point {i+1} ({lat:.6f}, {lon:.6f}): {str(e)}"
-                error_messages.append(error_msg)
-                print(f"❌ {error_msg}")
-        
-        print(f"📋 GRID-BASED GENERATION RESULTS:")
-        print(f"   Grid points processed: {len(grid_points_latlon)}")
-        print(f"   Successful heatmaps: {success_count}")
-        print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
-        print(f"   Errors: {len(error_messages)}")
-        
-        return success_count, stored_heatmap_ids, error_messages
-        
+            print(f"📋 FULL GENERATION RESULTS:")
+            print(f"   Grid processed: {actual_grid[0]} × {actual_grid[1]}")
+            print(f"   Successful heatmaps: {success_count}")
+            print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
+            print(f"   Errors: {len(error_messages)}")
+            
+            return success_count, stored_heatmap_ids, error_messages
+        else:
+            error_msg = "Unexpected result format from sequential generation"
+            print(f"❌ {error_msg}")
+            return 0, [], [error_msg]
+            
     except Exception as e:
-        error_msg = f"Error in grid-based automated generation: {str(e)}"
+        error_msg = f"Error in full automated generation: {str(e)}"
         print(f"❌ {error_msg}")
         return 0, [], [error_msg]
 

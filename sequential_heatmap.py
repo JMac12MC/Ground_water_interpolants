@@ -137,12 +137,10 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 try:
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
-                        center_lat=grid_point[0],
-                        center_lng=grid_point[1],
+                        center_point=(grid_point[0], grid_point[1]),
                         radius_km=search_radius,
                         resolution=100,  # Fixed resolution
-                        soil_polygons=soil_polygons,
-                        clipping_polygon=new_clipping_polygon
+                        soil_polygons=soil_polygons
                     )
                 except Exception as e:
                     print(f"❌ Error generating indicator mask for grid point {i+1}: {str(e)}")
@@ -153,35 +151,32 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             try:
                 geo_json_result = generate_geo_json_grid(
                     filtered_wells.copy(),
-                    center_lat=grid_point[0],
-                    center_lng=grid_point[1],
+                    center_point=(grid_point[0], grid_point[1]),
                     radius_km=search_radius,
                     resolution=100,  # Fixed resolution
                     method=interpolation_method,
                     indicator_mask=indicator_mask,
                     soil_polygons=soil_polygons,
-                    clipping_polygon=new_clipping_polygon,
-                    global_min_value=global_min_value,
-                    global_max_value=global_max_value,
-                    colormap_metadata=colormap_metadata
+                    new_clipping_polygon=new_clipping_polygon
                 )
                 
                 if geo_json_result and isinstance(geo_json_result, dict) and 'features' in geo_json_result:
                     # Create unique heatmap identifier based on grid point
                     heatmap_id = f"{interpolation_method}_gridpoint{i+1}_{grid_point[0]:.3f}_{grid_point[1]:.3f}"
                     
-                    # Store in database
-                    from database import store_heatmap_in_db
-                    success = store_heatmap_in_db(
-                        polygon_db,
-                        heatmap_id,
-                        geo_json_result,
-                        interpolation_method,
-                        grid_point[0],  # center_lat
-                        grid_point[1],  # center_lng
-                        search_radius,
-                        colormap_metadata
+                    # Store in database using the PolygonDatabase method
+                    success_id = polygon_db.store_heatmap(
+                        heatmap_name=heatmap_id,
+                        center_lat=grid_point[0],
+                        center_lon=grid_point[1],
+                        radius_km=search_radius,
+                        interpolation_method=interpolation_method,
+                        heatmap_data=[],  # Not using point data for GeoJSON heatmaps
+                        geojson_data=geo_json_result,
+                        well_count=len(filtered_wells),
+                        colormap_metadata=colormap_metadata
                     )
+                    success = success_id is not None
                     
                     if success:
                         stored_heatmap_ids.append(heatmap_id)

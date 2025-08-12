@@ -236,59 +236,73 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     print(f"📐 Convex hull boundary: SW({hull_sw_lat:.6f}, {hull_sw_lon:.6f}) to NE({hull_ne_lat:.6f}, {hull_ne_lon:.6f})")
     print(f"📐 Hull area: {hull_area_km2:.0f} km² vs rectangular area: {((ne_lat-sw_lat)*111)*((ne_lon-sw_lon)*111*np.cos(np.radians((sw_lat+ne_lat)/2))):.0f} km²")
     
-    # Calculate grid based on hull bounds (in NZTM for accuracy)
-    hull_x_km = (hull_max_x - hull_min_x) / 1000.0
-    hull_y_km = (hull_max_y - hull_min_y) / 1000.0
+    # Generate the exact same 19.82km grid points used in visualization
+    from shapely.geometry import Point, Polygon
     
-    # Calculate optimal grid size (19.82km spacing) with small buffer
-    grid_spacing_km = 19.82
+    # Create Shapely polygon from convex hull
+    hull_polygon = Polygon(hull_vertices)
     
-    # Add smaller buffer since convex hull already bounds the data efficiently
-    rows_needed = max(1, int(np.ceil(hull_y_km / grid_spacing_km)) + 1)  # +1 for buffer coverage
-    cols_needed = max(1, int(np.ceil(hull_x_km / grid_spacing_km)) + 1)  # +1 for buffer coverage
+    # Get bounds for grid generation
+    min_x, min_y, max_x, max_y = hull_polygon.bounds
     
-    # Use hull center for positioning
-    center_lat = (hull_sw_lat + hull_ne_lat) / 2
-    center_lon = (hull_sw_lon + hull_ne_lon) / 2
+    # Generate grid points at 19.82km spacing (same as visualization)
+    grid_spacing = 19820  # 19.82km in meters (NZTM units)
     
-    total_needed = rows_needed * cols_needed
+    # Calculate grid bounds with padding
+    start_x = int(min_x // grid_spacing) * grid_spacing
+    start_y = int(min_y // grid_spacing) * grid_spacing
+    end_x = int(max_x // grid_spacing + 1) * grid_spacing
+    end_y = int(max_y // grid_spacing + 1) * grid_spacing
     
-    print(f"📐 Hull extent: {hull_x_km:.1f}km × {hull_y_km:.1f}km")
-    print(f"📐 Optimal grid with buffer: {rows_needed} × {cols_needed} = {total_needed} heatmaps needed")
-    print(f"📍 Convex hull provides efficient coverage following data distribution")
+    # Generate all grid points within convex hull
+    grid_points_nztm = []
+    grid_points_latlon = []
     
-    # Limit to max_tiles
-    if total_needed > max_tiles:
-        # Scale down proportionally
-        scale_factor = np.sqrt(max_tiles / total_needed)
-        rows_limited = max(1, int(rows_needed * scale_factor))
-        cols_limited = max(1, int(cols_needed * scale_factor))
-        actual_grid = (rows_limited, cols_limited)
-        print(f"📐 Limited to: {rows_limited} × {cols_limited} = {rows_limited * cols_limited} heatmaps (max {max_tiles})")
+    y = start_y
+    while y <= end_y:
+        x = start_x
+        while x <= end_x:
+            point_nztm = Point(x, y)
+            # Check if point is within convex hull
+            if hull_polygon.contains(point_nztm):
+                grid_points_nztm.append((x, y))
+                # Convert to lat/lon for heatmap generation
+                lon, lat = transformer_to_latlon.transform(x, y)
+                grid_points_latlon.append([lat, lon])
+            x += grid_spacing
+        y += grid_spacing
+    
+    total_grid_points = len(grid_points_latlon)
+    
+    print(f"📐 Generated {total_grid_points} precise 19.82km grid points within convex hull")
+    print(f"📍 Using pre-calculated grid points for efficient coverage")
+    
+    # Limit to max_tiles if necessary
+    if total_grid_points > max_tiles:
+        # Use first max_tiles points (could be improved with better selection)
+        grid_points_latlon = grid_points_latlon[:max_tiles]
+        actual_total = max_tiles
+        print(f"📐 Limited to first {max_tiles} grid points (max {max_tiles})")
     else:
-        actual_grid = (rows_needed, cols_needed)
-        print(f"📐 Using full grid: {rows_needed} × {cols_needed} = {total_needed} heatmaps")
-    
-    # Use convex hull center for optimal positioning
-    start_point = [center_lat, center_lon]  # Start from convex hull center
+        actual_total = total_grid_points
+        print(f"📐 Using all {total_grid_points} grid points")
     
     try:
-        result = generate_quad_heatmaps_sequential(
+        result = generate_grid_heatmaps_from_points(
             wells_data, 
-            start_point, 
+            grid_points_latlon, 
             search_radius_km,  # use the parameter value
             interpolation_method, 
             polygon_db, 
             soil_polygons, 
-            new_clipping_polygon, 
-            actual_grid
+            new_clipping_polygon
         )
         
         if isinstance(result, tuple) and len(result) >= 3:
             success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
             
             print(f"📋 FULL GENERATION RESULTS:")
-            print(f"   Grid processed: {actual_grid[0]} × {actual_grid[1]}")
+            print(f"   Grid points processed: {actual_total}")
             print(f"   Successful heatmaps: {success_count}")
             print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
             print(f"   Errors: {len(error_messages)}")

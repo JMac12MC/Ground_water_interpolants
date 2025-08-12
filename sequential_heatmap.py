@@ -1,6 +1,224 @@
 # Sequential Heatmap Generation System
 # Generates, stores, and displays heatmaps one at a time to prevent crashes
 
+def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):
+    """
+    Generate heatmaps using pre-calculated grid points from the 19.82km grid visualization.
+    
+    Args:
+        wells_data: DataFrame with well data
+        grid_points: List of [lat, lon] coordinates from the pre-calculated 19.82km grid
+        search_radius: Search radius for each heatmap
+        interpolation_method: Kriging method to use
+        polygon_db: Database connection
+        soil_polygons: Optional soil polygon data
+        new_clipping_polygon: Optional clipping polygon
+    
+    Returns:
+        tuple: (success_count, stored_heatmap_ids, error_messages)
+    """
+    import streamlit as st
+    from interpolation import generate_geo_json_grid, generate_indicator_kriging_mask
+    from utils import is_within_square, get_distance
+    import numpy as np
+    
+    print(f"GRID-BASED HEATMAP GENERATION: Processing {len(grid_points)} pre-calculated grid points")
+    
+    # Process each grid point sequentially
+    generated_heatmaps = []
+    stored_heatmap_ids = []
+    error_messages = []
+    
+    # Calculate GLOBAL colormap range ONCE for ALL heatmaps to ensure consistency
+    print(f"🎨 CALCULATING GLOBAL COLORMAP RANGE for all {len(grid_points)} grid points...")
+    global_values = []
+    
+    # Pre-scan all grid points to get global value range
+    for i, grid_point in enumerate(grid_points):
+        # Filter wells for this grid point
+        wells_df_temp = wells_data.copy()
+        wells_df_temp['within_square'] = wells_df_temp.apply(
+            lambda row: is_within_square(
+                row['latitude'], 
+                row['longitude'],
+                grid_point[0],
+                grid_point[1],
+                search_radius
+            ), 
+            axis=1
+        )
+        
+        filtered_wells_temp = wells_df_temp[wells_df_temp['within_square']]
+        
+        if len(filtered_wells_temp) > 0:
+            # Get values from this area's wells for global range calculation
+            if interpolation_method == 'indicator_kriging':
+                # For indicator kriging, values are always 0-1
+                global_values.extend([0.0, 1.0])
+            else:
+                # For yield kriging, use actual yield values
+                yield_values = filtered_wells_temp['yield_rate'].dropna()
+                if len(yield_values) > 0:
+                    global_values.extend(yield_values.tolist())
+    
+    # Calculate final global range AND percentile-based color enhancement
+    if global_values:
+        global_min_value = min(global_values)
+        global_max_value = max(global_values)
+        print(f"🎨 GLOBAL COLORMAP RANGE: {global_min_value:.2f} to {global_max_value:.2f} (from {len(global_values)} values across all grid points)")
+        
+        # Calculate percentile-based color mapping for enhanced data discrimination
+        global_percentiles = np.percentile(global_values, np.linspace(0, 100, num=256))
+        percentile_25 = np.percentile(global_values, 25)
+        percentile_50 = np.percentile(global_values, 50)
+        percentile_75 = np.percentile(global_values, 75)
+        
+        print(f"🎨 PERCENTILE ENHANCEMENT: 25th={percentile_25:.2f}, 50th={percentile_50:.2f}, 75th={percentile_75:.2f}")
+        print(f"🎨 PERCENTILE COLORMAP: 256 bins for high-density data discrimination")
+        
+    else:
+        # Fallback defaults
+        if interpolation_method == 'indicator_kriging':
+            global_min_value, global_max_value = 0.0, 1.0
+        else:
+            global_min_value, global_max_value = 0.0, 25.0
+        global_percentiles = None
+        percentile_25 = percentile_50 = percentile_75 = None
+        print(f"🎨 GLOBAL COLORMAP RANGE: Using fallback {global_min_value:.2f} to {global_max_value:.2f}")
+    
+    # Store the global colormap range AND percentile data for consistent application
+    colormap_metadata = {
+        'global_min': global_min_value,
+        'global_max': global_max_value,
+        'method': interpolation_method,
+        'generated_at': str(np.datetime64('now')),
+        'percentiles': {
+            '25th': percentile_25,
+            '50th': percentile_50, 
+            '75th': percentile_75
+        } if global_values else None,
+        'total_values': len(global_values) if global_values else 0
+    }
+    
+    # Process each grid point
+    for i, grid_point in enumerate(grid_points):
+        try:
+            st.write(f"🔄 Building heatmap {i+1}/{len(grid_points)}: Grid Point {i+1} ({grid_point[0]:.6f}, {grid_point[1]:.6f})")
+            
+            # Filter wells for this grid point
+            wells_df = wells_data.copy()
+            wells_df['within_square'] = wells_df.apply(
+                lambda row: is_within_square(
+                    row['latitude'], 
+                    row['longitude'],
+                    grid_point[0],
+                    grid_point[1],
+                    search_radius
+                ), 
+                axis=1
+            )
+            
+            filtered_wells = wells_df[wells_df['within_square']]
+            
+            if len(filtered_wells) == 0:
+                error_messages.append(f"No wells found for grid point {i+1}")
+                continue
+                
+            print(f"  GRID POINT {i+1}: {len(filtered_wells)} wells found")
+            
+            # Generate indicator mask if needed
+            indicator_mask = None
+            methods_requiring_mask = [
+                'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
+                'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
+            ]
+            
+            if interpolation_method in methods_requiring_mask:
+                try:
+                    indicator_mask = generate_indicator_kriging_mask(
+                        filtered_wells.copy(),
+                        center_lat=grid_point[0],
+                        center_lng=grid_point[1],
+                        radius_km=search_radius,
+                        resolution=100,  # Fixed resolution
+                        soil_polygons=soil_polygons,
+                        clipping_polygon=new_clipping_polygon
+                    )
+                except Exception as e:
+                    print(f"❌ Error generating indicator mask for grid point {i+1}: {str(e)}")
+                    error_messages.append(f"Indicator mask error for grid point {i+1}: {str(e)}")
+                    continue
+            
+            # Generate the heatmap
+            try:
+                geo_json_result = generate_geo_json_grid(
+                    filtered_wells.copy(),
+                    center_lat=grid_point[0],
+                    center_lng=grid_point[1],
+                    radius_km=search_radius,
+                    resolution=100,  # Fixed resolution
+                    method=interpolation_method,
+                    indicator_mask=indicator_mask,
+                    soil_polygons=soil_polygons,
+                    clipping_polygon=new_clipping_polygon,
+                    global_min_value=global_min_value,
+                    global_max_value=global_max_value,
+                    colormap_metadata=colormap_metadata
+                )
+                
+                if geo_json_result and isinstance(geo_json_result, dict) and 'features' in geo_json_result:
+                    # Create unique heatmap identifier based on grid point
+                    heatmap_id = f"{interpolation_method}_gridpoint{i+1}_{grid_point[0]:.3f}_{grid_point[1]:.3f}"
+                    
+                    # Store in database
+                    from database import store_heatmap_in_db
+                    success = store_heatmap_in_db(
+                        polygon_db,
+                        heatmap_id,
+                        geo_json_result,
+                        interpolation_method,
+                        grid_point[0],  # center_lat
+                        grid_point[1],  # center_lng
+                        search_radius,
+                        colormap_metadata
+                    )
+                    
+                    if success:
+                        stored_heatmap_ids.append(heatmap_id)
+                        generated_heatmaps.append({
+                            'id': heatmap_id,
+                            'center': grid_point,
+                            'geojson': geo_json_result
+                        })
+                        print(f"✅ Grid point {i+1} heatmap generated and stored: {heatmap_id}")
+                    else:
+                        error_messages.append(f"Failed to store heatmap for grid point {i+1}")
+                        print(f"❌ Failed to store heatmap for grid point {i+1}")
+                else:
+                    error_messages.append(f"Invalid GeoJSON result for grid point {i+1}")
+                    print(f"❌ Invalid GeoJSON result for grid point {i+1}")
+                    
+            except Exception as e:
+                error_msg = f"Heatmap generation error for grid point {i+1}: {str(e)}"
+                error_messages.append(error_msg)
+                print(f"❌ {error_msg}")
+                continue
+                
+        except Exception as e:
+            error_msg = f"Unexpected error processing grid point {i+1}: {str(e)}"
+            error_messages.append(error_msg)
+            print(f"❌ {error_msg}")
+            continue
+    
+    success_count = len(stored_heatmap_ids)
+    print(f"📋 GRID-BASED GENERATION COMPLETE:")
+    print(f"   Grid points processed: {len(grid_points)}")
+    print(f"   Successful heatmaps: {success_count}")
+    print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
+    print(f"   Errors: {len(error_messages)}")
+    
+    return success_count, stored_heatmap_ids, error_messages
+
 def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, grid_size=None):
     """
     Generate heatmaps sequentially in a grid pattern to avoid memory issues.

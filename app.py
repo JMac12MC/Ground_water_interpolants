@@ -63,6 +63,7 @@ session_defaults = {
     'show_new_clipping_polygon': False,
     'show_well_bounds': False,
     'show_convex_hull': False,
+    'show_grid_points': False,
     'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
 }
 
@@ -421,6 +422,7 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
     st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary calculated from ALL wells (62% more efficient than rectangular bounds)")
+    st.session_state.show_grid_points = st.checkbox("Show 19.82km Grid Points", value=getattr(st.session_state, 'show_grid_points', False), help="Show grid of potential heatmap centers at 19.82km spacing within the convex hull boundary")
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
@@ -887,6 +889,102 @@ with main_col1:
                     
         except Exception as e:
             print(f"Error displaying convex hull: {e}")
+
+    # Show 19.82km grid points within convex hull if requested
+    if st.session_state.show_grid_points and st.session_state.wells_data is not None:
+        try:
+            wells_df = st.session_state.wells_data
+            
+            # Calculate convex hull and generate grid points within it
+            if 'latitude' in wells_df.columns and 'longitude' in wells_df.columns:
+                valid_wells = wells_df.dropna(subset=['latitude', 'longitude'])
+                
+                if len(valid_wells) > 0:
+                    from scipy.spatial import ConvexHull
+                    from pyproj import Transformer
+                    from shapely.geometry import Point, Polygon
+                    from utils import get_distance
+                    
+                    # Convert to NZTM for accurate grid generation
+                    transformer_to_nztm = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+                    transformer_to_latlon = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+                    
+                    # Get convex hull in NZTM coordinates
+                    all_lons = valid_wells['longitude'].astype(float)
+                    all_lats = valid_wells['latitude'].astype(float)
+                    nztm_coords = [transformer_to_nztm.transform(lon, lat) for lat, lon in zip(all_lats, all_lons)]
+                    nztm_x = [coord[0] for coord in nztm_coords]
+                    nztm_y = [coord[1] for coord in nztm_coords]
+                    
+                    # Calculate convex hull
+                    points = np.column_stack([nztm_x, nztm_y])
+                    hull = ConvexHull(points)
+                    hull_vertices_nztm = points[hull.vertices]
+                    
+                    # Create Shapely polygon from convex hull
+                    hull_polygon = Polygon(hull_vertices_nztm)
+                    
+                    # Get bounds for grid generation
+                    min_x, min_y, max_x, max_y = hull_polygon.bounds
+                    
+                    # Generate grid points at 19.82km spacing
+                    grid_spacing = 19820  # 19.82km in meters (NZTM units)
+                    
+                    # Calculate grid bounds with padding
+                    start_x = int(min_x // grid_spacing) * grid_spacing
+                    start_y = int(min_y // grid_spacing) * grid_spacing
+                    end_x = int(max_x // grid_spacing + 1) * grid_spacing
+                    end_y = int(max_y // grid_spacing + 1) * grid_spacing
+                    
+                    # Generate all grid points
+                    grid_points_nztm = []
+                    grid_points_latlon = []
+                    
+                    y = start_y
+                    while y <= end_y:
+                        x = start_x
+                        while x <= end_x:
+                            point_nztm = Point(x, y)
+                            # Check if point is within convex hull
+                            if hull_polygon.contains(point_nztm):
+                                grid_points_nztm.append((x, y))
+                                # Convert to lat/lon for display
+                                lon, lat = transformer_to_latlon.transform(x, y)
+                                grid_points_latlon.append((lat, lon))
+                            x += grid_spacing
+                        y += grid_spacing
+                    
+                    print(f"GRID GENERATION: Created {len(grid_points_latlon)} grid points at 19.82km spacing within convex hull")
+                    
+                    # Add grid points to map
+                    for i, (lat, lon) in enumerate(grid_points_latlon):
+                        # Calculate distance from center for reference
+                        center_lat = sum([coord[0] for coord in grid_points_latlon]) / len(grid_points_latlon)
+                        center_lon = sum([coord[1] for coord in grid_points_latlon]) / len(grid_points_latlon)
+                        distance_from_center = get_distance(center_lat, center_lon, lat, lon)
+                        
+                        folium.Marker(
+                            [lat, lon],
+                            popup=f"Grid Point {i+1}<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}<br>Distance from center: {distance_from_center:.1f} km<br>Potential heatmap center",
+                            icon=folium.Icon(color='green', icon='plus', prefix='fa'),
+                            tooltip=f"Grid Point {i+1} (19.82km spacing)"
+                        ).add_to(m)
+                    
+                    # Add grid info marker at convex hull center
+                    hull_center_nztm = hull_polygon.centroid
+                    hull_center_lon, hull_center_lat = transformer_to_latlon.transform(hull_center_nztm.x, hull_center_nztm.y)
+                    
+                    folium.Marker(
+                        [hull_center_lat, hull_center_lon],
+                        popup=f"19.82km Grid System<br>Total grid points: {len(grid_points_latlon)}<br>Spacing: 19.82km (North/South/East/West)<br>Coverage: Convex hull boundary only<br>These represent optimal heatmap centers",
+                        icon=folium.Icon(color='darkgreen', icon='th', prefix='fa'),
+                        tooltip="Grid System Center"
+                    ).add_to(m)
+                    
+                    print(f"GRID VISUALIZATION: Added {len(grid_points_latlon)} green markers at 19.82km spacing")
+                    
+        except Exception as e:
+            print(f"Error displaying grid points: {e}")
 
     # Add comprehensive clipping polygon if available and enabled
     if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:

@@ -553,7 +553,7 @@ with st.sidebar:
 
         # Tile Boundary Snapping section
         st.subheader("🔧 Tile Boundary Optimization")
-        st.write("Fix gaps and overlaps between adjacent heatmap tiles by snapping only boundary vertices (within 100m). Internal triangle vertices remain unchanged.")
+        st.write("Fix gaps and overlaps between adjacent heatmap tiles by snapping only boundary vertices (within 300m). Internal triangle vertices remain unchanged.")
         
         if st.button("🎯 Snap Boundary Vertices Only", type="primary"):
             print("\n" + "="*50)

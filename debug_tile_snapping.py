@@ -159,8 +159,8 @@ def test_vertex_snapping():
     print(f"Grid 1 in meters: {grid1_meters}")
     print(f"Grid 2 in meters: {grid2_meters}")
     
-    # Test snapping with 100m threshold
-    snap_distance = 100  # meters
+    # Test snapping with 300m threshold
+    snap_distance = 300  # meters
     tree = KDTree(grid2_meters)
     
     snapped_count = 0

@@ -2581,7 +2581,7 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
-def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100):
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
     """
     Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
     
@@ -2668,6 +2668,50 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         height = len(lats)
         xi, yi = np.meshgrid(lons, lats)
         
+        # Apply clipping polygon mask if provided
+        clipping_mask = None
+        if clipping_polygon is not None:
+            try:
+                from shapely.geometry import Point
+                import geopandas as gpd
+                
+                print(f"🗺️ Applying clipping polygon to {width}x{height} raster grid...")
+                
+                # Create mask for clipping
+                clipping_mask = np.zeros((height, width), dtype=bool)
+                
+                # Parse clipping polygon geometry
+                if hasattr(clipping_polygon, 'geometry') and len(clipping_polygon) > 0:
+                    # It's a GeoDataFrame
+                    merged_clipping_geom = clipping_polygon.geometry.unary_union
+                elif hasattr(clipping_polygon, '__geo_interface__'):
+                    # It's already a geometry
+                    merged_clipping_geom = clipping_polygon
+                else:
+                    print("Warning: Invalid clipping polygon format, skipping clipping")
+                    merged_clipping_geom = None
+                
+                if merged_clipping_geom is not None:
+                    # Check each grid point
+                    points_checked = 0
+                    points_inside = 0
+                    for i in range(height):
+                        for j in range(width):
+                            point = Point(xi[i, j], yi[i, j])
+                            is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
+                            clipping_mask[i, j] = is_inside
+                            points_checked += 1
+                            if is_inside:
+                                points_inside += 1
+                    
+                    print(f"🗺️ Clipping results: {points_inside}/{points_checked} grid points inside clipping polygon")
+                else:
+                    clipping_mask = None
+                    
+            except Exception as e:
+                print(f"Error applying clipping polygon: {e}")
+                clipping_mask = None
+        
         # Interpolate values onto 100m-spaced grid using multiple methods for complete coverage
         try:
             # Start with cubic interpolation for smooth results
@@ -2707,6 +2751,12 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         print(f"Generated {width}x{height} raster with interpolation across all triangulated data")
         print(f"Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
+        
+        # Apply clipping mask to the interpolated data
+        if clipping_mask is not None:
+            # Set areas outside clipping polygon to NaN to make them transparent
+            zi[~clipping_mask] = np.nan
+            print(f"🗺️ Applied clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
         
         # Use the interpolated zi for display
         zi_smooth = zi

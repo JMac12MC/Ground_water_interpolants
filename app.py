@@ -1923,7 +1923,8 @@ with main_col1:
                     overall_bounds, 
                     raster_size=(512, 512), 
                     global_colormap_func=lambda value: get_global_unified_color(value, method),
-                    opacity=st.session_state.get('heatmap_opacity', 0.7)
+                    opacity=st.session_state.get('heatmap_opacity', 0.7),
+                    clipping_polygon=st.session_state.new_clipping_polygon
                 )
                 
                 if raster_overlay:

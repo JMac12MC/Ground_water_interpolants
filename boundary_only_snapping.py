@@ -260,35 +260,27 @@ def run_boundary_only_snapping():
 
 def save_snapped_heatmaps(snapped_tiles, db):
     """Save snapped heatmaps back to database."""
-    try:
-        from sqlalchemy import text
-        
-        updated_count = 0
-        
-        with db.engine.connect() as conn:
-            for tile_id, tile_data in snapped_tiles.items():
-                geojson_str = json.dumps(tile_data['geojson'])
-                
-                result = conn.execute(text("""
-                    UPDATE stored_heatmaps 
-                    SET geojson_data = :geojson_data
-                    WHERE id = :heatmap_id
-                """), {
-                    'geojson_data': geojson_str,
-                    'heatmap_id': tile_id
-                })
-                
-                if result.rowcount > 0:
-                    updated_count += 1
+    updated_count = 0
+    
+    for tile_id, tile_data in snapped_tiles.items():
+        try:
+            # Use the database's built-in update method with retry logic
+            geojson_str = json.dumps(tile_data['geojson'])
             
-            conn.commit()
-        
-        print(f"📊 Updated {updated_count} heatmaps in database with boundary-snapped vertices")
-        
-    except Exception as e:
-        print(f"❌ Error saving boundary-snapped heatmaps: {e}")
-        import traceback
-        print(traceback.format_exc())
+            # Try to update using database method with connection retry
+            success = db.update_stored_heatmap_geojson(tile_id, geojson_str)
+            
+            if success:
+                updated_count += 1
+                print(f"✅ Updated heatmap {tile_id} with snapped boundaries")
+            else:
+                print(f"⚠️ Failed to update heatmap {tile_id}")
+                
+        except Exception as e:
+            print(f"❌ Error updating heatmap {tile_id}: {e}")
+            continue
+    
+    print(f"📊 Successfully updated {updated_count}/{len(snapped_tiles)} heatmaps with boundary-snapped vertices")
 
 if __name__ == "__main__":
     run_boundary_only_snapping()

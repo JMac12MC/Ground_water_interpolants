@@ -736,3 +736,57 @@ class PolygonDatabase:
             except Exception as retry_error:
                 print(f"❌ RETRY FAILED: {retry_error}")
                 return False
+
+    def update_stored_heatmap_geojson(self, heatmap_id, geojson_data):
+        """
+        Update the GeoJSON data for a specific stored heatmap
+        
+        Parameters:
+        -----------
+        heatmap_id : int
+            ID of the heatmap to update
+        geojson_data : str
+            JSON string of the updated GeoJSON data
+            
+        Returns:
+        --------
+        bool
+            True if update was successful
+        """
+        import time
+        try:
+            # Ensure engine connection is available with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    if not hasattr(self, 'engine') or self.engine is None:
+                        if not self.database_url:
+                            return False
+                        self.engine = create_engine(self.database_url)
+                    
+                    with self.engine.connect() as conn:
+                        result = conn.execute(text("""
+                            UPDATE stored_heatmaps 
+                            SET geojson_data = :geojson_data
+                            WHERE id = :heatmap_id
+                        """), {
+                            'geojson_data': geojson_data,
+                            'heatmap_id': heatmap_id
+                        })
+                        conn.commit()
+                        
+                        return result.rowcount > 0
+                        
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        print(f"Retry {attempt + 1}: Database connection failed, retrying...")
+                        time.sleep(1)
+                        # Force engine recreation
+                        self.engine = None
+                        continue
+                    else:
+                        raise e
+                        
+        except Exception as e:
+            print(f"Error updating heatmap {heatmap_id}: {e}")
+            return False

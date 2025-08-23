@@ -131,49 +131,16 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
     print(f"📐 Test grid size: {actual_grid[0]} × {actual_grid[1]} (center-positioned for data coverage)")
     
     try:
-        # STEP 1: Generate indicator interpolants first (probability zones)
-        print(f"🎯 STEP 1: Generating indicator interpolants for probability zones...")
-        indicator_result = generate_quad_heatmaps_sequential(
+        result = generate_quad_heatmaps_sequential(
             wells_data, 
             start_point, 
             20,  # search_radius in km
-            'indicator_kriging',  # First generate indicator masks
+            interpolation_method, 
             polygon_db, 
             soil_polygons, 
             new_clipping_polygon, 
             actual_grid
         )
-        
-        # STEP 2: Generate depth to groundwater heatmaps clipped by high probability zones
-        print(f"🌊 STEP 2: Generating depth to groundwater heatmaps with indicator clipping...")
-        depth_result = generate_quad_heatmaps_sequential(
-            wells_data, 
-            start_point, 
-            20,  # search_radius in km
-            interpolation_method,  # Original method (e.g., ground_water_level_kriging)
-            polygon_db, 
-            soil_polygons, 
-            new_clipping_polygon, 
-            actual_grid
-        )
-        
-        # Combine results from both steps
-        total_success = 0
-        all_heatmap_ids = []
-        
-        if isinstance(indicator_result, tuple) and len(indicator_result) >= 2:
-            indicator_success, indicator_ids = indicator_result[0], indicator_result[1]
-            total_success += indicator_success
-            all_heatmap_ids.extend(indicator_ids)
-            print(f"🎯 INDICATOR RESULT: {indicator_success} successful indicator interpolants")
-        
-        if isinstance(depth_result, tuple) and len(depth_result) >= 2:
-            depth_success, depth_ids = depth_result[0], depth_result[1]
-            total_success += depth_success
-            all_heatmap_ids.extend(depth_ids)
-            print(f"🌊 DEPTH RESULT: {depth_success} successful depth heatmaps with indicator clipping")
-        
-        result = (total_success, all_heatmap_ids)
         
         # Extract results
         if isinstance(result, tuple) and len(result) >= 2:
@@ -322,51 +289,15 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     
     try:
         from sequential_heatmap import generate_grid_heatmaps_from_points
-        
-        # STEP 1: Generate indicator interpolants first (probability zones)
-        print(f"🎯 STEP 1: Generating {actual_total} indicator interpolants for probability zones...")
-        indicator_result = generate_grid_heatmaps_from_points(
+        result = generate_grid_heatmaps_from_points(
             wells_data, 
             grid_points_latlon, 
-            search_radius_km,
-            'indicator_kriging',  # First generate indicator masks
+            search_radius_km,  # use the parameter value
+            interpolation_method, 
             polygon_db, 
             soil_polygons, 
             new_clipping_polygon
         )
-        
-        # STEP 2: Generate depth to groundwater heatmaps clipped by high probability zones  
-        print(f"🌊 STEP 2: Generating {actual_total} depth to groundwater heatmaps with indicator clipping...")
-        depth_result = generate_grid_heatmaps_from_points(
-            wells_data, 
-            grid_points_latlon, 
-            search_radius_km,
-            interpolation_method,  # Original method (e.g., ground_water_level_kriging)
-            polygon_db, 
-            soil_polygons, 
-            new_clipping_polygon
-        )
-        
-        # Combine results from both steps
-        total_success = 0
-        all_heatmap_ids = []
-        all_error_messages = []
-        
-        if isinstance(indicator_result, tuple) and len(indicator_result) >= 3:
-            indicator_success, indicator_ids, indicator_errors = indicator_result[0], indicator_result[1], indicator_result[2]
-            total_success += indicator_success
-            all_heatmap_ids.extend(indicator_ids)
-            all_error_messages.extend(indicator_errors)
-            print(f"🎯 INDICATOR RESULT: {indicator_success} successful indicator interpolants")
-        
-        if isinstance(depth_result, tuple) and len(depth_result) >= 3:
-            depth_success, depth_ids, depth_errors = depth_result[0], depth_result[1], depth_result[2]
-            total_success += depth_success
-            all_heatmap_ids.extend(depth_ids)
-            all_error_messages.extend(depth_errors)
-            print(f"🌊 DEPTH RESULT: {depth_success} successful depth heatmaps with indicator clipping")
-        
-        result = (total_success, all_heatmap_ids, all_error_messages)
         
         if isinstance(result, tuple) and len(result) >= 3:
             success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]

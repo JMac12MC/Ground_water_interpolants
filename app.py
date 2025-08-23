@@ -1868,10 +1868,7 @@ with main_col1:
         fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
     if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
-        # Filter for ground water level kriging heatmaps only (no limits - restore full functionality)
-        filtered_heatmaps = [h for h in st.session_state.stored_heatmaps if h.get('interpolation_method') == 'ground_water_level_kriging']
-        
-        print(f"Attempting to display {len(filtered_heatmaps)} depth heatmaps (filtered from {len(st.session_state.stored_heatmaps)} total)")
+        print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
         # For smooth raster style, collect ALL triangulated data first for unified processing
@@ -1881,8 +1878,8 @@ with main_col1:
                              'east': float('-inf'), 'west': float('inf')}
             valid_heatmaps_for_raster = []
             
-            # Collect all triangulated data from FILTERED heatmaps 
-            for i, stored_heatmap in enumerate(filtered_heatmaps):
+            # Collect all triangulated data from stored heatmaps
+            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 # Skip fresh heatmap to avoid duplication
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     continue
@@ -1952,9 +1949,8 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster OR if unified failed
         if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            for i, stored_heatmap in enumerate(filtered_heatmaps):
+            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 try:
-                        
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders
                     if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
@@ -2281,12 +2277,8 @@ with main_col1:
 
     # Layer control removed - all heatmaps display simultaneously
 
-    # Use st_folium with stability optimizations and reduced complexity
+    # Use st_folium with stability optimizations
     try:
-        # Add performance warning for large datasets
-        if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 50:
-            st.info(f"⏳ Loading {len([h for h in st.session_state.stored_heatmaps if h.get('interpolation_method') == 'ground_water_level_kriging'])} depth heatmaps - this may take a moment...")
-        
         map_data = st_folium(
             m,
             use_container_width=True,
@@ -2296,7 +2288,6 @@ with main_col1:
         )
     except Exception as e:
         print(f"Map rendering error: {e}")
-        st.error(f"Map rendering failed. Try switching to 'Smooth Raster' style for better performance with large datasets.")
         map_data = None
 
     # Process clicks from the map with better stability and error handling

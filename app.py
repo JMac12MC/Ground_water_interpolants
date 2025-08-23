@@ -2292,21 +2292,12 @@ with main_col1:
             use_container_width=True,
             height=600,
             key="main_map",
-            returned_objects=["last_clicked"],
-            debug=True
+            returned_objects=["last_clicked"]
         )
     except Exception as e:
         print(f"Map rendering error: {e}")
         st.error(f"Map rendering error: {e}")
-        # Fallback: try basic folium display
-        try:
-            import streamlit.components.v1 as components
-            map_html = m._repr_html_()
-            components.html(map_html, height=600)
-            map_data = None
-        except Exception as fallback_error:
-            st.error(f"Fallback map display failed: {fallback_error}")
-            map_data = None
+        map_data = None
 
     # Process clicks from the map with better stability and error handling
     try:

@@ -2581,7 +2581,7 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
-def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=200, clipping_polygon=None):
     """
     Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
     
@@ -2646,7 +2646,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         print(f"Extracted {len(values)} vertex points from triangulated heatmap data")
         
-        # Create regular grid at 100-meter spacing across all data bounds
+        # Create regular grid at configurable spacing across all data bounds
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
@@ -2661,7 +2661,24 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         lats = np.arange(south, north + lat_step, lat_step)
         lons = np.arange(west, east + lon_step, lon_step)
         
-        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
+        total_pixels = len(lats) * len(lons)
+        print(f"Created {len(lats)} x {len(lons)} = {total_pixels:,} sampling grid at {sampling_distance_meters}m spacing")
+        
+        # Safety check: limit maximum raster size to prevent memory issues
+        max_pixels = 1_000_000  # 1 million pixels max
+        if total_pixels > max_pixels:
+            print(f"⚠️ WARNING: Raster too large ({total_pixels:,} pixels). Reducing resolution...")
+            # Reduce resolution by increasing sampling distance
+            scale_factor = (total_pixels / max_pixels) ** 0.5
+            new_sampling_distance = int(sampling_distance_meters * scale_factor)
+            print(f"🔧 Adjusting sampling distance from {sampling_distance_meters}m to {new_sampling_distance}m")
+            
+            # Recalculate with reduced resolution
+            lat_step = new_sampling_distance / meters_per_degree_lat
+            lon_step = new_sampling_distance / meters_per_degree_lon
+            lats = np.arange(south, north + lat_step, lat_step)
+            lons = np.arange(west, east + lon_step, lon_step)
+            print(f"🔧 New grid: {len(lats)} x {len(lons)} = {len(lats) * len(lons):,} pixels")
         
         # Create coordinate grids
         width = len(lons)
@@ -2692,19 +2709,46 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                     merged_clipping_geom = None
                 
                 if merged_clipping_geom is not None:
-                    # Check each grid point
-                    points_checked = 0
-                    points_inside = 0
-                    for i in range(height):
-                        for j in range(width):
-                            point = Point(xi[i, j], yi[i, j])
-                            is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
-                            clipping_mask[i, j] = is_inside
-                            points_checked += 1
-                            if is_inside:
-                                points_inside += 1
-                    
-                    print(f"🗺️ Clipping results: {points_inside}/{points_checked} grid points inside clipping polygon")
+                    # Vectorized clipping using rasterize - much faster than point-by-point
+                    try:
+                        from rasterio.features import rasterize
+                        from affine import Affine
+                        
+                        # Create transform for rasterization
+                        transform = Affine.translation(west, south) * Affine.scale((east-west)/width, (north-south)/height)
+                        
+                        # Rasterize the clipping polygon
+                        clipping_mask = rasterize(
+                            [merged_clipping_geom],
+                            out_shape=(height, width),
+                            transform=transform,
+                            fill=0,  # Outside polygon
+                            default_value=1,  # Inside polygon
+                            dtype='uint8'
+                        ).astype(bool)
+                        
+                        points_inside = np.sum(clipping_mask)
+                        print(f"🗺️ Vectorized clipping: {points_inside:,}/{clipping_mask.size:,} grid points inside clipping polygon")
+                        
+                    except ImportError:
+                        print("🗺️ Rasterio not available, using point-by-point clipping (slower)...")
+                        # Fallback to point-by-point but with progress updates
+                        points_checked = 0
+                        points_inside = 0
+                        for i in range(height):
+                            for j in range(width):
+                                point = Point(xi[i, j], yi[i, j])
+                                is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
+                                clipping_mask[i, j] = is_inside
+                                points_checked += 1
+                                if is_inside:
+                                    points_inside += 1
+                                
+                                # Progress update every 10,000 points
+                                if points_checked % 10000 == 0:
+                                    print(f"🗺️ Clipping progress: {points_checked:,}/{clipping_mask.size:,} points processed...")
+                        
+                        print(f"🗺️ Point-by-point clipping complete: {points_inside}/{points_checked} grid points inside polygon")
                 else:
                     clipping_mask = None
                     

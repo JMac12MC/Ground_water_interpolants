@@ -1878,10 +1878,14 @@ with main_col1:
                              'east': float('-inf'), 'west': float('inf')}
             valid_heatmaps_for_raster = []
             
-            # Collect all triangulated data from stored heatmaps
+            # Collect all triangulated data from stored heatmaps - FILTER TO ONLY GROUND WATER LEVEL KRIGING
             for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 # Skip fresh heatmap to avoid duplication
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
+                    continue
+                
+                # FILTER: Only display ground_water_level_kriging heatmaps (indicator kriging used for clipping internally)
+                if stored_heatmap.get('interpolation_method') != 'ground_water_level_kriging':
                     continue
                     
                 geojson_data = stored_heatmap.get('geojson_data')
@@ -1951,6 +1955,10 @@ with main_col1:
         if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
             for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 try:
+                    # FILTER: Only display ground_water_level_kriging heatmaps (indicator kriging used for clipping internally)
+                    if stored_heatmap.get('interpolation_method') != 'ground_water_level_kriging':
+                        continue
+                        
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders
                     if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:

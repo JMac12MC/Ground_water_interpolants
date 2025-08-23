@@ -1868,14 +1868,8 @@ with main_col1:
         fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
     if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
-        # Filter for ground water level kriging heatmaps only
+        # Filter for ground water level kriging heatmaps only (no limits - restore full functionality)
         filtered_heatmaps = [h for h in st.session_state.stored_heatmaps if h.get('interpolation_method') == 'ground_water_level_kriging']
-        
-        # Performance optimization: limit display for browser stability
-        max_display_heatmaps = 20  # Limit to prevent browser crashes
-        if len(filtered_heatmaps) > max_display_heatmaps:
-            st.warning(f"⚠️ Performance Mode: Displaying {max_display_heatmaps} of {len(filtered_heatmaps)} depth heatmaps to prevent browser crashes. Use 'Smooth Raster' style for full coverage.")
-            filtered_heatmaps = filtered_heatmaps[:max_display_heatmaps]
         
         print(f"Attempting to display {len(filtered_heatmaps)} depth heatmaps (filtered from {len(st.session_state.stored_heatmaps)} total)")
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")

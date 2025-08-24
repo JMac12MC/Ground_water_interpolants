@@ -1594,8 +1594,8 @@ with main_col1:
                 
                 if has_selected_point and has_filtered_wells and wells_count > 0:
                     try:
-                        # Check if this is a depth to groundwater request
-                        if st.session_state.interpolation_method == 'depth_kriging':
+                        # Check if this is a request that needs indicator kriging clipping
+                        if st.session_state.interpolation_method in ['depth_kriging', 'ground_water_level_kriging']:
                             print(f"DUAL GENERATION: Triggering depth + indicator kriging workflow")
                             
                             # Use the dual heatmap generator for depth to groundwater with indicator clipping
@@ -1606,6 +1606,7 @@ with main_col1:
                                 click_point=st.session_state.selected_point,
                                 search_radius=st.session_state.search_radius,
                                 polygon_db=st.session_state.polygon_db,
+                                primary_method=st.session_state.interpolation_method,  # Pass the current method
                                 soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                                 new_clipping_polygon=st.session_state.new_clipping_polygon,
                                 grid_size=st.session_state.get('grid_size', (2, 3))
@@ -1894,33 +1895,35 @@ with main_col1:
 
     if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
         
-        # Check if we need to apply indicator clipping for depth_kriging heatmaps
+        # Check if we need to apply indicator clipping for heatmaps that support it
         heatmaps_to_display = st.session_state.stored_heatmaps
         
-        if st.session_state.interpolation_method == 'depth_kriging':
-            print(f"🎭 DEPTH KRIGING DISPLAY: Checking for indicator clipping...")
+        if st.session_state.interpolation_method in ['depth_kriging', 'ground_water_level_kriging']:
+            print(f"🎭 INDICATOR CLIPPING SUPPORT: Method '{st.session_state.interpolation_method}' supports indicator clipping...")
             
-            # Get depth heatmaps
-            depth_heatmaps = [h for h in st.session_state.stored_heatmaps if 'depth_kriging' in h.get('heatmap_name', '')]
+            # Get heatmaps that can be clipped (depth or ground water level)
+            clippable_heatmaps = [h for h in st.session_state.stored_heatmaps if 
+                                  'depth_kriging' in h.get('heatmap_name', '') or 
+                                  'ground_water_level_kriging' in h.get('heatmap_name', '')]
             
-            if depth_heatmaps:
+            if clippable_heatmaps:
                 # Get indicator heatmaps from database
                 try:
                     all_stored = st.session_state.polygon_db.get_all_stored_heatmaps()
                     indicator_heatmaps = [h for h in all_stored if 'indicator_kriging' in h.get('heatmap_name', '')]
                     
                     if indicator_heatmaps:
-                        print(f"🎭 APPLYING INDICATOR CLIPPING: {len(depth_heatmaps)} depth heatmaps with {len(indicator_heatmaps)} indicator masks")
+                        print(f"🎭 APPLYING INDICATOR CLIPPING: {len(clippable_heatmaps)} heatmaps with {len(indicator_heatmaps)} indicator masks")
                         
                         from dual_heatmap_generator import apply_indicator_clipping_to_depth_heatmaps
                         heatmaps_to_display = apply_indicator_clipping_to_depth_heatmaps(
                             st.session_state.polygon_db,
-                            depth_heatmaps,
+                            clippable_heatmaps,
                             indicator_heatmaps,
                             threshold=0.7
                         )
                     else:
-                        print(f"🎭 NO INDICATOR HEATMAPS: Displaying depth heatmaps without clipping")
+                        print(f"🎭 NO INDICATOR HEATMAPS: Displaying heatmaps without clipping")
                 except Exception as e:
                     print(f"🎭 CLIPPING ERROR: {e} - displaying unclipped heatmaps")
         

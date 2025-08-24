@@ -13,12 +13,15 @@ from interpolation import generate_geo_json_grid
 from database import PolygonDB
 
 
-def generate_depth_and_indicator_heatmaps(wells_data, click_point, search_radius, polygon_db, soil_polygons=None, new_clipping_polygon=None, grid_size=(2, 3)):
+def generate_depth_and_indicator_heatmaps(wells_data, click_point, search_radius, polygon_db, primary_method='depth_kriging', soil_polygons=None, new_clipping_polygon=None, grid_size=(2, 3)):
     """
-    Generate both depth to groundwater and indicator kriging heatmaps for all grid positions.
+    Generate both primary method (depth or ground water level) and indicator kriging heatmaps for all grid positions.
+    
+    Args:
+        primary_method: Either 'depth_kriging' or 'ground_water_level_kriging'
     
     Returns:
-        tuple: (depth_success_count, indicator_success_count, stored_depth_ids, stored_indicator_ids, error_messages)
+        tuple: (primary_success_count, indicator_success_count, stored_primary_ids, stored_indicator_ids, error_messages)
     """
     
     print(f"🔄 DUAL HEATMAP GENERATION: Starting depth + indicator kriging workflow")
@@ -81,33 +84,39 @@ def generate_depth_and_indicator_heatmaps(wells_data, click_point, search_radius
             
         print(f"  {location_name.upper()}: {len(filtered_wells)} wells found")
         
-        # STEP 1: Generate Depth to Groundwater heatmap
+        # STEP 1: Generate Primary Method heatmap (depth or ground water level)
         try:
-            print(f"  🌊 DEPTH KRIGING: Generating depth to groundwater heatmap...")
-            depth_geojson = generate_geo_json_grid(
+            method_name = "DEPTH KRIGING" if primary_method == 'depth_kriging' else "GROUND WATER LEVEL KRIGING"
+            print(f"  🌊 {method_name}: Generating {primary_method.replace('_', ' ')} heatmap...")
+            
+            # Configure variogram model based on method
+            variogram_model = 'spherical' if primary_method == 'ground_water_level_kriging' else 'spherical'
+            
+            primary_geojson = generate_geo_json_grid(
                 filtered_wells.copy(),
                 center_point,
                 search_radius,
                 resolution=100,
-                method='depth_kriging',
+                method=primary_method,
                 show_variance=False,
                 auto_fit_variogram=True,
-                variogram_model='spherical',
+                variogram_model=variogram_model,
                 soil_polygons=soil_polygons,
                 indicator_mask=None,  # No clipping during generation
                 new_clipping_polygon=new_clipping_polygon
             )
             
-            if depth_geojson and len(depth_geojson.get('features', [])) > 0:
-                print(f"  ✅ DEPTH KRIGING: Generated {len(depth_geojson.get('features', []))} features")
+            if primary_geojson and len(primary_geojson.get('features', [])) > 0:
+                print(f"  ✅ {method_name}: Generated {len(primary_geojson.get('features', []))} features")
                 
-                # Store depth heatmap in database
+                # Store primary heatmap in database
                 center_lat, center_lon = center_point
-                depth_heatmap_name = f"depth_kriging_{location_name}_{center_lat:.3f}_{center_lon:.3f}"
+                primary_heatmap_name = f"{primary_method}_{location_name}_{center_lat:.3f}_{center_lon:.3f}"
                 
-                # Convert to heatmap data format
-                depth_heatmap_data = []
-                for feature in depth_geojson.get('features', []):
+                # Convert to heatmap data format - handle different property names
+                property_name = 'depth' if primary_method == 'depth_kriging' else 'yield'  # ground water level uses 'yield' property
+                primary_heatmap_data = []
+                for feature in primary_geojson.get('features', []):
                     if 'geometry' in feature and 'properties' in feature:
                         geom = feature['geometry']
                         if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
@@ -115,34 +124,42 @@ def generate_depth_and_indicator_heatmaps(wells_data, click_point, search_radius
                             if len(coords) >= 3:
                                 lat = sum(coord[1] for coord in coords) / len(coords)
                                 lon = sum(coord[0] for coord in coords) / len(coords)
-                                value = feature['properties'].get('depth', 0)
-                                depth_heatmap_data.append([lat, lon, value])
+                                value = feature['properties'].get(property_name, 0)
+                                primary_heatmap_data.append([lat, lon, value])
+                
+                # Set appropriate ranges based on method
+                if primary_method == 'depth_kriging':
+                    global_min, global_max = 0.0, 50.0
+                    percentiles = {'25th': 2.0, '50th': 5.0, '75th': 15.0}
+                else:  # ground_water_level_kriging
+                    global_min, global_max = 0.0, 180.0
+                    percentiles = {'25th': 1.9, '50th': 3.5, '75th': 10.0}
                 
                 # Store in database
-                stored_depth_id = polygon_db.store_heatmap(
-                    heatmap_name=depth_heatmap_name,
+                stored_primary_id = polygon_db.store_heatmap(
+                    heatmap_name=primary_heatmap_name,
                     center_lat=float(center_lat),
                     center_lon=float(center_lon),
                     radius_km=search_radius,
-                    interpolation_method='depth_kriging',
-                    heatmap_data=depth_heatmap_data,
-                    geojson_data=depth_geojson,
-                    global_min=0.0,
-                    global_max=50.0,
-                    percentiles={'25th': 2.0, '50th': 5.0, '75th': 15.0},
-                    total_values=len(depth_heatmap_data)
+                    interpolation_method=primary_method,
+                    heatmap_data=primary_heatmap_data,
+                    geojson_data=primary_geojson,
+                    global_min=global_min,
+                    global_max=global_max,
+                    percentiles=percentiles,
+                    total_values=len(primary_heatmap_data)
                 )
                 
-                stored_depth_ids.append(stored_depth_id)
+                stored_depth_ids.append(stored_primary_id)
                 depth_success_count += 1
-                print(f"  💾 DEPTH STORED: ID {stored_depth_id}")
+                print(f"  💾 {method_name} STORED: ID {stored_primary_id}")
                 
             else:
-                error_messages.append(f"Failed to generate depth heatmap for {location_name}")
+                error_messages.append(f"Failed to generate {primary_method} heatmap for {location_name}")
                 
         except Exception as e:
-            error_messages.append(f"Error generating depth heatmap for {location_name}: {e}")
-            print(f"  ❌ DEPTH ERROR: {e}")
+            error_messages.append(f"Error generating {primary_method} heatmap for {location_name}: {e}")
+            print(f"  ❌ {method_name} ERROR: {e}")
         
         # STEP 2: Generate Indicator Kriging heatmap
         try:

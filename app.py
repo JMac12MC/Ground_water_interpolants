@@ -551,17 +551,17 @@ with st.sidebar:
                 else:
                     st.error("Database not available")
 
-        # Green Zone Analysis section
-        st.subheader("🟢 Green Zone Analysis")
-        st.write("Extract and display boundary polygons around high-probability indicator zones (≥0.7 threshold).")
+        # Red/Orange Zone Analysis section
+        st.subheader("🔴 Red/Orange Zone Analysis")
+        st.write("Extract and display boundary polygons around low/medium probability indicator zones (<0.7 threshold). Adjacent red and orange zones will be unified into continuous boundaries.")
         
-        if st.button("🌱 Extract Green Zone Boundary", type="primary"):
+        if st.button("🔴 Extract Red/Orange Zone Boundary", type="primary"):
             if st.session_state.polygon_db and st.session_state.stored_heatmaps:
-                with st.spinner("Extracting green zones from indicator kriging heatmaps..."):
+                with st.spinner("Extracting red/orange zones from indicator kriging heatmaps..."):
                     try:
                         from green_zone_extractor import extract_green_zones_from_indicator_heatmaps, store_green_zone_boundary
                         
-                        # Extract green zone boundary
+                        # Extract red/orange zone boundary
                         boundary_geojson = extract_green_zones_from_indicator_heatmaps(st.session_state.polygon_db)
                         
                         if boundary_geojson:
@@ -569,33 +569,32 @@ with st.sidebar:
                             polygon_id = store_green_zone_boundary(st.session_state.polygon_db, boundary_geojson)
                             
                             if polygon_id:
-                                st.success(f"✅ Green zone boundary extracted and stored! Polygon ID: {polygon_id}")
+                                st.success(f"✅ Red/orange zone boundary extracted and stored! Polygon ID: {polygon_id}")
                                 
                                 # Store boundary for map display
                                 st.session_state.green_zone_boundary = boundary_geojson
                                 st.session_state.show_green_zone_boundary = True
                                 
                                 # Show some stats
-                                feature = boundary_geojson['features'][0]
-                                feature_count = feature['properties']['feature_count']
-                                st.info(f"📊 Boundary encompasses {feature_count} high-probability features")
+                                total_zones = len(boundary_geojson['features'])
+                                st.info(f"📊 Created {total_zones} boundary polygon(s) around red/orange zones")
                             else:
                                 st.error("❌ Failed to store boundary polygon")
                         else:
-                            st.warning("⚠️ No green zones found. Make sure indicator kriging heatmaps are available.")
+                            st.warning("⚠️ No red/orange zones found. Make sure indicator kriging heatmaps are available.")
                             
                     except Exception as e:
-                        st.error(f"Error extracting green zones: {e}")
-                        print(f"Green zone extraction error: {e}")
+                        st.error(f"Error extracting red/orange zones: {e}")
+                        print(f"Red/orange zone extraction error: {e}")
             else:
                 st.error("Database or stored heatmaps not available")
         
-        # Display option for green zone boundary
+        # Display option for red/orange zone boundary
         if hasattr(st.session_state, 'green_zone_boundary') and st.session_state.green_zone_boundary:
             st.session_state.show_green_zone_boundary = st.checkbox(
-                "🌱 Show Green Zone Boundary", 
+                "🔴 Show Red/Orange Zone Boundary", 
                 value=getattr(st.session_state, 'show_green_zone_boundary', False),
-                help="Display the boundary polygon around high-probability indicator zones"
+                help="Display the boundary polygon around low/medium probability indicator zones"
             )
 
         # Tile Boundary Snapping section
@@ -1095,12 +1094,12 @@ with main_col1:
             
             success = display_green_zone_boundary_on_map(m, st.session_state.green_zone_boundary)
             if success:
-                print("🌱 GREEN ZONE BOUNDARY: Added to map successfully")
+                print("🔴 RED/ORANGE ZONE BOUNDARY: Added to map successfully")
             else:
-                print("❌ GREEN ZONE BOUNDARY: Failed to add to map")
+                print("❌ RED/ORANGE ZONE BOUNDARY: Failed to add to map")
                 
         except Exception as e:
-            print(f"Error displaying green zone boundary: {e}")
+            print(f"Error displaying red/orange zone boundary: {e}")
 
     # UNIFIED COLORMAP PROCESSING: Use stored colormap metadata for consistent coloring
     global_min_value = float('inf')

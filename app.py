@@ -1604,7 +1604,6 @@ with main_col1:
                             interpolation_method=st.session_state.interpolation_method,
                             polygon_db=st.session_state.polygon_db,
                             soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            banks_peninsula_coords=None,
                             new_clipping_polygon=st.session_state.new_clipping_polygon,
                             grid_size=st.session_state.get('grid_size', (2, 3))
                         )

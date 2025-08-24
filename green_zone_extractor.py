@@ -22,13 +22,29 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
     # Get all stored heatmaps
     all_heatmaps = polygon_db.get_all_stored_heatmaps()
     
-    # Filter for indicator kriging heatmaps
+    # Filter for indicator kriging heatmaps - use name pattern since they're clearly visible
     indicator_heatmaps = [
         hm for hm in all_heatmaps 
-        if hm.get('interpolation_method') == 'indicator_kriging'
+        if 'indicator_kriging' in hm.get('heatmap_name', '').lower()
     ]
     
     print(f"📊 Found {len(indicator_heatmaps)} indicator kriging heatmaps")
+    
+    # Debug: Show what we found
+    if indicator_heatmaps:
+        print("🔍 DETECTED INDICATOR HEATMAPS:")
+        for i, hm in enumerate(indicator_heatmaps[:5]):  # Show first 5
+            name = hm.get('heatmap_name', 'unknown')
+            method = hm.get('interpolation_method', 'unknown')
+            print(f"  {i+1}. {name} (method: {method})")
+        if len(indicator_heatmaps) > 5:
+            print(f"  ... and {len(indicator_heatmaps) - 5} more")
+    else:
+        print("🔍 DEBUG: No indicator heatmaps found. First 3 available heatmaps:")
+        for i, hm in enumerate(all_heatmaps[:3]):
+            name = hm.get('heatmap_name', 'unknown')
+            method = hm.get('interpolation_method', 'unknown')
+            print(f"  {i+1}. {name} (method: {method})")
     
     if not indicator_heatmaps:
         print("❌ No indicator kriging heatmaps found")

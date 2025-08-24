@@ -102,42 +102,68 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
         print("❌ No valid polygons created from green features")
         return None
     
-    # Create unified boundary using union and convex hull
+    # Create detailed boundaries for separate green zones (no convex hull oversimplification)
     try:
-        # First, union all the polygons to merge overlapping areas
-        unified_polygon = unary_union(green_polygons)
+        # First, union overlapping areas to get clean zones
+        unified_geometry = unary_union(green_polygons)
         
-        # If result is MultiPolygon, use convex hull to create single boundary
-        if isinstance(unified_polygon, MultiPolygon):
-            boundary_polygon = unified_polygon.convex_hull
-            print(f"🔗 Created convex hull boundary from {len(unified_polygon.geoms)} disconnected areas")
+        # Collect all separate green zone boundaries
+        boundary_features = []
+        zone_count = 0
+        
+        if isinstance(unified_geometry, MultiPolygon):
+            # Multiple separate zones - create boundary for each
+            for i, geom in enumerate(unified_geometry.geoms):
+                if geom.area > 0:  # Only include valid geometries
+                    # Use actual boundary, not convex hull for detailed shape
+                    boundary_coords = list(geom.exterior.coords)
+                    
+                    boundary_features.append({
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [boundary_coords]
+                        },
+                        "properties": {
+                            "name": f"Green Zone {i+1}",
+                            "description": f"High-probability indicator zone (≥0.7)",
+                            "zone_type": "high_probability_boundary",
+                            "threshold": 0.7,
+                            "zone_id": i+1
+                        }
+                    })
+                    zone_count += 1
+            
+            print(f"🔗 Created {zone_count} separate detailed green zone boundaries")
+            
         else:
-            # For single polygon, use convex hull to smooth the boundary
-            boundary_polygon = unified_polygon.convex_hull
-            print(f"🔗 Created convex hull boundary from unified polygon")
-        
-        # Convert to GeoJSON
-        boundary_coords = list(boundary_polygon.exterior.coords)
-        
-        boundary_geojson = {
-            "type": "FeatureCollection",
-            "features": [{
+            # Single unified zone
+            boundary_coords = list(unified_geometry.exterior.coords)
+            
+            boundary_features.append({
                 "type": "Feature",
                 "geometry": {
-                    "type": "Polygon",
+                    "type": "Polygon", 
                     "coordinates": [boundary_coords]
                 },
                 "properties": {
-                    "name": "Green Zone Boundary",
-                    "description": f"Boundary around {green_feature_count} high-probability indicator zones (≥0.7)",
-                    "zone_type": "high_probability_boundary",
+                    "name": "Green Zone 1",
+                    "description": f"High-probability indicator zone (≥0.7)",
+                    "zone_type": "high_probability_boundary", 
                     "threshold": 0.7,
-                    "feature_count": green_feature_count
+                    "zone_id": 1
                 }
-            }]
+            })
+            zone_count = 1
+            print(f"🔗 Created 1 detailed green zone boundary")
+        
+        # Create GeoJSON with multiple detailed boundaries
+        boundary_geojson = {
+            "type": "FeatureCollection",
+            "features": boundary_features
         }
         
-        print(f"✅ BOUNDARY CREATED: Polygon with {len(boundary_coords)} vertices")
+        print(f"✅ BOUNDARIES CREATED: {len(boundary_features)} detailed polygons for separate green zones")
         return boundary_geojson
         
     except Exception as e:
@@ -155,31 +181,32 @@ def store_green_zone_boundary(polygon_db, boundary_geojson):
         return None
         
     try:
-        # Calculate center point for storage
-        feature = boundary_geojson['features'][0]
-        coords = feature['geometry']['coordinates'][0]
+        # Store each boundary as a separate polygon
+        stored_ids = []
         
-        # Calculate centroid
-        lats = [coord[1] for coord in coords]
-        lons = [coord[0] for coord in coords]
-        center_lat = sum(lats) / len(lats)
-        center_lon = sum(lons) / len(lons)
+        for i, feature in enumerate(boundary_geojson['features']):
+            coords = feature['geometry']['coordinates'][0]
+            zone_name = feature['properties']['name']
+            
+            # Store this zone boundary
+            polygon_id = polygon_db.store_polygon(
+                name=zone_name,
+                polygon_type="indicator_boundary",
+                coordinates=coords,
+                metadata={
+                    "description": f"Detailed boundary for {zone_name} (≥0.7 threshold)",
+                    "threshold": 0.7,
+                    "zone_id": feature['properties']['zone_id'],
+                    "total_zones": len(boundary_geojson['features']),
+                    "generated_at": str(np.datetime64('now'))
+                }
+            )
+            
+            if polygon_id:
+                stored_ids.append(polygon_id)
         
-        # Store as a special polygon
-        polygon_id = polygon_db.store_polygon(
-            name="Green Zone Boundary",
-            polygon_type="indicator_boundary",
-            coordinates=coords,
-            metadata={
-                "description": "Boundary around high-probability indicator zones (≥0.7)",
-                "threshold": 0.7,
-                "feature_count": feature['properties']['feature_count'],
-                "generated_at": str(np.datetime64('now'))
-            }
-        )
-        
-        print(f"💾 STORED: Green zone boundary as polygon ID {polygon_id}")
-        return polygon_id
+        print(f"💾 STORED: {len(stored_ids)} green zone boundaries with IDs {stored_ids}")
+        return stored_ids[0] if stored_ids else None  # Return first ID for compatibility
         
     except Exception as e:
         print(f"❌ Error storing boundary polygon: {e}")
@@ -195,23 +222,32 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
     try:
         import folium
         
-        feature = boundary_geojson['features'][0]
-        coords = feature['geometry']['coordinates'][0]
+        # Add each separate green zone boundary to the map
+        zones_added = 0
         
-        # Convert coordinates to lat/lon format for Folium
-        folium_coords = [[coord[1], coord[0]] for coord in coords]
+        for feature in boundary_geojson['features']:
+            coords = feature['geometry']['coordinates'][0]
+            zone_name = feature['properties']['name']
+            
+            # Convert coordinates to lat/lon format for Folium
+            folium_coords = [[coord[1], coord[0]] for coord in coords]
+            
+            # Add boundary polygon to map with different colors for each zone
+            colors = ["#00AA00", "#00CC00", "#00EE00", "#22FF22", "#44FF44"]  # Different shades of green
+            color_index = (feature['properties']['zone_id'] - 1) % len(colors)
+            
+            folium.Polygon(
+                locations=folium_coords,
+                color=colors[color_index],
+                weight=3,
+                opacity=0.8,
+                fill=False,  # No fill, just boundary
+                popup=f"{zone_name}<br>High-probability zone (≥{feature['properties']['threshold']})<br>Detailed boundary following actual green areas"
+            ).add_to(folium_map)
+            
+            zones_added += 1
         
-        # Add boundary polygon to map
-        folium.Polygon(
-            locations=folium_coords,
-            color="#00AA00",  # Green border
-            weight=3,
-            opacity=0.8,
-            fill=False,  # No fill, just boundary
-            popup=f"Green Zone Boundary<br>Features: {feature['properties']['feature_count']}<br>Threshold: ≥{feature['properties']['threshold']}"
-        ).add_to(folium_map)
-        
-        print(f"🗺️  DISPLAYED: Green zone boundary added to map")
+        print(f"🗺️  DISPLAYED: {zones_added} detailed green zone boundaries added to map")
         return True
         
     except Exception as e:

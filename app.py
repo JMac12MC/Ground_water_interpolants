@@ -313,7 +313,7 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
     elif visualization_method == "Depth to Groundwater (Auto-Fitted Spherical)":
-        st.session_state.interpolation_method = 'depth_kriging'
+        st.session_state.interpolation_method = 'depth_kriging_auto'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'

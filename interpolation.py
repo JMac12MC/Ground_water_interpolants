@@ -307,7 +307,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Don't apply indicator clipping to indicator kriging methods themselves
     # Indicator methods should not be clipped by their own output
     indicator_methods = ['indicator_kriging', 'indicator_variance']
-    clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'swl_kriging', 'ground_water_level_kriging', 'idw', 'rf_kriging']
+    clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'depth_kriging_auto', 'swl_kriging', 'ground_water_level_kriging', 'idw', 'rf_kriging']
     
     if indicator_mask is not None and method in clippable_methods:
         mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
@@ -755,9 +755,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             print(f"Red (0.0-0.4): {red_count} points, Orange (0.4-0.7): {orange_count} points, Green (0.7-1.0): {green_count} points")
             print(f"Output value range: {interpolated_z.min():.3f} to {interpolated_z.max():.3f}")
 
-        elif (method == 'kriging' or method == 'depth_kriging') and auto_fit_variogram and len(wells_df) >= 5:
+        elif (method == 'kriging' or method == 'depth_kriging' or method == 'depth_kriging_auto') and auto_fit_variogram and len(wells_df) >= 5:
             # Perform kriging with auto-fitted variogram for yield/depth visualization (without variance output)
-            if method == 'depth_kriging':
+            if method == 'depth_kriging' or method == 'depth_kriging_auto':
                 print(f"Auto-fitting {variogram_model} variogram model for depth estimation...")
             else:
                 print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
@@ -771,7 +771,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
 
             # Set up kriging with auto-fitted variogram - ensure proper parameters for depth data
-            if method == 'depth_kriging':
+            if method == 'depth_kriging' or method == 'depth_kriging_auto':
                 # For depth data, use more appropriate variogram parameters
                 OK = OrdinaryKriging(
                     lon_values, lat_values, yields,
@@ -797,7 +797,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
 
             # Additional validation for depth interpolation
-            if method == 'depth_kriging':
+            if method == 'depth_kriging' or method == 'depth_kriging_auto':
                 print(f"Depth interpolation stats: min={np.min(interpolated_z):.2f}, max={np.max(interpolated_z):.2f}, mean={np.mean(interpolated_z):.2f}")
                 # Ensure reasonable depth values (depths should be positive and reasonable)
                 interpolated_z = np.maximum(0.1, interpolated_z)  # Minimum depth of 0.1m

@@ -10,7 +10,7 @@ This module implements the correct workflow:
 import streamlit as st
 import numpy as np
 from interpolation import generate_geo_json_grid
-from database import PolygonDB
+from database import PolygonDatabase
 
 
 def generate_depth_and_indicator_heatmaps(wells_data, click_point, search_radius, polygon_db, primary_method='depth_kriging', soil_polygons=None, new_clipping_polygon=None, grid_size=(2, 3)):

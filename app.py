@@ -551,6 +551,53 @@ with st.sidebar:
                 else:
                     st.error("Database not available")
 
+        # Green Zone Analysis section
+        st.subheader("🟢 Green Zone Analysis")
+        st.write("Extract and display boundary polygons around high-probability indicator zones (≥0.7 threshold).")
+        
+        if st.button("🌱 Extract Green Zone Boundary", type="primary"):
+            if st.session_state.polygon_db and st.session_state.stored_heatmaps:
+                with st.spinner("Extracting green zones from indicator kriging heatmaps..."):
+                    try:
+                        from green_zone_extractor import extract_green_zones_from_indicator_heatmaps, store_green_zone_boundary
+                        
+                        # Extract green zone boundary
+                        boundary_geojson = extract_green_zones_from_indicator_heatmaps(st.session_state.polygon_db)
+                        
+                        if boundary_geojson:
+                            # Store the boundary polygon
+                            polygon_id = store_green_zone_boundary(st.session_state.polygon_db, boundary_geojson)
+                            
+                            if polygon_id:
+                                st.success(f"✅ Green zone boundary extracted and stored! Polygon ID: {polygon_id}")
+                                
+                                # Store boundary for map display
+                                st.session_state.green_zone_boundary = boundary_geojson
+                                st.session_state.show_green_zone_boundary = True
+                                
+                                # Show some stats
+                                feature = boundary_geojson['features'][0]
+                                feature_count = feature['properties']['feature_count']
+                                st.info(f"📊 Boundary encompasses {feature_count} high-probability features")
+                            else:
+                                st.error("❌ Failed to store boundary polygon")
+                        else:
+                            st.warning("⚠️ No green zones found. Make sure indicator kriging heatmaps are available.")
+                            
+                    except Exception as e:
+                        st.error(f"Error extracting green zones: {e}")
+                        print(f"Green zone extraction error: {e}")
+            else:
+                st.error("Database or stored heatmaps not available")
+        
+        # Display option for green zone boundary
+        if hasattr(st.session_state, 'green_zone_boundary') and st.session_state.green_zone_boundary:
+            st.session_state.show_green_zone_boundary = st.checkbox(
+                "🌱 Show Green Zone Boundary", 
+                value=getattr(st.session_state, 'show_green_zone_boundary', False),
+                help="Display the boundary polygon around high-probability indicator zones"
+            )
+
         # Tile Boundary Snapping section
         st.subheader("🔧 Tile Boundary Optimization")
         st.write("Fix gaps and overlaps between adjacent heatmap tiles by snapping only boundary vertices (within 300m). Internal triangle vertices remain unchanged.")
@@ -1036,6 +1083,24 @@ with main_col1:
                 sticky=False
             )
         ).add_to(m)
+
+    # Add green zone boundary if available and enabled
+    if (hasattr(st.session_state, 'show_green_zone_boundary') and 
+        st.session_state.show_green_zone_boundary and 
+        hasattr(st.session_state, 'green_zone_boundary') and 
+        st.session_state.green_zone_boundary):
+        
+        try:
+            from green_zone_extractor import display_green_zone_boundary_on_map
+            
+            success = display_green_zone_boundary_on_map(m, st.session_state.green_zone_boundary)
+            if success:
+                print("🌱 GREEN ZONE BOUNDARY: Added to map successfully")
+            else:
+                print("❌ GREEN ZONE BOUNDARY: Failed to add to map")
+                
+        except Exception as e:
+            print(f"Error displaying green zone boundary: {e}")
 
     # UNIFIED COLORMAP PROCESSING: Use stored colormap metadata for consistent coloring
     global_min_value = float('inf')

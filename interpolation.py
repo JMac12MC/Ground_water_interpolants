@@ -247,15 +247,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     """
     
     # Debug indicator mask status and create polygon geometry for clipping
-    print(f"🎭 GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
-    if indicator_mask is not None:
-        print(f"🎭 INDICATOR MASK DETAILS: {len(indicator_mask)} components provided")
-        if len(indicator_mask) >= 3 and indicator_mask[2] is not None:
-            high_prob_count = np.sum(indicator_mask[2] >= 0.7)
-            total_points = len(indicator_mask[2])
-            print(f"🎭 CLIPPING WILL BE APPLIED: {high_prob_count}/{total_points} points ≥ 0.7 threshold")
-        else:
-            print(f"🎭 INDICATOR MASK INVALID: mask data is None or incomplete")
+    print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
     indicator_geometry = None
     
     # Create comprehensive clipping geometry (new comprehensive polygon takes priority)

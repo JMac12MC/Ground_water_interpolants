@@ -1587,53 +1587,26 @@ with main_col1:
                 has_filtered_wells = 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None
                 wells_count = len(st.session_state.filtered_wells) if has_filtered_wells else 0
                 
-                print(f"🔍 HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
-                print(f"🔍 SELECTED POINT VALUE: {st.session_state.selected_point}")
-                print(f"🔍 INTERPOLATION METHOD: {st.session_state.interpolation_method}")
-                print(f"🔍 FILTERED WELLS VALUE: {st.session_state.filtered_wells if has_filtered_wells else 'None'}")
+                print(f"HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
                 
                 if has_selected_point and has_filtered_wells and wells_count > 0:
                     try:
-                        # Check if this is a request that needs indicator kriging clipping
-                        if st.session_state.interpolation_method in ['depth_kriging', 'ground_water_level_kriging']:
-                            print(f"DUAL GENERATION: Triggering depth + indicator kriging workflow")
-                            
-                            # Use the dual heatmap generator for depth to groundwater with indicator clipping
-                            from dual_heatmap_generator import generate_depth_and_indicator_heatmaps
-                            
-                            depth_count, indicator_count, depth_ids, indicator_ids, error_messages = generate_depth_and_indicator_heatmaps(
-                                wells_data=st.session_state.wells_data,
-                                click_point=st.session_state.selected_point,
-                                search_radius=st.session_state.search_radius,
-                                polygon_db=st.session_state.polygon_db,
-                                primary_method=st.session_state.interpolation_method,  # Pass the current method
-                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                new_clipping_polygon=st.session_state.new_clipping_polygon,
-                                grid_size=st.session_state.get('grid_size', (2, 3))
-                            )
-                            
-                            success_count = depth_count
-                            stored_heatmap_ids = depth_ids
-                            
-                            print(f"DUAL GENERATION COMPLETE: {depth_count} depth + {indicator_count} indicator heatmaps")
-                            
-                        else:
-                            print(f"AUTOMATIC SEQUENTIAL GENERATION: Triggering quad heatmap generation on click")
-                            
-                            # Use the dedicated sequential processing module for automatic generation
-                            from sequential_heatmap import generate_quad_heatmaps_sequential
-                            
-                            # Generate heatmaps sequentially with comprehensive clipping polygon
-                            success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
-                                wells_data=st.session_state.wells_data,
-                                click_point=st.session_state.selected_point,
-                                search_radius=st.session_state.search_radius,
-                                interpolation_method=st.session_state.interpolation_method,
-                                polygon_db=st.session_state.polygon_db,
-                                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                                new_clipping_polygon=st.session_state.new_clipping_polygon,
-                                grid_size=st.session_state.get('grid_size', (2, 3))
-                            )
+                        print(f"AUTOMATIC SEQUENTIAL GENERATION: Triggering quad heatmap generation on click")
+                        
+                        # Use the dedicated sequential processing module for automatic generation
+                        from sequential_heatmap import generate_quad_heatmaps_sequential
+                        
+                        # Generate heatmaps sequentially with comprehensive clipping polygon
+                        success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
+                            wells_data=st.session_state.wells_data,
+                            click_point=st.session_state.selected_point,
+                            search_radius=st.session_state.search_radius,
+                            interpolation_method=st.session_state.interpolation_method,
+                            polygon_db=st.session_state.polygon_db,
+                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                            new_clipping_polygon=st.session_state.new_clipping_polygon,
+                            grid_size=st.session_state.get('grid_size', (2, 3))
+                        )
                         
                         print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
                         
@@ -1894,40 +1867,7 @@ with main_col1:
         fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
     if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
-        
-        # Check if we need to apply indicator clipping for heatmaps that support it
-        heatmaps_to_display = st.session_state.stored_heatmaps
-        
-        if st.session_state.interpolation_method in ['depth_kriging', 'ground_water_level_kriging']:
-            print(f"🎭 INDICATOR CLIPPING SUPPORT: Method '{st.session_state.interpolation_method}' supports indicator clipping...")
-            
-            # Get heatmaps that can be clipped (depth or ground water level)
-            clippable_heatmaps = [h for h in st.session_state.stored_heatmaps if 
-                                  'depth_kriging' in h.get('heatmap_name', '') or 
-                                  'ground_water_level_kriging' in h.get('heatmap_name', '')]
-            
-            if clippable_heatmaps:
-                # Get indicator heatmaps from database
-                try:
-                    all_stored = st.session_state.polygon_db.get_all_stored_heatmaps()
-                    indicator_heatmaps = [h for h in all_stored if 'indicator_kriging' in h.get('heatmap_name', '')]
-                    
-                    if indicator_heatmaps:
-                        print(f"🎭 APPLYING INDICATOR CLIPPING: {len(clippable_heatmaps)} heatmaps with {len(indicator_heatmaps)} indicator masks")
-                        
-                        from dual_heatmap_generator import apply_indicator_clipping_to_depth_heatmaps
-                        heatmaps_to_display = apply_indicator_clipping_to_depth_heatmaps(
-                            st.session_state.polygon_db,
-                            clippable_heatmaps,
-                            indicator_heatmaps,
-                            threshold=0.7
-                        )
-                    else:
-                        print(f"🎭 NO INDICATOR HEATMAPS: Displaying heatmaps without clipping")
-                except Exception as e:
-                    print(f"🎭 CLIPPING ERROR: {e} - displaying unclipped heatmaps")
-        
-        print(f"Attempting to display {len(heatmaps_to_display)} stored heatmaps with UPDATED unified colormap")
+        print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
         # For smooth raster style, collect ALL triangulated data first for unified processing
@@ -1938,7 +1878,7 @@ with main_col1:
             valid_heatmaps_for_raster = []
             
             # Collect all triangulated data from stored heatmaps
-            for i, stored_heatmap in enumerate(heatmaps_to_display):
+            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 # Skip fresh heatmap to avoid duplication
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     continue
@@ -2008,7 +1948,7 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster OR if unified failed
         if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            for i, stored_heatmap in enumerate(heatmaps_to_display):
+            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 try:
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders
@@ -2439,8 +2379,6 @@ with main_col1:
 
                 # Store all six points for 6-heatmap grid generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
-                print(f"🎯 SESSION STATE SET: selected_point = {st.session_state.selected_point}")
-                print(f"🎯 INTERPOLATION METHOD: {st.session_state.interpolation_method}")
                 st.session_state.selected_point_east = [clicked_east_lat, clicked_east_lng]
                 st.session_state.selected_point_northeast = [clicked_northeast_lat, clicked_northeast_lng]
                 st.session_state.selected_point_south = [clicked_south_lat, clicked_south_lng]

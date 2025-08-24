@@ -964,38 +964,36 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         include_triangle = merged_soil_geometry.contains(triangle_polygon)
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
-                    if include_triangle and indicator_geometry is not None and indicator_mask is not None:
+                    if include_triangle and indicator_mask is not None:
                         centroid_lon = float(np.mean(vertices[:, 0]))
                         centroid_lat = float(np.mean(vertices[:, 1]))
-                        was_included = include_triangle
                         
-                        try:
-                            # Use distance-based approach: check if centroid is near any high-probability indicator points
-                            # Extract indicator mask data for distance checking
-                            mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
+                        # Extract indicator mask data
+                        mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
+                        
+                        if mask_values is not None:
+                            # Find nearest grid point in the mask
+                            lat_idx = np.searchsorted(mask_lat_vals, centroid_lat)
+                            lon_idx = np.searchsorted(mask_lon_vals, centroid_lon)
                             
-                            # Find high-probability points (≥0.7)
-                            high_prob_mask = mask_values >= 0.7
-                            if np.any(high_prob_mask):
-                                high_prob_lats = mask_lat_grid[high_prob_mask]
-                                high_prob_lons = mask_lon_grid[high_prob_mask]
+                            # Ensure indices are within bounds
+                            lat_idx = min(max(0, lat_idx), len(mask_lat_vals) - 1)
+                            lon_idx = min(max(0, lon_idx), len(mask_lon_vals) - 1)
+                            
+                            # Get the indicator probability at this location
+                            if lat_idx < mask_values.shape[0] and lon_idx < mask_values.shape[1]:
+                                indicator_prob = mask_values[lat_idx, lon_idx]
                                 
-                                # Calculate distances to all high-probability points
-                                distances = np.sqrt((high_prob_lats - centroid_lat)**2 + (high_prob_lons - centroid_lon)**2)
-                                min_distance = np.min(distances)
-                                
-                                # Include if within reasonable distance (roughly grid spacing)
-                                grid_spacing = abs(mask_lat_vals[1] - mask_lat_vals[0]) if len(mask_lat_vals) > 1 else 0.01
-                                include_triangle = min_distance <= (grid_spacing * 1.5)  # 1.5x grid spacing tolerance
+                                # Only include if probability >= threshold
+                                if indicator_prob < 0.7:
+                                    include_triangle = False
+                                    print(f"  Masked out triangle at ({centroid_lat:.4f}, {centroid_lon:.4f}), prob={indicator_prob:.2f}")
                             else:
                                 include_triangle = False
-                        except Exception as e:
-                            # Fallback: use geometry-based clipping if distance approach fails
-                            centroid_point = Point(centroid_lon, centroid_lat)
-                            include_triangle = indicator_geometry.contains(centroid_point) or indicator_geometry.intersects(centroid_point)
-                            
-                        if was_included and not include_triangle:
-                            print(f"Triangulation indicator clipping: excluded triangle at ({centroid_lat:.3f}, {centroid_lon:.3f}) with value {avg_yield:.2f}")
+                                print(f"  Masked out triangle - indices out of bounds")
+                        else:
+                            include_triangle = False
+                            print(f"  Masked out triangle - no mask values available")
 
                     if include_triangle:
                         # Create polygon for this triangle
@@ -1052,36 +1050,33 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     include_point = merged_soil_geometry.contains(point) or merged_soil_geometry.intersects(point)
 
                 # Additional clipping by indicator kriging geometry (high-probability zones)
-                if include_point and indicator_geometry is not None and indicator_mask is not None:
-                    was_included = include_point
+                if include_point and indicator_mask is not None:
+                    # Extract indicator mask data
+                    mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
                     
-                    try:
-                        # Use distance-based approach: check if point is near any high-probability indicator points
-                        # Extract indicator mask data for distance checking
-                        mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
+                    if mask_values is not None:
+                        # Find nearest grid point in the mask
+                        lat_idx = np.searchsorted(mask_lat_vals, grid_lats[i])
+                        lon_idx = np.searchsorted(mask_lon_vals, grid_lons[i])
                         
-                        # Find high-probability points (≥0.7)
-                        high_prob_mask = mask_values >= 0.7
-                        if np.any(high_prob_mask):
-                            high_prob_lats = mask_lat_grid[high_prob_mask]
-                            high_prob_lons = mask_lon_grid[high_prob_mask]
+                        # Ensure indices are within bounds
+                        lat_idx = min(max(0, lat_idx), len(mask_lat_vals) - 1)
+                        lon_idx = min(max(0, lon_idx), len(mask_lon_vals) - 1)
+                        
+                        # Get the indicator probability at this location
+                        if lat_idx < mask_values.shape[0] and lon_idx < mask_values.shape[1]:
+                            indicator_prob = mask_values[lat_idx, lon_idx]
                             
-                            # Calculate distances to all high-probability points
-                            distances = np.sqrt((high_prob_lats - grid_lats[i])**2 + (high_prob_lons - grid_lons[i])**2)
-                            min_distance = np.min(distances)
-                            
-                            # Include if within reasonable distance (roughly grid spacing)
-                            grid_spacing = abs(mask_lat_vals[1] - mask_lat_vals[0]) if len(mask_lat_vals) > 1 else 0.01
-                            include_point = min_distance <= (grid_spacing * 1.5)  # 1.5x grid spacing tolerance
+                            # Only include if probability >= threshold
+                            if indicator_prob < 0.7:
+                                include_point = False
+                                print(f"  Masked out point at ({grid_lats[i]:.4f}, {grid_lons[i]:.4f}), prob={indicator_prob:.2f}")
                         else:
                             include_point = False
-                    except Exception as e:
-                        # Fallback: use geometry-based clipping if distance approach fails
-                        point = Point(grid_lons[i], grid_lats[i])
-                        include_point = indicator_geometry.contains(point) or indicator_geometry.intersects(point)
-                        
-                    if was_included and not include_point:
-                        print(f"Indicator clipping: excluded point at ({grid_lats[i]:.3f}, {grid_lons[i]:.3f}) with value {interpolated_z[i]:.2f}")
+                            print(f"  Masked out point - indices out of bounds")
+                    else:
+                        include_point = False
+                        print(f"  Masked out point - no mask values available")
 
                 if include_point:
                     # Create a small circle as a polygon (approximated with 8 points)

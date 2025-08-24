@@ -1,0 +1,148 @@
+The Problem
+The indicator mask is generated but when depth to groundwater interpolation is called, it's not receiving or using the indicator mask properly. The mask should be generated FIRST, then applied to filter the depth interpolation.
+Fix: Ensure Indicator Mask is Generated and Applied
+1. In app.py, modify the heatmap generation flow:
+Look for where the heatmaps are generated (around line 1500-1600). You need to ensure the indicator mask is generated BEFORE the depth interpolation:
+python# In app.py, where heatmap generation happens
+if has_selected_point and has_filtered_wells and wells_count > 0:
+    try:
+        # FIRST: Generate indicator mask if doing depth interpolation
+        indicator_mask = None
+        if st.session_state.interpolation_method in ['depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging']:
+            print("Generating indicator mask for depth interpolation...")
+            
+            # Generate indicator kriging mask
+            indicator_mask = generate_indicator_kriging_mask(
+                st.session_state.filtered_wells,
+                st.session_state.selected_point,
+                st.session_state.search_radius,
+                resolution=100,  # Higher resolution for better masking
+                soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                threshold=0.7
+            )
+            
+            if indicator_mask and indicator_mask[2] is not None:
+                high_prob_count = np.sum(indicator_mask[2] >= 0.7)
+                total_points = indicator_mask[2].size
+                print(f"✅ Indicator mask generated: {high_prob_count}/{total_points} high-probability points")
+            else:
+                print("⚠️ No indicator mask generated - will show all depth data")
+        
+        # THEN: Generate the actual interpolation with the mask
+        geojson_data = generate_geo_json_grid(
+            st.session_state.filtered_wells,
+            st.session_state.selected_point,
+            st.session_state.search_radius,
+            resolution=50,
+            method=st.session_state.interpolation_method,
+            show_variance=st.session_state.show_kriging_variance,
+            auto_fit_variogram=st.session_state.auto_fit_variogram,
+            variogram_model=st.session_state.variogram_model,
+            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+            indicator_mask=indicator_mask  # Pass the indicator mask here
+        )
+2. In sequential_heatmap.py, ensure indicator mask is generated and passed:
+pythondef generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, 
+                                     polygon_db, soil_polygons=None, new_clipping_polygon=None, 
+                                     grid_size=(2, 3)):
+    # ... existing code ...
+    
+    # For each heatmap position
+    for position_name, (center_lat, center_lon) in heatmap_positions.items():
+        # ... existing filtering code ...
+        
+        # Generate indicator mask FIRST if doing depth interpolation
+        indicator_mask = None
+        if interpolation_method in ['depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging']:
+            print(f"  Generating indicator mask for {position_name}...")
+            
+            indicator_mask = generate_indicator_kriging_mask(
+                filtered_wells,
+                (center_lat, center_lon),
+                search_radius,
+                resolution=100,
+                soil_polygons=soil_polygons,
+                threshold=0.7
+            )
+            
+            if indicator_mask and indicator_mask[2] is not None:
+                mask_values = indicator_mask[2]
+                high_prob_count = np.sum(mask_values >= 0.7)
+                print(f"  ✅ Indicator mask: {high_prob_count}/{mask_values.size} high-prob points")
+        
+        # Generate GeoJSON with indicator mask
+        geojson_data = generate_geo_json_grid(
+            filtered_wells,
+            (center_lat, center_lon),
+            search_radius,
+            resolution=50,
+            method=interpolation_method,
+            auto_fit_variogram=auto_fit_variogram,
+            variogram_model=variogram_model,
+            soil_polygons=soil_polygons,
+            indicator_mask=indicator_mask,  # Pass the mask here
+            new_clipping_polygon=new_clipping_polygon
+        )
+3. Fix the indicator mask application in interpolation.py:
+The key issue is in how the mask is being checked. Around line 1070 in generate_geo_json_grid:
+python# Additional clipping by indicator kriging geometry (high-probability zones)
+if include_triangle and indicator_mask is not None:
+    centroid_lon = float(np.mean(vertices[:, 0]))
+    centroid_lat = float(np.mean(vertices[:, 1]))
+    
+    # Extract indicator mask data
+    mask_lat_grid, mask_lon_grid, mask_values, mask_lat_vals, mask_lon_vals = indicator_mask
+    
+    if mask_values is not None:
+        # Find nearest grid point in the mask
+        lat_idx = np.searchsorted(mask_lat_vals, centroid_lat)
+        lon_idx = np.searchsorted(mask_lon_vals, centroid_lon)
+        
+        # Ensure indices are within bounds
+        lat_idx = min(max(0, lat_idx), len(mask_lat_vals) - 1)
+        lon_idx = min(max(0, lon_idx), len(mask_lon_vals) - 1)
+        
+        # Get the indicator probability at this location
+        if lat_idx < mask_values.shape[0] and lon_idx < mask_values.shape[1]:
+            indicator_prob = mask_values[lat_idx, lon_idx]
+            
+            # Only include if probability >= threshold
+            if indicator_prob < 0.7:
+                include_triangle = False
+                print(f"  Masked out triangle at ({centroid_lat:.4f}, {centroid_lon:.4f}), prob={indicator_prob:.2f}")
+        else:
+            include_triangle = False
+            print(f"  Masked out triangle - indices out of bounds")
+4. Ensure the mask is using the same coordinate system:
+In generate_indicator_kriging_mask, make sure the grid coordinates match:
+pythondef generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolution=50, soil_polygons=None, threshold=0.7):
+    # ... existing code ...
+    
+    # Create grid that matches the main interpolation grid
+    grid_size = min(150, max(50, resolution))
+    lat_vals = np.linspace(min_lat, max_lat, grid_size)
+    lon_vals = np.linspace(min_lon, max_lon, grid_size)
+    
+    # IMPORTANT: Return grid in consistent order
+    # The mask_values should be indexed as [lat_idx, lon_idx]
+    
+    print(f"Indicator mask grid: {grid_size}x{grid_size}")
+    print(f"Lat range: {min_lat:.4f} to {max_lat:.4f}")
+    print(f"Lon range: {min_lon:.4f} to {max_lon:.4f}")
+    
+    return grid_lats, grid_lons, mask_values, lat_vals, lon_vals
+5. Add debug output to verify masking is working:
+python# In generate_geo_json_grid, after applying the mask
+if indicator_mask is not None:
+    total_triangles = len(features)
+    included_triangles = sum(1 for f in features if f)  # Count non-None features
+    print(f"Indicator masking result: {included_triangles}/{total_triangles} triangles kept")
+    print(f"Masking removed {total_triangles - included_triangles} triangles")
+The main issue is that the indicator mask needs to be:
+
+Generated BEFORE the depth interpolation
+Passed correctly to the interpolation function
+Applied by checking each triangle's centroid against the mask grid
+Only including triangles where the indicator probability is >= 0.7
+
+These fixes should make the indicator masking work properly for your depth to groundwater interpolation.

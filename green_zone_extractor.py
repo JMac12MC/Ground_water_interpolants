@@ -13,15 +13,16 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
     """
     Extract red/orange zones (<0.7 probability) from stored indicator kriging heatmaps
     and create a boundary polygon around them.
+    Works directly with database - no need to load heatmaps on map first.
     
     Returns:
         dict: GeoJSON polygon representing the boundary of red/orange zones
     """
-    print("🔍 EXTRACTING RED/ORANGE ZONES: Loading indicator kriging heatmaps...")
+    print("🔍 EXTRACTING RED/ORANGE ZONES: Loading indicator kriging heatmaps directly from database...")
     
-    # Get all stored heatmaps
+    # Get all stored heatmaps directly from database (independent of map display)
     all_heatmaps = polygon_db.get_all_stored_heatmaps()
-    print(f"🔍 TOTAL HEATMAPS RETRIEVED: {len(all_heatmaps)}")
+    print(f"🔍 TOTAL HEATMAPS RETRIEVED FROM DATABASE: {len(all_heatmaps)}")
     
     # Enhanced filtering with multiple pattern checks
     indicator_heatmaps = []

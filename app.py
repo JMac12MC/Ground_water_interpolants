@@ -556,7 +556,7 @@ with st.sidebar:
         st.write("Extract and display boundary polygons around low/medium probability indicator zones (<0.7 threshold). Adjacent red and orange zones will be unified into continuous boundaries.")
         
         if st.button("🔴 Extract Red/Orange Zone Boundary", type="primary"):
-            if st.session_state.polygon_db and st.session_state.stored_heatmaps:
+            if st.session_state.polygon_db:
                 with st.spinner("Extracting red/orange zones from indicator kriging heatmaps..."):
                     try:
                         from green_zone_extractor import extract_green_zones_from_indicator_heatmaps, store_green_zone_boundary
@@ -587,7 +587,7 @@ with st.sidebar:
                         st.error(f"Error extracting red/orange zones: {e}")
                         print(f"Red/orange zone extraction error: {e}")
             else:
-                st.error("Database or stored heatmaps not available")
+                st.error("Database not available")
         
         # Display option for red/orange zone boundary
         if hasattr(st.session_state, 'green_zone_boundary') and st.session_state.green_zone_boundary:

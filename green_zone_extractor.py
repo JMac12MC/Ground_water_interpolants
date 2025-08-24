@@ -181,32 +181,28 @@ def store_green_zone_boundary(polygon_db, boundary_geojson):
         return None
         
     try:
-        # Store each boundary as a separate polygon
-        stored_ids = []
-        
-        for i, feature in enumerate(boundary_geojson['features']):
+        # Store as one comprehensive green zone boundary file (multiple features in one polygon)
+        # Calculate overall center point for storage
+        all_coords = []
+        for feature in boundary_geojson['features']:
             coords = feature['geometry']['coordinates'][0]
-            zone_name = feature['properties']['name']
-            
-            # Store this zone boundary
-            polygon_id = polygon_db.store_polygon(
-                name=zone_name,
-                polygon_type="indicator_boundary",
-                coordinates=coords,
-                metadata={
-                    "description": f"Detailed boundary for {zone_name} (≥0.7 threshold)",
-                    "threshold": 0.7,
-                    "zone_id": feature['properties']['zone_id'],
-                    "total_zones": len(boundary_geojson['features']),
-                    "generated_at": str(np.datetime64('now'))
-                }
-            )
-            
-            if polygon_id:
-                stored_ids.append(polygon_id)
+            all_coords.extend(coords)
         
-        print(f"💾 STORED: {len(stored_ids)} green zone boundaries with IDs {stored_ids}")
-        return stored_ids[0] if stored_ids else None  # Return first ID for compatibility
+        # Store the entire boundary collection as one polygon
+        polygon_id = polygon_db.store_polygon(
+            name="Green Zone Boundaries",
+            polygon_type="indicator_boundary",
+            coordinates=json.dumps(boundary_geojson),  # Store the entire GeoJSON
+            metadata={
+                "description": f"Detailed boundaries around all high-probability indicator zones (≥0.7)",
+                "threshold": 0.7,
+                "total_zones": len(boundary_geojson['features']),
+                "generated_at": str(np.datetime64('now'))
+            }
+        )
+        
+        print(f"💾 STORED: Green zone boundaries as single polygon file with ID {polygon_id}")
+        return polygon_id
         
     except Exception as e:
         print(f"❌ Error storing boundary polygon: {e}")
@@ -232,13 +228,10 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
             # Convert coordinates to lat/lon format for Folium
             folium_coords = [[coord[1], coord[0]] for coord in coords]
             
-            # Add boundary polygon to map with different colors for each zone
-            colors = ["#00AA00", "#00CC00", "#00EE00", "#22FF22", "#44FF44"]  # Different shades of green
-            color_index = (feature['properties']['zone_id'] - 1) % len(colors)
-            
+            # Add boundary polygon with consistent green color
             folium.Polygon(
                 locations=folium_coords,
-                color=colors[color_index],
+                color="#00AA00",  # Single green color
                 weight=3,
                 opacity=0.8,
                 fill=False,  # No fill, just boundary

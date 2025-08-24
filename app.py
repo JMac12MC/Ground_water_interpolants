@@ -2115,12 +2115,13 @@ with main_col1:
         if stored_heatmap_count > 0:
             if st.session_state.interpolation_method == 'indicator_kriging':
                 # Three-tier indicator kriging legend
+                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
                 colormap = folium.StepColormap(
                     colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
                     vmin=0,
                     vmax=1.0,
                     index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
-                    caption='Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
+                    caption=caption_text
                 )
             else:
                 # Determine appropriate caption based on method

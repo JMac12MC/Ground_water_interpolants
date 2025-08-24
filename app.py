@@ -1587,9 +1587,10 @@ with main_col1:
                 has_filtered_wells = 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None
                 wells_count = len(st.session_state.filtered_wells) if has_filtered_wells else 0
                 
-                print(f"HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
-                print(f"SELECTED POINT VALUE: {st.session_state.selected_point}")
-                print(f"FILTERED WELLS VALUE: {st.session_state.filtered_wells if has_filtered_wells else 'None'}")
+                print(f"🔍 HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
+                print(f"🔍 SELECTED POINT VALUE: {st.session_state.selected_point}")
+                print(f"🔍 INTERPOLATION METHOD: {st.session_state.interpolation_method}")
+                print(f"🔍 FILTERED WELLS VALUE: {st.session_state.filtered_wells if has_filtered_wells else 'None'}")
                 
                 if has_selected_point and has_filtered_wells and wells_count > 0:
                     try:
@@ -2435,6 +2436,8 @@ with main_col1:
 
                 # Store all six points for 6-heatmap grid generation
                 st.session_state.selected_point = [clicked_lat, clicked_lng]
+                print(f"🎯 SESSION STATE SET: selected_point = {st.session_state.selected_point}")
+                print(f"🎯 INTERPOLATION METHOD: {st.session_state.interpolation_method}")
                 st.session_state.selected_point_east = [clicked_east_lat, clicked_east_lng]
                 st.session_state.selected_point_northeast = [clicked_northeast_lat, clicked_northeast_lng]
                 st.session_state.selected_point_south = [clicked_south_lat, clicked_south_lng]

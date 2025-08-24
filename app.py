@@ -126,6 +126,22 @@ def load_new_clipping_polygon():
 if 'polygon_db' not in st.session_state:
     st.session_state.polygon_db = get_database_connection()
 
+# Load existing red/orange zone boundary on startup (once per session)
+if not hasattr(st.session_state, 'loaded_existing_boundary'):
+    if st.session_state.polygon_db:
+        try:
+            from green_zone_extractor import get_stored_red_orange_polygon
+            existing_boundary = get_stored_red_orange_polygon(st.session_state.polygon_db)
+            
+            if existing_boundary:
+                st.session_state.green_zone_boundary = existing_boundary
+                st.session_state.show_green_zone_boundary = True
+                print("🔄 STARTUP: Loaded existing red/orange zone boundary from database")
+        except Exception as e:
+            print(f"❌ Error loading existing boundary: {e}")
+            
+    st.session_state.loaded_existing_boundary = True
+
 # Force complete reload and clear ALL caches for comprehensive polygon data
 print("🔄 CLEARING ALL CACHED POLYGON DATA...")
 st.cache_data.clear()  # Clear all cached data including load_new_clipping_polygon cache
@@ -586,6 +602,23 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"Error extracting red/orange zones: {e}")
                         print(f"Red/orange zone extraction error: {e}")
+            else:
+                st.error("Database not available")
+        
+        # Clear red/orange polygon button
+        if st.button("🗑️ Clear Red/Orange Zone Boundary", help="Remove stored red/orange zone boundary from database"):
+            if st.session_state.polygon_db:
+                from green_zone_extractor import clear_stored_red_orange_polygon
+                success = clear_stored_red_orange_polygon(st.session_state.polygon_db)
+                
+                if success:
+                    st.success("✅ Red/orange zone boundary cleared from database!")
+                    # Clear from session state too
+                    if hasattr(st.session_state, 'green_zone_boundary'):
+                        st.session_state.green_zone_boundary = None
+                        st.session_state.show_green_zone_boundary = False
+                else:
+                    st.warning("⚠️ No red/orange zone boundary found to clear")
             else:
                 st.error("Database not available")
         

@@ -221,6 +221,86 @@ def store_green_zone_boundary(polygon_db, boundary_geojson):
         print(f"❌ Error storing boundary polygon: {e}")
         return None
 
+def get_stored_red_orange_polygon(polygon_db):
+    """
+    Retrieve stored red/orange zone boundary from database.
+    
+    Returns:
+        dict: GeoJSON of stored red/orange boundary, or None if not found
+    """
+    try:
+        if not hasattr(polygon_db, 'engine') or polygon_db.engine is None:
+            if not polygon_db.database_url:
+                return None
+            from sqlalchemy import create_engine
+            polygon_db.engine = create_engine(polygon_db.database_url)
+        
+        with polygon_db.engine.connect() as conn:
+            from sqlalchemy import text
+            result = conn.execute(text("""
+                SELECT coordinates, metadata FROM stored_polygons 
+                WHERE polygon_type = 'indicator_boundary' 
+                AND name = 'Red/Orange Zone Boundaries'
+                ORDER BY created_at DESC 
+                LIMIT 1
+            """))
+            
+            row = result.fetchone()
+            if row:
+                import json
+                coordinates_data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                metadata = json.loads(row[1]) if row[1] and isinstance(row[1], str) else row[1]
+                
+                print(f"🔄 LOADED: Existing red/orange zone boundary from database")
+                if metadata:
+                    total_zones = metadata.get('total_zones', 'unknown')
+                    print(f"📊 Contains {total_zones} boundary zones")
+                
+                return coordinates_data
+            
+            print("📭 No stored red/orange zone boundary found")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error retrieving stored polygon: {e}")
+        return None
+
+def clear_stored_red_orange_polygon(polygon_db):
+    """
+    Remove stored red/orange zone boundary from database.
+    
+    Returns:
+        bool: True if cleared successfully, False otherwise
+    """
+    try:
+        if not hasattr(polygon_db, 'engine') or polygon_db.engine is None:
+            if not polygon_db.database_url:
+                return False
+            from sqlalchemy import create_engine
+            polygon_db.engine = create_engine(polygon_db.database_url)
+        
+        with polygon_db.engine.connect() as conn:
+            from sqlalchemy import text
+            result = conn.execute(text("""
+                DELETE FROM stored_polygons 
+                WHERE polygon_type = 'indicator_boundary' 
+                AND name = 'Red/Orange Zone Boundaries'
+            """))
+            
+            conn.commit()
+            deleted_count = result.rowcount
+            
+            if deleted_count > 0:
+                print(f"🗑️ CLEARED: Removed {deleted_count} red/orange zone boundary record(s) from database")
+                return True
+            else:
+                print(f"📭 No red/orange zone boundaries found to clear")
+                return False
+            
+    except Exception as e:
+        print(f"❌ Error clearing stored polygon: {e}")
+        return False
+
 def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
     """
     Add the green zone boundary to a Folium map.

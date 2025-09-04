@@ -1337,29 +1337,69 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         else:
             print("⚠️ HEAT MAP INDICATOR KRIGING: USE_CODE_1_DESC column not found - skipping monitoring well filtering")
 
-        # Now get wells appropriate for indicator interpolation using filtered data
-        wells_df_filtered = get_wells_for_interpolation(wells_df_for_filtering, 'yield')
+        # INDICATOR KRIGING: Get wells with EITHER yield data OR groundwater level data
+        # Both indicate water presence, so both should be included
+        has_coordinates = (
+            wells_df_for_filtering['latitude'].notna() & 
+            wells_df_for_filtering['longitude'].notna()
+        )
+        
+        has_yield_data = (
+            wells_df_for_filtering['yield_rate'].notna() & 
+            (wells_df_for_filtering['yield_rate'] > 0)
+        )
+        
+        has_gwl_data = False
+        if 'ground water level' in wells_df_for_filtering.columns:
+            has_gwl_data = (
+                wells_df_for_filtering['ground water level'].notna() & 
+                (wells_df_for_filtering['ground water level'] != 0)
+            )
+        
+        # Include wells with coordinates AND (yield data OR groundwater level data)
+        indicator_wells_mask = has_coordinates & (has_yield_data | has_gwl_data)
+        wells_df_filtered = wells_df_for_filtering[indicator_wells_mask].copy()
+        
         if wells_df_filtered.empty:
+            print("No wells found with either yield or groundwater level data for indicator kriging")
             return []
 
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
 
-        # Convert yields to BINARY indicator values for kriging input
-        # 0 for wells with yield < 0.1 L/s (not viable)
-        # 1 for wells with yield ≥ 0.1 L/s (viable)
+        # BINARY CLASSIFICATION for indicator kriging:
+        # If well has yield data: viable if >= 0.1 L/s
+        # If well has no yield data but has groundwater level data: treat as viable (water present)
+        # If well has neither: treat as non-viable (should not happen due to filtering above)
         yield_threshold = 0.1
-        raw_yields = wells_df_filtered['yield_rate'].values.astype(float)
-        yields = (raw_yields >= yield_threshold).astype(float)  # Binary: 1 or 0
-
+        yields = np.zeros(len(wells_df_filtered))  # Start with all non-viable
+        
+        for i, (idx, row) in enumerate(wells_df_filtered.iterrows()):
+            has_yield = pd.notna(row['yield_rate']) and row['yield_rate'] > 0
+            has_gwl = False
+            if 'ground water level' in wells_df_filtered.columns:
+                has_gwl = pd.notna(row['ground water level']) and row['ground water level'] != 0
+            
+            if has_yield:
+                # Use yield data for classification
+                yields[i] = 1.0 if row['yield_rate'] >= yield_threshold else 0.0
+            elif has_gwl:
+                # No yield data but has groundwater level data = treat as viable (water present)
+                yields[i] = 1.0
+            else:
+                # No yield or GWL data = non-viable (should not happen due to filtering)
+                yields[i] = 0.0
+        
         # Count wells in each category for logging
         viable_count = np.sum(yields == 1)
         non_viable_count = np.sum(yields == 0)
+        yield_based_count = np.sum(has_yield_data[indicator_wells_mask])
+        gwl_based_count = np.sum(~has_yield_data[indicator_wells_mask] & has_gwl_data[indicator_wells_mask])
 
         print(f"Heat map indicator kriging: using {len(yields)} wells with binary classification")
-        print(f"Non-viable (<{yield_threshold} L/s): {non_viable_count} wells ({100*non_viable_count/len(yields):.1f}%)")
-        print(f"Viable (≥{yield_threshold} L/s): {viable_count} wells ({100*viable_count/len(yields):.1f}%)")
-        print(f"Raw yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
+        print(f"Wells with yield data: {yield_based_count}")
+        print(f"Wells with only groundwater level data (treated as viable): {gwl_based_count}")
+        print(f"Final classification - Viable: {viable_count} ({100*viable_count/len(yields):.1f}%), Non-viable: {non_viable_count} ({100*non_viable_count/len(yields):.1f}%)")
     else:
         # Get wells appropriate for yield interpolation
         wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')

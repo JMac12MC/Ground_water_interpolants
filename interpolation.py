@@ -532,6 +532,43 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             )
             valid_coord_mask = valid_coord_mask & investigation_mask
 
+        # Filter out monitoring wells with no useful data
+        # Exclude "Water Level Observation" or "Groundwater Quality" wells that have ALL empty data fields
+        if 'USE_CODE_1_DESC' in wells_df_original.columns:
+            def is_empty_or_zero(value):
+                """Check if field is empty, None, zero, or whitespace"""
+                if pd.isna(value) or str(value).strip() in ['', '0', '0.0', 'None', 'null']:
+                    return True
+                return False
+            
+            # Check for monitoring/observation wells
+            monitoring_wells_mask = wells_df_original['USE_CODE_1_DESC'].str.contains(
+                'Water Level Observation|Groundwater Quality', 
+                case=False, na=False, regex=True
+            )
+            
+            # For monitoring wells, check if ALL specified fields are empty
+            fields_to_check = [
+                'TOP_SCREEN_1', 'TOP_SCREEN_2', 'TOP_SCREEN_3',
+                'BOTTOM_SCREEN_2', 'BOTTOM_SCREEN_3', 'ground water level',
+                'START_READINGS', 'END_READINGS', 'MAX_YIELD'
+            ]
+            
+            # Create mask for wells that should be excluded (monitoring wells with all empty fields)
+            exclude_mask = wells_df_original.apply(lambda row: 
+                monitoring_wells_mask[row.name] and 
+                all(is_empty_or_zero(row.get(field, None)) for field in fields_to_check),
+                axis=1
+            )
+            
+            # Apply the exclusion filter
+            valid_coord_mask = valid_coord_mask & ~exclude_mask
+            
+            # Log filtering results
+            excluded_count = exclude_mask.sum()
+            if excluded_count > 0:
+                print(f"Filtered out {excluded_count} monitoring wells with no useful data for indicator kriging")
+
         wells_df = wells_df_original[valid_coord_mask].copy()
 
         if wells_df.empty:

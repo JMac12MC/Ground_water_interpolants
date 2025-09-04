@@ -535,6 +535,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         # Filter out monitoring wells with no useful data
         # Exclude "Water Level Observation" or "Groundwater Quality" wells that have ALL empty data fields
         print(f"INDICATOR KRIGING FILTERING: Starting with {len(wells_df_original)} total wells")
+        print(f"COLUMNS AVAILABLE: {list(wells_df_original.columns)}")
         if 'USE_CODE_1_DESC' in wells_df_original.columns:
             def is_empty_or_zero(value):
                 """Check if field is empty, None, zero, or whitespace"""

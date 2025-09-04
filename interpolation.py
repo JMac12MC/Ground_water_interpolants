@@ -534,6 +534,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         # Filter out monitoring wells with no useful data
         # Exclude "Water Level Observation" or "Groundwater Quality" wells that have ALL empty data fields
+        print(f"INDICATOR KRIGING FILTERING: Starting with {len(wells_df_original)} total wells")
         if 'USE_CODE_1_DESC' in wells_df_original.columns:
             def is_empty_or_zero(value):
                 """Check if field is empty, None, zero, or whitespace"""
@@ -566,8 +567,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             
             # Log filtering results
             excluded_count = exclude_mask.sum()
+            monitoring_count = monitoring_wells_mask.sum()
+            print(f"INDICATOR KRIGING FILTERING: Found {monitoring_count} monitoring wells, filtered out {excluded_count} with completely empty data")
             if excluded_count > 0:
-                print(f"Filtered out {excluded_count} monitoring wells with no useful data for indicator kriging")
+                print(f"✅ FILTERED: Removed {excluded_count} problematic monitoring wells from indicator kriging")
 
         wells_df = wells_df_original[valid_coord_mask].copy()
 

@@ -1295,8 +1295,50 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
         print(f"Heat map ground water level: using {len(yields)} wells with GWL values from {yields.min():.2f} to {yields.max():.2f}")
     elif method == 'indicator_kriging':
-        # Get wells appropriate for indicator interpolation
-        wells_df_filtered = get_wells_for_interpolation(wells_df, 'yield')
+        # INDICATOR KRIGING FILTERING: Filter out monitoring wells with no useful data BEFORE calling get_wells_for_interpolation
+        print(f"HEAT MAP INDICATOR KRIGING FILTERING: Starting with {len(wells_df)} total wells")
+        print(f"HEAT MAP COLUMNS AVAILABLE: {list(wells_df.columns)}")
+        
+        wells_df_for_filtering = wells_df.copy()
+        if 'USE_CODE_1_DESC' in wells_df_for_filtering.columns:
+            def is_empty_or_zero(value):
+                """Check if field is empty, None, zero, or whitespace"""
+                if pd.isna(value) or str(value).strip() in ['', '0', '0.0', 'None', 'null']:
+                    return True
+                return False
+            
+            # Find monitoring wells
+            monitoring_wells_mask = wells_df_for_filtering['USE_CODE_1_DESC'].str.contains(
+                'Water Level Observation|Groundwater Quality', 
+                case=False, na=False, regex=True
+            )
+            
+            # Fields to check for filtering (these are problematic empty fields)
+            fields_to_check = [
+                'TOP_SCREEN_1', 'TOP_SCREEN_2', 'TOP_SCREEN_3',
+                'BOTTOM_SCREEN_2', 'BOTTOM_SCREEN_3', 'ground water level',
+                'START_READINGS', 'END_READINGS', 'MAX_YIELD'
+            ]
+            
+            # Create exclusion mask: monitoring wells that have ALL empty data fields
+            exclude_mask = wells_df_for_filtering.apply(lambda row: 
+                monitoring_wells_mask[row.name] and 
+                all(is_empty_or_zero(row.get(field, None)) for field in fields_to_check),
+                axis=1
+            )
+            
+            excluded_count = exclude_mask.sum()
+            monitoring_count = monitoring_wells_mask.sum()
+            print(f"HEAT MAP INDICATOR KRIGING FILTERING: Found {monitoring_count} monitoring wells, filtered out {excluded_count} with completely empty data")
+            
+            if excluded_count > 0:
+                wells_df_for_filtering = wells_df_for_filtering[~exclude_mask].copy()
+                print(f"✅ HEAT MAP INDICATOR KRIGING FILTERED: Removed {excluded_count} problematic monitoring wells")
+        else:
+            print("⚠️ HEAT MAP INDICATOR KRIGING: USE_CODE_1_DESC column not found - skipping monitoring well filtering")
+
+        # Now get wells appropriate for indicator interpolation using filtered data
+        wells_df_filtered = get_wells_for_interpolation(wells_df_for_filtering, 'yield')
         if wells_df_filtered.empty:
             return []
 

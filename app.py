@@ -279,7 +279,8 @@ with st.sidebar:
             "Depth to Groundwater (Standard Kriging)",
             "Depth to Groundwater (Auto-Fitted Spherical)",
             "Ground Water Level (Spherical Kriging)",
-            "Indicator Kriging (Yield Suitability)"
+            "Indicator Kriging (Yield Suitability)",
+            "Indicator Kriging (Spherical)"
         ],
         index=5,  # Default to Ground Water Level (Spherical Kriging)
         help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
@@ -343,6 +344,11 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'linear'
+    elif visualization_method == "Indicator Kriging (Spherical)":
+        st.session_state.interpolation_method = 'indicator_kriging_spherical'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")

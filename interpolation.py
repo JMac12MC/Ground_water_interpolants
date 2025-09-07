@@ -306,7 +306,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # Don't apply indicator clipping to indicator kriging methods themselves
     # Indicator methods should not be clipped by their own output
-    indicator_methods = ['indicator_kriging', 'indicator_variance']
+    indicator_methods = ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_variance']
     clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'depth_kriging_auto', 'swl_kriging', 'ground_water_level_kriging', 'idw', 'rf_kriging']
     
     if indicator_mask is not None and method in clippable_methods:
@@ -1294,9 +1294,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         yields = wells_df_filtered['ground water level'].values.astype(float)
 
         print(f"Heat map ground water level: using {len(yields)} wells with GWL values from {yields.min():.2f} to {yields.max():.2f}")
-    elif method == 'indicator_kriging':
+    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
         # INDICATOR KRIGING FILTERING: Filter out monitoring wells with no useful data BEFORE calling get_wells_for_interpolation
-        print(f"HEAT MAP INDICATOR KRIGING FILTERING: Starting with {len(wells_df)} total wells")
+        method_name = "spherical" if method == 'indicator_kriging_spherical' else "linear"
+        print(f"HEAT MAP INDICATOR KRIGING ({method_name}) FILTERING: Starting with {len(wells_df)} total wells")
         print(f"HEAT MAP COLUMNS AVAILABLE: {list(wells_df.columns)}")
         
         wells_df_for_filtering = wells_df.copy()
@@ -1456,12 +1457,14 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     interpolation_name = "ground water level kriging"
                 elif method == 'indicator_kriging':
                     interpolation_name = "indicator kriging (yield suitability)"
+                elif method == 'indicator_kriging_spherical':
+                    interpolation_name = "indicator kriging spherical (yield suitability)"
                 else:
                     interpolation_name = "yield kriging"
                 print(f"Using {interpolation_name} interpolation for heat map")
 
                 # Filter to meaningful data for better kriging
-                if method == 'indicator_kriging':
+                if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
                     # For indicator kriging, use all data (including 0s and 1s)
                     meaningful_data_mask = np.ones(len(yields), dtype=bool)  # Use all data
                 else:
@@ -1482,6 +1485,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     if method == 'indicator_kriging':
                         # Use linear variogram for binary indicator data
                         variogram_model_to_use = 'linear'
+                    elif method == 'indicator_kriging_spherical':
+                        # Use spherical variogram for binary indicator data
+                        variogram_model_to_use = 'spherical'
                     else:
                         variogram_model_to_use = 'spherical'
 
@@ -1499,7 +1505,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
 
                     # Process results based on interpolation method
-                    if method == 'indicator_kriging':
+                    if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
                         # Ensure probability values are in [0,1] range
                         interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
 
@@ -1507,7 +1513,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         binary_threshold = 0.5
                         interpolated_z = (interpolated_z >= binary_threshold).astype(float)
 
-                        print(f"Heat map indicator kriging: binary classification with {np.sum(interpolated_z)}/{len(interpolated_z)} areas classified as 'likely' for groundwater")
+                        variogram_type = "spherical" if method == 'indicator_kriging_spherical' else "linear"
+                        print(f"Heat map indicator kriging ({variogram_type}): binary classification with {np.sum(interpolated_z)}/{len(interpolated_z)} areas classified as 'likely' for groundwater")
                     else:
                         # Ensure non-negative yields for other methods
                         interpolated_z = np.maximum(0, interpolated_z)

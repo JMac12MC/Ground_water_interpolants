@@ -503,7 +503,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             print(f"Ground water level interpolation: converted {negative_count} negative values (artesian) to 0 (surface level)")
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
-    elif method == 'indicator_kriging':
+    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
         # For indicator kriging, we need wells with ACTUAL yield data (including 0.0)
         # But exclude wells that have missing yield data entirely
         wells_df_original = wells_df.copy()
@@ -733,7 +733,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Execute kriging to get both predictions and variance
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
 
-        elif method == 'indicator_kriging' and len(wells_df) >= 5:
+        elif (method == 'indicator_kriging' or method == 'indicator_kriging_spherical') and len(wells_df) >= 5:
             # Perform indicator kriging for binary yield suitability
             print("Performing indicator kriging for yield suitability mapping...")
 
@@ -1449,7 +1449,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         grid_points = xi_inside
 
         # Choose interpolation method based on parameter and dataset size
-        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging') and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging' or method == 'indicator_kriging_spherical') and len(wells_df) >= 5:
             try:
                 if method == 'specific_capacity_kriging':
                     interpolation_name = "specific capacity kriging"

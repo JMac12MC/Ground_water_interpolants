@@ -1292,7 +1292,7 @@ with main_col1:
     # DEFINE GLOBAL UNIFIED COLOR FUNCTION 
     def get_global_unified_color(value, method='kriging'):
         """Global unified color function using stored global range for consistency"""
-        if method == 'indicator_kriging':
+        if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
             # Three-tier classification: red (poor), orange (moderate), green (good)
             if value <= 0.4:
                 return '#FF0000'    # Red for poor

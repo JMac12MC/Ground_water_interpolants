@@ -607,9 +607,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             gwl_viable = np.zeros_like(raw_yields, dtype=bool)
         
         # Check if well status data is available
-        has_status_data = 'WELL_STATUS_DESC' in wells_df.columns
+        has_status_data = 'status' in wells_df.columns
         if has_status_data:
-            status_values = wells_df['WELL_STATUS_DESC'].fillna('')  # Replace NaN with empty string
+            status_values = wells_df['status'].fillna('')  # Replace NaN with empty string
             # Wells are viable if they are "Active (exist, present)"
             status_viable = status_values == "Active (exist, present)"
         else:
@@ -677,13 +677,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     test_gwl = test_well['ground water level'] if not pd.isna(test_well['ground water level']) else 'NaN'
                     test_yield_viable = test_yield >= yield_threshold
                     test_gwl_viable = not pd.isna(test_well['ground water level'])
-                    test_status_viable = test_well.get('WELL_STATUS_DESC', '') == "Active (exist, present)" if has_status_data else False
+                    test_status_viable = test_well.get('status', '') == "Active (exist, present)" if has_status_data else False
                     test_combined = test_yield_viable or test_gwl_viable or test_status_viable
                     print(f"DEBUG WELL M35/4191:")
                     print(f"    Yield: {test_yield} L/s (viable: {test_yield_viable})")
                     print(f"    Ground water level: {test_gwl} (viable: {test_gwl_viable})")
                     if has_status_data:
-                        test_status = test_well.get('WELL_STATUS_DESC', 'N/A')
+                        test_status = test_well.get('status', 'N/A')
                         print(f"    Well status: {test_status} (viable: {test_status_viable})")
                     print(f"    Combined viable: {test_combined}")
                     print(f"    Criteria: yield>={yield_threshold}, gwl=has_valid_data, status=Active")

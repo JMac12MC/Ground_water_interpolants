@@ -648,10 +648,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if has_gwl_data and has_status_data:
             print(f"  Viable by ground water level + active status: {gwl_status_viable} wells")
             print(f"  Viable by all three criteria: {all_three_viable} wells")
+        
+        # Calculate valid counts for data summary
+        if has_gwl_data:
             valid_gwl_count = np.sum(~np.isnan(gwl_values))
             print(f"  Wells with ground water level data: {valid_gwl_count}/{len(wells_df)}")
         else:
             print(f"  No ground water level data available")
+            valid_gwl_count = 0
+            
         if has_status_data:
             active_status_count = np.sum(status_viable)
             print(f"  Wells with active status: {active_status_count}/{len(wells_df)}")

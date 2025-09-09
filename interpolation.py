@@ -582,9 +582,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lons = wells_df['longitude'].values.astype(float)
 
         # Convert to BINARY indicator values for kriging input using COMBINED criteria
-        # A well is viable (indicator = 1) if EITHER:
+        # A well is viable (indicator = 1) if ANY of these conditions are met:
         # - yield_rate ≥ 0.1 L/s, OR  
-        # - ground water level data exists (any valid depth means water was found)
+        # - ground water level data exists (any valid depth means water was found), OR
+        # - WELL_STATUS_DESC = "Active (exist, present)"
         # Note: If ground water level is recorded, it means water was found at that depth = viable
         # Otherwise indicator = 0 (not viable)
         
@@ -605,17 +606,30 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             gwl_values = np.full_like(raw_yields, np.nan)
             gwl_viable = np.zeros_like(raw_yields, dtype=bool)
         
-        # Combined viability logic: viable if EITHER condition is met
+        # Check if well status data is available
+        has_status_data = 'WELL_STATUS_DESC' in wells_df.columns
+        if has_status_data:
+            status_values = wells_df['WELL_STATUS_DESC'].fillna('')  # Replace NaN with empty string
+            # Wells are viable if they are "Active (exist, present)"
+            status_viable = status_values == "Active (exist, present)"
+        else:
+            status_viable = np.zeros_like(raw_yields, dtype=bool)
+        
+        # Combined viability logic: viable if ANY condition is met
         yield_viable = raw_yields >= yield_threshold
-        combined_viable = yield_viable | gwl_viable
+        combined_viable = yield_viable | gwl_viable | status_viable
         yields = combined_viable.astype(float)  # Binary: 1 or 0
 
         # Count wells in each category for detailed logging
         viable_count = np.sum(yields == 1)
         non_viable_count = np.sum(yields == 0)
-        yield_only_viable = np.sum(yield_viable & ~gwl_viable)
-        gwl_only_viable = np.sum(gwl_viable & ~yield_viable) if has_gwl_data else 0
-        both_viable = np.sum(yield_viable & gwl_viable) if has_gwl_data else 0
+        yield_only_viable = np.sum(yield_viable & ~gwl_viable & ~status_viable)
+        gwl_only_viable = np.sum(gwl_viable & ~yield_viable & ~status_viable) if has_gwl_data else 0
+        status_only_viable = np.sum(status_viable & ~yield_viable & ~gwl_viable) if has_status_data else 0
+        yield_gwl_viable = np.sum(yield_viable & gwl_viable & ~status_viable) if has_gwl_data else 0
+        yield_status_viable = np.sum(yield_viable & status_viable & ~gwl_viable) if has_status_data else 0
+        gwl_status_viable = np.sum(gwl_viable & status_viable & ~yield_viable) if has_gwl_data and has_status_data else 0
+        all_three_viable = np.sum(yield_viable & gwl_viable & status_viable) if has_gwl_data and has_status_data else 0
 
         print(f"GeoJSON indicator kriging: using {len(yields)} wells with COMBINED binary classification")
         print(f"COMBINED RESULTS:")
@@ -624,12 +638,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         print(f"BREAKDOWN BY CRITERIA:")
         print(f"  Viable by yield only (≥{yield_threshold} L/s): {yield_only_viable} wells")
         if has_gwl_data:
-            print(f"  Viable by ground water level only (has valid depth data): {gwl_only_viable} wells") 
-            print(f"  Viable by both criteria: {both_viable} wells")
+            print(f"  Viable by ground water level only: {gwl_only_viable} wells")
+        if has_status_data:
+            print(f"  Viable by active status only: {status_only_viable} wells")
+        if has_gwl_data:
+            print(f"  Viable by yield + ground water level: {yield_gwl_viable} wells")
+        if has_status_data:
+            print(f"  Viable by yield + active status: {yield_status_viable} wells")
+        if has_gwl_data and has_status_data:
+            print(f"  Viable by ground water level + active status: {gwl_status_viable} wells")
+            print(f"  Viable by all three criteria: {all_three_viable} wells")
             valid_gwl_count = np.sum(~np.isnan(gwl_values))
             print(f"  Wells with ground water level data: {valid_gwl_count}/{len(wells_df)}")
         else:
-            print(f"  No ground water level data available - using yield criteria only")
+            print(f"  No ground water level data available")
+        if has_status_data:
+            active_status_count = np.sum(status_viable)
+            print(f"  Wells with active status: {active_status_count}/{len(wells_df)}")
+        else:
+            print(f"  No well status data available")
         print(f"RAW DATA RANGES:")
         print(f"  Yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
         if has_gwl_data and valid_gwl_count > 0:
@@ -645,12 +672,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     test_gwl = test_well['ground water level'] if not pd.isna(test_well['ground water level']) else 'NaN'
                     test_yield_viable = test_yield >= yield_threshold
                     test_gwl_viable = not pd.isna(test_well['ground water level'])
-                    test_combined = test_yield_viable or test_gwl_viable
+                    test_status_viable = test_well.get('WELL_STATUS_DESC', '') == "Active (exist, present)" if has_status_data else False
+                    test_combined = test_yield_viable or test_gwl_viable or test_status_viable
                     print(f"DEBUG WELL M35/4191:")
                     print(f"    Yield: {test_yield} L/s (viable: {test_yield_viable})")
                     print(f"    Ground water level: {test_gwl} (viable: {test_gwl_viable})")
+                    if has_status_data:
+                        test_status = test_well.get('WELL_STATUS_DESC', 'N/A')
+                        print(f"    Well status: {test_status} (viable: {test_status_viable})")
                     print(f"    Combined viable: {test_combined}")
-                    print(f"    Criteria: yield>={yield_threshold}, gwl=has_valid_data")
+                    print(f"    Criteria: yield>={yield_threshold}, gwl=has_valid_data, status=Active")
                     
             # Sample of ground water level values showing range
             gwl_sample = valid_gwl[:10] if len(valid_gwl) > 0 else []

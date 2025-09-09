@@ -242,8 +242,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     # This creates overlapping coverage for seamless visual joining
     clicked_lat, clicked_lng = click_point
     
-    # Use dynamic offset - centroid spacing = search_area_size / 2 - 0.09km
-    target_offset_km = (search_radius / 2) - 0.09
+    # Use dynamic offset - all adjacent heatmaps spaced at (search_radius - 0.180km)
+    target_offset_km = search_radius - 0.180
     
     # SURVEY-GRADE GEODETIC CALCULATIONS with adaptive precision targeting
     # Achieves professional-grade accuracy through intelligent convergence algorithms
@@ -252,7 +252,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     TOLERANCE_KM = 0.0001  # 10cm tolerance for practical applications  
     ADAPTIVE_STEP_SIZE = 0.000001  # Dynamic adjustment precision
     
-    print(f"SURVEY-GRADE SPACING WITH ADAPTIVE PRECISION (target: {target_offset_km:.2f}km = {search_radius}km/2 - 0.09km):")
+    print(f"SURVEY-GRADE SPACING WITH ADAPTIVE PRECISION (target: {target_offset_km:.2f}km based on {search_radius}km search area):")
     print(f"  Using adaptive convergence for optimal real-world accuracy")
     
     # Step 1: Ultra-precise latitude offset with micro-adjustment optimization

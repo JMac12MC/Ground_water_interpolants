@@ -52,7 +52,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         
         if len(filtered_wells_temp) > 0:
             # Get values from this area's wells for global range calculation
-            if interpolation_method == 'indicator_kriging':
+            if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
                 # For indicator kriging, values are always 0-1
                 global_values.extend([0.0, 1.0])
             else:
@@ -78,7 +78,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         
     else:
         # Fallback defaults
-        if interpolation_method == 'indicator_kriging':
+        if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
             global_min_value, global_max_value = 0.0, 1.0
         else:
             global_min_value, global_max_value = 0.0, 25.0
@@ -501,7 +501,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         
         if len(filtered_wells_temp) > 0:
             # Get values from this area's wells for global range calculation
-            if interpolation_method == 'indicator_kriging':
+            if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
                 # For indicator kriging, values are always 0-1
                 global_values.extend([0.0, 1.0])
             else:
@@ -528,7 +528,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         
     else:
         # Fallback defaults
-        if interpolation_method == 'indicator_kriging':
+        if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
             global_min_value, global_max_value = 0.0, 1.0
         else:
             global_min_value, global_max_value = 0.0, 25.0

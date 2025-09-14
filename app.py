@@ -16,6 +16,39 @@ from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
 # Regional heatmap removed per user request
 
+def classify_well_viability(row):
+    """
+    Classify a well as viable (1) or not viable (0) using the same 3-rule system as indicator kriging.
+    
+    A well is viable if ANY of these conditions are met:
+    - yield_rate ≥ 0.1 L/s
+    - ground water level data exists (any valid depth means water was found)
+    - status = "Active (exist, present)"
+    
+    Returns:
+    --------
+    int: 1 if viable, 0 if not viable
+    """
+    yield_threshold = 0.1
+    
+    # Rule 1: Check yield rate
+    yield_rate = row.get('yield_rate', np.nan)
+    if pd.notna(yield_rate) and yield_rate >= yield_threshold:
+        return 1
+    
+    # Rule 2: Check ground water level data (any valid data means water was found)
+    gwl_value = row.get('ground water level', np.nan)
+    if pd.notna(gwl_value):
+        return 1
+    
+    # Rule 3: Check active status
+    status = row.get('status', '')
+    if status == "Active (exist, present)":
+        return 1
+    
+    # Not viable if none of the conditions are met
+    return 0
+
 # Set page configuration with stability settings
 st.set_page_config(
     page_title="Groundwater Mapper",
@@ -2346,7 +2379,7 @@ with main_col1:
                         fill=True,
                         fill_color='darkblue',
                         fill_opacity=0.7,
-                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m"
+                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m - Indicator: {classify_well_viability(row)}"
                     ).add_to(wells_layer)
                 except Exception as e:
                     print(f"Error creating marker for well: {e}")

@@ -1326,11 +1326,13 @@ with main_col1:
     def get_global_unified_color(value, method='kriging'):
         """Global unified color function using stored global range for consistency"""
         if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
-            # Three-tier classification: red (poor), orange (moderate), green (good)
+            # Four-tier classification: red (poor), orange (low-moderate), yellow (moderate), green (good)
             if value <= 0.4:
                 return '#FF0000'    # Red for poor
+            elif value <= 0.6:
+                return '#FF8000'    # Orange for low-moderate
             elif value <= 0.7:
-                return '#FF8000'    # Orange for moderate
+                return '#FFFF00'    # Yellow for moderate
             else:
                 return '#00FF00'    # Green for good
         else:

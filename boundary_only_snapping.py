@@ -10,7 +10,7 @@ from shapely.geometry import Point, Polygon, LineString
 from shapely.ops import unary_union
 import geopandas as gpd
 
-SNAP_DISTANCE_METERS = 800
+SNAP_DISTANCE_METERS = 1500
 
 # Boundary detection removed - now processing all vertices directly
 

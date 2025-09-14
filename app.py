@@ -2252,13 +2252,13 @@ with main_col1:
         # Add colormap legend AFTER all heatmaps are processed
         if stored_heatmap_count > 0:
             if st.session_state.interpolation_method == 'indicator_kriging':
-                # Three-tier indicator kriging legend
-                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
+                # Four-tier indicator kriging legend
+                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
                 colormap = folium.StepColormap(
-                    colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
+                    colors=['#FF0000', '#FF8000', '#FFFF00', '#00FF00'],  # Red, Orange, Yellow, Green
                     vmin=0,
                     vmax=1.0,
-                    index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
+                    index=[0, 0.4, 0.6, 0.7, 1.0],  # Four-tier thresholds
                     caption=caption_text
                 )
             else:

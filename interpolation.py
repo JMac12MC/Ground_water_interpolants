@@ -248,6 +248,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # For continuous indicator method, expand well search area but keep final grid bounds the same
     original_radius_km = radius_km
+    print(f"🔍 GENERATE_GEO_JSON_GRID CALLED: method={method}, radius={radius_km}km, wells_count={len(wells_df)}")
     print(f"🔍 WELL SEARCH ANALYSIS: method={method}, radius={radius_km}km, wells_count={len(wells_df)}")
     
     if method == 'indicator_kriging_spherical_continuous':

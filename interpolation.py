@@ -306,7 +306,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # Don't apply indicator clipping to indicator kriging methods themselves
     # Indicator methods should not be clipped by their own output
-    indicator_methods = ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_variance']
+    indicator_methods = ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous', 'indicator_variance']
     clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'depth_kriging_auto', 'swl_kriging', 'ground_water_level_kriging', 'idw', 'rf_kriging']
     
     if indicator_mask is not None and method in clippable_methods:
@@ -503,7 +503,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             print(f"Ground water level interpolation: converted {negative_count} negative values (artesian) to 0 (surface level)")
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
-    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
+    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
         # For indicator kriging, we need wells with ACTUAL yield data (including 0.0)
         # But exclude wells that have missing yield data entirely
         wells_df_original = wells_df.copy()
@@ -769,7 +769,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Execute kriging to get both predictions and variance
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
 
-        elif (method == 'indicator_kriging' or method == 'indicator_kriging_spherical') and len(wells_df) >= 5:
+        elif (method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:
             # Perform indicator kriging for binary yield suitability
             print("Performing indicator kriging for yield suitability mapping...")
 
@@ -802,25 +802,27 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
 
             # Apply distance-based decay to prevent high values far from good wells
-            # Calculate distances from each grid point to nearest good well (yield >= 0.75)
-            good_wells_mask = yields >= 0.75  # Wells with good yield indicators
-            if np.any(good_wells_mask):
-                good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
-                grid_coords = grid_points
+            # Skip decay for continuous version to preserve smooth kriging output
+            if method != 'indicator_kriging_spherical_continuous':
+                # Calculate distances from each grid point to nearest good well (yield >= 0.75)
+                good_wells_mask = yields >= 0.75  # Wells with good yield indicators
+                if np.any(good_wells_mask):
+                    good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
+                    grid_coords = grid_points
 
-                # Calculate distance to nearest good well for each grid point
-                from scipy.spatial.distance import cdist
-                distances = cdist(grid_coords, good_coords)
-                min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
+                    # Calculate distance to nearest good well for each grid point
+                    from scipy.spatial.distance import cdist
+                    distances = cdist(grid_coords, good_coords)
+                    min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
 
-                # Apply exponential decay for distances > 3km
-                decay_threshold_km = 3.0
-                decay_factor = 0.3  # Gentle decay to preserve three-tier structure
+                    # Apply exponential decay for distances > 3km
+                    decay_threshold_km = 3.0
+                    decay_factor = 0.3  # Gentle decay to preserve three-tier structure
 
-                distance_mask = min_distances_km > decay_threshold_km
-                excess_distance = min_distances_km[distance_mask] - decay_threshold_km
-                decay_multiplier = np.exp(-decay_factor * excess_distance)
-                interpolated_z[distance_mask] *= decay_multiplier
+                    distance_mask = min_distances_km > decay_threshold_km
+                    excess_distance = min_distances_km[distance_mask] - decay_threshold_km
+                    decay_multiplier = np.exp(-decay_factor * excess_distance)
+                    interpolated_z[distance_mask] *= decay_multiplier
 
             # Count points in each tier based on OUTPUT ranges (continuous 0-1 function)
             # Keep the continuous kriging output values intact - colors applied during visualization
@@ -1330,9 +1332,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         yields = wells_df_filtered['ground water level'].values.astype(float)
 
         print(f"Heat map ground water level: using {len(yields)} wells with GWL values from {yields.min():.2f} to {yields.max():.2f}")
-    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
+    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
         # INDICATOR KRIGING FILTERING: Filter out monitoring wells with no useful data BEFORE calling get_wells_for_interpolation
-        method_name = "spherical" if method == 'indicator_kriging_spherical' else "linear"
+        method_name = "spherical" if method in ['indicator_kriging_spherical', 'indicator_kriging_spherical_continuous'] else "linear"
         print(f"HEAT MAP INDICATOR KRIGING ({method_name}) FILTERING: Starting with {len(wells_df)} total wells")
         print(f"HEAT MAP COLUMNS AVAILABLE: {list(wells_df.columns)}")
         
@@ -1485,7 +1487,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         grid_points = xi_inside
 
         # Choose interpolation method based on parameter and dataset size
-        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging' or method == 'indicator_kriging_spherical') and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:
             try:
                 if method == 'specific_capacity_kriging':
                     interpolation_name = "specific capacity kriging"
@@ -1495,12 +1497,14 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     interpolation_name = "indicator kriging (yield suitability)"
                 elif method == 'indicator_kriging_spherical':
                     interpolation_name = "indicator kriging spherical (yield suitability)"
+                elif method == 'indicator_kriging_spherical_continuous':
+                    interpolation_name = "indicator kriging spherical continuous (yield suitability)"
                 else:
                     interpolation_name = "yield kriging"
                 print(f"Using {interpolation_name} interpolation for heat map")
 
                 # Filter to meaningful data for better kriging
-                if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
+                if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
                     # For indicator kriging, use all data (including 0s and 1s)
                     meaningful_data_mask = np.ones(len(yields), dtype=bool)  # Use all data
                 else:
@@ -1523,6 +1527,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         variogram_model_to_use = 'linear'
                     elif method == 'indicator_kriging_spherical':
                         # Use spherical variogram for binary indicator data
+                        variogram_model_to_use = 'spherical'
+                    elif method == 'indicator_kriging_spherical_continuous':
+                        # Use spherical variogram for continuous indicator data
                         variogram_model_to_use = 'spherical'
                     else:
                         variogram_model_to_use = 'spherical'
@@ -1551,6 +1558,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
                         variogram_type = "spherical" if method == 'indicator_kriging_spherical' else "linear"
                         print(f"Heat map indicator kriging ({variogram_type}): binary classification with {np.sum(interpolated_z)}/{len(interpolated_z)} areas classified as 'likely' for groundwater")
+                    elif method == 'indicator_kriging_spherical_continuous':
+                        # For continuous version: keep continuous probability values, no binary thresholding
+                        interpolated_z = np.clip(interpolated_z, 0.0, 1.0)  # Just ensure [0,1] range
+                        print(f"Heat map indicator kriging (spherical continuous): continuous probabilities from {interpolated_z.min():.3f} to {interpolated_z.max():.3f}")
                     else:
                         # Ensure non-negative yields for other methods
                         interpolated_z = np.maximum(0, interpolated_z)

@@ -391,6 +391,14 @@ with st.sidebar:
         # Log confirmation that enhanced functionality is active
         print(f"🎯 ENHANCED CONTINUOUS INDICATOR: Selected method with 2x well search radius functionality")
 
+    # Add discrete color option for spherical continuous indicator kriging
+    if visualization_method == "Indicator Kriging (Spherical Continuous)":
+        st.session_state.use_discrete_indicator_colors = st.checkbox(
+            "Use Discrete Color Map",
+            value=st.session_state.get('use_discrete_indicator_colors', False),
+            help="Apply red/orange/yellow/green flat colors like other indicator methods instead of continuous gradient"
+        )
+
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")
     grid_option = st.selectbox(
@@ -1343,6 +1351,16 @@ with main_col1:
                 return '#FFFF00'    # Yellow for moderate
             else:
                 return '#00FF00'    # Green for good
+        elif method == 'indicator_kriging_spherical_continuous' and st.session_state.get('use_discrete_indicator_colors', False):
+            # Apply same discrete colors as other indicator methods when checkbox is enabled
+            if value <= 0.4:
+                return '#FF0000'    # Red for poor
+            elif value <= 0.6:
+                return '#FF8000'    # Orange for low-moderate
+            elif value <= 0.7:
+                return '#FFFF00'    # Yellow for moderate
+            else:
+                return '#00FF00'    # Green for good
         else:
             # Apply selected color distribution method
             color_dist_method = getattr(st.session_state, 'color_distribution_method', 'linear_distribution')
@@ -2259,7 +2277,9 @@ with main_col1:
         
         # Add colormap legend AFTER all heatmaps are processed
         if stored_heatmap_count > 0:
-            if st.session_state.interpolation_method == 'indicator_kriging':
+            if (st.session_state.interpolation_method == 'indicator_kriging' or 
+                st.session_state.interpolation_method == 'indicator_kriging_spherical' or 
+                (st.session_state.interpolation_method == 'indicator_kriging_spherical_continuous' and st.session_state.get('use_discrete_indicator_colors', False))):
                 # Four-tier indicator kriging legend
                 caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
                 colormap = folium.StepColormap(

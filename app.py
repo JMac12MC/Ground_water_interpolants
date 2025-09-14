@@ -388,6 +388,8 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
+        # Log confirmation that enhanced functionality is active
+        print(f"🎯 ENHANCED CONTINUOUS INDICATOR: Selected method with 2x well search radius functionality")
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")

@@ -248,26 +248,33 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # For continuous indicator method, expand well search area but keep final grid bounds the same
     original_radius_km = radius_km
+    print(f"🔍 WELL SEARCH ANALYSIS: method={method}, radius={radius_km}km, wells_count={len(wells_df)}")
+    
     if method == 'indicator_kriging_spherical_continuous':
         # Double the radius for well selection - get wells from larger area
         expanded_radius_km = radius_km * 2.0
-        print(f"Continuous indicator kriging: expanding well search from {radius_km}km to {expanded_radius_km}km")
+        print(f"🎯 CONTINUOUS INDICATOR KRIGING: Expanding well search from {radius_km}km to {expanded_radius_km}km")
+        print(f"📊 BEFORE EXPANSION: Using {len(wells_df)} wells from original {radius_km}km radius")
         
         # Get expanded well dataset from the larger search area
         try:
             from data_loader import load_nz_govt_data
             expanded_wells_df = load_nz_govt_data(center_point, expanded_radius_km)
             if expanded_wells_df is not None and len(expanded_wells_df) > len(wells_df):
+                original_well_count = len(wells_df)
                 wells_df = expanded_wells_df
-                print(f"Continuous indicator kriging: using {len(wells_df)} wells from expanded {expanded_radius_km}km search area")
+                print(f"✅ EXPANSION SUCCESS: Found {len(wells_df)} wells in {expanded_radius_km}km area (gained {len(wells_df) - original_well_count} additional wells)")
             else:
-                print(f"Continuous indicator kriging: no additional wells found in expanded area, using original {len(wells_df)} wells")
+                print(f"⚠️ EXPANSION RESULT: No additional wells found in expanded area, using original {len(wells_df)} wells")
         except Exception as e:
-            print(f"Error expanding well search area: {e}, using original wells")
+            print(f"❌ EXPANSION ERROR: {e}, using original {len(wells_df)} wells")
         
         # Keep final grid bounds at original radius for consistent clipping
         radius_km = original_radius_km
-        print(f"Continuous indicator kriging: final grid bounds kept at original {radius_km}km")
+        print(f"📐 FINAL GRID BOUNDS: Kept at original {radius_km}km for consistent clipping polygon")
+        print(f"🎯 CONTINUOUS INDICATOR SUMMARY: Using {len(wells_df)} wells from {expanded_radius_km}km, clipping to {radius_km}km")
+    else:
+        print(f"📍 STANDARD METHOD: Using {len(wells_df)} wells from {radius_km}km radius")
     
     # Debug indicator mask status and create polygon geometry for clipping
     print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")

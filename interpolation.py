@@ -246,6 +246,29 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         GeoJSON data structure with interpolated yield values
     """
     
+    # For continuous indicator method, expand well search area but keep final grid bounds the same
+    original_radius_km = radius_km
+    if method == 'indicator_kriging_spherical_continuous':
+        # Double the radius for well selection - get wells from larger area
+        expanded_radius_km = radius_km * 2.0
+        print(f"Continuous indicator kriging: expanding well search from {radius_km}km to {expanded_radius_km}km")
+        
+        # Get expanded well dataset from the larger search area
+        try:
+            from data_loader import load_nz_govt_data
+            expanded_wells_df = load_nz_govt_data(center_point, expanded_radius_km)
+            if expanded_wells_df is not None and len(expanded_wells_df) > len(wells_df):
+                wells_df = expanded_wells_df
+                print(f"Continuous indicator kriging: using {len(wells_df)} wells from expanded {expanded_radius_km}km search area")
+            else:
+                print(f"Continuous indicator kriging: no additional wells found in expanded area, using original {len(wells_df)} wells")
+        except Exception as e:
+            print(f"Error expanding well search area: {e}, using original wells")
+        
+        # Keep final grid bounds at original radius for consistent clipping
+        radius_km = original_radius_km
+        print(f"Continuous indicator kriging: final grid bounds kept at original {radius_km}km")
+    
     # Debug indicator mask status and create polygon geometry for clipping
     print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
     indicator_geometry = None

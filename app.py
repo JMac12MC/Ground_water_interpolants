@@ -1236,7 +1236,14 @@ with main_col1:
         total_values = 0
         
         for stored_heatmap in st.session_state.stored_heatmaps:
-            geojson_data = stored_heatmap.get('geojson_data')
+            raw_geojson_data = stored_heatmap.get('geojson_data')
+            # Apply exclusion clipping for colormap calculation
+            if raw_geojson_data:
+                from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+            else:
+                geojson_data = raw_geojson_data
+                
             if geojson_data and geojson_data.get('features'):
                 for feature in geojson_data['features']:
                     value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -1249,7 +1256,14 @@ with main_col1:
             # Calculate percentile-based range for better color distribution
             all_values = []
             for stored_heatmap in st.session_state.stored_heatmaps:
-                geojson_data = stored_heatmap.get('geojson_data')
+                raw_geojson_data = stored_heatmap.get('geojson_data')
+                # Apply exclusion clipping for percentile color calculation
+                if raw_geojson_data:
+                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                else:
+                    geojson_data = raw_geojson_data
+                    
                 if geojson_data and geojson_data.get('features'):
                     for feature in geojson_data['features']:
                         value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -1985,7 +1999,14 @@ with main_col1:
                     # Include stored heatmap values
                     if st.session_state.stored_heatmaps:
                         for stored_heatmap in st.session_state.stored_heatmaps:
-                            stored_geojson = stored_heatmap.get('geojson_data')
+                            raw_stored_geojson = stored_heatmap.get('geojson_data')
+                            # Apply exclusion clipping for global color range calculation
+                            if raw_stored_geojson:
+                                from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                                stored_geojson = apply_exclusion_clipping_to_stored_heatmap(raw_stored_geojson)
+                            else:
+                                stored_geojson = raw_stored_geojson
+                                
                             if stored_geojson and 'features' in stored_geojson:
                                 for feature in stored_geojson['features']:
                                     value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -2029,7 +2050,14 @@ with main_col1:
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     continue
                     
-                geojson_data = stored_heatmap.get('geojson_data')
+                raw_geojson_data = stored_heatmap.get('geojson_data')
+                # Apply exclusion clipping to stored heatmap data for smooth raster
+                if raw_geojson_data:
+                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                else:
+                    geojson_data = raw_geojson_data
+                    
                 if geojson_data and geojson_data.get('features'):
                     # Add features to combined dataset
                     for feature in geojson_data['features']:
@@ -2103,8 +2131,15 @@ with main_col1:
                     # All stored heatmaps should display
 
                     # Prefer GeoJSON data for triangular mesh visualization
-                    geojson_data = stored_heatmap.get('geojson_data')
+                    raw_geojson_data = stored_heatmap.get('geojson_data')
                     heatmap_data = stored_heatmap.get('heatmap_data', [])
+                    
+                    # Apply exclusion clipping to stored heatmap GeoJSON data
+                    if raw_geojson_data:
+                        from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                        geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                    else:
+                        geojson_data = raw_geojson_data
 
                     if geojson_data and geojson_data.get('features'):
                         print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")

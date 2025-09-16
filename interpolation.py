@@ -18,6 +18,208 @@ from PIL import Image
 import matplotlib.colors as mcolors
 from scipy.interpolate import griddata
 
+def load_exclusion_polygons():
+    """
+    Load red/orange exclusion polygons from GeoJSON file
+    
+    Returns:
+    --------
+    geopandas.GeoDataFrame or None
+        GeoDataFrame containing exclusion polygon geometries
+    """
+    try:
+        import os
+        
+        # Check for the red/orange exclusion polygon file
+        exclusion_files = [
+            "attached_assets/red_orange_zones_stored_2025-09-16_1758015813886.geojson",
+            "red_orange_zones_stored_2025-09-16.geojson",
+            "attached_assets/red_orange_zones_stored_2025-09-16.geojson"
+        ]
+        
+        for file_path in exclusion_files:
+            if os.path.exists(file_path):
+                exclusion_gdf = gpd.read_file(file_path)
+                if exclusion_gdf is not None and not exclusion_gdf.empty:
+                    print(f"✅ Loaded {len(exclusion_gdf)} exclusion polygons from {file_path}")
+                    return exclusion_gdf
+                    
+        print("⚠️ No red/orange exclusion polygon file found")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error loading exclusion polygons: {e}")
+        return None
+
+def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
+    """
+    Apply negative clipping to remove heatmap points within exclusion areas
+    
+    Parameters:
+    -----------
+    heatmap_data : list
+        List of heatmap data points in format [[lat, lng, value], ...]
+    exclusion_polygons : geopandas.GeoDataFrame
+        GeoDataFrame containing exclusion polygon geometries
+        
+    Returns:
+    --------
+    list
+        Filtered heatmap data with exclusion areas removed
+    """
+    if exclusion_polygons is None or len(exclusion_polygons) == 0:
+        return heatmap_data
+        
+    if not heatmap_data:
+        return heatmap_data
+        
+    try:
+        from shapely.geometry import Point
+        from shapely.ops import unary_union
+        
+        # Create unified exclusion geometry for faster point-in-polygon testing
+        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
+        if not valid_geometries:
+            return heatmap_data
+            
+        exclusion_geometry = unary_union(valid_geometries)
+        print(f"🚫 Applying exclusion clipping with {len(valid_geometries)} exclusion zones")
+        
+        # Filter out points that fall within exclusion areas
+        filtered_data = []
+        excluded_count = 0
+        
+        for data_point in heatmap_data:
+            lat, lng = data_point[0], data_point[1]
+            point = Point(lng, lat)  # Shapely uses (lon, lat) order
+            
+            # Exclude point if it's within any exclusion area
+            if not (exclusion_geometry.contains(point) or exclusion_geometry.intersects(point)):
+                filtered_data.append(data_point)
+            else:
+                excluded_count += 1
+                
+        print(f"🚫 Exclusion clipping: Removed {excluded_count} points, kept {len(filtered_data)} points")
+        return filtered_data
+        
+    except Exception as e:
+        print(f"❌ Error applying exclusion clipping: {e}")
+        return heatmap_data
+
+def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True):
+    """
+    Apply exclusion clipping to stored heatmap GeoJSON data
+    
+    Parameters:
+    -----------
+    stored_heatmap_geojson : dict
+        GeoJSON data from stored heatmap
+    auto_load_exclusions : bool
+        Whether to auto-load exclusion polygons if not provided
+        
+    Returns:
+    --------
+    dict
+        Filtered GeoJSON with exclusion areas removed
+    """
+    if not stored_heatmap_geojson or not stored_heatmap_geojson.get('features'):
+        return stored_heatmap_geojson
+        
+    try:
+        # Load exclusion polygons
+        exclusion_polygons = load_exclusion_polygons() if auto_load_exclusions else None
+        
+        if exclusion_polygons is not None:
+            features_before = len(stored_heatmap_geojson['features'])
+            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons)
+            
+            # Return updated GeoJSON
+            filtered_geojson = {
+                "type": stored_heatmap_geojson.get("type", "FeatureCollection"),
+                "features": filtered_features
+            }
+            
+            print(f"🚫 PRODUCTION: Applied exclusion clipping to stored heatmap: {features_before} -> {len(filtered_features)} features")
+            return filtered_geojson
+        else:
+            print(f"🚫 PRODUCTION: No exclusion polygons found for stored heatmap - showing {len(stored_heatmap_geojson['features'])} features without exclusion clipping")
+            return stored_heatmap_geojson
+            
+    except Exception as e:
+        print(f"❌ PRODUCTION: Error applying exclusion clipping to stored heatmap: {e}")
+        return stored_heatmap_geojson
+
+def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
+    """
+    Apply negative clipping to remove GeoJSON features within exclusion areas
+    
+    Parameters:
+    -----------
+    features : list
+        List of GeoJSON feature objects
+    exclusion_polygons : geopandas.GeoDataFrame
+        GeoDataFrame containing exclusion polygon geometries
+        
+    Returns:
+    --------
+    list
+        Filtered GeoJSON features with exclusion areas removed
+    """
+    if exclusion_polygons is None or len(exclusion_polygons) == 0:
+        return features
+        
+    if not features:
+        return features
+        
+    try:
+        from shapely.geometry import Point, Polygon as ShapelyPolygon
+        from shapely.ops import unary_union
+        
+        # Create unified exclusion geometry for faster intersection testing
+        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
+        if not valid_geometries:
+            return features
+            
+        exclusion_geometry = unary_union(valid_geometries)
+        print(f"🚫 Applying exclusion clipping to GeoJSON features with {len(valid_geometries)} exclusion zones")
+        
+        # Filter out features that intersect with exclusion areas
+        filtered_features = []
+        excluded_count = 0
+        
+        for feature in features:
+            try:
+                # Get feature geometry
+                if feature['geometry']['type'] == 'Polygon':
+                    coords = feature['geometry']['coordinates'][0]
+                    if len(coords) >= 3:
+                        # Create Shapely polygon from coordinates
+                        shapely_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
+                        feature_polygon = ShapelyPolygon(shapely_coords)
+                        
+                        # Check if feature intersects with any exclusion area
+                        if not (exclusion_geometry.intersects(feature_polygon) or exclusion_geometry.contains(feature_polygon)):
+                            filtered_features.append(feature)
+                        else:
+                            excluded_count += 1
+                    else:
+                        # Keep features with invalid geometry
+                        filtered_features.append(feature)
+                else:
+                    # Keep non-polygon features
+                    filtered_features.append(feature)
+                    
+            except Exception as e:
+                # If geometry processing fails, keep the feature
+                filtered_features.append(feature)
+                
+        print(f"🚫 GeoJSON exclusion clipping: Removed {excluded_count} features, kept {len(filtered_features)} features")
+        return filtered_features
+        
+    except Exception as e:
+        print(f"❌ Error applying GeoJSON exclusion clipping: {e}")
+        return features
+
 def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
     """
     Convert indicator kriging mask into polygon geometry for clipping
@@ -218,7 +420,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None, exclusion_polygons=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -1249,6 +1451,21 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     features = final_clipped_features
     print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
+
+    # Apply exclusion clipping if exclusion polygons are provided
+    if exclusion_polygons is not None:
+        features_before_exclusion = len(features)
+        features = apply_exclusion_clipping_to_geojson(features, exclusion_polygons)
+        print(f"🚫 PRODUCTION: Applied exclusion clipping: {features_before_exclusion} -> {len(features)} features")
+    elif exclusion_polygons is None:
+        # Try to load exclusion polygons automatically
+        auto_exclusion_polygons = load_exclusion_polygons()
+        if auto_exclusion_polygons is not None:
+            features_before_exclusion = len(features)
+            features = apply_exclusion_clipping_to_geojson(features, auto_exclusion_polygons)
+            print(f"🚫 PRODUCTION: Applied auto-loaded exclusion clipping: {features_before_exclusion} -> {len(features)} features")
+        else:
+            print(f"🚫 PRODUCTION: No exclusion polygons found - showing {len(features)} features without exclusion clipping")
 
     # Create the full GeoJSON object
     geojson = {

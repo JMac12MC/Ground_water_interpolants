@@ -618,39 +618,108 @@ with st.sidebar:
         st.subheader("🔴 Red/Orange Zone Analysis")
         st.write("Extract and display boundary polygons around low/medium probability indicator zones (<0.7 threshold). Adjacent red and orange zones will be unified into continuous boundaries.")
         
-        if st.button("🔴 Extract Red/Orange Zone Boundary", type="primary"):
-            if st.session_state.polygon_db:
-                with st.spinner("Extracting red/orange zones from indicator kriging heatmaps..."):
-                    try:
-                        from green_zone_extractor import extract_green_zones_from_indicator_heatmaps, store_green_zone_boundary
+        # Check for existing stored boundaries
+        existing_boundary = None
+        if st.session_state.polygon_db:
+            try:
+                from green_zone_extractor import get_stored_red_orange_polygon
+                existing_boundary = get_stored_red_orange_polygon(st.session_state.polygon_db)
+            except Exception as e:
+                print(f"Error checking for existing boundary: {e}")
+        
+        if existing_boundary:
+            # Show info about existing boundary
+            if existing_boundary.get('features'):
+                zone_count = len(existing_boundary['features'])
+                st.success(f"✅ Found {zone_count} stored red/orange zone boundaries")
+                
+                # Download button for existing data
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("📥 Download Red/Orange Polygons"):
+                        from utils import get_red_orange_polygon_for_download
+                        success, geojson_data, message = get_red_orange_polygon_for_download(st.session_state.polygon_db)
                         
-                        # Extract red/orange zone boundary
-                        boundary_geojson = extract_green_zones_from_indicator_heatmaps(st.session_state.polygon_db)
-                        
-                        if boundary_geojson:
-                            # Store the boundary polygon
-                            polygon_id = store_green_zone_boundary(st.session_state.polygon_db, boundary_geojson)
-                            
-                            if polygon_id:
-                                st.success(f"✅ Red/orange zone boundary extracted and stored! Polygon ID: {polygon_id}")
-                                
-                                # Store boundary for map display
-                                st.session_state.green_zone_boundary = boundary_geojson
-                                st.session_state.show_green_zone_boundary = True
-                                
-                                # Show some stats
-                                total_zones = len(boundary_geojson['features'])
-                                st.info(f"📊 Created {total_zones} boundary polygon(s) around red/orange zones")
-                            else:
-                                st.error("❌ Failed to store boundary polygon")
+                        if success:
+                            st.download_button(
+                                label="Download GeoJSON",
+                                data=geojson_data,
+                                file_name="red_orange_zones.geojson",
+                                mime="application/json"
+                            )
+                            st.success("✅ Red/orange polygon data ready for download")
                         else:
-                            st.warning("⚠️ No red/orange zones found. Make sure indicator kriging heatmaps are available.")
+                            st.error(f"❌ {message}")
+                
+                with col2:
+                    if st.button("🔴 Re-extract from Heatmaps", help="Extract fresh boundaries from indicator heatmaps"):
+                        if st.session_state.polygon_db:
+                            with st.spinner("Extracting red/orange zones from indicator kriging heatmaps..."):
+                                try:
+                                    from green_zone_extractor import extract_green_zones_from_indicator_heatmaps, store_green_zone_boundary
+                                    
+                                    # Extract red/orange zone boundary
+                                    boundary_geojson = extract_green_zones_from_indicator_heatmaps(st.session_state.polygon_db)
+                                    
+                                    if boundary_geojson:
+                                        # Store the boundary polygon
+                                        polygon_id = store_green_zone_boundary(st.session_state.polygon_db, boundary_geojson)
+                                        
+                                        if polygon_id:
+                                            st.success(f"✅ Red/orange zone boundary re-extracted and stored! Polygon ID: {polygon_id}")
+                                            
+                                            # Store boundary for map display
+                                            st.session_state.green_zone_boundary = boundary_geojson
+                                            st.session_state.show_green_zone_boundary = True
+                                            
+                                            # Show some stats
+                                            total_zones = len(boundary_geojson['features'])
+                                            st.info(f"📊 Created {total_zones} boundary polygon(s) around red/orange zones")
+                                        else:
+                                            st.error("❌ Failed to store boundary polygon")
+                                    else:
+                                        st.warning("⚠️ No red/orange zones found. Make sure indicator kriging heatmaps are available.")
+                                        
+                                except Exception as e:
+                                    st.error(f"Error extracting red/orange zones: {e}")
+                                    print(f"Red/orange zone extraction error: {e}")
+                        else:
+                            st.error("Database not available")
+        else:
+            # No existing boundary, show extract button
+            if st.button("🔴 Extract Red/Orange Zone Boundary", type="primary"):
+                if st.session_state.polygon_db:
+                    with st.spinner("Extracting red/orange zones from indicator kriging heatmaps..."):
+                        try:
+                            from green_zone_extractor import extract_green_zones_from_indicator_heatmaps, store_green_zone_boundary
                             
-                    except Exception as e:
-                        st.error(f"Error extracting red/orange zones: {e}")
-                        print(f"Red/orange zone extraction error: {e}")
-            else:
-                st.error("Database not available")
+                            # Extract red/orange zone boundary
+                            boundary_geojson = extract_green_zones_from_indicator_heatmaps(st.session_state.polygon_db)
+                            
+                            if boundary_geojson:
+                                # Store the boundary polygon
+                                polygon_id = store_green_zone_boundary(st.session_state.polygon_db, boundary_geojson)
+                                
+                                if polygon_id:
+                                    st.success(f"✅ Red/orange zone boundary extracted and stored! Polygon ID: {polygon_id}")
+                                    
+                                    # Store boundary for map display
+                                    st.session_state.green_zone_boundary = boundary_geojson
+                                    st.session_state.show_green_zone_boundary = True
+                                    
+                                    # Show some stats
+                                    total_zones = len(boundary_geojson['features'])
+                                    st.info(f"📊 Created {total_zones} boundary polygon(s) around red/orange zones")
+                                else:
+                                    st.error("❌ Failed to store boundary polygon")
+                            else:
+                                st.warning("⚠️ No red/orange zones found. Make sure indicator kriging heatmaps are available.")
+                                
+                        except Exception as e:
+                            st.error(f"Error extracting red/orange zones: {e}")
+                            print(f"Red/orange zone extraction error: {e}")
+                else:
+                    st.error("Database not available")
         
         # Clear red/orange polygon button
         if st.button("🗑️ Clear Red/Orange Zone Boundary", help="Remove stored red/orange zone boundary from database"):
@@ -2768,6 +2837,23 @@ with main_col2:
                     file_name="nearby_wells_east.csv",
                     mime="text/csv"
                 )
+        
+        # Export red/orange polygon data if available
+        if st.session_state.polygon_db is not None:
+            if st.button("Download Red/Orange Polygons"):
+                from utils import get_red_orange_polygon_for_download
+                success, geojson_data, message = get_red_orange_polygon_for_download(st.session_state.polygon_db)
+                
+                if success:
+                    st.download_button(
+                        label="Download GeoJSON",
+                        data=geojson_data,
+                        file_name="red_orange_zones.geojson",
+                        mime="application/json"
+                    )
+                    st.success("✅ Red/orange polygon data ready for download")
+                else:
+                    st.error(f"❌ {message}")
     elif st.session_state.get('selected_point'):
         st.info("Location selected. View the dual interpolated heatmaps on the left.")
     else:

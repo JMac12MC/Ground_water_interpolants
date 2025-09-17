@@ -1460,7 +1460,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         'indicator_kriging_spherical_continuous'
     ]
     
-    if method not in indicator_methods:
+    # TEMPORARILY DISABLE exclusion clipping to debug missing heatmaps
+    if False and method not in indicator_methods:
         # Apply exclusion clipping if exclusion polygons are provided
         if exclusion_polygons is not None:
             features_before_exclusion = len(features)

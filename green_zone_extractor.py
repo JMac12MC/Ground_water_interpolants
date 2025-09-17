@@ -1,6 +1,6 @@
 """
 Green Zone Polygon Extractor
-Creates boundary polygons around high-probability indicator kriging zones (≥0.7)
+Creates boundary polygons around low-probability indicator kriging zones (<0.5, red/orange zones)
 """
 
 import json
@@ -11,7 +11,7 @@ import geopandas as gpd
 
 def extract_green_zones_from_indicator_heatmaps(polygon_db):
     """
-    Extract red/orange zones (<0.7 probability) from stored indicator kriging heatmaps
+    Extract red/orange zones (<0.5 probability) from stored indicator kriging heatmaps
     and create a boundary polygon around them.
     Works directly with database - no need to load heatmaps on map first.
     
@@ -62,7 +62,7 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
         print("❌ No indicator kriging heatmaps found")
         return None
     
-    # Collect all red/orange zone features (<0.7)
+    # Collect all red/orange zone features (<0.5, excluding yellow zones)
     red_orange_features = []
     total_features = 0
     red_orange_feature_count = 0
@@ -79,9 +79,9 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
         heatmap_red_orange_count = 0
         for feature in features:
             if 'properties' in feature:
-                # Check for indicator value < 0.7 (red/orange zone)
+                # Check for indicator value < 0.5 (red/orange zone, excluding yellow 0.5-0.7)
                 value = feature['properties'].get('value', 0)
-                if value < 0.7:
+                if value < 0.5:
                     red_orange_features.append(feature)
                     heatmap_red_orange_count += 1
                     red_orange_feature_count += 1
@@ -91,7 +91,7 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
     print(f"✅ EXTRACTED: {red_orange_feature_count}/{total_features} total red/orange zone features")
     
     if not red_orange_features:
-        print("❌ No red/orange zone features found (<0.7 threshold)")
+        print("❌ No red/orange zone features found (<0.5 threshold, excluding yellow zones)")
         return None
     
     # Create polygons from red/orange features

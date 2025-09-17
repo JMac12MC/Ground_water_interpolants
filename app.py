@@ -1237,10 +1237,21 @@ with main_col1:
         
         for stored_heatmap in st.session_state.stored_heatmaps:
             raw_geojson_data = stored_heatmap.get('geojson_data')
-            # Apply exclusion clipping for colormap calculation
+            
+            # Apply exclusion clipping ONLY to non-indicator methods for colormap calculation
+            method = stored_heatmap.get('interpolation_method', 'kriging')
+            indicator_methods = [
+                'indicator_kriging', 
+                'indicator_kriging_spherical', 
+                'indicator_kriging_spherical_continuous'
+            ]
+            
             if raw_geojson_data:
-                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                if method not in indicator_methods:
+                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                else:
+                    geojson_data = raw_geojson_data
             else:
                 geojson_data = raw_geojson_data
                 
@@ -1257,10 +1268,21 @@ with main_col1:
             all_values = []
             for stored_heatmap in st.session_state.stored_heatmaps:
                 raw_geojson_data = stored_heatmap.get('geojson_data')
-                # Apply exclusion clipping for percentile color calculation
+                
+                # Apply exclusion clipping ONLY to non-indicator methods for percentile calculation
+                method = stored_heatmap.get('interpolation_method', 'kriging')
+                indicator_methods = [
+                    'indicator_kriging', 
+                    'indicator_kriging_spherical', 
+                    'indicator_kriging_spherical_continuous'
+                ]
+                
                 if raw_geojson_data:
-                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                    if method not in indicator_methods:
+                        from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                        geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                    else:
+                        geojson_data = raw_geojson_data
                 else:
                     geojson_data = raw_geojson_data
                     
@@ -2051,10 +2073,22 @@ with main_col1:
                     continue
                     
                 raw_geojson_data = stored_heatmap.get('geojson_data')
-                # Apply exclusion clipping to stored heatmap data for smooth raster
+                
+                # Apply exclusion clipping ONLY to non-indicator methods for smooth raster
+                method = stored_heatmap.get('interpolation_method', 'kriging')
+                indicator_methods = [
+                    'indicator_kriging', 
+                    'indicator_kriging_spherical', 
+                    'indicator_kriging_spherical_continuous'
+                ]
+                
                 if raw_geojson_data:
-                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                    if method not in indicator_methods:
+                        from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                        geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                    else:
+                        geojson_data = raw_geojson_data
+                        print(f"🔄 SMOOTH RASTER INDICATOR: Skipping exclusion clipping for {method} (preserving full probability distribution)")
                 else:
                     geojson_data = raw_geojson_data
                     
@@ -2134,10 +2168,22 @@ with main_col1:
                     raw_geojson_data = stored_heatmap.get('geojson_data')
                     heatmap_data = stored_heatmap.get('heatmap_data', [])
                     
-                    # Apply exclusion clipping to stored heatmap GeoJSON data
+                    # Apply exclusion clipping ONLY to non-indicator methods
+                    # Indicator methods already show probability values, so preserve full distribution
+                    method = stored_heatmap.get('interpolation_method', 'kriging')
+                    indicator_methods = [
+                        'indicator_kriging', 
+                        'indicator_kriging_spherical', 
+                        'indicator_kriging_spherical_continuous'
+                    ]
+                    
                     if raw_geojson_data:
-                        from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                        geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                        if method not in indicator_methods:
+                            from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                            geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                        else:
+                            geojson_data = raw_geojson_data
+                            print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for stored {method} heatmap (preserving full probability distribution)")
                     else:
                         geojson_data = raw_geojson_data
 

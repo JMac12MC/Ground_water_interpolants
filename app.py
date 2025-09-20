@@ -2187,18 +2187,56 @@ with main_col1:
                     else:
                         geojson_data = raw_geojson_data
 
+                    # DEBUG: Check what we actually have
+                    print(f"  🐛 DEBUG HEATMAP {stored_heatmap['heatmap_name']}:")
+                    print(f"     raw_geojson_data type: {type(raw_geojson_data)}")
+                    print(f"     raw_geojson_data is None: {raw_geojson_data is None}")
+                    if raw_geojson_data:
+                        print(f"     raw_geojson_data keys: {list(raw_geojson_data.keys()) if isinstance(raw_geojson_data, dict) else 'not a dict'}")
+                    print(f"     geojson_data type: {type(geojson_data)}")
+                    print(f"     geojson_data is None: {geojson_data is None}")
+                    if geojson_data:
+                        print(f"     geojson_data keys: {list(geojson_data.keys()) if isinstance(geojson_data, dict) else 'not a dict'}")
+                        if isinstance(geojson_data, dict) and 'features' in geojson_data:
+                            print(f"     features count: {len(geojson_data['features'])}")
+                            if geojson_data['features']:
+                                first_feature = geojson_data['features'][0]
+                                print(f"     first feature properties: {list(first_feature.get('properties', {}).keys())}")
+                    
                     if geojson_data and geojson_data.get('features'):
                         print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
 
                         # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
+                        # Handle multiple possible property names for ground water level heatmaps
+                        value_keys_to_check = ['value', 'yield', 'ground_water_level', 'ground water level', 'z', 'prediction', 'gwl_value', 'depth', 'level']
+                        
                         for feature in geojson_data['features']:
                             if 'properties' in feature:
-                                # If 'value' doesn't exist but 'yield' does, copy it
-                                if 'value' not in feature['properties'] and 'yield' in feature['properties']:
-                                    feature['properties']['value'] = feature['properties']['yield']
-                                # If 'yield' doesn't exist but 'value' does, copy it
-                                elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
-                                    feature['properties']['yield'] = feature['properties']['value']
+                                # Find the first available numeric value from possible property names
+                                found_value = None
+                                found_key = None
+                                
+                                for key in value_keys_to_check:
+                                    if key in feature['properties']:
+                                        val = feature['properties'][key]
+                                        if isinstance(val, (int, float)) and not (isinstance(val, bool)):
+                                            found_value = val
+                                            found_key = key
+                                            break
+                                
+                                # If we found a value, ensure both 'value' and 'yield' exist
+                                if found_value is not None:
+                                    feature['properties']['value'] = found_value
+                                    feature['properties']['yield'] = found_value
+                                    if found_key not in ['value', 'yield']:
+                                        print(f"  PROPERTY NORMALIZATION: Found data in '{found_key}' property, normalized to 'value' and 'yield'")
+                                else:
+                                    # Log what properties are available for debugging
+                                    available_props = list(feature['properties'].keys())
+                                    print(f"  WARNING: No numeric value found in feature properties: {available_props}")
+                                    # Set default values to prevent errors
+                                    feature['properties']['value'] = 0
+                                    feature['properties']['yield'] = 0
 
                         # Use the UPDATED global unified color function with method info
                         method = stored_heatmap.get('interpolation_method', 'kriging')

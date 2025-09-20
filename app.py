@@ -2019,6 +2019,7 @@ with main_col1:
                     if st.session_state.stored_heatmaps:
                         for stored_heatmap in st.session_state.stored_heatmaps:
                             raw_stored_geojson = stored_heatmap.get('geojson_data')
+                            stored_method = stored_heatmap.get('interpolation_method', 'kriging')
                             # Apply exclusion clipping for global color range calculation
                             if raw_stored_geojson:
                                 from interpolation import apply_exclusion_clipping_to_stored_heatmap

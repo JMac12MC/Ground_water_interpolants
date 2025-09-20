@@ -97,7 +97,7 @@ session_defaults = {
     'show_well_bounds': False,
     'show_convex_hull': False,
     'show_grid_points': False,
-    'heatmap_visualization_mode': 'triangular_mesh'  # 'triangular_mesh' or 'smooth_raster'
+    'heatmap_visualization_mode': 'smooth_raster'  # 'triangular_mesh' or 'smooth_raster'
 }
 
 # Initialize all session state variables
@@ -325,7 +325,7 @@ with st.sidebar:
     heatmap_style = st.selectbox(
         "Heatmap Display Style",
         options=["Triangle Mesh (Scientific)", "Smooth Raster (Windy.com Style)"],
-        index=0,  # Default to Triangle Mesh
+        index=1,  # Default to Smooth Raster
         help="Choose how interpolated data is visualized: Triangle Mesh shows precise triangular interpolation, Smooth Raster provides a weather-map style visualization",
         key="heatmap_style_selector"
     )
@@ -416,7 +416,7 @@ with st.sidebar:
     heatmap_mode = st.radio(
         "Choose heatmap rendering style:",
         options=["Triangular Mesh (Current)", "Smooth Raster (Windy.com style)"],
-        index=0 if st.session_state.heatmap_visualization_mode == 'triangular_mesh' else 1,
+        index=1 if st.session_state.heatmap_visualization_mode == 'smooth_raster' else 0,
         help="Triangular Mesh: Current triangular interpolation with sharp boundaries. Smooth Raster: Windy.com-style smooth gradient visualization without triangle artifacts."
     )
     

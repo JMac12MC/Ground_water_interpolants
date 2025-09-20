@@ -1272,8 +1272,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         triangle_coords.append(triangle_coords[0])  # Close the polygon
                         triangle_polygon = ShapelyPolygon(triangle_coords)
                         
-                        # Only include if triangle is completely within soil drainage areas
-                        include_triangle = merged_soil_geometry.contains(triangle_polygon)
+                        # Include if triangle intersects or is mostly within soil drainage areas
+                        # Allow triangles that cross boundaries rather than requiring complete containment
+                        include_triangle = (merged_soil_geometry.intersects(triangle_polygon) or 
+                                          merged_soil_geometry.contains(triangle_polygon))
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
                     if include_triangle and indicator_mask is not None:

@@ -3142,7 +3142,11 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                     points_inside = 0
                     for i in range(height):
                         for j in range(width):
-                            point = Point(xi[i, j], yi[i, j])
+                            # FIXED: Access coordinates correctly from meshgrid
+                            # xi[i, j] = longitude, yi[i, j] = latitude
+                            lon = xi[i, j]
+                            lat = yi[i, j]
+                            point = Point(lon, lat)
                             is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
                             clipping_mask[i, j] = is_inside
                             points_checked += 1
@@ -3260,9 +3264,16 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Encode to base64
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
+        # Use actual grid bounds to ensure correct positioning
+        # The grid extends slightly beyond the input bounds due to the step size
+        actual_south = lats[0]
+        actual_north = lats[-1]
+        actual_west = lons[0] 
+        actual_east = lons[-1]
+        
         return {
             'image_base64': img_base64,
-            'bounds': [[south, west], [north, east]],
+            'bounds': [[actual_south, actual_west], [actual_north, actual_east]],
             'opacity': opacity
         }
         

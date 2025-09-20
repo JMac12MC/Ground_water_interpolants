@@ -2082,7 +2082,6 @@ with main_col1:
                 if raw_geojson_data:
                     from interpolation import apply_exclusion_clipping_to_stored_heatmap
                     geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method)
-                        print(f"🔄 SMOOTH RASTER INDICATOR: Skipping exclusion clipping for {method} (preserving full probability distribution)")
                 else:
                     geojson_data = raw_geojson_data
                     

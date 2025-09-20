@@ -32,6 +32,7 @@ def load_exclusion_polygons():
         
         # Check for the red/orange exclusion polygon file
         exclusion_files = [
+            "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson",
             "attached_assets/red_orange_zones_stored_2025-09-16_1758015813886.geojson",
             "red_orange_zones_stored_2025-09-16.geojson",
             "attached_assets/red_orange_zones_stored_2025-09-16.geojson"
@@ -106,11 +107,9 @@ def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
         print(f"❌ Error applying exclusion clipping: {e}")
         return heatmap_data
 
-def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True):
+def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True, method_name=None):
     """
-    Apply exclusion clipping to stored heatmap GeoJSON data
-    
-    DISABLED: Red/orange exclusion clipping has been removed from heatmap generation
+    Apply exclusion clipping to stored heatmap GeoJSON data for non-indicator methods only
     
     Parameters:
     -----------
@@ -118,18 +117,53 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
         GeoJSON data from stored heatmap
     auto_load_exclusions : bool
         Whether to auto-load exclusion polygons if not provided
+    method_name : str
+        Interpolation method name to determine if exclusion should be applied
         
     Returns:
     --------
     dict
-        Original GeoJSON without exclusion clipping applied
+        GeoJSON with exclusion clipping applied for non-indicator methods
     """
     if not stored_heatmap_geojson or not stored_heatmap_geojson.get('features'):
         return stored_heatmap_geojson
+    
+    # Define indicator methods that should NOT have red/orange exclusion clipping
+    indicator_methods = [
+        'indicator_kriging', 
+        'indicator_kriging_spherical', 
+        'indicator_kriging_spherical_continuous'
+    ]
+    
+    # Skip exclusion clipping for indicator methods
+    if method_name and method_name in indicator_methods:
+        print(f"🔄 INDICATOR METHOD: Skipping red/orange exclusion clipping for {method_name} (preserving full probability distribution)")
+        return stored_heatmap_geojson
         
-    # RED/ORANGE EXCLUSION CLIPPING DISABLED PER USER REQUEST
-    print(f"🔄 EXCLUSION CLIPPING DISABLED: Showing {len(stored_heatmap_geojson.get('features', []))} features without red/orange zone clipping")
-    return stored_heatmap_geojson
+    # Apply exclusion clipping for non-indicator methods
+    try:
+        # Load exclusion polygons
+        exclusion_polygons = load_exclusion_polygons() if auto_load_exclusions else None
+        
+        if exclusion_polygons is not None:
+            features_before = len(stored_heatmap_geojson['features'])
+            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons)
+            
+            # Return updated GeoJSON
+            filtered_geojson = {
+                "type": stored_heatmap_geojson.get("type", "FeatureCollection"),
+                "features": filtered_features
+            }
+            
+            print(f"🚫 PRODUCTION: Applied red/orange exclusion clipping to {method_name or 'heatmap'}: {features_before} -> {len(filtered_features)} features")
+            return filtered_geojson
+        else:
+            print(f"⚠️ No red/orange exclusion polygons found for {method_name or 'heatmap'} - showing {len(stored_heatmap_geojson['features'])} features without clipping")
+            return stored_heatmap_geojson
+            
+    except Exception as e:
+        print(f"❌ PRODUCTION: Error applying exclusion clipping to {method_name or 'heatmap'}: {e}")
+        return stored_heatmap_geojson
 
 def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
     """
@@ -1444,8 +1478,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         'indicator_kriging_spherical_continuous'
     ]
     
-    # RED/ORANGE EXCLUSION CLIPPING PERMANENTLY DISABLED PER USER REQUEST  
-    if False and method not in indicator_methods:
+    # Apply red/orange exclusion clipping for NON-INDICATOR methods only
+    if method not in indicator_methods:
         # Apply exclusion clipping if exclusion polygons are provided
         if exclusion_polygons is not None:
             features_before_exclusion = len(features)

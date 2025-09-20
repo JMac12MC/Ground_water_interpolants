@@ -118,8 +118,4 @@ externalPort = 3001
 localPort = 45609
 externalPort = 3002
 
-[[ports]]
-localPort = 46535
-externalPort = 3000
-
 [agent]

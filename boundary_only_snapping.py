@@ -62,8 +62,8 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
     snap_stats = {'total_snaps': 0, 'tiles_modified': 0}
     vertex_mappings = {}  # Maps (tile_id, original_vertex) -> snapped_vertex
     
-    # Convert snap distance from meters to degrees
-    snap_distance_degrees = snap_distance / 111000.0  # ~111km per degree
+    # Use meter-accurate distance calculations instead of flawed degree-based comparisons
+    # Note: We'll calculate actual meter distances for each comparison
     
     for i, current_tile_id in enumerate(sorted_tile_ids):
         if current_tile_id not in tile_vertices:
@@ -103,16 +103,21 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
                 if mapping_key in vertex_mappings:
                     continue
                 
-                # Calculate distances to all vertices in the older tile
-                distances = np.sqrt(
-                    (vertex[0] - older_vertices[:, 0])**2 + 
-                    (vertex[1] - older_vertices[:, 1])**2
-                )
+                # Calculate meter-accurate distances to all vertices in the older tile
+                # Use proper longitude scaling with cos(latitude) for accurate distances
+                current_lat = vertex[1]
+                cos_lat = np.cos(np.radians(current_lat))
                 
-                min_distance_idx = np.argmin(distances)
-                min_distance = distances[min_distance_idx]
+                # Convert coordinate differences to meters
+                lon_diff_m = (vertex[0] - older_vertices[:, 0]) * cos_lat * 111000.0
+                lat_diff_m = (vertex[1] - older_vertices[:, 1]) * 111000.0
+                distances_meters = np.sqrt(lon_diff_m**2 + lat_diff_m**2)
                 
-                if min_distance <= snap_distance_degrees:
+                min_distance_idx = np.argmin(distances_meters)
+                min_distance_meters = distances_meters[min_distance_idx]
+                
+                # HARD CLAMP: Only snap if actual meter distance is within 300m
+                if min_distance_meters <= snap_distance:
                     # Snap to the closest vertex in the older tile
                     snapped_vertex = tuple(older_vertices[min_distance_idx])
                     
@@ -120,7 +125,11 @@ def snap_boundary_vertices_only(tiles, snap_distance=SNAP_DISTANCE_METERS):
                     tile_snaps += 1
                     snaps_with_this_tile += 1
                     
-                    print(f"      Snapped {original_vertex} → {snapped_vertex} (distance: {min_distance*111000:.1f}m)")
+                    print(f"      Snapped {original_vertex} → {snapped_vertex} (distance: {min_distance_meters:.1f}m)")
+                else:
+                    # Log any attempted snap over 300m for debugging
+                    if min_distance_meters <= 500:  # Only log if reasonably close
+                        print(f"      BLOCKED snap {original_vertex} (distance: {min_distance_meters:.1f}m > {snap_distance}m limit)")
             
             if snaps_with_this_tile > 0:
                 print(f"    → {snaps_with_this_tile} vertices from {current_tile_id} snapped to {older_tile_id}")

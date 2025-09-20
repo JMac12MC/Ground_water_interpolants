@@ -569,6 +569,22 @@ class PolygonDatabase:
                             print(f"⚠️  JSON decode error for geojson_data in ID {row[0]}")
                             geojson_data = None
                     
+                    # Validate GeoJSON structure
+                    if geojson_data and isinstance(geojson_data, dict):
+                        if 'features' not in geojson_data:
+                            print(f"⚠️  GeoJSON missing 'features' for ID {row[0]}")
+                            geojson_data = None
+                        elif not isinstance(geojson_data['features'], list):
+                            print(f"⚠️  GeoJSON 'features' is not a list for ID {row[0]}")
+                            geojson_data = None
+                        elif len(geojson_data['features']) == 0:
+                            print(f"⚠️  GeoJSON has 0 features for ID {row[0]}")
+                        else:
+                            print(f"  ✅ Valid GeoJSON with {len(geojson_data['features'])} features for ID {row[0]}")
+                    elif geojson_data is not None:
+                        print(f"⚠️  Invalid GeoJSON type {type(geojson_data)} for ID {row[0]}")
+                        geojson_data = None
+                    
                     # Parse colormap metadata if available
                     colormap_metadata = None
                     try:

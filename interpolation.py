@@ -110,6 +110,8 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
     """
     Apply exclusion clipping to stored heatmap GeoJSON data
     
+    DISABLED: Red/orange exclusion clipping has been removed from heatmap generation
+    
     Parameters:
     -----------
     stored_heatmap_geojson : dict
@@ -120,34 +122,14 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
     Returns:
     --------
     dict
-        Filtered GeoJSON with exclusion areas removed
+        Original GeoJSON without exclusion clipping applied
     """
     if not stored_heatmap_geojson or not stored_heatmap_geojson.get('features'):
         return stored_heatmap_geojson
         
-    try:
-        # Load exclusion polygons
-        exclusion_polygons = load_exclusion_polygons() if auto_load_exclusions else None
-        
-        if exclusion_polygons is not None:
-            features_before = len(stored_heatmap_geojson['features'])
-            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons)
-            
-            # Return updated GeoJSON
-            filtered_geojson = {
-                "type": stored_heatmap_geojson.get("type", "FeatureCollection"),
-                "features": filtered_features
-            }
-            
-            print(f"🚫 PRODUCTION: Applied exclusion clipping to stored heatmap: {features_before} -> {len(filtered_features)} features")
-            return filtered_geojson
-        else:
-            print(f"🚫 PRODUCTION: No exclusion polygons found for stored heatmap - showing {len(stored_heatmap_geojson['features'])} features without exclusion clipping")
-            return stored_heatmap_geojson
-            
-    except Exception as e:
-        print(f"❌ PRODUCTION: Error applying exclusion clipping to stored heatmap: {e}")
-        return stored_heatmap_geojson
+    # RED/ORANGE EXCLUSION CLIPPING DISABLED PER USER REQUEST
+    print(f"🔄 EXCLUSION CLIPPING DISABLED: Showing {len(stored_heatmap_geojson.get('features', []))} features without red/orange zone clipping")
+    return stored_heatmap_geojson
 
 def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
     """
@@ -1462,7 +1444,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         'indicator_kriging_spherical_continuous'
     ]
     
-    # TEMPORARILY DISABLE exclusion clipping to debug missing heatmaps
+    # RED/ORANGE EXCLUSION CLIPPING PERMANENTLY DISABLED PER USER REQUEST  
     if False and method not in indicator_methods:
         # Apply exclusion clipping if exclusion polygons are provided
         if exclusion_polygons is not None:

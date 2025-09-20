@@ -2118,6 +2118,46 @@ with main_col1:
                 # Use the stored heatmap's interpolation method for colormap consistency
                 method = st.session_state.stored_heatmaps[0].get('interpolation_method', 'kriging') if st.session_state.stored_heatmaps else 'kriging'
                 
+                # Create combined clipping polygon: include soil areas AND exclude red/orange zones
+                combined_clipping_polygon = st.session_state.new_clipping_polygon
+                
+                # For non-indicator methods, subtract red/orange exclusion zones from clipping polygon
+                if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
+                    try:
+                        # Load red/orange exclusion zones
+                        import geopandas as gpd
+                        exclusion_file_path = "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson"
+                        
+                        if os.path.exists(exclusion_file_path):
+                            exclusion_gdf = gpd.read_file(exclusion_file_path)
+                            print(f"🚫 SMOOTH RASTER: Loaded {len(exclusion_gdf)} red/orange exclusion polygons for clipping")
+                            
+                            # If we have a base clipping polygon, subtract exclusion zones from it
+                            if combined_clipping_polygon is not None and len(combined_clipping_polygon) > 0:
+                                # Get the unary union of the exclusion zones
+                                exclusion_union = exclusion_gdf.geometry.unary_union
+                                
+                                # Get the clipping polygon geometry  
+                                if hasattr(combined_clipping_polygon, 'geometry'):
+                                    base_clipping_geom = combined_clipping_polygon.geometry.unary_union
+                                else:
+                                    base_clipping_geom = combined_clipping_polygon
+                                
+                                # Subtract exclusion zones from clipping polygon using difference
+                                try:
+                                    combined_clipping_geom = base_clipping_geom.difference(exclusion_union)
+                                    # Convert back to GeoDataFrame for consistency
+                                    combined_clipping_polygon = gpd.GeoDataFrame([1], geometry=[combined_clipping_geom], crs='EPSG:4326')
+                                    print(f"🚫 SMOOTH RASTER: Successfully created combined clipping polygon (soil areas minus red/orange zones)")
+                                except Exception as e:
+                                    print(f"🚫 SMOOTH RASTER: Failed to subtract exclusion zones: {e}, using original clipping")
+                            else:
+                                print(f"🚫 SMOOTH RASTER: No base clipping polygon, red/orange exclusion not applied to smooth raster")
+                        else:
+                            print(f"🚫 SMOOTH RASTER: Red/orange exclusion file not found: {exclusion_file_path}")
+                    except Exception as e:
+                        print(f"🚫 SMOOTH RASTER: Error applying red/orange exclusion clipping: {e}")
+                
                 # Generate single unified smooth raster across ALL triangulated data
                 raster_overlay = generate_smooth_raster_overlay(
                     combined_geojson, 
@@ -2125,7 +2165,7 @@ with main_col1:
                     raster_size=(512, 512), 
                     global_colormap_func=lambda value: get_global_unified_color(value, method),
                     opacity=st.session_state.get('heatmap_opacity', 0.7),
-                    clipping_polygon=st.session_state.new_clipping_polygon
+                    clipping_polygon=combined_clipping_polygon
                 )
                 
                 if raster_overlay:

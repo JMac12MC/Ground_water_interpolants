@@ -3271,6 +3271,15 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         actual_west = lons[0] - lon_step/2
         actual_east = lons[-1] + lon_step/2
         
+        # DEBUG: Log the exact bounds being returned
+        print(f"🔧 SMOOTH RASTER BOUNDS DEBUG:")
+        print(f"🔧 Input bounds: N={north:.6f}, S={south:.6f}, E={east:.6f}, W={west:.6f}")
+        print(f"🔧 Grid arrays: lats[0]={lats[0]:.6f}, lats[-1]={lats[-1]:.6f}")
+        print(f"🔧               lons[0]={lons[0]:.6f}, lons[-1]={lons[-1]:.6f}")
+        print(f"🔧 Step sizes: lat_step={lat_step:.6f}, lon_step={lon_step:.6f}")
+        print(f"🔧 Actual bounds: N={actual_north:.6f}, S={actual_south:.6f}, E={actual_east:.6f}, W={actual_west:.6f}")
+        print(f"🔧 Folium bounds: [[{actual_south:.6f}, {actual_west:.6f}], [{actual_north:.6f}, {actual_east:.6f}]]")
+        
         return {
             'image_base64': img_base64,
             'bounds': [[actual_south, actual_west], [actual_north, actual_east]],

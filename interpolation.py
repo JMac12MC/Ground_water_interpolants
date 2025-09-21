@@ -3265,11 +3265,11 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
         # Use actual grid bounds to ensure correct positioning
-        # The grid extends slightly beyond the input bounds due to the step size
-        actual_south = lats[0]
-        actual_north = lats[-1]
-        actual_west = lons[0] 
-        actual_east = lons[-1]
+        # Account for pixel registration - use pixel edges instead of centers
+        actual_south = lats[0] - lat_step/2
+        actual_north = lats[-1] + lat_step/2
+        actual_west = lons[0] - lon_step/2
+        actual_east = lons[-1] + lon_step/2
         
         return {
             'image_base64': img_base64,

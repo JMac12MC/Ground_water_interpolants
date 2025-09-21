@@ -3252,9 +3252,15 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
         
         # Convert to PIL Image and then to base64
-        # Flip vertically because raster coordinates are different from image coordinates
-        rgba_image_flipped = np.flipud(rgba_image)
-        pil_image = Image.fromarray(rgba_image_flipped, 'RGBA')
+        # DEBUG: Check if vertical flip is the issue causing southern displacement
+        print(f"🔧 IMAGE DEBUG: Image shape = {rgba_image.shape}")
+        print(f"🔧 IMAGE DEBUG: Grid shape = lats: {len(lats)} (south to north), lons: {len(lons)} (west to east)")
+        print(f"🔧 IMAGE DEBUG: Image array[0,0] corresponds to lat={lats[0]:.6f}, lon={lons[0]:.6f}")
+        print(f"🔧 IMAGE DEBUG: Image array[-1,-1] corresponds to lat={lats[-1]:.6f}, lon={lons[-1]:.6f}")
+        
+        # TRY: No vertical flip - maybe this is causing the displacement issue
+        pil_image = Image.fromarray(rgba_image, 'RGBA')
+        print(f"🔧 IMAGE DEBUG: Using image WITHOUT vertical flip to test positioning")
         
         # Save to bytes buffer
         img_buffer = io.BytesIO()

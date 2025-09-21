@@ -20,7 +20,7 @@ from scipy.interpolate import griddata
 import streamlit as st
 
 @st.cache_data
-def load_exclusion_polygons():
+def _load_exclusion_data():
     """
     Load red/orange exclusion polygons from GeoJSON file (cached for performance)
     
@@ -42,10 +42,13 @@ def load_exclusion_polygons():
         
         for file_path in exclusion_files:
             if os.path.exists(file_path):
-                exclusion_gdf = gpd.read_file(file_path)
-                if exclusion_gdf is not None and not exclusion_gdf.empty:
-                    print(f"✅ Loaded {len(exclusion_gdf)} exclusion polygons from {file_path}")
-                    return exclusion_gdf
+                # Load as raw JSON data for caching compatibility
+                import json
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                if data and data.get('features'):
+                    print(f"✅ Loaded {len(data['features'])} exclusion polygons from {file_path}")
+                    return data
                     
         print("⚠️ No red/orange exclusion polygon file found")
         return None
@@ -53,6 +56,15 @@ def load_exclusion_polygons():
     except Exception as e:
         print(f"❌ Error loading exclusion polygons: {e}")
         return None
+
+def load_exclusion_polygons():
+    """
+    Get exclusion polygons as GeoDataFrame (with caching)
+    """
+    data = _load_exclusion_data()
+    if data:
+        return gpd.GeoDataFrame.from_features(data['features'])
+    return None
 
 def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
     """
@@ -3095,22 +3107,44 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         if coords.size == 0:
             return None
         
-        # Create regular grid at 100-meter spacing across all data bounds
+        # PERFORMANCE: Use dynamic grid resolution to prevent memory crashes
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
-        # Convert sampling distance to degrees (approximate)
-        meters_per_degree_lat = 111000  # Approximately 111 km per degree latitude
-        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))  # Adjust for longitude
+        # Calculate grid extent
+        lat_extent = north - south
+        lon_extent = east - west
         
-        lat_step = sampling_distance_meters / meters_per_degree_lat
-        lon_step = sampling_distance_meters / meters_per_degree_lon
+        # OPTIMIZATION: Cap maximum grid size to prevent crashes
+        max_grid_points = 1_000_000  # Maximum 1M points instead of 10.5M
+        
+        # Calculate appropriate resolution based on extent
+        meters_per_degree_lat = 111000
+        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))
+        
+        # Estimate grid points at 100m resolution
+        lat_step_100m = 100 / meters_per_degree_lat
+        lon_step_100m = 100 / meters_per_degree_lon
+        grid_points_100m = (lat_extent / lat_step_100m) * (lon_extent / lon_step_100m)
+        
+        # Use coarser resolution if needed (architect recommendation)
+        if grid_points_100m > max_grid_points:
+            # Scale up resolution to stay under limit
+            scale_factor = np.sqrt(grid_points_100m / max_grid_points)
+            effective_resolution = 100 * scale_factor
+            lat_step = effective_resolution / meters_per_degree_lat
+            lon_step = effective_resolution / meters_per_degree_lon
+            print(f"PERFORMANCE: Using {effective_resolution:.0f}m resolution (scaled from 100m) to prevent memory crash")
+        else:
+            lat_step = lat_step_100m
+            lon_step = lon_step_100m
+            effective_resolution = 100
         
         # Create regular sampling grid
         lats = np.arange(south, north + lat_step, lat_step)
         lons = np.arange(west, east + lon_step, lon_step)
         
-        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
+        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {effective_resolution:.0f}m spacing")
         
         # Create coordinate grids
         width = len(lons)

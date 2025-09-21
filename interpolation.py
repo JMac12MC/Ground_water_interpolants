@@ -3102,7 +3102,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         # 2) INPUT DATA SUMMARY
         print(f"🔧 EXTRACTED DATA: {len(values)} vertex points from triangulated heatmap data")
-        if coords:
+        if coords.size > 0:
             coords_array = np.array(coords)
             values_array = np.array(values)
             min_lon, max_lon = np.min(coords_array[:, 0]), np.max(coords_array[:, 0])

@@ -3387,7 +3387,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         print(f"🔧 IN CENTER BOUNDS? lat: {center_south <= christchurch_lat <= center_north}, lon: {center_west <= christchurch_lon <= center_east}")
         print(f"🔧 IN EDGE BOUNDS?   lat: {edge_south <= christchurch_lat <= edge_north}, lon: {edge_west <= christchurch_lon <= edge_east}")
         
-        print(f"🔧 FOLIUM BOUNDS (center-based): [[{actual_south:.6f}, {actual_west:.6f}], [{actual_north:.6f}, {actual_east:.6f}]]")
+        print(f"🔧 FOLIUM BOUNDS (edge-based - FIXED): [[{edge_south:.6f}, {edge_west:.6f}], [{edge_north:.6f}, {edge_east:.6f}]]")
         print(f"🔧 =======================================")
         
         # 10) CROSS-CHECK: Log sample triangulated data for comparison
@@ -3400,9 +3400,11 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
         print(f"🔧 ========================================")
         
+        # FIXED: Use edge-based bounds for proper pixel registration
+        # This fixes the 1.7km southward offset by aligning pixel edges with coordinates
         return {
             'image_base64': img_base64,
-            'bounds': [[actual_south, actual_west], [actual_north, actual_east]],
+            'bounds': [[edge_south, edge_west], [edge_north, edge_east]],
             'opacity': opacity
         }
         

@@ -3052,7 +3052,18 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         Dictionary containing base64 encoded image and bounds for Folium overlay
     """
     try:
+        import uuid
+        run_id = str(uuid.uuid4())[:8]
+        print(f"🔧 ===== SMOOTH RASTER DEBUG RUN: {run_id} =====")
+        
+        # 1) HEADER: Run parameters
+        center_lat = (bounds['north'] + bounds['south']) / 2
+        center_lon = (bounds['east'] + bounds['west']) / 2
+        print(f"🔧 RUN PARAMS: center=({center_lat:.6f}, {center_lon:.6f}), resolution={sampling_distance_meters}m, opacity={opacity}")
+        print(f"🔧 INPUT BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
+        
         if not geojson_data or not geojson_data.get('features'):
+            print(f"🔧 ERROR: No geojson_data or features")
             return None
             
         # Extract values and coordinates from triangular mesh
@@ -3089,29 +3100,66 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         values = np.array(values)
         coords = np.array(coords)
         
-        print(f"Extracted {len(values)} vertex points from triangulated heatmap data")
+        # 2) INPUT DATA SUMMARY
+        print(f"🔧 EXTRACTED DATA: {len(values)} vertex points from triangulated heatmap data")
+        if coords:
+            coords_array = np.array(coords)
+            values_array = np.array(values)
+            min_lon, max_lon = np.min(coords_array[:, 0]), np.max(coords_array[:, 0])
+            min_lat, max_lat = np.min(coords_array[:, 1]), np.max(coords_array[:, 1])
+            print(f"🔧 COORDS RANGE: lat=[{min_lat:.6f}, {max_lat:.6f}], lon=[{min_lon:.6f}, {max_lon:.6f}]")
+            print(f"🔧 VALUES RANGE: [{np.min(values_array):.3f}, {np.max(values_array):.3f}]")
+            
+            # Sample first 3 coordinate points for verification
+            print(f"🔧 SAMPLE COORDS:")
+            for i in range(min(3, len(coords))):
+                lon, lat = coords[i]
+                print(f"🔧   Point {i}: lat={lat:.6f}, lon={lon:.6f}, value={values[i]:.3f}")
+        else:
+            print(f"🔧 ERROR: No coordinates extracted!")
         
         # Create regular grid at 100-meter spacing across all data bounds
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
-        # Convert sampling distance to degrees (approximate)
+        # 3) CONVERSION FACTORS and validation
         meters_per_degree_lat = 111000  # Approximately 111 km per degree latitude
         meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))  # Adjust for longitude
         
         lat_step = sampling_distance_meters / meters_per_degree_lat
         lon_step = sampling_distance_meters / meters_per_degree_lon
         
+        print(f"🔧 CONVERSION: {meters_per_degree_lat:.0f}m/deg lat, {meters_per_degree_lon:.0f}m/deg lon")
+        print(f"🔧 GRID STEPS: lat_step={lat_step:.6f} deg ({lat_step*meters_per_degree_lat:.1f}m)")
+        print(f"🔧            lon_step={lon_step:.6f} deg ({lon_step*meters_per_degree_lon:.1f}m)")
+        
+        # Validation: check conversion accuracy with 1km offset
+        test_lat_offset = 1000 / meters_per_degree_lat  # 1km in degrees
+        test_lon_offset = 1000 / meters_per_degree_lon  # 1km in degrees
+        print(f"🔧 VALIDATION: 1km = {test_lat_offset:.6f} deg lat, {test_lon_offset:.6f} deg lon")
+        
         # Create regular sampling grid
         lats = np.arange(south, north + lat_step, lat_step)
         lons = np.arange(west, east + lon_step, lon_step)
         
-        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
+        # 4) GRID SETUP validation
+        print(f"🔧 GRID ARRAYS: lats {len(lats)} points [{lats[0]:.6f}, {lats[-1]:.6f}]")
+        print(f"🔧             lons {len(lons)} points [{lons[0]:.6f}, {lons[-1]:.6f}]")
+        print(f"🔧 MONOTONIC CHECK: lats ascending={np.all(np.diff(lats) > 0)}, lons ascending={np.all(np.diff(lons) > 0)}")
+        print(f"🔧 TOTAL GRID: {len(lats)} x {len(lons)} = {len(lats) * len(lons)} points at {sampling_distance_meters}m spacing")
         
-        # Create coordinate grids
+        # Create coordinate grids with explicit xy indexing
         width = len(lons)
         height = len(lats)
-        xi, yi = np.meshgrid(lons, lats)
+        xi, yi = np.meshgrid(lons, lats, indexing='xy')
+        
+        # 5) MESHGRID VERIFICATION
+        print(f"🔧 MESHGRID SHAPES: xi={xi.shape}, yi={yi.shape}")
+        print(f"🔧 GRID VERIFICATION:")
+        print(f"🔧   xi[0,0]={xi[0,0]:.6f} should equal lons[0]={lons[0]:.6f} (match: {abs(xi[0,0] - lons[0]) < 1e-10})")
+        print(f"🔧   yi[0,0]={yi[0,0]:.6f} should equal lats[0]={lats[0]:.6f} (match: {abs(yi[0,0] - lats[0]) < 1e-10})")
+        print(f"🔧   xi[-1,-1]={xi[-1,-1]:.6f} should equal lons[-1]={lons[-1]:.6f} (match: {abs(xi[-1,-1] - lons[-1]) < 1e-10})")
+        print(f"🔧   yi[-1,-1]={yi[-1,-1]:.6f} should equal lats[-1]={lats[-1]:.6f} (match: {abs(yi[-1,-1] - lats[-1]) < 1e-10})")
         
         # Apply clipping polygon mask if provided
         clipping_mask = None
@@ -3161,6 +3209,14 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 print(f"Error applying clipping polygon: {e}")
                 clipping_mask = None
         
+        # 6) INTERPOLATION INPUTS verification
+        print(f"🔧 INTERPOLATION SETUP:")
+        print(f"🔧   Input coords shape: {coords.shape}, values shape: {values.shape}")
+        print(f"🔧   Grid shapes: xi={xi.shape}, yi={yi.shape}")
+        print(f"🔧   Sample input data:")
+        for i in range(min(3, len(coords))):
+            print(f"🔧     ({coords[i,0]:.6f}, {coords[i,1]:.6f}) -> {values[i]:.3f}")
+        
         # Interpolate values onto 100m-spaced grid using multiple methods for complete coverage
         try:
             # Start with cubic interpolation for smooth results
@@ -3198,8 +3254,21 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             from scipy.ndimage import gaussian_filter
             zi = gaussian_filter(zi, sigma=1.5)
         
-        print(f"Generated {width}x{height} raster with interpolation across all triangulated data")
-        print(f"Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
+        # 7) Z ARRAY STATISTICS and analysis
+        print(f"🔧 Z ARRAY ANALYSIS:")
+        print(f"🔧   Shape: {zi.shape} (height={zi.shape[0]}, width={zi.shape[1]})")
+        print(f"🔧   Values: min={np.nanmin(zi):.3f}, max={np.nanmax(zi):.3f}, mean={np.nanmean(zi):.3f}")
+        print(f"🔧   NaN count: {np.sum(np.isnan(zi))} of {zi.size} ({100*np.sum(np.isnan(zi))/zi.size:.1f}%)")
+        
+        # Corner probes to understand array orientation
+        print(f"🔧 CORNER PROBES:")
+        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi[0,0]:.6f}, {yi[0,0]:.6f}) = SW corner")
+        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi[0,-1]:.6f}, {yi[0,-1]:.6f}) = SE corner")
+        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi[-1,0]:.6f}, {yi[-1,0]:.6f}) = NW corner")
+        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi[-1,-1]:.6f}, {yi[-1,-1]:.6f}) = NE corner")
+        
+        print(f"🔧 Generated {width}x{height} raster with interpolation across all triangulated data")
+        print(f"🔧 Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
         
         # Apply clipping mask to the interpolated data
         if clipping_mask is not None:
@@ -3252,15 +3321,37 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
         
         # Convert to PIL Image and then to base64
-        # DEBUG: Check if vertical flip is the issue causing southern displacement
-        print(f"🔧 IMAGE DEBUG: Image shape = {rgba_image.shape}")
-        print(f"🔧 IMAGE DEBUG: Grid shape = lats: {len(lats)} (south to north), lons: {len(lons)} (west to east)")
-        print(f"🔧 IMAGE DEBUG: Image array[0,0] corresponds to lat={lats[0]:.6f}, lon={lons[0]:.6f}")
-        print(f"🔧 IMAGE DEBUG: Image array[-1,-1] corresponds to lat={lats[-1]:.6f}, lon={lons[-1]:.6f}")
+        # 8) IMAGE ORIENTATION - CRITICAL DEBUGGING
+        print(f"🔧 ===== IMAGE ORIENTATION ANALYSIS =====")
+        print(f"🔧 RGBA IMAGE: shape={rgba_image.shape}")
+        print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (south to north)")
+        print(f"🔧 GRID SETUP: lons go from {lons[0]:.6f} to {lons[-1]:.6f} (west to east)")
         
-        # TRY: No vertical flip - maybe this is causing the displacement issue
-        pil_image = Image.fromarray(rgba_image, 'RGBA')
-        print(f"🔧 IMAGE DEBUG: Using image WITHOUT vertical flip to test positioning")
+        # Record image values BEFORE any flip
+        print(f"🔧 IMAGE CORNERS (BEFORE flip):")
+        print(f"🔧   rgba[0,0] (top-left) = {rgba_image[0,0,:3]} at geo ({lons[0]:.6f}, {lats[0]:.6f}) = SW")
+        print(f"🔧   rgba[0,-1] (top-right) = {rgba_image[0,-1,:3]} at geo ({lons[-1]:.6f}, {lats[0]:.6f}) = SE")
+        print(f"🔧   rgba[-1,0] (bottom-left) = {rgba_image[-1,0,:3]} at geo ({lons[0]:.6f}, {lats[-1]:.6f}) = NW") 
+        print(f"🔧   rgba[-1,-1] (bottom-right) = {rgba_image[-1,-1,:3]} at geo ({lons[-1]:.6f}, {lats[-1]:.6f}) = NE")
+        
+        # ENFORCE INVARIANT: row 0 must correspond to NORTH (max lat) for correct Folium display
+        # Since lats[0] is south and lats[-1] is north, we need to flip vertically
+        rgba_image_flipped = np.flipud(rgba_image)
+        print(f"🔧 APPLYING VERTICAL FLIP for correct orientation (row 0 = north)")
+        
+        # Record image values AFTER flip
+        print(f"🔧 IMAGE CORNERS (AFTER flip):")
+        print(f"🔧   rgba[0,0] (top-left) = {rgba_image_flipped[0,0,:3]} at geo ({lons[0]:.6f}, {lats[-1]:.6f}) = NW")
+        print(f"🔧   rgba[0,-1] (top-right) = {rgba_image_flipped[0,-1,:3]} at geo ({lons[-1]:.6f}, {lats[-1]:.6f}) = NE")
+        print(f"🔧   rgba[-1,0] (bottom-left) = {rgba_image_flipped[-1,0,:3]} at geo ({lons[0]:.6f}, {lats[0]:.6f}) = SW") 
+        print(f"🔧   rgba[-1,-1] (bottom-right) = {rgba_image_flipped[-1,-1,:3]} at geo ({lons[-1]:.6f}, {lats[0]:.6f}) = SE")
+        
+        # ASSERTION: Verify image row 0 now corresponds to north
+        assert lats[-1] > lats[0], f"Latitude array should be ascending: {lats[0]} to {lats[-1]}"
+        print(f"🔧 INVARIANT VERIFIED: Image row 0 corresponds to NORTH (lat={lats[-1]:.6f})")
+        print(f"🔧 =========================================")
+        
+        pil_image = Image.fromarray(rgba_image_flipped, 'RGBA')
         
         # Save to bytes buffer
         img_buffer = io.BytesIO()
@@ -3277,26 +3368,55 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         actual_west = west
         actual_east = east
         
-        # COMPREHENSIVE DEBUG: Compare with triangulated coordinate data
-        print(f"🔧 ===== SMOOTH RASTER COORDINATE DEBUG =====")
-        print(f"🔧 INPUT BOUNDS: N={north:.6f}, S={south:.6f}, E={east:.6f}, W={west:.6f}")
-        print(f"🔧 GRID BOUNDS: N={lats[-1]:.6f}, S={lats[0]:.6f}, E={lons[-1]:.6f}, W={lons[0]:.6f}")
-        print(f"🔧 FOLIUM BOUNDS: [[{actual_south:.6f}, {actual_west:.6f}], [{actual_north:.6f}, {actual_east:.6f}]]")
+        # 9) BOUNDS CALCULATION - CENTER vs EDGE analysis
+        print(f"🔧 ===== BOUNDS CALCULATION DEBUG =====")
         
-        # Sample some triangulated data to compare coordinate ranges
-        sample_coords = coords[:10] if len(coords) > 0 else []
-        if len(sample_coords) > 0:
-            print(f"🔧 TRIANGULATED DATA SAMPLE:")
-            for i, coord in enumerate(sample_coords):
-                lon, lat = coord
-                print(f"🔧   Point {i}: lat={lat:.6f}, lon={lon:.6f}")
+        # CENTER-based bounds (current approach)
+        center_south, center_north = south, north
+        center_west, center_east = west, east
         
-        # Canterbury, NZ reference coordinates for validation
+        # EDGE-based bounds (architect recommendation)
+        edge_south = lats[0] - lat_step/2
+        edge_north = lats[-1] + lat_step/2  
+        edge_west = lons[0] - lon_step/2
+        edge_east = lons[-1] + lon_step/2
+        
+        print(f"🔧 CENTER-BASED: N={center_north:.6f}, S={center_south:.6f}, E={center_east:.6f}, W={center_west:.6f}")
+        print(f"🔧 EDGE-BASED:   N={edge_north:.6f}, S={edge_south:.6f}, E={edge_east:.6f}, W={edge_west:.6f}")
+        
+        # Calculate differences in meters
+        lat_diff_meters = (edge_north - center_north) * meters_per_degree_lat
+        lon_diff_meters = (edge_east - center_east) * meters_per_degree_lon
+        print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
+        
+        # Overlay center vs grid center
+        overlay_center_lat = (center_north + center_south) / 2
+        overlay_center_lon = (center_east + center_west) / 2
+        grid_center_lat = (lats[0] + lats[-1]) / 2
+        grid_center_lon = (lons[0] + lons[-1]) / 2
+        
+        center_diff_lat_m = (overlay_center_lat - grid_center_lat) * meters_per_degree_lat
+        center_diff_lon_m = (overlay_center_lon - grid_center_lon) * meters_per_degree_lon
+        print(f"🔧 CENTER DIFFERENCE: overlay vs grid = {center_diff_lat_m:.1f}m lat, {center_diff_lon_m:.1f}m lon")
+        
+        # Canterbury reference validation
         christchurch_lat, christchurch_lon = -43.5321, 172.6362
-        print(f"🔧 REFERENCE: Christchurch should be at lat={christchurch_lat:.6f}, lon={christchurch_lon:.6f}")
-        print(f"🔧 REFERENCE: Is Christchurch in bounds? lat in [{actual_south:.3f}, {actual_north:.3f}]: {actual_south <= christchurch_lat <= actual_north}")
-        print(f"🔧 REFERENCE: Is Christchurch in bounds? lon in [{actual_west:.3f}, {actual_east:.3f}]: {actual_west <= christchurch_lon <= actual_east}")
-        print(f"🔧 =============================================")
+        print(f"🔧 REFERENCE: Christchurch at ({christchurch_lat:.6f}, {christchurch_lon:.6f})")
+        print(f"🔧 IN CENTER BOUNDS? lat: {center_south <= christchurch_lat <= center_north}, lon: {center_west <= christchurch_lon <= center_east}")
+        print(f"🔧 IN EDGE BOUNDS?   lat: {edge_south <= christchurch_lat <= edge_north}, lon: {edge_west <= christchurch_lon <= edge_east}")
+        
+        print(f"🔧 FOLIUM BOUNDS (center-based): [[{actual_south:.6f}, {actual_west:.6f}], [{actual_north:.6f}, {actual_east:.6f}]]")
+        print(f"🔧 =======================================")
+        
+        # 10) CROSS-CHECK: Log sample triangulated data for comparison
+        if coords.size > 0:
+            print(f"🔧 TRIANGULATED DATA CROSS-CHECK:")
+            sample_indices = np.linspace(0, len(coords)-1, min(5, len(coords)), dtype=int)
+            for i in sample_indices:
+                lon, lat = coords[i]
+                value = values[i]
+                print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
+        print(f"🔧 ========================================")
         
         return {
             'image_base64': img_base64,

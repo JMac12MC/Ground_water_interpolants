@@ -17,10 +17,12 @@ import base64
 from PIL import Image
 import matplotlib.colors as mcolors
 from scipy.interpolate import griddata
+import streamlit as st
 
+@st.cache_data
 def load_exclusion_polygons():
     """
-    Load red/orange exclusion polygons from GeoJSON file
+    Load red/orange exclusion polygons from GeoJSON file (cached for performance)
     
     Returns:
     --------
@@ -3052,18 +3054,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         Dictionary containing base64 encoded image and bounds for Folium overlay
     """
     try:
-        import uuid
-        run_id = str(uuid.uuid4())[:8]
-        print(f"🔧 ===== SMOOTH RASTER DEBUG RUN: {run_id} =====")
-        
-        # 1) HEADER: Run parameters
-        center_lat = (bounds['north'] + bounds['south']) / 2
-        center_lon = (bounds['east'] + bounds['west']) / 2
-        print(f"🔧 RUN PARAMS: center=({center_lat:.6f}, {center_lon:.6f}), resolution={sampling_distance_meters}m, opacity={opacity}")
-        print(f"🔧 INPUT BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
-        
         if not geojson_data or not geojson_data.get('features'):
-            print(f"🔧 ERROR: No geojson_data or features")
             return None
             
         # Extract values and coordinates from triangular mesh
@@ -3100,66 +3091,31 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         values = np.array(values)
         coords = np.array(coords)
         
-        # 2) INPUT DATA SUMMARY
-        print(f"🔧 EXTRACTED DATA: {len(values)} vertex points from triangulated heatmap data")
-        if coords.size > 0:
-            coords_array = np.array(coords)
-            values_array = np.array(values)
-            min_lon, max_lon = np.min(coords_array[:, 0]), np.max(coords_array[:, 0])
-            min_lat, max_lat = np.min(coords_array[:, 1]), np.max(coords_array[:, 1])
-            print(f"🔧 COORDS RANGE: lat=[{min_lat:.6f}, {max_lat:.6f}], lon=[{min_lon:.6f}, {max_lon:.6f}]")
-            print(f"🔧 VALUES RANGE: [{np.min(values_array):.3f}, {np.max(values_array):.3f}]")
-            
-            # Sample first 3 coordinate points for verification
-            print(f"🔧 SAMPLE COORDS:")
-            for i in range(min(3, len(coords))):
-                lon, lat = coords[i]
-                print(f"🔧   Point {i}: lat={lat:.6f}, lon={lon:.6f}, value={values[i]:.3f}")
-        else:
-            print(f"🔧 ERROR: No coordinates extracted!")
+        print(f"Extracted {len(values)} vertex points from triangulated heatmap data")
+        if coords.size == 0:
+            return None
         
         # Create regular grid at 100-meter spacing across all data bounds
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
-        # 3) CONVERSION FACTORS and validation
+        # Convert sampling distance to degrees (approximate)
         meters_per_degree_lat = 111000  # Approximately 111 km per degree latitude
         meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))  # Adjust for longitude
         
         lat_step = sampling_distance_meters / meters_per_degree_lat
         lon_step = sampling_distance_meters / meters_per_degree_lon
         
-        print(f"🔧 CONVERSION: {meters_per_degree_lat:.0f}m/deg lat, {meters_per_degree_lon:.0f}m/deg lon")
-        print(f"🔧 GRID STEPS: lat_step={lat_step:.6f} deg ({lat_step*meters_per_degree_lat:.1f}m)")
-        print(f"🔧            lon_step={lon_step:.6f} deg ({lon_step*meters_per_degree_lon:.1f}m)")
-        
-        # Validation: check conversion accuracy with 1km offset
-        test_lat_offset = 1000 / meters_per_degree_lat  # 1km in degrees
-        test_lon_offset = 1000 / meters_per_degree_lon  # 1km in degrees
-        print(f"🔧 VALIDATION: 1km = {test_lat_offset:.6f} deg lat, {test_lon_offset:.6f} deg lon")
-        
         # Create regular sampling grid
         lats = np.arange(south, north + lat_step, lat_step)
         lons = np.arange(west, east + lon_step, lon_step)
         
-        # 4) GRID SETUP validation
-        print(f"🔧 GRID ARRAYS: lats {len(lats)} points [{lats[0]:.6f}, {lats[-1]:.6f}]")
-        print(f"🔧             lons {len(lons)} points [{lons[0]:.6f}, {lons[-1]:.6f}]")
-        print(f"🔧 MONOTONIC CHECK: lats ascending={np.all(np.diff(lats) > 0)}, lons ascending={np.all(np.diff(lons) > 0)}")
-        print(f"🔧 TOTAL GRID: {len(lats)} x {len(lons)} = {len(lats) * len(lons)} points at {sampling_distance_meters}m spacing")
+        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
         
-        # Create coordinate grids with explicit xy indexing
+        # Create coordinate grids
         width = len(lons)
         height = len(lats)
-        xi, yi = np.meshgrid(lons, lats, indexing='xy')
-        
-        # 5) MESHGRID VERIFICATION
-        print(f"🔧 MESHGRID SHAPES: xi={xi.shape}, yi={yi.shape}")
-        print(f"🔧 GRID VERIFICATION:")
-        print(f"🔧   xi[0,0]={xi[0,0]:.6f} should equal lons[0]={lons[0]:.6f} (match: {abs(xi[0,0] - lons[0]) < 1e-10})")
-        print(f"🔧   yi[0,0]={yi[0,0]:.6f} should equal lats[0]={lats[0]:.6f} (match: {abs(yi[0,0] - lats[0]) < 1e-10})")
-        print(f"🔧   xi[-1,-1]={xi[-1,-1]:.6f} should equal lons[-1]={lons[-1]:.6f} (match: {abs(xi[-1,-1] - lons[-1]) < 1e-10})")
-        print(f"🔧   yi[-1,-1]={yi[-1,-1]:.6f} should equal lats[-1]={lats[-1]:.6f} (match: {abs(yi[-1,-1] - lats[-1]) < 1e-10})")
+        xi, yi = np.meshgrid(lons, lats)
         
         # Apply clipping polygon mask if provided
         clipping_mask = None
@@ -3208,14 +3164,6 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             except Exception as e:
                 print(f"Error applying clipping polygon: {e}")
                 clipping_mask = None
-        
-        # 6) INTERPOLATION INPUTS verification
-        print(f"🔧 INTERPOLATION SETUP:")
-        print(f"🔧   Input coords shape: {coords.shape}, values shape: {values.shape}")
-        print(f"🔧   Grid shapes: xi={xi.shape}, yi={yi.shape}")
-        print(f"🔧   Sample input data:")
-        for i in range(min(3, len(coords))):
-            print(f"🔧     ({coords[i,0]:.6f}, {coords[i,1]:.6f}) -> {values[i]:.3f}")
         
         # Interpolate values onto 100m-spaced grid using multiple methods for complete coverage
         try:

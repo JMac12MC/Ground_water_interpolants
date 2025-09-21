@@ -3277,14 +3277,26 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         actual_west = west
         actual_east = east
         
-        # DEBUG: Log the exact bounds being returned
-        print(f"🔧 SMOOTH RASTER BOUNDS DEBUG:")
-        print(f"🔧 Input bounds: N={north:.6f}, S={south:.6f}, E={east:.6f}, W={west:.6f}")
-        print(f"🔧 Grid arrays: lats[0]={lats[0]:.6f}, lats[-1]={lats[-1]:.6f}")
-        print(f"🔧               lons[0]={lons[0]:.6f}, lons[-1]={lons[-1]:.6f}")
-        print(f"🔧 Step sizes: lat_step={lat_step:.6f}, lon_step={lon_step:.6f}")
-        print(f"🔧 Actual bounds: N={actual_north:.6f}, S={actual_south:.6f}, E={actual_east:.6f}, W={actual_west:.6f}")
-        print(f"🔧 Folium bounds: [[{actual_south:.6f}, {actual_west:.6f}], [{actual_north:.6f}, {actual_east:.6f}]]")
+        # COMPREHENSIVE DEBUG: Compare with triangulated coordinate data
+        print(f"🔧 ===== SMOOTH RASTER COORDINATE DEBUG =====")
+        print(f"🔧 INPUT BOUNDS: N={north:.6f}, S={south:.6f}, E={east:.6f}, W={west:.6f}")
+        print(f"🔧 GRID BOUNDS: N={lats[-1]:.6f}, S={lats[0]:.6f}, E={lons[-1]:.6f}, W={lons[0]:.6f}")
+        print(f"🔧 FOLIUM BOUNDS: [[{actual_south:.6f}, {actual_west:.6f}], [{actual_north:.6f}, {actual_east:.6f}]]")
+        
+        # Sample some triangulated data to compare coordinate ranges
+        sample_coords = coords[:10] if len(coords) > 0 else []
+        if len(sample_coords) > 0:
+            print(f"🔧 TRIANGULATED DATA SAMPLE:")
+            for i, coord in enumerate(sample_coords):
+                lon, lat = coord
+                print(f"🔧   Point {i}: lat={lat:.6f}, lon={lon:.6f}")
+        
+        # Canterbury, NZ reference coordinates for validation
+        christchurch_lat, christchurch_lon = -43.5321, 172.6362
+        print(f"🔧 REFERENCE: Christchurch should be at lat={christchurch_lat:.6f}, lon={christchurch_lon:.6f}")
+        print(f"🔧 REFERENCE: Is Christchurch in bounds? lat in [{actual_south:.3f}, {actual_north:.3f}]: {actual_south <= christchurch_lat <= actual_north}")
+        print(f"🔧 REFERENCE: Is Christchurch in bounds? lon in [{actual_west:.3f}, {actual_east:.3f}]: {actual_west <= christchurch_lon <= actual_east}")
+        print(f"🔧 =============================================")
         
         return {
             'image_base64': img_base64,

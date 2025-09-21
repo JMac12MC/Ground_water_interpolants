@@ -2097,6 +2097,8 @@ with main_col1:
                         combined_geojson['features'].append(feature)
                     
                     # Update overall bounds to cover all heatmaps
+                    feature_count = 0
+                    coord_samples = []
                     for feature in geojson_data['features']:
                         if feature['geometry']['type'] == 'Polygon':
                             coords = feature['geometry']['coordinates'][0]
@@ -2106,6 +2108,17 @@ with main_col1:
                                 overall_bounds['east'] = max(overall_bounds['east'], lon)
                                 overall_bounds['south'] = min(overall_bounds['south'], lat)
                                 overall_bounds['north'] = max(overall_bounds['north'], lat)
+                                
+                                # Sample first few coordinates for debugging
+                                if len(coord_samples) < 5:
+                                    coord_samples.append((lat, lon))
+                            feature_count += 1
+                    
+                    # DEBUG: Log coordinate samples from this heatmap
+                    if coord_samples:
+                        heatmap_name = stored_heatmap.get('heatmap_name', 'Unknown')
+                        print(f"🔧 TRIANGULATED BOUNDS DEBUG: {heatmap_name}")
+                        print(f"🔧   Features: {feature_count}, Sample coords: {coord_samples[:3]}")
                     
                     valid_heatmaps_for_raster.append(stored_heatmap['heatmap_name'])
             

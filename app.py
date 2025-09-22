@@ -2277,6 +2277,46 @@ with main_col1:
             st.session_state[cache_key] = processed_data
             return processed_data
 
+        def create_unified_clipping_geometry():
+            """Create unified clipping geometry combining red/orange exclusions and NEW clipping polygon"""
+            try:
+                from shapely.ops import unary_union
+                from shapely.geometry import Point
+                import geopandas as gpd
+                
+                clipping_parts = []
+                
+                # Get NEW clipping polygon (allowed areas) 
+                if 'new_clipping_polygon' in st.session_state and st.session_state.new_clipping_polygon is not None:
+                    new_polygon = st.session_state.new_clipping_polygon
+                    if hasattr(new_polygon, 'geometry') and len(new_polygon) > 0:
+                        # Union all NEW clipping polygon geometries
+                        allowed_geoms = [geom for geom in new_polygon.geometry if geom.is_valid]
+                        if allowed_geoms:
+                            allowed_union = unary_union(allowed_geoms)
+                            print(f"🎯 UNIFIED CLIPPING: NEW polygon with {len(allowed_geoms)} parts loaded")
+                            
+                            # Get red/orange exclusion polygons to subtract from allowed areas
+                            from interpolation import get_prepared_exclusion_union
+                            exclusion_data = get_prepared_exclusion_union()
+                            
+                            if exclusion_data is not None:
+                                exclusion_union, _, _, _ = exclusion_data
+                                # Create final allowed geometry: NEW_areas - red/orange_exclusions
+                                final_allowed = allowed_union.difference(exclusion_union)
+                                print(f"🎯 UNIFIED CLIPPING: Applied red/orange exclusions to NEW polygon")
+                                return final_allowed
+                            else:
+                                print(f"🎯 UNIFIED CLIPPING: Using NEW polygon only (no exclusions)")
+                                return allowed_union
+                
+                print(f"🎯 UNIFIED CLIPPING: No clipping geometry available")
+                return None
+                
+            except Exception as e:
+                print(f"❌ ERROR creating unified clipping geometry: {e}")
+                return None
+
         # PERFORMANCE OPTIMIZATION 4: Single raster overlay for triangulated display
         def create_combined_raster_overlay(visible_heatmaps, style):
             """Combine multiple heatmaps into a single raster overlay"""
@@ -2339,7 +2379,7 @@ with main_col1:
                     raster_size=(1024, 1024),  # Higher resolution for combined overlay
                     global_colormap_func=lambda value: get_global_unified_color(value, 'combined'),
                     opacity=st.session_state.get('heatmap_opacity', 0.7),
-                    clipping_polygon=None  # Already clipped in preprocessing
+                    clipping_polygon=create_unified_clipping_geometry()  # FIXED: Apply proper polygon clipping
                 )
                 
                 return raster_overlay

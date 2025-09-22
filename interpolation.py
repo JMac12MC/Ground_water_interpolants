@@ -66,6 +66,61 @@ def load_exclusion_polygons():
         return gpd.GeoDataFrame.from_features(data['features'])
     return None
 
+@st.cache_resource
+def get_prepared_exclusion_union():
+    """
+    Get prepared exclusion union for fast intersection testing (cached per session)
+    
+    Returns:
+    --------
+    tuple or None
+        (union_geometry, prepared_geometry, union_bounds, exclusion_version) or None if no exclusions
+    """
+    try:
+        import hashlib
+        import os
+        from shapely.ops import unary_union
+        from shapely.prepared import prep
+        
+        # Load exclusion polygons
+        exclusion_polygons = load_exclusion_polygons()
+        if exclusion_polygons is None or len(exclusion_polygons) == 0:
+            return None
+            
+        # Create version hash for cache invalidation
+        exclusion_files = [
+            "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson",
+            "attached_assets/red_orange_zones_stored_2025-09-16_1758015813886.geojson",
+            "red_orange_zones_stored_2025-09-16.geojson",
+            "attached_assets/red_orange_zones_stored_2025-09-16.geojson"
+        ]
+        
+        version_parts = []
+        for file_path in exclusion_files:
+            if os.path.exists(file_path):
+                stat = os.stat(file_path)
+                version_parts.append(f"{file_path}:{stat.st_size}:{stat.st_mtime}")
+                break
+        
+        exclusion_version = hashlib.md5(":".join(version_parts).encode()).hexdigest()[:8]
+        
+        # Create unified exclusion geometry
+        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
+        if not valid_geometries:
+            return None
+            
+        union_geometry = unary_union(valid_geometries)
+        prepared_geometry = prep(union_geometry)
+        union_bounds = union_geometry.bounds  # (minx, miny, maxx, maxy)
+        
+        print(f"🚀 PERFORMANCE: Created prepared exclusion union from {len(valid_geometries)} zones (version: {exclusion_version})")
+        
+        return union_geometry, prepared_geometry, union_bounds, exclusion_version
+        
+    except Exception as e:
+        print(f"❌ Error creating prepared exclusion union: {e}")
+        return None
+
 def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
     """
     Apply negative clipping to remove heatmap points within exclusion areas
@@ -121,7 +176,7 @@ def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
         print(f"❌ Error applying exclusion clipping: {e}")
         return heatmap_data
 
-def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True, method_name=None):
+def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True, method_name=None, heatmap_id=None):
     """
     Apply exclusion clipping to stored heatmap GeoJSON data for non-indicator methods only
     
@@ -161,7 +216,7 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
         
         if exclusion_polygons is not None:
             features_before = len(stored_heatmap_geojson['features'])
-            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons)
+            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons, heatmap_id=heatmap_id)
             
             # Return updated GeoJSON
             filtered_geojson = {
@@ -179,39 +234,116 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
         print(f"❌ PRODUCTION: Error applying exclusion clipping to {method_name or 'heatmap'}: {e}")
         return stored_heatmap_geojson
 
-def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
+# Removed unused caching function - using session_state cache instead
+
+def bbox_intersects(bbox1, bbox2):
     """
-    Apply negative clipping to remove GeoJSON features within exclusion areas
+    Fast bounding box intersection test
+    
+    Parameters:
+    -----------
+    bbox1, bbox2 : tuple
+        Bounding boxes as (minx, miny, maxx, maxy)
+        
+    Returns:
+    --------
+    bool
+        True if bounding boxes intersect
+    """
+    return not (bbox1[2] < bbox2[0] or bbox1[0] > bbox2[2] or 
+                bbox1[3] < bbox2[1] or bbox1[1] > bbox2[3])
+
+def get_features_bbox(features):
+    """
+    Calculate bounding box of all features
+    
+    Parameters:
+    -----------
+    features : list
+        List of GeoJSON feature objects
+        
+    Returns:
+    --------
+    tuple or None
+        Bounding box as (minx, miny, maxx, maxy) or None
+    """
+    if not features:
+        return None
+        
+    min_x = min_y = float('inf')
+    max_x = max_y = float('-inf')
+    
+    for feature in features:
+        try:
+            if feature['geometry']['type'] == 'Polygon':
+                coords = feature['geometry']['coordinates'][0]
+                for coord in coords:
+                    x, y = coord[0], coord[1]
+                    min_x = min(min_x, x)
+                    max_x = max(max_x, x)
+                    min_y = min(min_y, y)
+                    max_y = max(max_y, y)
+        except:
+            continue
+            
+    if min_x == float('inf'):
+        return None
+        
+    return (min_x, min_y, max_x, max_y)
+
+def apply_exclusion_clipping_to_geojson(features, exclusion_polygons, heatmap_id=None):
+    """
+    OPTIMIZED: Apply negative clipping to remove GeoJSON features within exclusion areas
+    Uses prepared geometry, bounding box prefilters, and per-heatmap caching
     
     Parameters:
     -----------
     features : list
         List of GeoJSON feature objects
     exclusion_polygons : geopandas.GeoDataFrame
-        GeoDataFrame containing exclusion polygon geometries
+        GeoDataFrame containing exclusion polygon geometries (ignored, uses cached union)
+    heatmap_id : str, optional
+        Unique identifier for caching (e.g., "ground_water_level_kriging_gridpoint1")
         
     Returns:
     --------
     list
         Filtered GeoJSON features with exclusion areas removed
     """
-    if exclusion_polygons is None or len(exclusion_polygons) == 0:
-        return features
-        
     if not features:
         return features
         
     try:
-        from shapely.geometry import Point, Polygon as ShapelyPolygon
-        from shapely.ops import unary_union
-        
-        # Create unified exclusion geometry for faster intersection testing
-        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
-        if not valid_geometries:
+        # Get prepared exclusion union (cached)
+        exclusion_data = get_prepared_exclusion_union()
+        if exclusion_data is None:
             return features
             
-        exclusion_geometry = unary_union(valid_geometries)
-        print(f"🚫 Applying exclusion clipping to GeoJSON features with {len(valid_geometries)} exclusion zones")
+        union_geometry, prepared_geometry, union_bounds, exclusion_version = exclusion_data
+        
+        # Fast bounding box prefilter
+        features_bbox = get_features_bbox(features)
+        if features_bbox is None:
+            return features
+            
+        if not bbox_intersects(features_bbox, union_bounds):
+            print(f"🚀 FAST SKIP: Heatmap {heatmap_id or 'unknown'} bbox doesn't intersect exclusion zones")
+            return features
+        
+        # Check cache if heatmap_id provided
+        if heatmap_id:
+            import hashlib
+            features_str = str(len(features))  # Simplified hash based on count for performance
+            cache_key = f"clipped_result_{heatmap_id}_{features_str}_{exclusion_version}"
+            
+            if cache_key in st.session_state:
+                filtered_features, excluded_count = st.session_state[cache_key]
+                print(f"🚀 CACHE HIT: {heatmap_id} - {excluded_count} excluded, {len(filtered_features)} kept")
+                return filtered_features
+        
+        from shapely.geometry import Polygon as ShapelyPolygon
+        
+        print(f"🚫 Applying exclusion clipping to GeoJSON features with {len(exclusion_polygons) if exclusion_polygons is not None else 0} exclusion zones")
         
         # Filter out features that intersect with exclusion areas
         filtered_features = []
@@ -223,12 +355,18 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
                 if feature['geometry']['type'] == 'Polygon':
                     coords = feature['geometry']['coordinates'][0]
                     if len(coords) >= 3:
+                        # Fast bbox check first
+                        feature_bbox = get_features_bbox([feature])
+                        if feature_bbox and not bbox_intersects(feature_bbox, union_bounds):
+                            filtered_features.append(feature)
+                            continue
+                        
                         # Create Shapely polygon from coordinates
                         shapely_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
                         feature_polygon = ShapelyPolygon(shapely_coords)
                         
-                        # Check if feature intersects with any exclusion area
-                        if not (exclusion_geometry.intersects(feature_polygon) or exclusion_geometry.contains(feature_polygon)):
+                        # Use prepared geometry for fast intersection testing
+                        if not (prepared_geometry.intersects(feature_polygon) or prepared_geometry.contains(feature_polygon)):
                             filtered_features.append(feature)
                         else:
                             excluded_count += 1
@@ -242,6 +380,11 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
             except Exception as e:
                 # If geometry processing fails, keep the feature
                 filtered_features.append(feature)
+        
+        # Cache the result if heatmap_id provided
+        if heatmap_id:
+            # Store the actual result in session state cache
+            st.session_state[cache_key] = (filtered_features, excluded_count)
                 
         print(f"🚫 GeoJSON exclusion clipping: Removed {excluded_count} features, kept {len(filtered_features)} features")
         return filtered_features

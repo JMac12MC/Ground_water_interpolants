@@ -2227,7 +2227,7 @@ with main_col1:
                     if raw_geojson_data:
                         if method not in indicator_methods:
                             from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                            geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method)
+                            geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method, heatmap_id=stored_heatmap['heatmap_name'])
                         else:
                             geojson_data = raw_geojson_data
                             print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for stored {method} heatmap (preserving full probability distribution)")

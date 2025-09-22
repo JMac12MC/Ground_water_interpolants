@@ -176,9 +176,26 @@ def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
         print(f"❌ Error applying exclusion clipping: {e}")
         return heatmap_data
 
+def generate_clipping_version():
+    """
+    Generate current clipping version based on exclusion data
+    """
+    try:
+        exclusion_data = load_exclusion_polygons_cached()
+        if exclusion_data is not None:
+            _, _, _, exclusion_version = exclusion_data
+            clipping_version = f"red_orange_{exclusion_version}"
+            return clipping_version
+    except Exception as e:
+        print(f"Error generating clipping version: {e}")
+    
+    # Fallback version if unable to generate
+    return "red_orange_default"
+
 def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True, method_name=None, heatmap_id=None):
     """
     Apply exclusion clipping to stored heatmap GeoJSON data for non-indicator methods only
+    Now optimized to use pre-clipped data when available!
     
     Parameters:
     -----------
@@ -188,6 +205,8 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
         Whether to auto-load exclusion polygons if not provided
     method_name : str
         Interpolation method name to determine if exclusion should be applied
+    heatmap_id : int, optional
+        ID of the heatmap for accessing pre-clipped data
         
     Returns:
     --------
@@ -208,8 +227,29 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
     if method_name and method_name in indicator_methods:
         print(f"🔄 INDICATOR METHOD: Skipping red/orange exclusion clipping for {method_name} (preserving full probability distribution)")
         return stored_heatmap_geojson
+    
+    # OPTIMIZATION: Check for pre-clipped data first!
+    if heatmap_id is not None:
+        try:
+            import streamlit as st
+            # Get database connection from session state
+            if hasattr(st.session_state, 'polygon_db') and st.session_state.polygon_db:
+                # Generate current clipping version to check if pre-clipped data is still valid
+                current_clipping_version = generate_clipping_version()
+                
+                # Try to get pre-clipped data from database
+                pre_clipped_data = st.session_state.polygon_db.get_pre_clipped_heatmap(heatmap_id, current_clipping_version)
+                
+                if pre_clipped_data:
+                    features_count = len(pre_clipped_data.get('features', []))
+                    print(f"🚀 FAST OPTIMIZATION: Using pre-clipped data for heatmap {heatmap_id} with {features_count} features (skipping 29,008+ geometric operations!)")
+                    return pre_clipped_data
+                else:
+                    print(f"💡 No pre-clipped data found for heatmap {heatmap_id} version {current_clipping_version} - falling back to real-time clipping")
+        except Exception as e:
+            print(f"⚠️ Error checking pre-clipped data for heatmap {heatmap_id}: {e} - falling back to real-time clipping")
         
-    # Apply exclusion clipping for non-indicator methods
+    # Apply exclusion clipping for non-indicator methods (fallback when no pre-clipped data)
     try:
         # Load exclusion polygons
         exclusion_polygons = load_exclusion_polygons() if auto_load_exclusions else None

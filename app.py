@@ -2407,7 +2407,7 @@ with main_col1:
                     method = heatmap.get('interpolation_method', 'kriging')
                     
                     if raw_geojson_data:
-                        processed_data = get_preprocessed_heatmap(heatmap['heatmap_name'], raw_geojson_data, method)
+                        processed_data = get_preprocessed_heatmap(heatmap['id'], raw_geojson_data, method)
                         if processed_data and processed_data.get('features'):
                             # Normalize feature properties
                             for feature in processed_data['features']:
@@ -2502,7 +2502,7 @@ with main_col1:
                     
                     if raw_geojson_data:
                         # Use preprocessed data with caching
-                        geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, method)
+                        geojson_data = get_preprocessed_heatmap(stored_heatmap['id'], raw_geojson_data, method)
                         print(f"🚀 OPTIMIZED: Using preprocessed data for {stored_heatmap['heatmap_name']}")
                     else:
                         geojson_data = raw_geojson_data

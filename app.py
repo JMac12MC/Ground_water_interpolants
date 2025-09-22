@@ -16,72 +16,6 @@ from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
 # Regional heatmap removed per user request
 
-def bounds_intersect(heatmap_bounds, viewport_bounds):
-    """
-    Check if heatmap bounding box intersects with viewport bounds
-    
-    Parameters:
-    -----------
-    heatmap_bounds : dict
-        Heatmap bounds with keys: north, south, east, west
-    viewport_bounds : dict  
-        Viewport bounds with keys: north, south, east, west
-        
-    Returns:
-    --------
-    bool
-        True if bounds intersect, False otherwise
-    """
-    try:
-        # Check if rectangles intersect using standard algorithm
-        return not (
-            heatmap_bounds['west'] > viewport_bounds['east'] or
-            heatmap_bounds['east'] < viewport_bounds['west'] or
-            heatmap_bounds['north'] < viewport_bounds['south'] or
-            heatmap_bounds['south'] > viewport_bounds['north']
-        )
-    except (KeyError, TypeError):
-        # If bounds are invalid, include the heatmap (safe fallback)
-        return True
-
-def get_heatmap_bounds(geojson_data):
-    """
-    Calculate bounding box for a heatmap's GeoJSON data
-    
-    Parameters:
-    -----------
-    geojson_data : dict
-        GeoJSON data with features
-        
-    Returns:
-    --------
-    dict or None
-        Bounds dict with north, south, east, west keys, or None if no data
-    """
-    try:
-        if not geojson_data or 'features' not in geojson_data or not geojson_data['features']:
-            return None
-            
-        lats, lons = [], []
-        for feature in geojson_data['features']:
-            if feature['geometry']['type'] == 'Polygon':
-                coords = feature['geometry']['coordinates'][0]
-                for coord in coords:
-                    lons.append(coord[0])
-                    lats.append(coord[1])
-        
-        if not lats or not lons:
-            return None
-            
-        return {
-            'north': max(lats),
-            'south': min(lats), 
-            'east': max(lons),
-            'west': min(lons)
-        }
-    except Exception:
-        return None
-
 def classify_well_viability(row):
     """
     Classify a well as viable (1) or not viable (0) using the same 3-rule system as indicator kriging.
@@ -394,14 +328,6 @@ with st.sidebar:
         index=0,  # Default to Triangle Mesh
         help="Choose how interpolated data is visualized: Triangle Mesh shows precise triangular interpolation, Smooth Raster provides a weather-map style visualization",
         key="heatmap_style_selector"
-    )
-    
-    # Viewport filtering option for performance optimization
-    viewport_filtering = st.checkbox(
-        "🚀 Viewport Filtering (Performance)",
-        value=True,  # Default enabled for better performance
-        help="Only display heatmaps visible in current map view. Dramatically improves performance when zoomed in by reducing rendered features by 90%+. Disable to see all heatmaps regardless of zoom level.",
-        key="viewport_filtering_enabled"
     )
 
     # Map visualization selection to internal parameters
@@ -2672,7 +2598,7 @@ with main_col1:
             use_container_width=True,
             height=600,
             key="main_map",
-            returned_objects=["last_clicked", "bounds", "zoom"]
+            returned_objects=["last_clicked"]
         )
     except Exception as e:
         print(f"Map rendering error: {e}")

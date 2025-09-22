@@ -16,7 +16,6 @@ import io
 import base64
 from PIL import Image
 import matplotlib.colors as mcolors
-from scipy.interpolate import griddata
 import streamlit as st
 import pyproj
 
@@ -70,6 +69,72 @@ def to_wgs84(x_coords, y_coords):
     _, transformer_to_wgs84 = get_transformers()
     return transformer_to_wgs84.transform(x_coords, y_coords)
 # ==================================================================
+
+# ===== CENTRALIZED CRS/GRID CONTEXT HELPERS (ARCHITECT SOLUTION) =====
+def build_crs_grid(center_latlon, radius_km, grid_size):
+    """
+    Build coordinate grid in both NZTM2000 meters and WGS84 degrees.
+    Returns both meter grid for interpolation and WGS84 grid for GeoJSON output.
+    """
+    center_lat, center_lon = center_latlon
+    
+    # Transform center to NZTM2000
+    center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+    center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+    
+    # Create grid bounds in NZTM2000 meters
+    radius_m = radius_km * 1000.0
+    min_x_m = center_x_m - radius_m
+    max_x_m = center_x_m + radius_m
+    min_y_m = center_y_m - radius_m
+    max_y_m = center_y_m + radius_m
+    
+    # Create meter grid
+    x_vals_m = np.linspace(min_x_m, max_x_m, grid_size)
+    y_vals_m = np.linspace(min_y_m, max_y_m, grid_size)
+    X_m, Y_m = np.meshgrid(x_vals_m, y_vals_m)
+    
+    # Transform 2D grid to WGS84 for GeoJSON output
+    LONS_2D, LATS_2D = to_wgs84(X_m.flatten(), Y_m.flatten())
+    LONS_2D = LONS_2D.reshape(X_m.shape)
+    LATS_2D = LATS_2D.reshape(Y_m.shape)
+    
+    return {
+        'x_vals_m': x_vals_m,
+        'y_vals_m': y_vals_m, 
+        'X_m': X_m,
+        'Y_m': Y_m,
+        'LONS_2D': LONS_2D,
+        'LATS_2D': LATS_2D
+    }
+
+def prepare_wells_xy(wells_df):
+    """
+    Transform wells coordinates from WGS84 to NZTM2000 meters.
+    """
+    lats = wells_df['latitude'].values.astype(float)
+    lons = wells_df['longitude'].values.astype(float)
+    wells_x_m, wells_y_m = to_nztm2000(lons, lats)
+    return wells_x_m, wells_y_m
+
+def krige_on_grid(wells_x_m, wells_y_m, values, x_vals_m, y_vals_m, variogram_model='spherical', verbose=False):
+    """
+    Perform Kriging interpolation using NZTM2000 meter coordinates.
+    """
+    try:
+        OK = OrdinaryKriging(
+            wells_x_m, wells_y_m, values,
+            variogram_model=variogram_model,
+            verbose=verbose,
+            enable_plotting=False,
+            coordinates_type='euclidean'
+        )
+        Z, SS = OK.execute('grid', x_vals_m, y_vals_m)
+        return Z, SS, OK
+    except Exception as e:
+        print(f"Kriging failed with {variogram_model}: {e}")
+        return None, None, None
+# =================================================================
 
 @st.cache_data
 def _load_exclusion_data():
@@ -897,17 +962,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         
         return best_lat_factor, best_lon_factor
     
-    # Calculate ultra-precise conversion factors
-    km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
-
-    # Create grid in lat/lon space
-    min_lat = center_lat - (radius_km / km_per_degree_lat)
-    max_lat = center_lat + (radius_km / km_per_degree_lat)
-    min_lon = center_lon - (radius_km / km_per_degree_lon)
-    max_lon = center_lon + (radius_km / km_per_degree_lon)
-
+    # ===== ARCHITECT SOLUTION: PROPER COORDINATE TRANSFORMATION =====
+    print(f"🔧 ===== COORDINATE TRANSFORMATION FIX APPLIED IN GENERATE_GEO_JSON_GRID =====")
+    print(f"🔧 Using centralized CRS helpers for proper EPSG:2193 transformations")
+    
     # High resolution grid for smooth professional visualization
-    # Increase resolution significantly for smoother appearance like kriging software
     wells_count = len(wells_df)
     if wells_count > 5000:
         grid_size = 80   # Higher resolution for very large datasets
@@ -916,13 +975,33 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     else:
         grid_size = 150  # Very fine resolution for smaller datasets
 
-    # Create the grid for our GeoJSON polygons
-    lat_vals = np.linspace(min_lat, max_lat, grid_size)
-    lon_vals = np.linspace(min_lon, max_lon, grid_size)
+    # Build grid using centralized helper
+    grid_ctx = build_crs_grid(center_point, radius_km, grid_size)
+    x_vals_m = grid_ctx['x_vals_m']
+    y_vals_m = grid_ctx['y_vals_m']
+    X_m = grid_ctx['X_m']
+    Y_m = grid_ctx['Y_m']
+    LONS_2D = grid_ctx['LONS_2D']
+    LATS_2D = grid_ctx['LATS_2D']
+    
+    # For backward compatibility, create 1D lat/lon arrays (though we'll use 2D for polygons)
+    lat_vals = LATS_2D[:, 0]  # First column (west edge)
+    lon_vals = LONS_2D[0, :]  # First row (north edge)
+    
+    print(f"🔧 GRID CREATED: {grid_size}x{grid_size} using centralized CRS helpers")
+    print(f"🔧 WGS84 BOUNDS: lat [{LATS_2D.min():.6f}, {LATS_2D.max():.6f}]°, lon [{LONS_2D.min():.6f}, {LONS_2D.max():.6f}]°")
+    # =================================================================="
 
+    # ===== TRANSFORM WELLS TO NZTM2000 FOR ACCURATE INTERPOLATION =====
     # Extract coordinates and values from the wells dataframe
     lats = wells_df['latitude'].values.astype(float)
     lons = wells_df['longitude'].values.astype(float)
+    
+    # Transform wells to NZTM2000 using centralized helper
+    wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+    print(f"🔧 WELLS TRANSFORMED: {len(lons)} wells from WGS84 to NZTM2000 using helper")
+    print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+    # ================================================================="
 
     # Use the new categorization system
     from data_loader import get_wells_for_interpolation
@@ -1193,27 +1272,28 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['yield_rate'].values.astype(float)
 
-    # Convert to km-based coordinates for proper interpolation
-    x_coords = (lons - center_lon) * km_per_degree_lon
-    y_coords = (lats - center_lat) * km_per_degree_lat
-
-    # Create grid in km space (square bounds)
-    grid_x = np.linspace(-radius_km, radius_km, grid_size)
-    grid_y = np.linspace(-radius_km, radius_km, grid_size)
-    grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
-
-    # Flatten for interpolation
-    points = np.vstack([x_coords, y_coords]).T  # Well points in km
-    xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
-
-    # Use square bounds instead of circular radius
-    mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
-
-    # Define grid_points early to avoid UnboundLocalError
-    grid_points = xi[mask]
-
-    # Perform interpolation
-    points = np.vstack([x_coords, y_coords]).T
+    # ===== ARCHITECT SOLUTION: USE NZTM2000 COORDINATES FOR INTERPOLATION =====
+    print(f"🔧 Using NZTM2000 coordinates for accurate interpolation")
+    
+    # Create grid points in NZTM2000 meters for interpolation
+    radius_m = radius_km * 1000.0
+    X_m_flat = X_m.flatten()
+    Y_m_flat = Y_m.flatten()
+    
+    # Apply radius filter in meters
+    center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+    center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+    
+    # Distance from center in meters
+    distances = np.sqrt((X_m_flat - center_x_m)**2 + (Y_m_flat - center_y_m)**2)
+    mask = distances <= radius_m
+    
+    # Define grid points in NZTM2000 meters
+    grid_points_x = X_m_flat[mask]
+    grid_points_y = Y_m_flat[mask]
+    
+    print(f"🔧 GRID FILTERING: {len(grid_points_x)}/{len(X_m_flat)} points within {radius_km}km radius")
+    # ============================================================================
 
     try:
         # Initialize variance array for kriging uncertainty
@@ -1224,65 +1304,71 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Use actual kriging with variance calculation when variance is requested
             print("Calculating kriging with variance estimation")
 
-            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
-            lon_values = x_coords / km_per_degree_lon + center_lon
-            lat_values = y_coords / km_per_degree_lat + center_lat
-
-            # Use already defined grid_points
-            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
-
-            # Set up kriging with variance calculation
+            # ===== USE CENTRALIZED KRIGING WITH NZTM2000 COORDINATES =====
+            print(f"🔧 Performing kriging with variance in NZTM2000 coordinates")
+            
+            # Use centralized kriging helper with NZTM2000 coordinates
             if auto_fit_variogram:
-                # Use auto-fitted variogram for more accurate uncertainty estimation
-                print(f"Auto-fitting {variogram_model} variogram model...")
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
+                Z_grid, SS_grid, OK = krige_on_grid(
+                    wells_x_m, wells_y_m, yields,
+                    x_vals_m, y_vals_m,
                     variogram_model=variogram_model,
-                    verbose=False,
-                    enable_plotting=False,
-                    variogram_parameters=None  # Let PyKrige auto-fit parameters
+                    verbose=False
                 )
             else:
-                # Use fixed variogram model for speed
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
-                    variogram_model='linear',  # Fast and stable
-                    verbose=False,
-                    enable_plotting=False
+                Z_grid, SS_grid, OK = krige_on_grid(
+                    wells_x_m, wells_y_m, yields,
+                    x_vals_m, y_vals_m,
+                    variogram_model='linear',
+                    verbose=False
                 )
-
-            # Execute kriging to get both predictions and variance
-            interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
+            
+            if Z_grid is not None:
+                # Extract values for masked grid points
+                Z_flat = Z_grid.flatten()
+                interpolated_z = Z_flat[mask]
+                
+                if SS_grid is not None:
+                    SS_flat = SS_grid.flatten()
+                    kriging_variance = SS_flat[mask]
+                else:
+                    kriging_variance = None
+                    
+                print(f"🔧 Kriging with variance completed: {len(interpolated_z)} interpolated points")
+            else:
+                print("❌ Kriging failed, falling back to griddata")
+                interpolated_z = None
+                kriging_variance = None
+            # ====================================================================
 
         elif (method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:
             # Perform indicator kriging for binary yield suitability
             print("Performing indicator kriging for yield suitability mapping...")
 
-            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
-            lon_values = x_coords / km_per_degree_lon + center_lon
-            lat_values = y_coords / km_per_degree_lat + center_lat
-
-            # Use already defined grid_points
-            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
-
-            # Set up kriging for binary indicator data with constrained parameters
-            # Use spherical model with limited range to prevent high values far from viable wells
-            max_range_km = min(radius_km * 0.5, 5.0)  # Limit influence to half radius or 5km max
-            range_degrees = max_range_km / 111.0  # Convert km to degrees (rough approximation)
-
-            OK = OrdinaryKriging(
-                lon_values, lat_values, yields,
-                variogram_model='spherical',  # Better spatial control than linear
-                verbose=False,
-                enable_plotting=False,
-                weight=True,  # Enable nugget effect for indicator data
-                variogram_parameters=[0.2, 0.6, range_degrees]  # [nugget, sill, range] - constrained range
+            # ===== INDICATOR KRIGING WITH NZTM2000 COORDINATES =====
+            print(f"🔧 Performing indicator kriging in NZTM2000 coordinates")
+            
+            # Use centralized kriging helper with spherical model for indicator data
+            Z_grid, SS_grid, OK = krige_on_grid(
+                wells_x_m, wells_y_m, yields,
+                x_vals_m, y_vals_m,
+                variogram_model='spherical',
+                verbose=False
             )
-
-            # Execute kriging to get probability predictions
-            interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+            
+            if Z_grid is not None:
+                # Extract values for masked grid points
+                Z_flat = Z_grid.flatten()
+                interpolated_z = Z_flat[mask]
+                
+                # Ensure values are in [0,1] range (probabilities)
+                interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+                
+                print(f"🔧 Indicator kriging completed: {len(interpolated_z)} probability points")
+            else:
+                print("❌ Indicator kriging failed")
+                interpolated_z = None
+            # ====================================================================
 
             # Ensure values are in [0,1] range (probabilities)
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
@@ -1292,7 +1378,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if method != 'indicator_kriging_spherical_continuous':
                 # Calculate distances from each grid point to nearest good well (yield >= 0.75)
                 good_wells_mask = yields >= 0.75  # Wells with good yield indicators
-                if np.any(good_wells_mask):
+                print(f"🔧 Found {np.sum(good_wells_mask)} good wells for distance decay calculation")
+                if np.any(good_wells_mask) and interpolated_z is not None:
                     good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
                     grid_coords = grid_points
 
@@ -1327,39 +1414,29 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             else:
                 print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
 
-            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
-            lon_values = x_coords / km_per_degree_lon + center_lon
-            lat_values = y_coords / km_per_degree_lat + center_lat
-
-            # Use already defined grid_points
-            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
-
-            # Set up kriging with auto-fitted variogram - ensure proper parameters for depth data
-            if method == 'depth_kriging' or method == 'depth_kriging_auto':
-                # For depth data, use more appropriate variogram parameters
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
-                    variogram_model=variogram_model,
-                    verbose=True,  # Enable verbose for debugging depth issues
-                    enable_plotting=False,
-                    variogram_parameters=None,  # Let PyKrige auto-fit parameters
-                    weight=True,  # Enable nugget effect for depth data
-                    anisotropy_scaling=1.0,  # No anisotropy scaling
-                    anisotropy_angle=0.0
-                )
+            # ===== AUTO-FITTED KRIGING WITH NZTM2000 COORDINATES =====
+            print(f"🔧 Performing auto-fitted kriging for {method} in NZTM2000 coordinates")
+            
+            # Use centralized kriging helper with auto-fitted variogram
+            verbose_mode = True if (method == 'depth_kriging' or method == 'depth_kriging_auto') else False
+            
+            Z_grid, SS_grid, OK = krige_on_grid(
+                wells_x_m, wells_y_m, yields,
+                x_vals_m, y_vals_m,
+                variogram_model=variogram_model,
+                verbose=verbose_mode
+            )
+            
+            if Z_grid is not None:
+                # Extract values for masked grid points
+                Z_flat = Z_grid.flatten()
+                interpolated_z = Z_flat[mask]
+                
+                print(f"🔧 Auto-fitted kriging completed: {len(interpolated_z)} interpolated points")
             else:
-                # Standard yield kriging
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
-                    variogram_model=variogram_model,
-                    verbose=False,
-                    enable_plotting=False,
-                    variogram_parameters=None  # Let PyKrige auto-fit parameters
-                )
-
-            # Execute kriging to get predictions (ignore variance)
-            interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+                print("❌ Auto-fitted kriging failed, falling back to griddata")
+                interpolated_z = None
+            # ====================================================================
 
             # Additional validation for depth interpolation
             if method == 'depth_kriging' or method == 'depth_kriging_auto':
@@ -1369,10 +1446,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 interpolated_z = np.minimum(200.0, interpolated_z)  # Maximum reasonable depth of 200m
 
         else:
-            # Use standard griddata interpolation for other cases
+            # Use standard griddata interpolation with NZTM2000 coordinates
             # This is much faster than kriging for large datasets
+            wells_points = np.column_stack([wells_x_m, wells_y_m])
+            grid_points_array = np.column_stack([grid_points_x, grid_points_y])
+            
             interpolated_z = griddata(
-                points, yields, grid_points,
+                wells_points, yields, grid_points_array,
                 method='linear', fill_value=0.0
             )
 
@@ -1380,20 +1460,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             nan_mask = np.isnan(interpolated_z)
             if np.any(nan_mask):
                 interpolated_z[nan_mask] = griddata(
-                    points, yields, grid_points[nan_mask],
+                    wells_points, yields, grid_points_array[nan_mask],
                     method='nearest', fill_value=0.0
                 )
 
-            # Apply advanced smoothing for professional kriging-like appearance
+            # Apply advanced smoothing for professional kriging-like appearance using NZTM2000 grid
             from scipy.ndimage import gaussian_filter
 
-            # Reshape to 2D grid for smoothing
+            # Reshape to 2D grid for smoothing using the NZTM2000 grid
             try:
-                # Create full 2D grid for smoothing
-                z_grid = np.zeros_like(grid_X)
+                # Create full 2D grid for smoothing using X_m grid shape
+                z_grid = np.zeros_like(X_m)
                 z_grid_flat = z_grid.flatten()
                 z_grid_flat[mask] = interpolated_z
-                z_grid = z_grid_flat.reshape(grid_X.shape)
+                z_grid = z_grid_flat.reshape(X_m.shape)
 
                 # Apply multiple smoothing passes for ultra-smooth appearance
                 # First pass: moderate smoothing

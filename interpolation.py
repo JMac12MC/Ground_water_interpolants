@@ -472,7 +472,9 @@ def batch_apply_exclusion_clipping(heatmaps_list, exclusion_data, clipping_versi
         
         # Step 2: Apply clipping once to all features
         print("🚀 BATCH CLIPPING: Step 2 - Applying geometric clipping to combined features...")
-        clipped_features = apply_exclusion_clipping_to_stored_heatmap(all_features, exclusion_data)
+        # Use the direct GeoJSON clipping function since we have a features list, not a full GeoJSON object
+        # The exclusion_polygons parameter is ignored since the function uses cached prepared union
+        clipped_features = apply_exclusion_clipping_to_geojson(all_features, None)
         
         # Step 3: Redistribute clipped features back to their original heatmaps
         print("🚀 BATCH CLIPPING: Step 3 - Redistributing clipped features...")

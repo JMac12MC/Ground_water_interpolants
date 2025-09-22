@@ -3210,6 +3210,226 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
+def generate_vector_grid_overlay(geojson_data, bounds, global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
+    """
+    ARCHITECT SOLUTION: Vector-based grid overlay using GeoJSON rectangles for deterministic positioning
+    
+    This eliminates coordinate system mismatches by letting Leaflet handle precise geographic positioning
+    of individual grid cells as vector polygons instead of relying on raster overlay corner-warping.
+    
+    Parameters:
+    -----------
+    geojson_data : dict
+        GeoJSON FeatureCollection containing triangular mesh data
+    bounds : dict
+        Dictionary with 'north', 'south', 'east', 'west' bounds
+    global_colormap_func : function
+        Function to map values to colors consistently across all heatmaps
+    opacity : float
+        Transparency level (0.0 to 1.0)
+    sampling_distance_meters : int
+        Grid spacing in meters (default: 100m)
+    clipping_polygon : object
+        Optional clipping polygon
+        
+    Returns:
+    --------
+    dict
+        Dictionary containing GeoJSON FeatureCollection of grid rectangles
+    """
+    try:
+        if not geojson_data or not geojson_data.get('features'):
+            return None
+            
+        # Extract values and coordinates from triangular mesh - same as before
+        values = []
+        coords = []
+        vertex_values = {}
+        
+        for feature in geojson_data['features']:
+            if feature.get('properties', {}).get('value') is not None:
+                value = feature['properties']['value']
+                
+                if feature['geometry']['type'] == 'Polygon':
+                    triangle_coords = feature['geometry']['coordinates'][0][:-1]
+                    
+                    for coord in triangle_coords:
+                        coord_key = (round(coord[0], 6), round(coord[1], 6))
+                        
+                        if coord_key in vertex_values:
+                            vertex_values[coord_key] = (vertex_values[coord_key] + value) / 2
+                        else:
+                            vertex_values[coord_key] = value
+        
+        # Convert vertex dictionary to arrays
+        for (lon, lat), val in vertex_values.items():
+            coords.append([lon, lat])
+            values.append(val)
+        
+        if not values or not coords:
+            return None
+            
+        values = np.array(values)
+        coords = np.array(coords)
+        
+        print(f"🔄 VECTOR APPROACH: Creating grid rectangles from {len(values)} vertex points")
+        
+        # Calculate grid parameters 
+        west, east = bounds['west'], bounds['east']
+        south, north = bounds['south'], bounds['north']
+        
+        # Calculate grid resolution
+        meters_per_degree_lat = 111000
+        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))
+        
+        lat_step = sampling_distance_meters / meters_per_degree_lat
+        lon_step = sampling_distance_meters / meters_per_degree_lon
+        
+        # Create grid points for interpolation (centers of rectangles)
+        lats = np.arange(north - lat_step/2, south - lat_step/2, -lat_step)  # Grid centers, north to south
+        lons = np.arange(west + lon_step/2, east + lon_step/2, lon_step)     # Grid centers, west to east
+        
+        print(f"🔄 VECTOR GRID: {len(lats)} x {len(lons)} = {len(lats) * len(lons)} grid cells")
+        
+        # Create coordinate meshgrid for interpolation
+        xi, yi = np.meshgrid(lons, lats)
+        
+        # Apply clipping polygon mask if provided
+        clipping_mask = None
+        if clipping_polygon is not None:
+            try:
+                from shapely.geometry import Point
+                import geopandas as gpd
+                
+                print(f"🗺️ Applying clipping polygon to vector grid...")
+                
+                clipping_mask = np.zeros((len(lats), len(lons)), dtype=bool)
+                
+                if hasattr(clipping_polygon, 'geometry') and len(clipping_polygon) > 0:
+                    merged_clipping_geom = clipping_polygon.geometry.unary_union
+                elif hasattr(clipping_polygon, '__geo_interface__'):
+                    merged_clipping_geom = clipping_polygon
+                else:
+                    merged_clipping_geom = None
+                
+                if merged_clipping_geom is not None:
+                    points_inside = 0
+                    for i in range(len(lats)):
+                        for j in range(len(lons)):
+                            lon = xi[i, j]
+                            lat = yi[i, j]
+                            point = Point(lon, lat)
+                            is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
+                            clipping_mask[i, j] = is_inside
+                            if is_inside:
+                                points_inside += 1
+                    
+                    print(f"🗺️ Clipping results: {points_inside}/{len(lats)*len(lons)} grid cells inside clipping polygon")
+                    
+            except Exception as e:
+                print(f"Error applying clipping polygon: {e}")
+                clipping_mask = None
+        
+        # Interpolate values onto grid using multiple methods
+        try:
+            # Start with cubic interpolation
+            zi = griddata(coords, values, (xi, yi), method='cubic', fill_value=np.nan)
+            
+            # Fill NaN values with linear interpolation
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_linear = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
+                zi[nan_mask] = zi_linear[nan_mask]
+                
+            # Final pass: fill remaining NaN with nearest neighbor
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest', fill_value=np.nan)
+                zi[nan_mask] = zi_nearest[nan_mask]
+                
+        except Exception as e:
+            print(f"Error in interpolation: {e}")
+            # Fallback to nearest neighbor only
+            zi = griddata(coords, values, (xi, yi), method='nearest', fill_value=np.nan)
+        
+        # Apply clipping mask
+        if clipping_mask is not None:
+            zi[~clipping_mask] = np.nan
+        
+        # Create GeoJSON FeatureCollection of grid rectangles
+        features = []
+        
+        for i in range(len(lats)):
+            for j in range(len(lons)):
+                if not np.isnan(zi[i, j]):
+                    value = zi[i, j]
+                    
+                    # Calculate rectangle bounds (cell edges, not centers)
+                    cell_north = lats[i] + lat_step/2
+                    cell_south = lats[i] - lat_step/2  
+                    cell_west = lons[j] - lon_step/2
+                    cell_east = lons[j] + lon_step/2
+                    
+                    # Create rectangle coordinates (clockwise from top-left)
+                    rectangle_coords = [[
+                        [cell_west, cell_north],   # Top-left (NW)
+                        [cell_east, cell_north],   # Top-right (NE) 
+                        [cell_east, cell_south],   # Bottom-right (SE)
+                        [cell_west, cell_south],   # Bottom-left (SW)
+                        [cell_west, cell_north]    # Close rectangle
+                    ]]
+                    
+                    # Get color from global colormap function
+                    if global_colormap_func:
+                        color_hex = global_colormap_func(value)
+                    else:
+                        # Fallback color mapping
+                        normalized_value = (value - np.nanmin(zi)) / (np.nanmax(zi) - np.nanmin(zi))
+                        color_hex = f"#{int(normalized_value * 255):02x}{int((1-normalized_value) * 255):02x}00"
+                    
+                    feature = {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": rectangle_coords
+                        },
+                        "properties": {
+                            "value": float(value),
+                            "color": color_hex,
+                            "opacity": opacity,
+                            "row": i,
+                            "col": j,
+                            "center_lat": float(lats[i]),
+                            "center_lon": float(lons[j])
+                        }
+                    }
+                    features.append(feature)
+        
+        print(f"🔄 VECTOR RESULT: Created {len(features)} grid rectangles with precise geographic positioning")
+        
+        geojson_result = {
+            "type": "FeatureCollection", 
+            "features": features
+        }
+        
+        return {
+            'type': 'vector_grid',
+            'geojson': geojson_result,
+            'opacity': opacity,
+            'grid_info': {
+                'total_cells': len(lats) * len(lons),
+                'visible_cells': len(features),
+                'lat_step_degrees': lat_step,
+                'lon_step_degrees': lon_step,
+                'lat_step_meters': sampling_distance_meters,
+                'lon_step_meters': sampling_distance_meters
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error generating vector grid overlay: {e}")
+        return None
+
 def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
     """
     Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization

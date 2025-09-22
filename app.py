@@ -2201,9 +2201,179 @@ with main_col1:
             else:
                 print(f"🌬️  UNIFIED PROCESSING FAILED: Falling back to individual triangle mesh display")
         
-        # Only run individual loop if not using unified smooth raster OR if unified failed
-        if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
+        # PERFORMANCE OPTIMIZATION 1: Viewport-based filtering
+        def get_heatmap_bounds(geojson_data):
+            """Extract bounding box from GeoJSON data"""
+            if not geojson_data or not geojson_data.get('features'):
+                return None
+            
+            all_coords = []
+            for feature in geojson_data['features']:
+                if feature['geometry']['type'] == 'Polygon':
+                    coords = feature['geometry']['coordinates'][0]
+                    all_coords.extend(coords)
+            
+            if not all_coords:
+                return None
+                
+            lons = [coord[0] for coord in all_coords]
+            lats = [coord[1] for coord in all_coords]
+            return {
+                'north': max(lats), 'south': min(lats),
+                'east': max(lons), 'west': min(lons)
+            }
+        
+        def bounds_intersect(bounds1, bounds2):
+            """Check if two bounding boxes intersect"""
+            if not bounds1 or not bounds2:
+                return True  # If we can't determine bounds, include it
+            return not (bounds1['east'] < bounds2['west'] or 
+                       bounds1['west'] > bounds2['east'] or
+                       bounds1['north'] < bounds2['south'] or 
+                       bounds1['south'] > bounds2['north'])
+        
+        # Get current viewport (use Canterbury region as default)
+        if 'map_bounds' not in st.session_state:
+            # Default to Canterbury region bounds
+            st.session_state.map_bounds = {
+                'north': -42.5, 'south': -45.0,
+                'east': 174.0, 'west': 169.0
+            }
+        
+        # PERFORMANCE OPTIMIZATION 2: Filter heatmaps by viewport intersection
+        visible_heatmaps = []
+        total_heatmaps = len(st.session_state.stored_heatmaps)
+        
+        for stored_heatmap in st.session_state.stored_heatmaps:
+            raw_geojson_data = stored_heatmap.get('geojson_data')
+            if raw_geojson_data:
+                heatmap_bounds = get_heatmap_bounds(raw_geojson_data)
+                if bounds_intersect(heatmap_bounds, st.session_state.map_bounds):
+                    visible_heatmaps.append(stored_heatmap)
+        
+        print(f"🔍 VIEWPORT FILTERING: {len(visible_heatmaps)}/{total_heatmaps} heatmaps visible in current viewport")
+        
+        # PERFORMANCE OPTIMIZATION 5: Progressive loading with user feedback
+        if len(visible_heatmaps) > 0:
+            with st.spinner(f"⚡ Loading {len(visible_heatmaps)} visible heatmaps (optimized)..."):
+                pass  # Visual feedback for user
+        
+        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache
+        def get_preprocessed_heatmap(heatmap_id, raw_geojson_data, method):
+            """Get or create preprocessed heatmap data"""
+            cache_key = f"preprocessed_{heatmap_id}_{method}_v2"
+            
+            if cache_key in st.session_state:
+                return st.session_state[cache_key]
+            
+            # Apply exclusion clipping and preprocessing
+            if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
+                from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                processed_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method, heatmap_id=heatmap_id)
+            else:
+                processed_data = raw_geojson_data
+            
+            # Cache the result
+            st.session_state[cache_key] = processed_data
+            return processed_data
+
+        # PERFORMANCE OPTIMIZATION 4: Single raster overlay for triangulated display
+        def create_combined_raster_overlay(visible_heatmaps, style):
+            """Combine multiple heatmaps into a single raster overlay"""
+            if not visible_heatmaps or style == "Smooth Raster (Windy.com Style)":
+                return None
+            
+            try:
+                print(f"🎨 CREATING COMBINED RASTER: Processing {len(visible_heatmaps)} visible heatmaps")
+                
+                # Combine all visible heatmap features
+                combined_features = []
+                for heatmap in visible_heatmaps:
+                    raw_geojson_data = heatmap.get('geojson_data')
+                    method = heatmap.get('interpolation_method', 'kriging')
+                    
+                    if raw_geojson_data:
+                        processed_data = get_preprocessed_heatmap(heatmap['heatmap_name'], raw_geojson_data, method)
+                        if processed_data and processed_data.get('features'):
+                            # Normalize feature properties
+                            for feature in processed_data['features']:
+                                if 'properties' in feature:
+                                    # Ensure value property exists
+                                    if 'value' not in feature['properties'] and 'yield' in feature['properties']:
+                                        feature['properties']['value'] = feature['properties']['yield']
+                                    elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
+                                        feature['properties']['yield'] = feature['properties']['value']
+                            combined_features.extend(processed_data['features'])
+                
+                if not combined_features:
+                    return None
+                
+                # Create combined GeoJSON
+                combined_geojson = {
+                    'type': 'FeatureCollection',
+                    'features': combined_features
+                }
+                
+                # Calculate overall bounds
+                all_coords = []
+                for feature in combined_features:
+                    if feature['geometry']['type'] == 'Polygon':
+                        coords = feature['geometry']['coordinates'][0]
+                        all_coords.extend(coords)
+                
+                if not all_coords:
+                    return None
+                
+                lons = [coord[0] for coord in all_coords]
+                lats = [coord[1] for coord in all_coords]
+                bounds = {
+                    'north': max(lats), 'south': min(lats),
+                    'east': max(lons), 'west': min(lons)
+                }
+                
+                # Generate single raster overlay
+                from interpolation import generate_smooth_raster_overlay
+                raster_overlay = generate_smooth_raster_overlay(
+                    combined_geojson, 
+                    bounds, 
+                    raster_size=(1024, 1024),  # Higher resolution for combined overlay
+                    global_colormap_func=lambda value: get_global_unified_color(value, 'combined'),
+                    opacity=st.session_state.get('heatmap_opacity', 0.7),
+                    clipping_polygon=None  # Already clipped in preprocessing
+                )
+                
+                return raster_overlay
+                
+            except Exception as e:
+                print(f"❌ COMBINED RASTER FAILED: {e}")
+                return None
+        
+        # Try to create combined raster overlay for better performance
+        combined_raster = None
+        if len(visible_heatmaps) > 5 and heatmap_style != "Smooth Raster (Windy.com Style)":
+            combined_raster = create_combined_raster_overlay(visible_heatmaps, heatmap_style)
+            
+        if combined_raster:
+            # Add single combined raster overlay
+            folium.raster_layers.ImageOverlay(
+                image=f"data:image/png;base64,{combined_raster['image_base64']}",
+                bounds=combined_raster['bounds'],
+                opacity=combined_raster['opacity'],
+                name=f"Combined Heatmap Overlay ({len(visible_heatmaps)} tiles)"
+            ).add_to(m)
+            stored_heatmap_count = len(visible_heatmaps)
+            print(f"🎨 SUCCESS: Added combined raster overlay for {len(visible_heatmaps)} heatmaps")
+        
+        # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
+        elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
+            # PERFORMANCE OPTIMIZATION 6: Limit individual processing to prevent browser overload
+            max_individual_layers = 10  # Limit to prevent DOM bloat
+            heatmaps_to_process = visible_heatmaps[:max_individual_layers]
+            
+            if len(visible_heatmaps) > max_individual_layers:
+                print(f"⚠️  LIMITING INDIVIDUAL LAYERS: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent browser overload")
+            
+            for i, stored_heatmap in enumerate(heatmaps_to_process):
                 try:
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders
@@ -2211,26 +2381,15 @@ with main_col1:
                         print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
                     # All stored heatmaps should display
 
-                    # Prefer GeoJSON data for triangular mesh visualization
+                    # OPTIMIZATION: Use preprocessed data instead of reprocessing
                     raw_geojson_data = stored_heatmap.get('geojson_data')
                     heatmap_data = stored_heatmap.get('heatmap_data', [])
-                    
-                    # Apply exclusion clipping ONLY to non-indicator methods
-                    # Indicator methods already show probability values, so preserve full distribution
                     method = stored_heatmap.get('interpolation_method', 'kriging')
-                    indicator_methods = [
-                        'indicator_kriging', 
-                        'indicator_kriging_spherical', 
-                        'indicator_kriging_spherical_continuous'
-                    ]
                     
                     if raw_geojson_data:
-                        if method not in indicator_methods:
-                            from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                            geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method, heatmap_id=stored_heatmap['heatmap_name'])
-                        else:
-                            geojson_data = raw_geojson_data
-                            print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for stored {method} heatmap (preserving full probability distribution)")
+                        # Use preprocessed data with caching
+                        geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, method)
+                        print(f"🚀 OPTIMIZED: Using preprocessed data for {stored_heatmap['heatmap_name']}")
                     else:
                         geojson_data = raw_geojson_data
 

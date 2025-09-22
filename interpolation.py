@@ -3278,16 +3278,48 @@ def generate_vector_grid_overlay(geojson_data, bounds, global_colormap_func=None
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
-        # Calculate grid resolution
-        meters_per_degree_lat = 111000
-        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))
+        # COORDINATE TRANSFORMATION FIX: Work entirely in EPSG:2193 (NZTM2000) projected coordinates
+        print(f"🔧 ===== PROJECTED COORDINATE GRID CREATION =====")
         
-        lat_step = sampling_distance_meters / meters_per_degree_lat
-        lon_step = sampling_distance_meters / meters_per_degree_lon
+        # Set up coordinate transformer from WGS84 to NZTM2000
+        import pyproj
+        transformer_to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+        transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
         
-        # Create grid points for interpolation (centers of rectangles)
-        lats = np.arange(north - lat_step/2, south - lat_step/2, -lat_step)  # Grid centers, north to south
-        lons = np.arange(west + lon_step/2, east + lon_step/2, lon_step)     # Grid centers, west to east
+        # Transform bounding box to NZTM2000 (meters)
+        west_m, south_m = transformer_to_nztm.transform(west, south)
+        east_m, north_m = transformer_to_nztm.transform(east, north)
+        
+        print(f"🔧 WGS84 BOUNDS: N={north:.6f}°, S={south:.6f}°, E={east:.6f}°, W={west:.6f}°")
+        print(f"🔧 NZTM2000 BOUNDS: N={north_m:.1f}m, S={south_m:.1f}m, E={east_m:.1f}m, W={west_m:.1f}m")
+        
+        # Create regular grid in meters using sampling_distance_meters directly
+        x_coords_m = np.arange(west_m + sampling_distance_meters/2, east_m, sampling_distance_meters)
+        y_coords_m = np.arange(south_m + sampling_distance_meters/2, north_m, sampling_distance_meters)
+        
+        print(f"🔧 PROJECTED GRID: {len(x_coords_m)} × {len(y_coords_m)} = {len(x_coords_m) * len(y_coords_m)} points")
+        print(f"🔧 GRID SPACING: {sampling_distance_meters}m exactly (no degree approximation)")
+        
+        # Convert grid coordinates back to WGS84 for compatibility with existing code
+        # Create meshgrid first
+        X_m, Y_m = np.meshgrid(x_coords_m, y_coords_m)
+        
+        # Transform all grid points to WGS84
+        lons_grid, lats_grid = transformer_to_wgs84.transform(X_m.flatten(), Y_m.flatten())
+        lons = lons_grid.reshape(X_m.shape)[0, :]  # First row (all have same x-coordinates)
+        lats = lats_grid.reshape(Y_m.shape)[:, 0]  # First column (all have same y-coordinates)
+        
+        # Reverse lats array to maintain north-to-south ordering expected by rest of code
+        lats = lats[::-1]
+        
+        # Calculate equivalent degree steps for backward compatibility
+        lat_step = abs(lats[1] - lats[0]) if len(lats) > 1 else 0.001
+        lon_step = abs(lons[1] - lons[0]) if len(lons) > 1 else 0.001
+        
+        print(f"🔧 TRANSFORMED GRID: {len(lats)} lats from {lats[0]:.6f}° to {lats[-1]:.6f}°")
+        print(f"🔧 TRANSFORMED GRID: {len(lons)} lons from {lons[0]:.6f}° to {lons[-1]:.6f}°")
+        print(f"🔧 EQUIVALENT STEPS: lat_step={lat_step:.8f}°, lon_step={lon_step:.8f}°")
+        print(f"🔧 ===================================================")
         
         print(f"🔄 VECTOR GRID: {len(lats)} x {len(lons)} = {len(lats) * len(lons)} grid cells")
         
@@ -3895,31 +3927,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             # Clean up temporary file
             os.unlink(tmp_path)
             
-            # OFFSET FIX: Apply fine-tuned correction to counteract the positioning offset bug
-            # Calculate the offset distance based on grid cell size
-            northward_offset_cells = 3.8  # Fine-tuned: 4.3 - 0.5 to move south
-            eastward_offset_cells = 0.0   # Fine-tuned: 0.5 - 0.5 to move west
-            
-            northward_offset_degrees = northward_offset_cells * lat_step
-            eastward_offset_degrees = eastward_offset_cells * lon_step
-            
-            print(f"🔧 APPLYING FINE-TUNED OFFSET CORRECTION:")
-            print(f"🔧   Northward: {northward_offset_cells} cells ({northward_offset_degrees:.8f} degrees)")
-            print(f"🔧   Eastward: {eastward_offset_cells} cells ({eastward_offset_degrees:.8f} degrees)")
-            
-            # Apply offset to both bounds to shift the entire raster
-            corrected_south = accurate_south + northward_offset_degrees
-            corrected_north = accurate_north + northward_offset_degrees
-            corrected_west = accurate_west + eastward_offset_degrees
-            corrected_east = accurate_east + eastward_offset_degrees
-            
-            # Use the offset-corrected bounds for Folium overlay
-            folium_bounds = [[corrected_south, corrected_west], [corrected_north, corrected_east]]
-            
-            print(f"🔧 ORIGINAL BOUNDS: S={accurate_south:.8f}, N={accurate_north:.8f}, W={accurate_west:.8f}, E={accurate_east:.8f}")
-            print(f"🔧 CORRECTED BOUNDS: S={corrected_south:.8f}, N={corrected_north:.8f}, W={corrected_west:.8f}, E={corrected_east:.8f}")
-            print(f"🔧 NORTHWARD SHIFT: {northward_offset_degrees:.8f} degrees ({northward_offset_degrees * 111000:.1f} meters)")
-            print(f"🔧 EASTWARD SHIFT: {eastward_offset_degrees:.8f} degrees ({eastward_offset_degrees * 111000:.1f} meters)")
+            # COORDINATE TRANSFORMATION FIX: Use accurate rasterio bounds directly
+            # No manual offsets needed with proper projected coordinate grid
+            folium_bounds = [[accurate_south, accurate_west], [accurate_north, accurate_east]]
             
             print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
             print(f"🔧 COORDINATE VALIDATION:")
@@ -3928,20 +3938,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             
         except Exception as e:
             print(f"🚨 RASTERIO ERROR: {e}")
-            # Fallback to manual bounds calculation with fine-tuned offset correction
-            northward_offset_cells = 3.8
-            eastward_offset_cells = 0.0
-            northward_offset_degrees = northward_offset_cells * lat_step
-            eastward_offset_degrees = eastward_offset_cells * lon_step
-            
-            corrected_south = raster_south + northward_offset_degrees
-            corrected_north = raster_north + northward_offset_degrees
-            corrected_west = raster_west + eastward_offset_degrees
-            corrected_east = raster_east + eastward_offset_degrees
-            
-            folium_bounds = [[corrected_south, corrected_west], [corrected_north, corrected_east]]
-            print(f"🔧 FALLBACK BOUNDS (with fine-tuned offset): {folium_bounds}")
-            print(f"🔧 FALLBACK OFFSET: {northward_offset_cells} cells north, {eastward_offset_cells} cells east")
+            # Fallback to manual bounds calculation (no offsets needed with projected grid)
+            folium_bounds = [[raster_south, raster_west], [raster_north, raster_east]]
+            print(f"🔧 FALLBACK BOUNDS (projected grid): {folium_bounds}")
         
         pil_image = Image.fromarray(rgba_image, 'RGBA')
         

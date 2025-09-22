@@ -365,11 +365,38 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons, heatmap_id
                         shapely_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
                         feature_polygon = ShapelyPolygon(shapely_coords)
                         
-                        # Use prepared geometry for fast intersection testing
-                        if not (prepared_geometry.intersects(feature_polygon) or prepared_geometry.contains(feature_polygon)):
-                            filtered_features.append(feature)
-                        else:
-                            excluded_count += 1
+                        # FIXED: Use geometric difference/intersection instead of just feature removal
+                        try:
+                            # Create allowed geometry: feature - exclusion_zones
+                            allowed_geometry = feature_polygon.difference(union_geometry)
+                            
+                            if not allowed_geometry.is_empty:
+                                # Handle MultiPolygon results
+                                if hasattr(allowed_geometry, 'geoms'):
+                                    # Split into separate features for each disconnected part
+                                    for geom_part in allowed_geometry.geoms:
+                                        if geom_part.area > 1e-10:  # Skip tiny slivers
+                                            # Convert back to GeoJSON coordinates
+                                            coords = list(geom_part.exterior.coords)
+                                            new_feature = feature.copy()
+                                            new_feature['geometry']['coordinates'] = [coords]
+                                            filtered_features.append(new_feature)
+                                else:
+                                    # Single polygon result
+                                    if allowed_geometry.area > 1e-10:  # Skip tiny slivers
+                                        coords = list(allowed_geometry.exterior.coords)
+                                        new_feature = feature.copy()
+                                        new_feature['geometry']['coordinates'] = [coords]
+                                        filtered_features.append(new_feature)
+                                        
+                            if allowed_geometry.is_empty or allowed_geometry.area < feature_polygon.area * 0.9:
+                                excluded_count += 1  # Count as clipped if significant area removed
+                        except Exception as geom_error:
+                            # Fallback to old intersection test if geometric operations fail
+                            if not (prepared_geometry.intersects(feature_polygon) or prepared_geometry.contains(feature_polygon)):
+                                filtered_features.append(feature)
+                            else:
+                                excluded_count += 1
                     else:
                         # Keep features with invalid geometry
                         filtered_features.append(feature)

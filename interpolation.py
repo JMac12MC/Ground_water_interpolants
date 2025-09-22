@@ -1443,7 +1443,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Convert grid coordinates back to lat/lon
     # ===== ARCHITECT FIX: CONVERT GRID POINTS USING NZTM2000 SYSTEM =====
     # Use the centralized coordinate system instead of km_per_degree
-    grid_lons, grid_lats = to_wgs84(xi_inside_x, xi_inside_y)
+    grid_lons, grid_lats = to_wgs84(grid_points_x, grid_points_y)
     print(f"🔧 Converted {len(grid_lons)} grid points from NZTM2000 to WGS84")
     # ========================================================================
 

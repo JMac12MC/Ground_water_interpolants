@@ -18,6 +18,58 @@ from PIL import Image
 import matplotlib.colors as mcolors
 from scipy.interpolate import griddata
 import streamlit as st
+import pyproj
+
+# ===== CENTRALIZED CRS TRANSFORMATION HELPERS (ARCHITECT SOLUTION) =====
+def get_transformers():
+    """
+    Create standardized coordinate transformers with always_xy=True to avoid axis order issues.
+    Returns transformers for WGS84 <-> NZTM2000 conversions.
+    
+    Returns:
+    --------
+    tuple: (transformer_to_nztm, transformer_to_wgs84)
+    """
+    transformer_to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+    transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+    return transformer_to_nztm, transformer_to_wgs84
+
+def to_nztm2000(lons, lats):
+    """
+    Transform coordinates from WGS84 (EPSG:4326) to NZTM2000 (EPSG:2193).
+    
+    Parameters:
+    -----------
+    lons : array-like
+        Longitude coordinates in WGS84
+    lats : array-like  
+        Latitude coordinates in WGS84
+        
+    Returns:
+    --------
+    tuple: (x_coords, y_coords) in NZTM2000 meters
+    """
+    transformer_to_nztm, _ = get_transformers()
+    return transformer_to_nztm.transform(lons, lats)
+
+def to_wgs84(x_coords, y_coords):
+    """
+    Transform coordinates from NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326).
+    
+    Parameters:
+    -----------
+    x_coords : array-like
+        X coordinates in NZTM2000 meters
+    y_coords : array-like
+        Y coordinates in NZTM2000 meters
+        
+    Returns:
+    --------  
+    tuple: (lons, lats) in WGS84 degrees
+    """
+    _, transformer_to_wgs84 = get_transformers()
+    return transformer_to_wgs84.transform(x_coords, y_coords)
+# ==================================================================
 
 @st.cache_data
 def _load_exclusion_data():

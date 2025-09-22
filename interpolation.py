@@ -3897,8 +3897,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             
             # OFFSET FIX: Apply fine-tuned correction to counteract the positioning offset bug
             # Calculate the offset distance based on grid cell size
-            northward_offset_cells = 4.3  # Fine-tuned from 5.0 based on visual feedback
-            eastward_offset_cells = 0.5   # Additional eastward correction
+            northward_offset_cells = 3.8  # Fine-tuned: 4.3 - 0.5 to move south
+            eastward_offset_cells = 0.0   # Fine-tuned: 0.5 - 0.5 to move west
             
             northward_offset_degrees = northward_offset_cells * lat_step
             eastward_offset_degrees = eastward_offset_cells * lon_step
@@ -3929,8 +3929,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         except Exception as e:
             print(f"🚨 RASTERIO ERROR: {e}")
             # Fallback to manual bounds calculation with fine-tuned offset correction
-            northward_offset_cells = 4.3
-            eastward_offset_cells = 0.5
+            northward_offset_cells = 3.8
+            eastward_offset_cells = 0.0
             northward_offset_degrees = northward_offset_cells * lat_step
             eastward_offset_degrees = eastward_offset_cells * lon_step
             

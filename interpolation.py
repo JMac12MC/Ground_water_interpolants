@@ -905,15 +905,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     print(f"🔧 WGS84 BOUNDS: lat [{LATS_2D.min():.6f}, {LATS_2D.max():.6f}]°, lon [{LONS_2D.min():.6f}, {LONS_2D.max():.6f}]°")
     # =================================================================="
 
-    # ===== TRANSFORM WELLS TO NZTM2000 FOR ACCURATE INTERPOLATION =====
-    # Extract coordinates and values from the wells dataframe
-    lats = wells_df['latitude'].values.astype(float)
-    lons = wells_df['longitude'].values.astype(float)
-    
-    # Transform wells to NZTM2000 using centralized helper
-    wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
-    print(f"🔧 WELLS TRANSFORMED: {len(lons)} wells from WGS84 to NZTM2000 using helper")
-    print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+    # ===== COORDINATE TRANSFORMATION MOVED AFTER FILTERING FOR EACH METHOD =====
+    # This ensures coordinate arrays match filtered well data arrays
     # ================================================================="
 
     # Use the new categorization system
@@ -924,6 +917,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         wells_df = get_wells_for_interpolation(wells_df, 'depth')
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
+
+        # ===== TRANSFORM FILTERED WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000 using helper")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        # ================================================================="
 
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
@@ -948,6 +948,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
 
+        # ===== TRANSFORM FILTERED WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000 using helper")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        # ================================================================="
+
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['specific_capacity'].values.astype(float)
@@ -962,6 +969,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         valid_gwl_mask = wells_df['ground water level'].notna()
 
         wells_df = wells_df[valid_gwl_mask].copy()
+
+        # ===== TRANSFORM FILTERED WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000 using helper")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        # ================================================================="
 
         if wells_df.empty:
             print("No valid ground water level data found for interpolation")

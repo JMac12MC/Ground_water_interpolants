@@ -572,59 +572,6 @@ with st.sidebar:
             else:
                 st.error("Wells data or database not available")
     
-    # Performance Optimization Section
-    st.markdown("---")
-    st.subheader("⚡ Performance Optimization")
-    st.write("Pre-compute clipped heatmaps to eliminate 29,008+ geometric operations per load. **Reduces loading time from 5+ minutes to under 30 seconds!**")
-    
-    # Load stored heatmaps for performance optimization check
-    if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
-        try:
-            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-        except Exception as e:
-            print(f"Failed to load stored heatmaps for performance optimization: {e}")
-            st.session_state.stored_heatmaps = []
-    
-    # Check if pre-computation is available
-    if st.session_state.stored_heatmaps:
-        if st.button("🚀 Pre-Compute Clipped Heatmaps", help="Process all stored heatmaps once and store clipped results for instant loading"):
-            if st.session_state.polygon_db is not None:
-                with st.spinner("Pre-computing clipped heatmaps for ultra-fast loading..."):
-                    try:
-                        from interpolation import get_prepared_exclusion_union, precompute_and_store_clipped_heatmaps
-                        
-                        # Get exclusion data
-                        exclusion_data = get_prepared_exclusion_union()
-                        
-                        if exclusion_data is not None:
-                            _, _, _, exclusion_version = exclusion_data
-                            clipping_version = f"red_orange_{exclusion_version}"
-                            
-                            # Run pre-computation
-                            result = precompute_and_store_clipped_heatmaps(
-                                st.session_state.polygon_db, 
-                                exclusion_data, 
-                                clipping_version
-                            )
-                            
-                            if result['status'] == 'success':
-                                st.success(f"✅ Pre-computation complete! Processed {result['heatmaps_processed']} heatmaps in {result['processing_time_seconds']}s")
-                                st.info(f"🚀 Performance gain: {result['performance_gain']}")
-                                st.balloons()
-                            elif result['status'] == 'no_data':
-                                st.warning("⚠️ No heatmaps found to process")
-                            else:
-                                st.error(f"❌ Pre-computation failed: {result.get('error', 'Unknown error')}")
-                        else:
-                            st.warning("⚠️ No red/orange exclusion zones found - pre-computation not needed")
-                            
-                    except Exception as e:
-                        st.error(f"Pre-computation error: {e}")
-            else:
-                st.error("Database not available")
-    else:
-        st.info("📝 No stored heatmaps available. Generate heatmaps first using the buttons above.")
-    
     # Stored Heatmaps Management Section
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
@@ -2311,37 +2258,16 @@ with main_col1:
             with st.spinner(f"⚡ Loading {len(visible_heatmaps)} visible heatmaps (optimized)..."):
                 pass  # Visual feedback for user
         
-        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache with pre-clipped data support
+        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache
         def get_preprocessed_heatmap(heatmap_id, raw_geojson_data, method):
-            """Get or create preprocessed heatmap data - now with PRE-CLIPPED DATA SUPPORT"""
-            cache_key = f"preprocessed_{heatmap_id}_{method}_v3"  # Updated version for pre-clipped support
+            """Get or create preprocessed heatmap data"""
+            cache_key = f"preprocessed_{heatmap_id}_{method}_v2"
             
             if cache_key in st.session_state:
                 return st.session_state[cache_key]
             
-            # OPTIMIZATION 1: Try to get pre-clipped data first (eliminates 29,008 geometric operations!)
+            # Apply exclusion clipping and preprocessing
             if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
-                try:
-                    from interpolation import get_prepared_exclusion_union
-                    exclusion_data = get_prepared_exclusion_union()
-                    
-                    if exclusion_data is not None:
-                        _, _, _, exclusion_version = exclusion_data
-                        clipping_version = f"red_orange_{exclusion_version}"
-                        
-                        # Try to get pre-clipped data from database
-                        pre_clipped_data = st.session_state.polygon_db.get_pre_clipped_heatmap(heatmap_id, clipping_version)
-                        
-                        if pre_clipped_data is not None:
-                            print(f"🚀 PERFORMANCE: Using pre-clipped data for heatmap {heatmap_id} (skipped {259} geometric operations!)")
-                            st.session_state[cache_key] = pre_clipped_data
-                            return pre_clipped_data
-                        else:
-                            print(f"⚡ FALLBACK: No pre-clipped data for heatmap {heatmap_id}, using real-time clipping")
-                except Exception as e:
-                    print(f"❌ Pre-clipped data error: {e}, falling back to real-time clipping")
-                
-                # FALLBACK: Use real-time clipping if pre-clipped data not available
                 from interpolation import apply_exclusion_clipping_to_stored_heatmap
                 processed_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method, heatmap_id=heatmap_id)
             else:
@@ -2407,7 +2333,7 @@ with main_col1:
                     method = heatmap.get('interpolation_method', 'kriging')
                     
                     if raw_geojson_data:
-                        processed_data = get_preprocessed_heatmap(heatmap['id'], raw_geojson_data, method)
+                        processed_data = get_preprocessed_heatmap(heatmap['heatmap_name'], raw_geojson_data, method)
                         if processed_data and processed_data.get('features'):
                             # Normalize feature properties
                             for feature in processed_data['features']:
@@ -2464,12 +2390,8 @@ with main_col1:
         
         # Try to create combined raster overlay for better performance
         combined_raster = None
-        # PERFORMANCE FIX: Limit combined raster to prevent memory overload
-        max_combined_heatmaps = 20  # Reasonable limit to prevent hanging
-        if len(visible_heatmaps) > 5 and len(visible_heatmaps) <= max_combined_heatmaps and heatmap_style != "Smooth Raster (Windy.com Style)":
+        if len(visible_heatmaps) > 5 and heatmap_style != "Smooth Raster (Windy.com Style)":
             combined_raster = create_combined_raster_overlay(visible_heatmaps, heatmap_style)
-        elif len(visible_heatmaps) > max_combined_heatmaps:
-            print(f"⚠️  SKIPPING COMBINED RASTER: Too many heatmaps ({len(visible_heatmaps)} > {max_combined_heatmaps}), using individual processing")
             
         if combined_raster:
             # Add single combined raster overlay
@@ -2485,7 +2407,7 @@ with main_col1:
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
             # PERFORMANCE OPTIMIZATION 6: Limit individual processing to prevent browser overload
-            max_individual_layers = 25  # Increased limit since we're using optimized pre-clipped data
+            max_individual_layers = 10  # Limit to prevent DOM bloat
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
             if len(visible_heatmaps) > max_individual_layers:
@@ -2506,7 +2428,7 @@ with main_col1:
                     
                     if raw_geojson_data:
                         # Use preprocessed data with caching
-                        geojson_data = get_preprocessed_heatmap(stored_heatmap['id'], raw_geojson_data, method)
+                        geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, method)
                         print(f"🚀 OPTIMIZED: Using preprocessed data for {stored_heatmap['heatmap_name']}")
                     else:
                         geojson_data = raw_geojson_data

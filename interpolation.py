@@ -176,26 +176,9 @@ def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
         print(f"❌ Error applying exclusion clipping: {e}")
         return heatmap_data
 
-def generate_clipping_version():
-    """
-    Generate current clipping version based on exclusion data
-    """
-    try:
-        exclusion_data = load_exclusion_polygons_cached()
-        if exclusion_data is not None:
-            _, _, _, exclusion_version = exclusion_data
-            clipping_version = f"red_orange_{exclusion_version}"
-            return clipping_version
-    except Exception as e:
-        print(f"Error generating clipping version: {e}")
-    
-    # Fallback version if unable to generate
-    return "red_orange_default"
-
 def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True, method_name=None, heatmap_id=None):
     """
     Apply exclusion clipping to stored heatmap GeoJSON data for non-indicator methods only
-    Now optimized to use pre-clipped data when available!
     
     Parameters:
     -----------
@@ -205,8 +188,6 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
         Whether to auto-load exclusion polygons if not provided
     method_name : str
         Interpolation method name to determine if exclusion should be applied
-    heatmap_id : int, optional
-        ID of the heatmap for accessing pre-clipped data
         
     Returns:
     --------
@@ -227,29 +208,8 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
     if method_name and method_name in indicator_methods:
         print(f"🔄 INDICATOR METHOD: Skipping red/orange exclusion clipping for {method_name} (preserving full probability distribution)")
         return stored_heatmap_geojson
-    
-    # OPTIMIZATION: Check for pre-clipped data first!
-    if heatmap_id is not None:
-        try:
-            import streamlit as st
-            # Get database connection from session state
-            if hasattr(st.session_state, 'polygon_db') and st.session_state.polygon_db:
-                # Generate current clipping version to check if pre-clipped data is still valid
-                current_clipping_version = generate_clipping_version()
-                
-                # Try to get pre-clipped data from database
-                pre_clipped_data = st.session_state.polygon_db.get_pre_clipped_heatmap(heatmap_id, current_clipping_version)
-                
-                if pre_clipped_data:
-                    features_count = len(pre_clipped_data.get('features', []))
-                    print(f"🚀 FAST OPTIMIZATION: Using pre-clipped data for heatmap {heatmap_id} with {features_count} features (skipping 29,008+ geometric operations!)")
-                    return pre_clipped_data
-                else:
-                    print(f"💡 No pre-clipped data found for heatmap {heatmap_id} version {current_clipping_version} - falling back to real-time clipping")
-        except Exception as e:
-            print(f"⚠️ Error checking pre-clipped data for heatmap {heatmap_id}: {e} - falling back to real-time clipping")
         
-    # Apply exclusion clipping for non-indicator methods (fallback when no pre-clipped data)
+    # Apply exclusion clipping for non-indicator methods
     try:
         # Load exclusion polygons
         exclusion_polygons = load_exclusion_polygons() if auto_load_exclusions else None
@@ -459,199 +419,6 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons, heatmap_id
     except Exception as e:
         print(f"❌ Error applying GeoJSON exclusion clipping: {e}")
         return features
-
-def batch_apply_exclusion_clipping(heatmaps_list, exclusion_data, clipping_version):
-    """
-    PERFORMANCE OPTIMIZATION: Batch geometric operations - merge all heatmap features first, 
-    then apply exclusions once to the combined geometry instead of processing each heatmap separately.
-    
-    This reduces geometric operations from N*M to 1*M where N=heatmaps, M=exclusion_zones
-    
-    Parameters:
-    -----------
-    heatmaps_list : list
-        List of heatmap dictionaries with 'geojson_data' and 'id' keys
-    exclusion_data : tuple 
-        Exclusion data (union_geometry, prepared_geometry, union_bounds, exclusion_version)
-    clipping_version : str
-        Version identifier for caching
-        
-    Returns:
-    --------
-    dict
-        Dictionary mapping heatmap_id -> clipped_geojson_data
-    """
-    print(f"🚀 BATCH CLIPPING: Starting batch processing for {len(heatmaps_list)} heatmaps")
-    
-    try:
-        if not exclusion_data:
-            print("🚀 BATCH CLIPPING: No exclusions to apply, returning original data")
-            return {hm['id']: hm.get('geojson_data') for hm in heatmaps_list if hm.get('geojson_data')}
-            
-        union_geometry, prepared_geometry, union_bounds, exclusion_version = exclusion_data
-        
-        # Step 1: Merge all features with heatmap_id tracking
-        print("🚀 BATCH CLIPPING: Step 1 - Merging all heatmap features...")
-        all_features = []
-        feature_to_heatmap = {}  # Track which heatmap each feature belongs to
-        
-        for heatmap in heatmaps_list:
-            heatmap_id = heatmap['id']
-            geojson_data = heatmap.get('geojson_data')
-            
-            if geojson_data and isinstance(geojson_data, dict) and 'features' in geojson_data:
-                features = geojson_data['features']
-                for i, feature in enumerate(features):
-                    # Add unique identifier to track source heatmap
-                    feature_key = f"{heatmap_id}_{i}"
-                    feature_to_heatmap[feature_key] = heatmap_id
-                    feature['_batch_key'] = feature_key
-                    all_features.append(feature)
-        
-        print(f"🚀 BATCH CLIPPING: Merged {len(all_features)} features from {len(heatmaps_list)} heatmaps")
-        
-        # Step 2: Apply clipping once to all features
-        print("🚀 BATCH CLIPPING: Step 2 - Applying geometric clipping to combined features...")
-        # Use the direct GeoJSON clipping function since we have a features list, not a full GeoJSON object
-        # The exclusion_polygons parameter is ignored since the function uses cached prepared union
-        clipped_features = apply_exclusion_clipping_to_geojson(all_features, None)
-        
-        # Step 3: Redistribute clipped features back to their original heatmaps
-        print("🚀 BATCH CLIPPING: Step 3 - Redistributing clipped features...")
-        result = {}
-        heatmap_feature_counts = {}
-        
-        # Initialize result structure
-        for heatmap in heatmaps_list:
-            heatmap_id = heatmap['id']
-            result[heatmap_id] = {
-                'type': 'FeatureCollection',
-                'features': []
-            }
-            heatmap_feature_counts[heatmap_id] = 0
-        
-        # Redistribute features
-        for feature in clipped_features:
-            if '_batch_key' in feature:
-                batch_key = feature['_batch_key']
-                if batch_key in feature_to_heatmap:
-                    heatmap_id = feature_to_heatmap[batch_key]
-                    # Remove the tracking key before storing
-                    del feature['_batch_key']
-                    result[heatmap_id]['features'].append(feature)
-                    heatmap_feature_counts[heatmap_id] += 1
-        
-        # Report results
-        total_clipped_features = sum(heatmap_feature_counts.values())
-        original_total = len(all_features)
-        reduction = original_total - total_clipped_features
-        
-        print(f"🚀 BATCH CLIPPING: Complete! {original_total} → {total_clipped_features} features (-{reduction})")
-        print(f"🚀 BATCH CLIPPING: Per-heatmap breakdown:")
-        for heatmap_id, count in heatmap_feature_counts.items():
-            print(f"   - Heatmap {heatmap_id}: {count} features")
-        
-        return result
-        
-    except Exception as e:
-        print(f"❌ BATCH CLIPPING ERROR: {e}")
-        import traceback
-        print(f"❌ BATCH CLIPPING TRACEBACK: {traceback.format_exc()}")
-        # Fallback to individual processing
-        print("🔄 BATCH CLIPPING: Falling back to individual processing...")
-        return {hm['id']: apply_exclusion_clipping_to_stored_heatmap(
-            hm.get('geojson_data', {}).get('features', []), exclusion_data, hm['id']
-        ) for hm in heatmaps_list if hm.get('geojson_data')}
-
-def precompute_and_store_clipped_heatmaps(database, exclusion_data, clipping_version):
-    """
-    Pre-compute and store clipped heatmaps to eliminate real-time geometric operations.
-    This function runs once when clipping configuration changes and stores results for instant loading.
-    
-    Parameters:
-    -----------
-    database : PolygonDatabase
-        Database instance to store pre-clipped data
-    exclusion_data : tuple
-        Exclusion data (union_geometry, prepared_geometry, union_bounds, exclusion_version)
-    clipping_version : str
-        Version identifier for the clipping configuration
-        
-    Returns:
-    --------
-    dict
-        Results summary with counts and timing
-    """
-    print(f"🚀 PRE-COMPUTATION: Starting pre-computation for clipping version: {clipping_version}")
-    
-    try:
-        import time
-        start_time = time.time()
-        
-        # Step 1: Load all stored heatmaps
-        print("🚀 PRE-COMPUTATION: Step 1 - Loading all stored heatmaps...")
-        all_heatmaps = database.get_all_stored_heatmaps()
-        
-        if not all_heatmaps:
-            print("🚀 PRE-COMPUTATION: No heatmaps found in database")
-            return {'status': 'no_data', 'heatmaps_processed': 0}
-        
-        print(f"🚀 PRE-COMPUTATION: Loaded {len(all_heatmaps)} heatmaps from database")
-        
-        # Step 2: Use batch processing to clip all heatmaps efficiently
-        print("🚀 PRE-COMPUTATION: Step 2 - Running batch geometric clipping...")
-        clipped_results = batch_apply_exclusion_clipping(all_heatmaps, exclusion_data, clipping_version)
-        
-        # Step 3: Store pre-clipped results in database
-        print("🚀 PRE-COMPUTATION: Step 3 - Storing pre-clipped results...")
-        successful_stores = 0
-        failed_stores = 0
-        
-        for heatmap_id, clipped_geojson in clipped_results.items():
-            try:
-                success = database.store_pre_clipped_heatmap(heatmap_id, clipped_geojson, clipping_version)
-                if success:
-                    successful_stores += 1
-                else:
-                    failed_stores += 1
-            except Exception as e:
-                print(f"❌ PRE-COMPUTATION: Failed to store heatmap {heatmap_id}: {e}")
-                failed_stores += 1
-        
-        # Calculate performance metrics
-        end_time = time.time()
-        total_time = end_time - start_time
-        
-        # Report results
-        result = {
-            'status': 'success',
-            'clipping_version': clipping_version,
-            'heatmaps_processed': len(all_heatmaps),
-            'successful_stores': successful_stores,
-            'failed_stores': failed_stores,
-            'processing_time_seconds': round(total_time, 2),
-            'performance_gain': f"Reduced from {len(all_heatmaps) * 259} to 259 geometric operations"
-        }
-        
-        print(f"🚀 PRE-COMPUTATION: COMPLETE!")
-        print(f"   - Processed: {len(all_heatmaps)} heatmaps")
-        print(f"   - Successful: {successful_stores}")
-        print(f"   - Failed: {failed_stores}")
-        print(f"   - Time: {total_time:.2f} seconds")
-        print(f"   - Performance: Reduced operations from {len(all_heatmaps) * 259} to 259")
-        print(f"   - Future loads will be ~99% faster!")
-        
-        return result
-        
-    except Exception as e:
-        print(f"❌ PRE-COMPUTATION ERROR: {e}")
-        import traceback
-        print(f"❌ PRE-COMPUTATION TRACEBACK: {traceback.format_exc()}")
-        return {
-            'status': 'error',
-            'error': str(e),
-            'heatmaps_processed': 0
-        }
 
 def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
     """

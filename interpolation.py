@@ -3693,19 +3693,43 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             else:
                 rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
         
-        # Convert to PIL Image and then to base64
-        # 8) IMAGE ORIENTATION - CRITICAL DEBUGGING
-        print(f"🔧 ===== IMAGE ORIENTATION ANALYSIS =====")
+        # ARCHITECT SOLUTION: Create properly georeferenced raster with correct geotransform
+        print(f"🔧 ===== GEOREFERENCED RASTER PIPELINE =====")
         print(f"🔧 RGBA IMAGE: shape={rgba_image.shape}")
         print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (north to south)")
         print(f"🔧 GRID SETUP: lons go from {lons[0]:.6f} to {lons[-1]:.6f} (west to east)")
         
-        # NO FLIP NEEDED: Row 0 already corresponds to north
-        print(f"🔧 IMAGE CORNERS (north-first ordering):")
-        print(f"🔧   rgba[0,0] (top-left) = {rgba_image[0,0,:3]} at geo ({lons[0]:.6f}, {lats[0]:.6f}) = NW")
-        print(f"🔧   rgba[0,-1] (top-right) = {rgba_image[0,-1,:3]} at geo ({lons[-1]:.6f}, {lats[0]:.6f}) = NE")
-        print(f"🔧   rgba[-1,0] (bottom-left) = {rgba_image[-1,0,:3]} at geo ({lons[0]:.6f}, {lats[-1]:.6f}) = SW") 
-        print(f"🔧   rgba[-1,-1] (bottom-right) = {rgba_image[-1,-1,:3]} at geo ({lons[-1]:.6f}, {lats[-1]:.6f}) = SE")
+        # Use rasterio to create proper geotransform from pixel edges (not centers)
+        import rasterio
+        from rasterio.transform import from_bounds
+        from rasterio.warp import calculate_default_transform, reproject, Resampling
+        from rasterio.crs import CRS
+        import tempfile
+        import os
+        
+        height, width = rgba_image.shape[:2]
+        
+        # CRITICAL FIX: Define bounds using pixel edges, not centers
+        # lats[0] is northernmost center, so north edge is lats[0] + lat_step/2
+        # lats[-1] is southernmost center, so south edge is lats[-1] - lat_step/2
+        raster_west = lons[0] - lon_step/2    # West edge
+        raster_east = lons[-1] + lon_step/2   # East edge  
+        raster_south = lats[-1] - lat_step/2  # South edge (bottom of image)
+        raster_north = lats[0] + lat_step/2   # North edge (top of image)
+        
+        print(f"🔧 PIXEL EDGE BOUNDS: N={raster_north:.8f}, S={raster_south:.8f}, E={raster_east:.8f}, W={raster_west:.8f}")
+        
+        # Create geotransform using rasterio's from_bounds (handles edge vs center correctly)
+        transform = from_bounds(raster_west, raster_south, raster_east, raster_north, width, height)
+        print(f"🔧 GEOTRANSFORM: {transform}")
+        
+        # Verify transform maps correctly
+        # Top-left pixel (0,0) should map to (raster_west, raster_north)
+        x0, y0 = transform * (0, 0)
+        # Bottom-right pixel (width-1, height-1) should map to (raster_east, raster_south)  
+        x1, y1 = transform * (width-1, height-1)
+        print(f"🔧 TRANSFORM CHECK: pixel(0,0) -> geo({x0:.8f}, {y0:.8f}) [should be W,N]")
+        print(f"🔧 TRANSFORM CHECK: pixel({width-1},{height-1}) -> geo({x1:.8f}, {y1:.8f}) [should be E,S]")
         
         # ARCHITECT FIX: Crop to visible pixels to eliminate transparent padding offset
         print(f"🔧 CROPPING TO VISIBLE PIXELS (alpha > 0)...")
@@ -3831,12 +3855,75 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
         print(f"🔧 ========================================")
         
-        # ARCHITECT FIX: Use bounds from cropped visible pixels only
-        # This eliminates transparent padding that was causing the 1.7km southward offset
+        # ARCHITECT SOLUTION: Use georeferenced bounds with proper pixel-to-coordinate mapping
+        try:
+            # Create a temporary GeoTIFF to ensure proper georeferencing
+            with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+            
+            # Write georeferenced raster using rasterio
+            with rasterio.open(
+                tmp_path, 'w',
+                driver='GTiff',
+                height=height, width=width,
+                count=4,  # RGBA
+                dtype=rgba_image.dtype,
+                crs=CRS.from_epsg(4326),  # WGS84
+                transform=transform,
+                compress='lzw'
+            ) as dst:
+                # Write RGBA bands
+                for i in range(4):
+                    dst.write(rgba_image[:, :, i], i + 1)
+            
+            # Read back the georeferenced bounds to ensure accuracy
+            with rasterio.open(tmp_path) as src:
+                bounds_obj = src.bounds
+                accurate_west = bounds_obj.left
+                accurate_south = bounds_obj.bottom  
+                accurate_east = bounds_obj.right
+                accurate_north = bounds_obj.top
+                
+                print(f"🔧 RASTERIO BOUNDS: N={accurate_north:.8f}, S={accurate_south:.8f}, E={accurate_east:.8f}, W={accurate_west:.8f}")
+                
+                # Verify no coordinate flips occurred
+                if accurate_north <= accurate_south:
+                    print(f"🚨 ERROR: North <= South, coordinate flip detected!")
+                if accurate_east <= accurate_west:
+                    print(f"🚨 ERROR: East <= West, coordinate flip detected!")
+            
+            # Clean up temporary file
+            os.unlink(tmp_path)
+            
+            # Use the georeferenced bounds for Folium overlay
+            folium_bounds = [[accurate_south, accurate_west], [accurate_north, accurate_east]]
+            
+            print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
+            print(f"🔧 COORDINATE VALIDATION:")
+            print(f"🔧   North > South: {accurate_north > accurate_south} ({accurate_north:.6f} > {accurate_south:.6f})")
+            print(f"🔧   East > West: {accurate_east > accurate_west} ({accurate_east:.6f} > {accurate_west:.6f})")
+            
+        except Exception as e:
+            print(f"🚨 RASTERIO ERROR: {e}")
+            # Fallback to manual bounds calculation if rasterio fails
+            folium_bounds = [[raster_south, raster_west], [raster_north, raster_east]]
+            print(f"🔧 FALLBACK BOUNDS: {folium_bounds}")
+        
+        pil_image = Image.fromarray(rgba_image, 'RGBA')
+        
+        # Save to bytes buffer
+        img_buffer = io.BytesIO()
+        pil_image.save(img_buffer, format='PNG', optimize=True)
+        img_buffer.seek(0)
+        
+        # Encode to base64
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
         return {
             'image_base64': img_base64,
-            'bounds': final_bounds,
-            'opacity': opacity
+            'bounds': folium_bounds,
+            'opacity': opacity,
+            'positioning_method': 'georeferenced_rasterio'
         }
         
     except Exception as e:

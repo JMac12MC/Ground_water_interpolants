@@ -2464,8 +2464,12 @@ with main_col1:
         
         # Try to create combined raster overlay for better performance
         combined_raster = None
-        if len(visible_heatmaps) > 5 and heatmap_style != "Smooth Raster (Windy.com Style)":
+        # PERFORMANCE FIX: Limit combined raster to prevent memory overload
+        max_combined_heatmaps = 20  # Reasonable limit to prevent hanging
+        if len(visible_heatmaps) > 5 and len(visible_heatmaps) <= max_combined_heatmaps and heatmap_style != "Smooth Raster (Windy.com Style)":
             combined_raster = create_combined_raster_overlay(visible_heatmaps, heatmap_style)
+        elif len(visible_heatmaps) > max_combined_heatmaps:
+            print(f"⚠️  SKIPPING COMBINED RASTER: Too many heatmaps ({len(visible_heatmaps)} > {max_combined_heatmaps}), using individual processing")
             
         if combined_raster:
             # Add single combined raster overlay
@@ -2481,7 +2485,7 @@ with main_col1:
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
             # PERFORMANCE OPTIMIZATION 6: Limit individual processing to prevent browser overload
-            max_individual_layers = 10  # Limit to prevent DOM bloat
+            max_individual_layers = 25  # Increased limit since we're using optimized pre-clipped data
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
             if len(visible_heatmaps) > max_individual_layers:

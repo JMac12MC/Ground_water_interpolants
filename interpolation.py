@@ -3895,23 +3895,31 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             # Clean up temporary file
             os.unlink(tmp_path)
             
-            # OFFSET FIX: Apply northward correction to counteract the 5-cell southern offset bug
+            # OFFSET FIX: Apply fine-tuned correction to counteract the positioning offset bug
             # Calculate the offset distance based on grid cell size
-            offset_cells = 5
-            northward_offset_degrees = offset_cells * lat_step
+            northward_offset_cells = 4.3  # Fine-tuned from 5.0 based on visual feedback
+            eastward_offset_cells = 0.5   # Additional eastward correction
             
-            print(f"🔧 APPLYING OFFSET CORRECTION: Moving raster {offset_cells} cells north ({northward_offset_degrees:.8f} degrees)")
+            northward_offset_degrees = northward_offset_cells * lat_step
+            eastward_offset_degrees = eastward_offset_cells * lon_step
             
-            # Apply offset to both north and south bounds to shift the entire raster north
+            print(f"🔧 APPLYING FINE-TUNED OFFSET CORRECTION:")
+            print(f"🔧   Northward: {northward_offset_cells} cells ({northward_offset_degrees:.8f} degrees)")
+            print(f"🔧   Eastward: {eastward_offset_cells} cells ({eastward_offset_degrees:.8f} degrees)")
+            
+            # Apply offset to both bounds to shift the entire raster
             corrected_south = accurate_south + northward_offset_degrees
             corrected_north = accurate_north + northward_offset_degrees
+            corrected_west = accurate_west + eastward_offset_degrees
+            corrected_east = accurate_east + eastward_offset_degrees
             
             # Use the offset-corrected bounds for Folium overlay
-            folium_bounds = [[corrected_south, accurate_west], [corrected_north, accurate_east]]
+            folium_bounds = [[corrected_south, corrected_west], [corrected_north, corrected_east]]
             
-            print(f"🔧 ORIGINAL BOUNDS: S={accurate_south:.8f}, N={accurate_north:.8f}")
-            print(f"🔧 CORRECTED BOUNDS: S={corrected_south:.8f}, N={corrected_north:.8f}")
+            print(f"🔧 ORIGINAL BOUNDS: S={accurate_south:.8f}, N={accurate_north:.8f}, W={accurate_west:.8f}, E={accurate_east:.8f}")
+            print(f"🔧 CORRECTED BOUNDS: S={corrected_south:.8f}, N={corrected_north:.8f}, W={corrected_west:.8f}, E={corrected_east:.8f}")
             print(f"🔧 NORTHWARD SHIFT: {northward_offset_degrees:.8f} degrees ({northward_offset_degrees * 111000:.1f} meters)")
+            print(f"🔧 EASTWARD SHIFT: {eastward_offset_degrees:.8f} degrees ({eastward_offset_degrees * 111000:.1f} meters)")
             
             print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
             print(f"🔧 COORDINATE VALIDATION:")
@@ -3920,15 +3928,20 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             
         except Exception as e:
             print(f"🚨 RASTERIO ERROR: {e}")
-            # Fallback to manual bounds calculation with offset correction
-            offset_cells = 5
-            northward_offset_degrees = offset_cells * lat_step
+            # Fallback to manual bounds calculation with fine-tuned offset correction
+            northward_offset_cells = 4.3
+            eastward_offset_cells = 0.5
+            northward_offset_degrees = northward_offset_cells * lat_step
+            eastward_offset_degrees = eastward_offset_cells * lon_step
+            
             corrected_south = raster_south + northward_offset_degrees
             corrected_north = raster_north + northward_offset_degrees
+            corrected_west = raster_west + eastward_offset_degrees
+            corrected_east = raster_east + eastward_offset_degrees
             
-            folium_bounds = [[corrected_south, raster_west], [corrected_north, raster_east]]
-            print(f"🔧 FALLBACK BOUNDS (with offset): {folium_bounds}")
-            print(f"🔧 FALLBACK OFFSET: {northward_offset_degrees:.8f} degrees northward")
+            folium_bounds = [[corrected_south, corrected_west], [corrected_north, corrected_east]]
+            print(f"🔧 FALLBACK BOUNDS (with fine-tuned offset): {folium_bounds}")
+            print(f"🔧 FALLBACK OFFSET: {northward_offset_cells} cells north, {eastward_offset_cells} cells east")
         
         pil_image = Image.fromarray(rgba_image, 'RGBA')
         

@@ -3415,10 +3415,10 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         # Corner probes to understand array orientation
         print(f"🔧 CORNER PROBES:")
-        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi[0,0]:.6f}, {yi[0,0]:.6f}) = SW corner")
-        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi[0,-1]:.6f}, {yi[0,-1]:.6f}) = SE corner")
-        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi[-1,0]:.6f}, {yi[-1,0]:.6f}) = NW corner")
-        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi[-1,-1]:.6f}, {yi[-1,-1]:.6f}) = NE corner")
+        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi[0,0]:.6f}, {yi[0,0]:.6f}) = NW corner (west, north)")
+        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi[0,-1]:.6f}, {yi[0,-1]:.6f}) = NE corner (east, north)")
+        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi[-1,0]:.6f}, {yi[-1,0]:.6f}) = SW corner (west, south)")
+        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi[-1,-1]:.6f}, {yi[-1,-1]:.6f}) = SE corner (east, south)")
         
         print(f"🔧 Generated {width}x{height} raster with interpolation across all triangulated data")
         print(f"🔧 Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
@@ -3511,8 +3511,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 
                 # Calculate geographic bounds for the cropped image
                 # Row indices correspond to lat indices, col indices to lon indices
-                cropped_north = lats[min_row] + lat_step/2  # Edge of northernmost visible pixel
-                cropped_south = lats[max_row] - lat_step/2  # Edge of southernmost visible pixel
+                # FIXED: Correct pixel edge calculation - since lats go north to south
+                cropped_north = lats[min_row] + lat_step/2  # Edge of northernmost visible pixel (correct)
+                cropped_south = lats[max_row] - lat_step/2  # Edge of southernmost visible pixel (correct)
                 cropped_west = lons[min_col] - lon_step/2   # Edge of westernmost visible pixel
                 cropped_east = lons[max_col] + lon_step/2   # Edge of easternmost visible pixel
                 

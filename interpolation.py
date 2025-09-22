@@ -694,12 +694,30 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
             
             return best_lat_factor, best_lon_factor
         
-        km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
+        # ===== ARCHITECT SOLUTION: BOUNDS CALCULATION WITH NZTM2000 =====
+        print(f"🔧 Creating indicator mask bounds using NZTM2000 coordinate system")
         
-        min_lat = center_lat - (radius_km / km_per_degree_lat)
-        max_lat = center_lat + (radius_km / km_per_degree_lat)
-        min_lon = center_lon - (radius_km / km_per_degree_lon)
-        max_lon = center_lon + (radius_km / km_per_degree_lon)
+        # Transform center to NZTM2000
+        center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+        center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+        
+        # Create bounds in NZTM2000 meters
+        radius_m = radius_km * 1000.0
+        min_x_m = center_x_m - radius_m
+        max_x_m = center_x_m + radius_m
+        min_y_m = center_y_m - radius_m
+        max_y_m = center_y_m + radius_m
+        
+        # Transform bounds back to WGS84 for grid creation
+        bounds_x_m = [min_x_m, max_x_m, max_x_m, min_x_m]
+        bounds_y_m = [min_y_m, min_y_m, max_y_m, max_y_m]
+        bounds_lons, bounds_lats = to_wgs84(bounds_x_m, bounds_y_m)
+        
+        min_lat, max_lat = bounds_lats.min(), bounds_lats.max()
+        min_lon, max_lon = bounds_lons.min(), bounds_lons.max()
+        
+        print(f"🔧 MASK BOUNDS: lat [{min_lat:.6f}, {max_lat:.6f}]°, lon [{min_lon:.6f}, {max_lon:.6f}]°")
+        # ========================================================================
         
         # Create grid
         grid_size = min(150, max(50, resolution))
@@ -1510,8 +1528,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             interpolated_z[i] = np.sum(weights * yields) / np.sum(weights)
 
     # Convert grid coordinates back to lat/lon
-    grid_lats = (grid_points[:, 1] / km_per_degree_lat) + center_lat
-    grid_lons = (grid_points[:, 0] / km_per_degree_lon) + center_lon
+    # ===== ARCHITECT FIX: CONVERT GRID POINTS USING NZTM2000 SYSTEM =====
+    # Use the centralized coordinate system instead of km_per_degree
+    grid_lons, grid_lats = to_wgs84(xi_inside_x, xi_inside_y)
+    print(f"🔧 Converted {len(grid_lons)} grid points from NZTM2000 to WGS84")
+    # ========================================================================
 
     # Prepare soil polygon geometry for later filtering (do not apply to interpolation)
     merged_soil_geometry = None
@@ -1544,8 +1565,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     final_radius_km = radius_km * final_clip_factor
     
     # Create final square clipping polygon centered on the original center
-    final_clip_lat_radius = final_radius_km / km_per_degree_lat
-    final_clip_lon_radius = final_radius_km / km_per_degree_lon
+    # ===== ARCHITECT FIX: FINAL CLIPPING WITH NZTM2000 SYSTEM =====
+    # Calculate final radius in NZTM2000 meters for consistent clipping
+    final_radius_m = final_radius_km * 1000.0
+    print(f"🔧 Final radius clipping: {final_radius_km}km = {final_radius_m}m NZTM2000")
+    # ========================================================================
     
     final_clip_polygon_coords = [
         [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
@@ -2051,27 +2075,37 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     grid_size = min(50, max(30, resolution))
 
     try:
-        # Convert to km-based coordinates (flat Earth approximation for small areas)
-        # This is essential for proper interpolation
-        km_per_degree_lat = 111.0  # km per degree of latitude
-        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # km per degree of longitude
-
-        # Convert all coordinates to km from center
-        x_coords = (lons - center_lon) * km_per_degree_lon
-        y_coords = (lats - center_lat) * km_per_degree_lat
-
-        # Create grid in km space (square bounds)
-        grid_x = np.linspace(-radius_km, radius_km, grid_size)
-        grid_y = np.linspace(-radius_km, radius_km, grid_size)
-        grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
-
-        # Flatten for interpolation
-        points = np.vstack([x_coords, y_coords]).T  # Well points in km
-        xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
-
-        # Filter points outside the square bounds
-        mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
-        xi_inside = xi[mask]
+        # ===== ARCHITECT SOLUTION: USE NZTM2000 FOR indicator_kriging_mask =====
+        print(f"🔧 Converting indicator_kriging_mask to use NZTM2000 coordinates")
+        
+        # Transform wells to NZTM2000 using centralized helper
+        wells_temp_df = pd.DataFrame({'latitude': lats, 'longitude': lons})
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_temp_df)
+        
+        # Build grid using centralized helper  
+        grid_ctx = build_crs_grid(center_point, radius_km, grid_size)
+        x_vals_m = grid_ctx['x_vals_m']
+        y_vals_m = grid_ctx['y_vals_m']
+        X_m = grid_ctx['X_m']
+        Y_m = grid_ctx['Y_m']
+        
+        # Create grid points in NZTM2000 meters
+        center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+        center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+        
+        X_m_flat = X_m.flatten()
+        Y_m_flat = Y_m.flatten()
+        
+        # Apply radius filter in meters
+        radius_m = radius_km * 1000.0
+        distances = np.sqrt((X_m_flat - center_x_m)**2 + (Y_m_flat - center_y_m)**2)
+        mask = distances <= radius_m
+        
+        xi_inside_x = X_m_flat[mask]
+        xi_inside_y = Y_m_flat[mask]
+        
+        print(f"🔧 INDICATOR GRID: {len(xi_inside_x)}/{len(X_m_flat)} points within {radius_km}km radius")
+        # ========================================================================
 
         # Define grid_points for compatibility
         grid_points = xi_inside
@@ -2107,9 +2141,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     filtered_y_coords = y_coords[meaningful_data_mask] 
                     filtered_yields = yields[meaningful_data_mask]
 
-                    # Convert to lat/lon for kriging
-                    filtered_lons = filtered_x_coords / km_per_degree_lon + center_lon
-                    filtered_lats = filtered_y_coords / km_per_degree_lat + center_lat
+                    # Use filtered wells in NZTM2000 coordinates
+                    filtered_wells_x_m = wells_x_m[meaningful_data_mask]
+                    filtered_wells_y_m = wells_y_m[meaningful_data_mask]
 
                     # Set up kriging with appropriate variogram model
                     if method == 'indicator_kriging':
@@ -2124,18 +2158,22 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     else:
                         variogram_model_to_use = 'spherical'
 
-                    OK = OrdinaryKriging(
-                        filtered_lons, filtered_lats, filtered_yields,
+                    # Use centralized kriging helper with NZTM2000 coordinates
+                    Z_grid, SS_grid, OK = krige_on_grid(
+                        filtered_wells_x_m, filtered_wells_y_m, filtered_yields,
+                        x_vals_m, y_vals_m,
                         variogram_model=variogram_model_to_use,
-                        verbose=False,
-                        enable_plotting=False,
-                        variogram_parameters=None
+                        verbose=False
                     )
-
-                    # Execute kriging
-                    xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-                    xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
-                    interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+                    
+                    if Z_grid is not None:
+                        # Extract values for masked grid points
+                        Z_flat = Z_grid.flatten()
+                        interpolated_z = Z_flat[mask]
+                        print(f"🔧 Indicator kriging completed: {len(interpolated_z)} points")
+                    else:
+                        print("❌ Indicator kriging failed in helper")
+                        interpolated_z = None
 
                     # Process results based on interpolation method
                     if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
@@ -2206,21 +2244,26 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
                     # If enough points, apply Kriging to the residuals
                     if len(features) >= 5 and len(features) < 1000:
-                        # Convert back to lon/lat for kriging (pykrige expects lon/lat)
-                        lon_values = x_coords / km_per_degree_lon + center_lon
-                        lat_values = y_coords / km_per_degree_lat + center_lat
-                        xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-                        xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
-
-                        # OPTIMIZATION: Use a simpler variogram model and limit kriging calculations
-                        OK = OrdinaryKriging(
-                            lon_values, lat_values, residuals,
-                            variogram_model='linear',  # Simpler model than spherical - much faster
-                            verbose=False,
-                            enable_plotting=False
+                        # ===== FINAL ARCHITECT FIX: RF+KRIGING WITH NZTM2000 =====
+                        print("🔧 Applying NZTM2000 coordinate fix to RF+Kriging residuals")
+                        
+                        # Use centralized kriging helper for residuals interpolation
+                        Z_grid, SS_grid, OK = krige_on_grid(
+                            wells_x_m, wells_y_m, residuals,
+                            x_vals_m, y_vals_m,
+                            variogram_model='linear',
+                            verbose=False
                         )
-                        # Execute kriging on grid points
-                        kriged_residuals, _ = OK.execute('points', xi_lon, xi_lat)
+                        
+                        if Z_grid is not None:
+                            # Extract kriged residuals for masked grid points
+                            Z_flat = Z_grid.flatten()
+                            kriged_residuals = Z_flat[mask]
+                            print("🔧 RF+Kriging residuals interpolated successfully")
+                        else:
+                            print("❌ RF+Kriging residuals failed, using RF predictions only")
+                            kriged_residuals = np.zeros_like(rf_predictions)
+                        # ================================================================
 
                         # Combine RF predictions with kriged residuals
                         interpolated_z = rf_predictions + kriged_residuals
@@ -2333,8 +2376,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         interpolated_z = np.maximum(0, interpolated_z)
 
         # Convert back to lat/lon coordinates
-        lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
-        lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+        # ===== ARCHITECT FIX: CONVERT GRID POINTS USING NZTM2000 =====
+        lon_points, lat_points = to_wgs84(xi_inside_x, xi_inside_y)
+        print(f"🔧 Converted grid points for heat data: {len(lat_points)} points")
+        # ========================================================================
 
         # Prepare soil polygon geometry for filtering heat map display
         merged_soil_geometry = None
@@ -2460,8 +2505,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         for j in range(len(lats)):
             # Check if well is within search radius
             well_dist_km = np.sqrt(
-                ((lats[j] - center_lat) * km_per_degree_lat)**2 +
-                ((lons[j] - center_lon) * km_per_degree_lon)**2
+                # ===== ARCHITECT FIX: DISTANCE CALCULATION WITH NZTM2000 =====
+                (wells_y_m[j] - center_y_m)**2 + (wells_x_m[j] - center_x_m)**2
+                # ================================================================
             )
 
             if well_dist_km <= radius_km:

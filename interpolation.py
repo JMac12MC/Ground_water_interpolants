@@ -1417,9 +1417,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     except Exception as e:
         # Fallback to simple IDW interpolation if the above methods fail
         print(f"Interpolation error: {e}, using fallback method")
-        interpolated_z = np.zeros(grid_points.shape[0])
-        for i, point in enumerate(grid_points):
-            weights = 1.0 / (np.sqrt(np.sum((points - point)**2, axis=1)) + 1e-5)
+        # Create grid points array for IDW interpolation
+        grid_points_array = np.column_stack([grid_points_x, grid_points_y])
+        wells_points = np.column_stack([wells_x_m, wells_y_m])
+        
+        interpolated_z = np.zeros(len(grid_points_x))
+        for i, point in enumerate(grid_points_array):
+            weights = 1.0 / (np.sqrt(np.sum((wells_points - point)**2, axis=1)) + 1e-5)
             interpolated_z[i] = np.sum(weights * yields) / np.sum(weights)
 
     # Convert grid coordinates back to lat/lon
@@ -2018,8 +2022,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         print(f"🔧 INDICATOR GRID: {len(xi_inside_x)}/{len(X_m_flat)} points within {radius_km}km radius")
         # ========================================================================
 
-        # Define grid_points for compatibility
-        grid_points = xi_inside
+        # Create grid points array for compatibility 
+        grid_points_array = np.column_stack([xi_inside_x, xi_inside_y])
+        print(f"🔧 Grid points array created: {len(grid_points_array)} points for indicator kriging")
 
         # Choose interpolation method based on parameter and dataset size
         if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:

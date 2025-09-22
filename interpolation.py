@@ -719,6 +719,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # Fallback to Banks Peninsula exclusion if comprehensive polygon not available
     banks_peninsula_polygon = None
+    banks_peninsula_coords = None  # Define the variable to prevent errors
     if clipping_geometry is None and banks_peninsula_coords and len(banks_peninsula_coords) > 3:
         try:
             from shapely.geometry import Polygon
@@ -2723,15 +2724,29 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         center_lat, center_lon = center_point
         grid_size = min(50, max(30, resolution))  # Adjust grid size if necessary
 
-        # Convert to km-based coordinates
-        km_per_degree_lat = 111.0
-        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        # COORDINATE TRANSFORMATION FIX: Use proper projected coordinates (EPSG:2193)
+        print(f"🔧 ===== COORDINATE TRANSFORMATION FIX APPLIED =====")
+        import pyproj
+        
+        # Set up coordinate transformers
+        transformer_to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+        transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+        
+        # Transform center point to NZTM2000 (meters)
+        center_x_m, center_y_m = transformer_to_nztm.transform(center_lon, center_lat)
+        print(f"🔧 CENTER POINT: ({center_lat:.6f}°, {center_lon:.6f}°) -> ({center_x_m:.1f}m, {center_y_m:.1f}m)")
+        
+        # Transform well coordinates to NZTM2000 meters
+        wells_x_m, wells_y_m = transformer_to_nztm.transform(lons, lats)
+        
+        # Convert to km from center using exact meter calculations
+        x_coords = (wells_x_m - center_x_m) / 1000.0  # Convert to km
+        y_coords = (wells_y_m - center_y_m) / 1000.0  # Convert to km
+        
+        print(f"🔧 WELL COORDS: {len(x_coords)} wells converted to projected coordinates")
+        print(f"🔧 COORDINATE RANGE: X: {x_coords.min():.2f} to {x_coords.max():.2f} km, Y: {y_coords.min():.2f} to {y_coords.max():.2f} km")
 
-        # Convert coordinates to km from center
-        x_coords = (lons - center_lon) * km_per_degree_lon
-        y_coords = (lats - center_lat) * km_per_degree_lat
-
-        # Create grid in km space (square bounds)
+        # Create grid in km space (square bounds) - same as before
         grid_x = np.linspace(-radius_km, radius_km, grid_size)
         grid_y = np.linspace(-radius_km, radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
@@ -2742,11 +2757,20 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         # Filter points outside the square bounds (instead of circular)
         mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
-        # Convert back to lat/lon for kriging
-        lon_values = x_coords / km_per_degree_lon + center_lon
-        lat_values = y_coords / km_per_degree_lat + center_lat
-        xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-        xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
+        
+        # Convert grid points back to NZTM2000 meters, then to WGS84 for kriging
+        grid_x_m = xi_inside[:, 0] * 1000.0 + center_x_m  # Convert km back to meters
+        grid_y_m = xi_inside[:, 1] * 1000.0 + center_y_m  # Convert km back to meters
+        
+        # Transform grid points to WGS84 for kriging
+        xi_lon, xi_lat = transformer_to_wgs84.transform(grid_x_m, grid_y_m)
+        
+        # Transform well coordinates to WGS84 for kriging (reverse original transformation)
+        lon_values, lat_values = transformer_to_wgs84.transform(wells_x_m, wells_y_m)
+        
+        print(f"🔧 GRID POINTS: {len(xi_inside)} points transformed for kriging")
+        print(f"🔧 KRIGING INPUT: wells ({len(lon_values)}) and grid points ({len(xi_lon)}) in WGS84")
+        print(f"🔧 ========================================================")
 
         # Perform Ordinary Kriging with enhanced variance calculation
         try:
@@ -2900,9 +2924,10 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
             else:
                 kriging_variance = np.full(len(xi_lat), np.var(values) * 0.5)
 
-        # Prepare variance data for heat map
-        lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
-        lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+        # Prepare variance data for heat map using proper coordinate transformation
+        # xi_lat and xi_lon are already in WGS84 from the coordinate transformation above
+        lat_points = xi_lat
+        lon_points = xi_lon
 
         # Prepare soil polygon geometry for filtering variance display (same as other interpolants)
         merged_soil_geometry = None
@@ -3706,8 +3731,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                         rgba_image[i, j] = [0, 0, 0, 0]  # Transparent for NaN values
         else:
             # Fallback: use matplotlib colormap
-            from matplotlib.cm import viridis
+            import matplotlib.cm as cm
             from matplotlib.colors import Normalize
+            viridis = cm.viridis
             
             # Normalize values
             valid_mask = ~np.isnan(zi_smooth)

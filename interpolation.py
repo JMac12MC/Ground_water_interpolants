@@ -3140,8 +3140,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             lon_step = lon_step_100m
             effective_resolution = 100
         
-        # Create regular sampling grid
-        lats = np.arange(south, north + lat_step, lat_step)
+        # Create regular sampling grid with lats ordered NORTH to SOUTH (row 0 = north)
+        # This eliminates the need for vertical flip and ensures proper pixel-to-coordinate mapping
+        lats = np.arange(north, south - lat_step, -lat_step)  # North to south ordering
         lons = np.arange(west, east + lon_step, lon_step)
         
         print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {effective_resolution:.0f}m spacing")
@@ -3306,34 +3307,73 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # 8) IMAGE ORIENTATION - CRITICAL DEBUGGING
         print(f"🔧 ===== IMAGE ORIENTATION ANALYSIS =====")
         print(f"🔧 RGBA IMAGE: shape={rgba_image.shape}")
-        print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (south to north)")
+        print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (north to south)")
         print(f"🔧 GRID SETUP: lons go from {lons[0]:.6f} to {lons[-1]:.6f} (west to east)")
         
-        # Record image values BEFORE any flip
-        print(f"🔧 IMAGE CORNERS (BEFORE flip):")
-        print(f"🔧   rgba[0,0] (top-left) = {rgba_image[0,0,:3]} at geo ({lons[0]:.6f}, {lats[0]:.6f}) = SW")
-        print(f"🔧   rgba[0,-1] (top-right) = {rgba_image[0,-1,:3]} at geo ({lons[-1]:.6f}, {lats[0]:.6f}) = SE")
-        print(f"🔧   rgba[-1,0] (bottom-left) = {rgba_image[-1,0,:3]} at geo ({lons[0]:.6f}, {lats[-1]:.6f}) = NW") 
-        print(f"🔧   rgba[-1,-1] (bottom-right) = {rgba_image[-1,-1,:3]} at geo ({lons[-1]:.6f}, {lats[-1]:.6f}) = NE")
+        # NO FLIP NEEDED: Row 0 already corresponds to north
+        print(f"🔧 IMAGE CORNERS (north-first ordering):")
+        print(f"🔧   rgba[0,0] (top-left) = {rgba_image[0,0,:3]} at geo ({lons[0]:.6f}, {lats[0]:.6f}) = NW")
+        print(f"🔧   rgba[0,-1] (top-right) = {rgba_image[0,-1,:3]} at geo ({lons[-1]:.6f}, {lats[0]:.6f}) = NE")
+        print(f"🔧   rgba[-1,0] (bottom-left) = {rgba_image[-1,0,:3]} at geo ({lons[0]:.6f}, {lats[-1]:.6f}) = SW") 
+        print(f"🔧   rgba[-1,-1] (bottom-right) = {rgba_image[-1,-1,:3]} at geo ({lons[-1]:.6f}, {lats[-1]:.6f}) = SE")
         
-        # ENFORCE INVARIANT: row 0 must correspond to NORTH (max lat) for correct Folium display
-        # Since lats[0] is south and lats[-1] is north, we need to flip vertically
-        rgba_image_flipped = np.flipud(rgba_image)
-        print(f"🔧 APPLYING VERTICAL FLIP for correct orientation (row 0 = north)")
+        # ARCHITECT FIX: Crop to visible pixels to eliminate transparent padding offset
+        print(f"🔧 CROPPING TO VISIBLE PIXELS (alpha > 0)...")
         
-        # Record image values AFTER flip
-        print(f"🔧 IMAGE CORNERS (AFTER flip):")
-        print(f"🔧   rgba[0,0] (top-left) = {rgba_image_flipped[0,0,:3]} at geo ({lons[0]:.6f}, {lats[-1]:.6f}) = NW")
-        print(f"🔧   rgba[0,-1] (top-right) = {rgba_image_flipped[0,-1,:3]} at geo ({lons[-1]:.6f}, {lats[-1]:.6f}) = NE")
-        print(f"🔧   rgba[-1,0] (bottom-left) = {rgba_image_flipped[-1,0,:3]} at geo ({lons[0]:.6f}, {lats[0]:.6f}) = SW") 
-        print(f"🔧   rgba[-1,-1] (bottom-right) = {rgba_image_flipped[-1,-1,:3]} at geo ({lons[-1]:.6f}, {lats[0]:.6f}) = SE")
+        # Find bounding box of non-transparent pixels
+        alpha_mask = rgba_image[:, :, 3] > 0
         
-        # ASSERTION: Verify image row 0 now corresponds to north
-        assert lats[-1] > lats[0], f"Latitude array should be ascending: {lats[0]} to {lats[-1]}"
-        print(f"🔧 INVARIANT VERIFIED: Image row 0 corresponds to NORTH (lat={lats[-1]:.6f})")
+        if np.any(alpha_mask):
+            # Find rows and columns with visible pixels
+            visible_rows = np.any(alpha_mask, axis=1)
+            visible_cols = np.any(alpha_mask, axis=0)
+            
+            row_indices = np.where(visible_rows)[0]
+            col_indices = np.where(visible_cols)[0]
+            
+            if len(row_indices) > 0 and len(col_indices) > 0:
+                # Get tight bounding box
+                min_row, max_row = row_indices[0], row_indices[-1]
+                min_col, max_col = col_indices[0], col_indices[-1]
+                
+                # Crop the image to visible pixels only
+                rgba_image_cropped = rgba_image[min_row:max_row+1, min_col:max_col+1]
+                
+                # Calculate geographic bounds for the cropped image
+                # Row indices correspond to lat indices, col indices to lon indices
+                cropped_north = lats[min_row] + lat_step/2  # Edge of northernmost visible pixel
+                cropped_south = lats[max_row] - lat_step/2  # Edge of southernmost visible pixel
+                cropped_west = lons[min_col] - lon_step/2   # Edge of westernmost visible pixel
+                cropped_east = lons[max_col] + lon_step/2   # Edge of easternmost visible pixel
+                
+                print(f"🔧 CROPPED: {rgba_image.shape} -> {rgba_image_cropped.shape}")
+                print(f"🔧 VISIBLE BOUNDS: rows {min_row}-{max_row}, cols {min_col}-{max_col}")
+                print(f"🔧 GEOGRAPHIC BOUNDS: N={cropped_north:.6f}, S={cropped_south:.6f}, E={cropped_east:.6f}, W={cropped_west:.6f}")
+                
+                # Diagnostic: verify pixel resolution
+                actual_lat_per_pixel = (cropped_north - cropped_south) / rgba_image_cropped.shape[0]
+                actual_lon_per_pixel = (cropped_east - cropped_west) / rgba_image_cropped.shape[1]
+                lat_pixel_meters = actual_lat_per_pixel * meters_per_degree_lat
+                lon_pixel_meters = actual_lon_per_pixel * meters_per_degree_lon
+                print(f"🔧 PIXEL RESOLUTION: {lat_pixel_meters:.1f}m lat, {lon_pixel_meters:.1f}m lon")
+                
+                rgba_final = rgba_image_cropped
+                final_bounds = [[cropped_south, cropped_west], [cropped_north, cropped_east]]
+            else:
+                print(f"🔧 WARNING: No visible pixels found, using original image")
+                rgba_final = rgba_image
+                final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
+        else:
+            print(f"🔧 WARNING: Image is fully transparent, using original bounds")
+            rgba_final = rgba_image
+            final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
+        
+        # ASSERTION: Verify image row 0 corresponds to north
+        assert lats[0] > lats[-1], f"Latitude array should be descending (north to south): {lats[0]} to {lats[-1]}"
+        print(f"🔧 INVARIANT VERIFIED: Image row 0 corresponds to NORTH (lat={lats[0]:.6f})")
         print(f"🔧 =========================================")
         
-        pil_image = Image.fromarray(rgba_image_flipped, 'RGBA')
+        pil_image = Image.fromarray(rgba_final, 'RGBA')
         
         # Save to bytes buffer
         img_buffer = io.BytesIO()
@@ -3357,9 +3397,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         center_south, center_north = south, north
         center_west, center_east = west, east
         
-        # EDGE-based bounds (architect recommendation)
-        edge_south = lats[0] - lat_step/2
-        edge_north = lats[-1] + lat_step/2  
+        # EDGE-based bounds (for comparison - lats now go north to south)
+        edge_north = lats[0] + lat_step/2   # lats[0] is now northernmost
+        edge_south = lats[-1] - lat_step/2  # lats[-1] is now southernmost
         edge_west = lons[0] - lon_step/2
         edge_east = lons[-1] + lon_step/2
         
@@ -3387,7 +3427,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         print(f"🔧 IN CENTER BOUNDS? lat: {center_south <= christchurch_lat <= center_north}, lon: {center_west <= christchurch_lon <= center_east}")
         print(f"🔧 IN EDGE BOUNDS?   lat: {edge_south <= christchurch_lat <= edge_north}, lon: {edge_west <= christchurch_lon <= edge_east}")
         
-        print(f"🔧 FOLIUM BOUNDS (edge-based - FIXED): [[{edge_south:.6f}, {edge_west:.6f}], [{edge_north:.6f}, {edge_east:.6f}]]")
+        print(f"🔧 FOLIUM BOUNDS (cropped visible pixels): {final_bounds}")
         print(f"🔧 =======================================")
         
         # 10) CROSS-CHECK: Log sample triangulated data for comparison
@@ -3400,11 +3440,11 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
         print(f"🔧 ========================================")
         
-        # FIXED: Use edge-based bounds for proper pixel registration
-        # This fixes the 1.7km southward offset by aligning pixel edges with coordinates
+        # ARCHITECT FIX: Use bounds from cropped visible pixels only
+        # This eliminates transparent padding that was causing the 1.7km southward offset
         return {
             'image_base64': img_base64,
-            'bounds': [[edge_south, edge_west], [edge_north, edge_east]],
+            'bounds': final_bounds,
             'opacity': opacity
         }
         

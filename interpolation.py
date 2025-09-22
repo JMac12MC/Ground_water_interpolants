@@ -420,6 +420,107 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons, heatmap_id
         print(f"❌ Error applying GeoJSON exclusion clipping: {e}")
         return features
 
+def batch_apply_exclusion_clipping(heatmaps_list, exclusion_data, clipping_version):
+    """
+    PERFORMANCE OPTIMIZATION: Batch geometric operations - merge all heatmap features first, 
+    then apply exclusions once to the combined geometry instead of processing each heatmap separately.
+    
+    This reduces geometric operations from N*M to 1*M where N=heatmaps, M=exclusion_zones
+    
+    Parameters:
+    -----------
+    heatmaps_list : list
+        List of heatmap dictionaries with 'geojson_data' and 'id' keys
+    exclusion_data : tuple 
+        Exclusion data (union_geometry, prepared_geometry, union_bounds, exclusion_version)
+    clipping_version : str
+        Version identifier for caching
+        
+    Returns:
+    --------
+    dict
+        Dictionary mapping heatmap_id -> clipped_geojson_data
+    """
+    print(f"🚀 BATCH CLIPPING: Starting batch processing for {len(heatmaps_list)} heatmaps")
+    
+    try:
+        if not exclusion_data:
+            print("🚀 BATCH CLIPPING: No exclusions to apply, returning original data")
+            return {hm['id']: hm.get('geojson_data') for hm in heatmaps_list if hm.get('geojson_data')}
+            
+        union_geometry, prepared_geometry, union_bounds, exclusion_version = exclusion_data
+        
+        # Step 1: Merge all features with heatmap_id tracking
+        print("🚀 BATCH CLIPPING: Step 1 - Merging all heatmap features...")
+        all_features = []
+        feature_to_heatmap = {}  # Track which heatmap each feature belongs to
+        
+        for heatmap in heatmaps_list:
+            heatmap_id = heatmap['id']
+            geojson_data = heatmap.get('geojson_data')
+            
+            if geojson_data and isinstance(geojson_data, dict) and 'features' in geojson_data:
+                features = geojson_data['features']
+                for i, feature in enumerate(features):
+                    # Add unique identifier to track source heatmap
+                    feature_key = f"{heatmap_id}_{i}"
+                    feature_to_heatmap[feature_key] = heatmap_id
+                    feature['_batch_key'] = feature_key
+                    all_features.append(feature)
+        
+        print(f"🚀 BATCH CLIPPING: Merged {len(all_features)} features from {len(heatmaps_list)} heatmaps")
+        
+        # Step 2: Apply clipping once to all features
+        print("🚀 BATCH CLIPPING: Step 2 - Applying geometric clipping to combined features...")
+        clipped_features = apply_exclusion_clipping_to_stored_heatmap(all_features, exclusion_data)
+        
+        # Step 3: Redistribute clipped features back to their original heatmaps
+        print("🚀 BATCH CLIPPING: Step 3 - Redistributing clipped features...")
+        result = {}
+        heatmap_feature_counts = {}
+        
+        # Initialize result structure
+        for heatmap in heatmaps_list:
+            heatmap_id = heatmap['id']
+            result[heatmap_id] = {
+                'type': 'FeatureCollection',
+                'features': []
+            }
+            heatmap_feature_counts[heatmap_id] = 0
+        
+        # Redistribute features
+        for feature in clipped_features:
+            if '_batch_key' in feature:
+                batch_key = feature['_batch_key']
+                if batch_key in feature_to_heatmap:
+                    heatmap_id = feature_to_heatmap[batch_key]
+                    # Remove the tracking key before storing
+                    del feature['_batch_key']
+                    result[heatmap_id]['features'].append(feature)
+                    heatmap_feature_counts[heatmap_id] += 1
+        
+        # Report results
+        total_clipped_features = sum(heatmap_feature_counts.values())
+        original_total = len(all_features)
+        reduction = original_total - total_clipped_features
+        
+        print(f"🚀 BATCH CLIPPING: Complete! {original_total} → {total_clipped_features} features (-{reduction})")
+        print(f"🚀 BATCH CLIPPING: Per-heatmap breakdown:")
+        for heatmap_id, count in heatmap_feature_counts.items():
+            print(f"   - Heatmap {heatmap_id}: {count} features")
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ BATCH CLIPPING ERROR: {e}")
+        import traceback
+        print(f"❌ BATCH CLIPPING TRACEBACK: {traceback.format_exc()}")
+        # Fallback to individual processing
+        print("🔄 BATCH CLIPPING: Falling back to individual processing...")
+        return {hm['id']: apply_exclusion_clipping_to_stored_heatmap(
+            hm.get('geojson_data', {}).get('features', []), exclusion_data, hm['id']
+        ) for hm in heatmaps_list if hm.get('geojson_data')}
+
 def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
     """
     Convert indicator kriging mask into polygon geometry for clipping

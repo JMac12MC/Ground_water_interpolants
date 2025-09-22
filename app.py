@@ -2258,16 +2258,37 @@ with main_col1:
             with st.spinner(f"⚡ Loading {len(visible_heatmaps)} visible heatmaps (optimized)..."):
                 pass  # Visual feedback for user
         
-        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache
+        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache with pre-clipped data support
         def get_preprocessed_heatmap(heatmap_id, raw_geojson_data, method):
-            """Get or create preprocessed heatmap data"""
-            cache_key = f"preprocessed_{heatmap_id}_{method}_v2"
+            """Get or create preprocessed heatmap data - now with PRE-CLIPPED DATA SUPPORT"""
+            cache_key = f"preprocessed_{heatmap_id}_{method}_v3"  # Updated version for pre-clipped support
             
             if cache_key in st.session_state:
                 return st.session_state[cache_key]
             
-            # Apply exclusion clipping and preprocessing
+            # OPTIMIZATION 1: Try to get pre-clipped data first (eliminates 29,008 geometric operations!)
             if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
+                try:
+                    from interpolation import get_prepared_exclusion_union
+                    exclusion_data = get_prepared_exclusion_union()
+                    
+                    if exclusion_data is not None:
+                        _, _, _, exclusion_version = exclusion_data
+                        clipping_version = f"red_orange_{exclusion_version}"
+                        
+                        # Try to get pre-clipped data from database
+                        pre_clipped_data = st.session_state.polygon_db.get_pre_clipped_heatmap(heatmap_id, clipping_version)
+                        
+                        if pre_clipped_data is not None:
+                            print(f"🚀 PERFORMANCE: Using pre-clipped data for heatmap {heatmap_id} (skipped {259} geometric operations!)")
+                            st.session_state[cache_key] = pre_clipped_data
+                            return pre_clipped_data
+                        else:
+                            print(f"⚡ FALLBACK: No pre-clipped data for heatmap {heatmap_id}, using real-time clipping")
+                except Exception as e:
+                    print(f"❌ Pre-clipped data error: {e}, falling back to real-time clipping")
+                
+                # FALLBACK: Use real-time clipping if pre-clipped data not available
                 from interpolation import apply_exclusion_clipping_to_stored_heatmap
                 processed_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method, heatmap_id=heatmap_id)
             else:

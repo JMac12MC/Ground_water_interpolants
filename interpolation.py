@@ -637,62 +637,15 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         # Extract center coordinates and setup grid with HIGH-PRECISION conversion
         center_lat, center_lon = center_point
         
-        # Use same high-precision conversion factors as main interpolation
-        from utils import get_distance
-        TOLERANCE_KM = 0.0001  # 10cm tolerance
-        MAX_ITERATIONS = 100
+        # ===== ARCHITECT CLEANUP: Removed legacy precision calculation variables =====
+        # These were used for km_per_degree calculations, now using NZTM2000 system
+        print(f"🔧 Using NZTM2000 coordinate system for indicator mask generation")
+        # ===========================================================================
         
-        def get_precise_conversion_factors(reference_lat, reference_lon):
-            """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
-            test_distance = 1.0  # 1km test distance
-            
-            # Ultra-precise latitude conversion
-            lat_offset_initial = test_distance / 111.0
-            best_lat_factor = 111.0
-            best_lat_error = float('inf')
-            
-            for i in range(MAX_ITERATIONS):
-                test_lat = reference_lat + lat_offset_initial
-                actual_distance = get_distance(reference_lat, reference_lon, test_lat, reference_lon)
-                error = abs(actual_distance - test_distance)
-                
-                current_factor = test_distance / lat_offset_initial
-                if error < best_lat_error:
-                    best_lat_factor = current_factor
-                    best_lat_error = error
-                
-                if error < TOLERANCE_KM:
-                    break
-                    
-                if actual_distance > test_distance:
-                    lat_offset_initial *= 0.999
-                else:
-                    lat_offset_initial *= 1.001
-            
-            # Ultra-precise longitude conversion
-            lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
-            best_lon_factor = 111.0 * abs(np.cos(np.radians(reference_lat)))
-            best_lon_error = float('inf')
-            
-            for i in range(MAX_ITERATIONS):
-                test_lon = reference_lon + lon_offset_initial
-                actual_distance = get_distance(reference_lat, reference_lon, reference_lat, test_lon)
-                error = abs(actual_distance - test_distance)
-                
-                current_factor = test_distance / lon_offset_initial
-                if error < best_lon_error:
-                    best_lon_factor = current_factor
-                    best_lon_error = error
-                
-                if error < TOLERANCE_KM:
-                    break
-                    
-                if actual_distance > test_distance:
-                    lon_offset_initial *= 0.999
-                else:
-                    lon_offset_initial *= 1.001
-            
-            return best_lat_factor, best_lon_factor
+        # ===== REMOVED: Legacy get_precise_conversion_factors (ARCHITECT CLEANUP) =====
+        # This function was used for km_per_degree calculations which have been 
+        # replaced with proper NZTM2000 coordinate transformations
+        # ============================================================================
         
         # ===== ARCHITECT SOLUTION: BOUNDS CALCULATION WITH NZTM2000 =====
         print(f"🔧 Creating indicator mask bounds using NZTM2000 coordinate system")
@@ -916,69 +869,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     from utils import get_distance
     import numpy as np
     
-    # Ultra-precise conversion factors using iterative refinement
-    # Target: Match sequential_heatmap.py precision (10cm accuracy)
-    TOLERANCE_KM = 0.0001  # 10cm tolerance
-    MAX_ITERATIONS = 100
-    
-    def get_precise_conversion_factors(reference_lat, reference_lon):
-        """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
-        
-        # Step 1: Ultra-precise latitude conversion
-        test_distance = 1.0  # 1km test distance
-        lat_offset_initial = test_distance / 111.0  # Initial estimate
-        
-        best_lat_factor = 111.0
-        best_lat_error = float('inf')
-        
-        for i in range(MAX_ITERATIONS):
-            test_lat = reference_lat + lat_offset_initial
-            actual_distance = get_distance(reference_lat, reference_lon, test_lat, reference_lon)
-            error = abs(actual_distance - test_distance)
-            
-            current_factor = test_distance / lat_offset_initial
-            if error < best_lat_error:
-                best_lat_factor = current_factor
-                best_lat_error = error
-            
-            if error < TOLERANCE_KM:
-                break
-                
-            # Adaptive refinement
-            if actual_distance > test_distance:
-                lat_offset_initial *= 0.999  # Smaller offset needed
-            else:
-                lat_offset_initial *= 1.001  # Larger offset needed
-        
-        # Step 2: Ultra-precise longitude conversion (latitude-dependent)
-        lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
-        
-        best_lon_factor = 111.0 * abs(np.cos(np.radians(reference_lat)))
-        best_lon_error = float('inf')
-        
-        for i in range(MAX_ITERATIONS):
-            test_lon = reference_lon + lon_offset_initial
-            actual_distance = get_distance(reference_lat, reference_lon, reference_lat, test_lon)
-            error = abs(actual_distance - test_distance)
-            
-            current_factor = test_distance / lon_offset_initial
-            if error < best_lon_error:
-                best_lon_factor = current_factor
-                best_lon_error = error
-            
-            if error < TOLERANCE_KM:
-                break
-                
-            # Adaptive refinement
-            if actual_distance > test_distance:
-                lon_offset_initial *= 0.999
-            else:
-                lon_offset_initial *= 1.001
-        
-        print(f"HIGH-PRECISION CONVERSION: lat_factor={best_lat_factor:.8f} km/deg (error: {best_lat_error:.8f}km)")
-        print(f"HIGH-PRECISION CONVERSION: lon_factor={best_lon_factor:.8f} km/deg (error: {best_lon_error:.8f}km)")
-        
-        return best_lat_factor, best_lon_factor
+    # ===== ARCHITECT CLEANUP: Removed second legacy get_precise_conversion_factors =====
+    # This function has been replaced with proper NZTM2000 coordinate transformations
+    # using the centralized CRS helpers: to_nztm2000(), to_wgs84(), build_crs_grid()
+    print(f"🔧 COORDINATE SYSTEM: Using NZTM2000 transformations (legacy km_per_degree removed)")
+    # ==================================================================================
     
     # ===== ARCHITECT SOLUTION: PROPER COORDINATE TRANSFORMATION =====
     print(f"🔧 ===== COORDINATE TRANSFORMATION FIX APPLIED IN GENERATE_GEO_JSON_GRID =====")
@@ -1571,13 +1466,29 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     print(f"🔧 Final radius clipping: {final_radius_km}km = {final_radius_m}m NZTM2000")
     # ========================================================================
     
+    # ===== FINAL ARCHITECT FIX: CLIPPING POLYGON WITH NZTM2000 BOUNDS =====
+    # Convert final radius to WGS84 bounds using NZTM2000 system
+    center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+    center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+    
+    # Create bounds in NZTM2000 meters
+    bounds_x_m = [center_x_m - final_radius_m, center_x_m + final_radius_m, 
+                  center_x_m + final_radius_m, center_x_m - final_radius_m]
+    bounds_y_m = [center_y_m - final_radius_m, center_y_m - final_radius_m,
+                  center_y_m + final_radius_m, center_y_m + final_radius_m]
+    
+    # Transform to WGS84 for polygon coordinates
+    bounds_lons, bounds_lats = to_wgs84(bounds_x_m, bounds_y_m)
+    
     final_clip_polygon_coords = [
-        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
-        [center_lon + final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SE
-        [center_lon + final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NE
-        [center_lon - final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NW
-        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius]   # Close
+        [bounds_lons[0], bounds_lats[0]],  # SW
+        [bounds_lons[1], bounds_lats[1]],  # SE
+        [bounds_lons[2], bounds_lats[2]],  # NE
+        [bounds_lons[3], bounds_lats[3]],  # NW
+        [bounds_lons[0], bounds_lats[0]]   # Close
     ]
+    print(f"🔧 Final clipping polygon created using NZTM2000 coordinate system")
+    # ==========================================================================
     
     from shapely.geometry import Polygon as ShapelyPolygon
     final_clip_geometry = ShapelyPolygon(final_clip_polygon_coords)

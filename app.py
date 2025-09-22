@@ -577,6 +577,14 @@ with st.sidebar:
     st.subheader("⚡ Performance Optimization")
     st.write("Pre-compute clipped heatmaps to eliminate 29,008+ geometric operations per load. **Reduces loading time from 5+ minutes to under 30 seconds!**")
     
+    # Load stored heatmaps for performance optimization check
+    if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
+        try:
+            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+        except Exception as e:
+            print(f"Failed to load stored heatmaps for performance optimization: {e}")
+            st.session_state.stored_heatmaps = []
+    
     # Check if pre-computation is available
     if st.session_state.stored_heatmaps:
         if st.button("🚀 Pre-Compute Clipped Heatmaps", help="Process all stored heatmaps once and store clipped results for instant loading"):

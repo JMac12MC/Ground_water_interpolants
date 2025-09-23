@@ -75,13 +75,14 @@ def calculate_authoritative_bounds(lats, lons, lat_step, lon_step):
     
     This function eliminates coordinate alignment issues by providing
     one consistent bounds calculation used throughout the entire system.
+    Works regardless of array ordering.
     
     Parameters:
     -----------
     lats : array-like
-        Latitude array (north to south order)
+        Latitude array (any order)
     lons : array-like  
-        Longitude array (west to east order)
+        Longitude array (any order)
     lat_step : float
         Latitude step size in degrees
     lon_step : float
@@ -91,12 +92,20 @@ def calculate_authoritative_bounds(lats, lons, lat_step, lon_step):
     --------
     dict: Standardized bounds in all required formats
     """
+    # Calculate step sizes (handle None and ensure positive)
+    lat_step_abs = abs(lat_step) if lat_step is not None else (abs(lats[1]-lats[0]) if len(lats) > 1 else 0)
+    lon_step_abs = abs(lon_step) if lon_step is not None else (abs(lons[1]-lons[0]) if len(lons) > 1 else 0)
+    
     # Use EDGE-based bounds consistently (pixel boundaries, not centers)
-    # This ensures proper alignment between interpolation and display
-    north = lats[0] + lat_step/2   # lats[0] is northernmost center + half pixel
-    south = lats[-1] - lat_step/2  # lats[-1] is southernmost center - half pixel  
-    west = lons[0] - lon_step/2    # lons[0] is westernmost center - half pixel
-    east = lons[-1] + lon_step/2   # lons[-1] is easternmost center + half pixel
+    # Compute from min/max to work regardless of array ordering
+    south = float(np.min(lats)) - lat_step_abs/2  # Most negative (southernmost)
+    north = float(np.max(lats)) + lat_step_abs/2  # Least negative (northernmost)
+    west = float(np.min(lons)) - lon_step_abs/2   # Westernmost
+    east = float(np.max(lons)) + lon_step_abs/2   # Easternmost
+    
+    # Safety check
+    assert north > south, f"North ({north}) must be > South ({south})"
+    assert east > west, f"East ({east}) must be > West ({west})"
     
     return {
         'north': north, 'south': south, 'east': east, 'west': west,

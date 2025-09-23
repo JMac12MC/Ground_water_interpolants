@@ -975,6 +975,26 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
         print(f"🔧 WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000 using helper")
         print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        
+        # ===== MINIMAL DEBUG: Reference Point Validation =====
+        if len(wells_df) < 500:  # Only test on smaller datasets to avoid spam
+            # Test known Canterbury landmarks
+            landmarks = [
+                ("Christchurch Cathedral", -43.5321, 172.6362),
+                ("Canterbury Plains Center", -43.7, 172.0)
+            ]
+            print("🔍 COORD DEBUG - Reference Point Validation:")
+            for name, lat, lon in landmarks:
+                try:
+                    # Test coordinate transformation accuracy
+                    test_x, test_y = to_nztm2000([lon], [lat])
+                    back_lon, back_lat = to_wgs84(test_x, test_y)
+                    lat_diff = abs(lat - back_lat[0])
+                    lon_diff = abs(lon - back_lon[0])
+                    print(f"  {name}: WGS84({lat:.6f},{lon:.6f}) → NZTM({test_x[0]:.1f},{test_y[0]:.1f}) → WGS84({back_lat[0]:.6f},{back_lon[0]:.6f})")
+                    print(f"    Round-trip error: lat={lat_diff:.8f}°, lon={lon_diff:.8f}°")
+                except Exception as e:
+                    print(f"    Error testing {name}: {e}")
         # ================================================================="
 
         if wells_df.empty:
@@ -1445,6 +1465,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Use the centralized coordinate system instead of km_per_degree
     grid_lons, grid_lats = to_wgs84(grid_points_x, grid_points_y)
     print(f"🔧 Converted {len(grid_lons)} grid points from NZTM2000 to WGS84")
+    
+    # ===== MINIMAL DEBUG: Coordinate Validation Points =====
+    debug_coords = len(grid_lons) < 1000  # Only debug smaller grids to avoid spam
+    if debug_coords and len(grid_lons) > 4:
+        # Log grid corners for validation
+        indices = [0, len(grid_lons)//4, len(grid_lons)//2, -1]
+        print("🔍 COORD DEBUG - Grid Sample Points:")
+        for i in indices:
+            if i < len(grid_lons):
+                print(f"  Point {i}: NZTM({grid_points_x[i]:.1f}, {grid_points_y[i]:.1f})m → WGS84({grid_lats[i]:.6f}, {grid_lons[i]:.6f})")
+    # ================================================================
     # ========================================================================
 
     # Prepare soil polygon geometry for later filtering (do not apply to interpolation)

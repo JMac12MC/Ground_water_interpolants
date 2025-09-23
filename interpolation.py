@@ -68,6 +68,41 @@ def to_wgs84(x_coords, y_coords):
     """
     _, transformer_to_wgs84 = get_transformers()
     return transformer_to_wgs84.transform(x_coords, y_coords)
+
+def calculate_authoritative_bounds(lats, lons, lat_step, lon_step):
+    """
+    SINGLE SOURCE OF TRUTH for all bounds calculations.
+    
+    This function eliminates coordinate alignment issues by providing
+    one consistent bounds calculation used throughout the entire system.
+    
+    Parameters:
+    -----------
+    lats : array-like
+        Latitude array (north to south order)
+    lons : array-like  
+        Longitude array (west to east order)
+    lat_step : float
+        Latitude step size in degrees
+    lon_step : float
+        Longitude step size in degrees
+        
+    Returns:
+    --------
+    dict: Standardized bounds in all required formats
+    """
+    # Use EDGE-based bounds consistently (pixel boundaries, not centers)
+    # This ensures proper alignment between interpolation and display
+    north = lats[0] + lat_step/2   # lats[0] is northernmost center + half pixel
+    south = lats[-1] - lat_step/2  # lats[-1] is southernmost center - half pixel  
+    west = lons[0] - lon_step/2    # lons[0] is westernmost center - half pixel
+    east = lons[-1] + lon_step/2   # lons[-1] is easternmost center + half pixel
+    
+    return {
+        'north': north, 'south': south, 'east': east, 'west': west,
+        'rasterio_format': (west, south, east, north),  # (left, bottom, right, top)
+        'folium_format': [[south, west], [north, east]]  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
+    }
 # ==================================================================
 
 # ===== CENTRALIZED CRS/GRID CONTEXT HELPERS (ARCHITECT SOLUTION) =====
@@ -3906,13 +3941,12 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         height, width = rgba_image.shape[:2]
         
-        # CRITICAL FIX: Define bounds using pixel edges, not centers
-        # lats[0] is northernmost center, so north edge is lats[0] + lat_step/2
-        # lats[-1] is southernmost center, so south edge is lats[-1] - lat_step/2
-        raster_west = lons[0] - lon_step/2    # West edge
-        raster_east = lons[-1] + lon_step/2   # East edge  
-        raster_south = lats[-1] - lat_step/2  # South edge (bottom of image)
-        raster_north = lats[0] + lat_step/2   # North edge (top of image)
+        # ===== COORDINATE ALIGNMENT FIX: Use centralized bounds calculation =====
+        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
+        raster_west = bounds['west']
+        raster_east = bounds['east'] 
+        raster_south = bounds['south']
+        raster_north = bounds['north']
         
         print(f"🔧 PIXEL EDGE BOUNDS: N={raster_north:.8f}, S={raster_south:.8f}, E={raster_east:.8f}, W={raster_west:.8f}")
         
@@ -3995,41 +4029,30 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Encode to base64
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
-        # ===== COORDINATE ALIGNMENT FIX: Use EDGE-based bounds consistently =====
-        # Replace CENTER-based bounds with EDGE-based bounds for proper pixel alignment
-        # This ensures perfect alignment with raster pixel boundaries
-        actual_south = lats[-1] - lat_step/2  # lats[-1] is southernmost + half pixel
-        actual_north = lats[0] + lat_step/2   # lats[0] is northernmost + half pixel 
-        actual_west = lons[0] - lon_step/2    # westernmost + half pixel
-        actual_east = lons[-1] + lon_step/2   # easternmost + half pixel
-        print(f"🔧 ALIGNMENT FIX: Using EDGE-based bounds instead of CENTER-based bounds")
-        print(f"🔧 FIXED BOUNDS: N={actual_north:.6f}, S={actual_south:.6f}, E={actual_east:.6f}, W={actual_west:.6f}")
+        # ===== COORDINATE ALIGNMENT FIX: Use centralized authoritative bounds =====
+        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
+        print(f"🔧 ALIGNMENT FIX: Using centralized bounds calculation (eliminates CENTER vs EDGE inconsistencies)")
+        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
         # ================================================================
         
         # 9) BOUNDS CALCULATION - CENTER vs EDGE analysis
         print(f"🔧 ===== BOUNDS CALCULATION DEBUG =====")
         
-        # OLD CENTER-based bounds (previous approach - for comparison only)
-        old_center_south, old_center_north = south, north
-        old_center_west, old_center_east = west, east
+        # Comparison with legacy center-based bounds (for debugging only)
+        legacy_center_south, legacy_center_north = south, north
+        legacy_center_west, legacy_center_east = west, east
         
-        # NEW EDGE-based bounds (now used consistently throughout pipeline)
-        new_edge_north = actual_north  # Using the corrected edge-based bounds
-        new_edge_south = actual_south
-        new_edge_west = actual_west 
-        new_edge_east = actual_east
+        print(f"🔧 LEGACY CENTER-BASED: N={legacy_center_north:.6f}, S={legacy_center_south:.6f}, E={legacy_center_east:.6f}, W={legacy_center_west:.6f}")
+        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
         
-        print(f"🔧 OLD CENTER-BASED: N={old_center_north:.6f}, S={old_center_south:.6f}, E={old_center_east:.6f}, W={old_center_west:.6f}")
-        print(f"🔧 NEW EDGE-BASED:   N={new_edge_north:.6f}, S={new_edge_south:.6f}, E={new_edge_east:.6f}, W={new_edge_west:.6f}")
-        
-        # Calculate differences in meters (should now be ~0 since we use edge-based consistently)
-        lat_diff_meters = (new_edge_north - old_center_north) * meters_per_degree_lat
-        lon_diff_meters = (new_edge_east - old_center_east) * meters_per_degree_lon
+        # Calculate the differences that were causing the offset (should now be consistent ~143m/244m)
+        lat_diff_meters = (bounds['north'] - legacy_center_north) * meters_per_degree_lat
+        lon_diff_meters = (bounds['east'] - legacy_center_east) * meters_per_degree_lon
         print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
         
         # Overlay center vs grid center 
-        overlay_center_lat = (new_edge_north + new_edge_south) / 2
-        overlay_center_lon = (new_edge_east + new_edge_west) / 2
+        overlay_center_lat = (bounds['north'] + bounds['south']) / 2
+        overlay_center_lon = (bounds['east'] + bounds['west']) / 2
         grid_center_lat = (lats[0] + lats[-1]) / 2
         grid_center_lon = (lons[0] + lons[-1]) / 2
         
@@ -4040,8 +4063,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Canterbury reference validation
         christchurch_lat, christchurch_lon = -43.5321, 172.6362
         print(f"🔧 REFERENCE: Christchurch at ({christchurch_lat:.6f}, {christchurch_lon:.6f})")
-        print(f"🔧 IN OLD CENTER BOUNDS? lat: {old_center_south <= christchurch_lat <= old_center_north}, lon: {old_center_west <= christchurch_lon <= old_center_east}")
-        print(f"🔧 IN NEW EDGE BOUNDS?   lat: {new_edge_south <= christchurch_lat <= new_edge_north}, lon: {new_edge_west <= christchurch_lon <= new_edge_east}")
+        print(f"🔧 IN LEGACY CENTER BOUNDS? lat: {legacy_center_south <= christchurch_lat <= legacy_center_north}, lon: {legacy_center_west <= christchurch_lon <= legacy_center_east}")
+        print(f"🔧 IN AUTHORITATIVE BOUNDS? lat: {bounds['south'] <= christchurch_lat <= bounds['north']}, lon: {bounds['west'] <= christchurch_lon <= bounds['east']}")
         
         print(f"🔧 FOLIUM BOUNDS (cropped visible pixels): {final_bounds}")
         print(f"🔧 =======================================")
@@ -4096,9 +4119,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             # Clean up temporary file
             os.unlink(tmp_path)
             
-            # COORDINATE TRANSFORMATION FIX: Use accurate rasterio bounds directly
-            # No manual offsets needed with proper projected coordinate grid
-            folium_bounds = [[accurate_south, accurate_west], [accurate_north, accurate_east]]
+            # COORDINATE ALIGNMENT FIX: Use centralized bounds for consistency
+            # This ensures display bounds match interpolation bounds exactly
+            folium_bounds = bounds['folium_format']
             
             print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
             print(f"🔧 COORDINATE VALIDATION:")
@@ -4107,9 +4130,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             
         except Exception as e:
             print(f"🚨 RASTERIO ERROR: {e}")
-            # Fallback to manual bounds calculation (no offsets needed with projected grid)
-            folium_bounds = [[raster_south, raster_west], [raster_north, raster_east]]
-            print(f"🔧 FALLBACK BOUNDS (projected grid): {folium_bounds}")
+            # Fallback to centralized bounds calculation for consistency
+            folium_bounds = bounds['folium_format']
+            print(f"🔧 FALLBACK BOUNDS (centralized): {folium_bounds}")
         
         pil_image = Image.fromarray(rgba_image, 'RGBA')
         

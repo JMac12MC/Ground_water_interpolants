@@ -3995,37 +3995,41 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Encode to base64
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
-        # FIXED: Use the exact same bounds calculation as individual GeoJSON layers
-        # This ensures perfect alignment with triangulated heatmaps
-        actual_south = south
-        actual_north = north
-        actual_west = west
-        actual_east = east
+        # ===== COORDINATE ALIGNMENT FIX: Use EDGE-based bounds consistently =====
+        # Replace CENTER-based bounds with EDGE-based bounds for proper pixel alignment
+        # This ensures perfect alignment with raster pixel boundaries
+        actual_south = lats[-1] - lat_step/2  # lats[-1] is southernmost + half pixel
+        actual_north = lats[0] + lat_step/2   # lats[0] is northernmost + half pixel 
+        actual_west = lons[0] - lon_step/2    # westernmost + half pixel
+        actual_east = lons[-1] + lon_step/2   # easternmost + half pixel
+        print(f"🔧 ALIGNMENT FIX: Using EDGE-based bounds instead of CENTER-based bounds")
+        print(f"🔧 FIXED BOUNDS: N={actual_north:.6f}, S={actual_south:.6f}, E={actual_east:.6f}, W={actual_west:.6f}")
+        # ================================================================
         
         # 9) BOUNDS CALCULATION - CENTER vs EDGE analysis
         print(f"🔧 ===== BOUNDS CALCULATION DEBUG =====")
         
-        # CENTER-based bounds (current approach)
-        center_south, center_north = south, north
-        center_west, center_east = west, east
+        # OLD CENTER-based bounds (previous approach - for comparison only)
+        old_center_south, old_center_north = south, north
+        old_center_west, old_center_east = west, east
         
-        # EDGE-based bounds (for comparison - lats now go north to south)
-        edge_north = lats[0] + lat_step/2   # lats[0] is now northernmost
-        edge_south = lats[-1] - lat_step/2  # lats[-1] is now southernmost
-        edge_west = lons[0] - lon_step/2
-        edge_east = lons[-1] + lon_step/2
+        # NEW EDGE-based bounds (now used consistently throughout pipeline)
+        new_edge_north = actual_north  # Using the corrected edge-based bounds
+        new_edge_south = actual_south
+        new_edge_west = actual_west 
+        new_edge_east = actual_east
         
-        print(f"🔧 CENTER-BASED: N={center_north:.6f}, S={center_south:.6f}, E={center_east:.6f}, W={center_west:.6f}")
-        print(f"🔧 EDGE-BASED:   N={edge_north:.6f}, S={edge_south:.6f}, E={edge_east:.6f}, W={edge_west:.6f}")
+        print(f"🔧 OLD CENTER-BASED: N={old_center_north:.6f}, S={old_center_south:.6f}, E={old_center_east:.6f}, W={old_center_west:.6f}")
+        print(f"🔧 NEW EDGE-BASED:   N={new_edge_north:.6f}, S={new_edge_south:.6f}, E={new_edge_east:.6f}, W={new_edge_west:.6f}")
         
-        # Calculate differences in meters
-        lat_diff_meters = (edge_north - center_north) * meters_per_degree_lat
-        lon_diff_meters = (edge_east - center_east) * meters_per_degree_lon
+        # Calculate differences in meters (should now be ~0 since we use edge-based consistently)
+        lat_diff_meters = (new_edge_north - old_center_north) * meters_per_degree_lat
+        lon_diff_meters = (new_edge_east - old_center_east) * meters_per_degree_lon
         print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
         
-        # Overlay center vs grid center
-        overlay_center_lat = (center_north + center_south) / 2
-        overlay_center_lon = (center_east + center_west) / 2
+        # Overlay center vs grid center 
+        overlay_center_lat = (new_edge_north + new_edge_south) / 2
+        overlay_center_lon = (new_edge_east + new_edge_west) / 2
         grid_center_lat = (lats[0] + lats[-1]) / 2
         grid_center_lon = (lons[0] + lons[-1]) / 2
         
@@ -4036,8 +4040,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Canterbury reference validation
         christchurch_lat, christchurch_lon = -43.5321, 172.6362
         print(f"🔧 REFERENCE: Christchurch at ({christchurch_lat:.6f}, {christchurch_lon:.6f})")
-        print(f"🔧 IN CENTER BOUNDS? lat: {center_south <= christchurch_lat <= center_north}, lon: {center_west <= christchurch_lon <= center_east}")
-        print(f"🔧 IN EDGE BOUNDS?   lat: {edge_south <= christchurch_lat <= edge_north}, lon: {edge_west <= christchurch_lon <= edge_east}")
+        print(f"🔧 IN OLD CENTER BOUNDS? lat: {old_center_south <= christchurch_lat <= old_center_north}, lon: {old_center_west <= christchurch_lon <= old_center_east}")
+        print(f"🔧 IN NEW EDGE BOUNDS?   lat: {new_edge_south <= christchurch_lat <= new_edge_north}, lon: {new_edge_west <= christchurch_lon <= new_edge_east}")
         
         print(f"🔧 FOLIUM BOUNDS (cropped visible pixels): {final_bounds}")
         print(f"🔧 =======================================")

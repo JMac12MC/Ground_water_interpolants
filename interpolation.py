@@ -1409,15 +1409,22 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 verbose=verbose_mode
             )
             
+            # OFFSET FIX: Store Z_grid for direct raster generation (bypass triangulation)
+            stored_Z_grid = Z_grid
+            stored_x_vals_m = x_vals_m
+            stored_y_vals_m = y_vals_m
+            
             if Z_grid is not None:
                 # Extract values for masked grid points
                 Z_flat = Z_grid.flatten()
                 interpolated_z = Z_flat[mask]
                 
                 print(f"🔧 Auto-fitted kriging completed: {len(interpolated_z)} interpolated points")
+                print(f"🎯 OFFSET FIX: Stored Z_grid {Z_grid.shape} for direct raster generation")
             else:
                 print("❌ Auto-fitted kriging failed, falling back to griddata")
                 interpolated_z = None
+                stored_Z_grid = None
             # ====================================================================
 
             # Additional validation for depth interpolation
@@ -1836,6 +1843,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         "type": "FeatureCollection",
         "features": features
     }
+    
+    # OFFSET FIX: Include Z_grid data for direct raster generation if available
+    if 'stored_Z_grid' in locals() and stored_Z_grid is not None:
+        geojson['_kriging_data'] = {
+            'Z_grid': stored_Z_grid,
+            'x_vals_m': stored_x_vals_m,
+            'y_vals_m': stored_y_vals_m,
+            'method': method,
+            'direct_raster_available': True
+        }
+        print(f"🎯 OFFSET FIX: Added Kriging Z_grid data to GeoJSON for direct raster bypass")
+    else:
+        geojson['_kriging_data'] = {'direct_raster_available': False}
 
     return geojson
 

@@ -1845,7 +1845,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     }
     
     # OFFSET FIX: Include Z_grid data for direct raster generation if available
-    if 'stored_Z_grid' in locals() and stored_Z_grid is not None:
+    # Initialize default values to avoid "possibly unbound" errors
+    stored_Z_grid = locals().get('stored_Z_grid', None)
+    stored_x_vals_m = locals().get('stored_x_vals_m', None)
+    stored_y_vals_m = locals().get('stored_y_vals_m', None)
+    
+    if stored_Z_grid is not None and stored_x_vals_m is not None and stored_y_vals_m is not None:
         geojson['_kriging_data'] = {
             'Z_grid': stored_Z_grid,
             'x_vals_m': stored_x_vals_m,

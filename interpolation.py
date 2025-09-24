@@ -3409,6 +3409,120 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
+def generate_raster_from_kriging_grid(Z_grid, x_vals_m, y_vals_m, global_colormap_func=None, opacity=0.7, raster_size=(512, 512)):
+    """
+    OFFSET FIX: Generate raster directly from Kriging Z_grid, bypassing triangulation to eliminate 6-pixel offset.
+    
+    This function creates a raster directly from the PyKrige interpolation results without the
+    coordinate-drift-prone triangulation step that was causing the alignment issues.
+    
+    Parameters:
+    -----------
+    Z_grid : numpy.ndarray
+        2D array of Kriging interpolation results from PyKrige (shape matches x_vals_m, y_vals_m meshgrid)
+    x_vals_m : numpy.ndarray
+        1D array of x-coordinates in NZTM2000 meters
+    y_vals_m : numpy.ndarray  
+        1D array of y-coordinates in NZTM2000 meters
+    global_colormap_func : function
+        Function to map values to colors
+    opacity : float
+        Raster opacity (0.0-1.0)
+    raster_size : tuple
+        (width, height) of output raster
+        
+    Returns:
+    --------
+    dict : Raster overlay data with 'image_base64', 'bounds', 'opacity' keys
+    """
+    try:
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        import base64
+        from io import BytesIO
+        import rasterio
+        from rasterio.transform import from_origin
+        
+        print(f"🎯 DIRECT KRIGING RASTER: Creating raster from {Z_grid.shape} grid, bypassing triangulation")
+        
+        # Convert NZTM2000 grid coordinates to WGS84 for georeferencing
+        X_m, Y_m = np.meshgrid(x_vals_m, y_vals_m)
+        grid_lons, grid_lats = to_wgs84(X_m.flatten(), Y_m.flatten())
+        grid_lons_2d = grid_lons.reshape(X_m.shape)
+        grid_lats_2d = grid_lats.reshape(Y_m.shape)
+        
+        # Extract bounds from transformed coordinates
+        min_lat, max_lat = grid_lats_2d.min(), grid_lats_2d.max()
+        min_lon, max_lon = grid_lons_2d.min(), grid_lons_2d.max()
+        
+        print(f"🎯 BOUNDS: lat [{min_lat:.6f}, {max_lat:.6f}], lon [{min_lon:.6f}, {max_lon:.6f}]")
+        print(f"🎯 KRIGING GRID: {Z_grid.shape}, values [{Z_grid.min():.3f}, {Z_grid.max():.3f}]")
+        
+        # Create output raster at specified size
+        height, width = raster_size
+        
+        # Resample Z_grid to target raster size if needed
+        from scipy.ndimage import zoom
+        if Z_grid.shape != (height, width):
+            zoom_factors = (height / Z_grid.shape[0], width / Z_grid.shape[1])
+            Z_resampled = zoom(Z_grid, zoom_factors, order=1)  # Linear interpolation
+            print(f"🎯 RESAMPLED: {Z_grid.shape} → {Z_resampled.shape}")
+        else:
+            Z_resampled = Z_grid
+        
+        # Create RGBA image
+        rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
+        
+        # Apply colormap to interpolated values
+        for i in range(height):
+            for j in range(width):
+                value = Z_resampled[i, j]
+                if not np.isnan(value) and value > 0:
+                    if global_colormap_func:
+                        color_hex = global_colormap_func(value)
+                        # Convert hex to RGB
+                        r = int(color_hex[1:3], 16)
+                        g = int(color_hex[3:5], 16) 
+                        b = int(color_hex[5:7], 16)
+                    else:
+                        # Fallback colormap (blue to red)
+                        norm_val = min(1.0, max(0.0, value / Z_resampled.max()))
+                        r = int(255 * norm_val)
+                        g = int(255 * (1 - norm_val))
+                        b = int(255 * (1 - norm_val))
+                    
+                    rgba_image[i, j] = [r, g, b, int(255 * opacity)]
+        
+        # Convert to PNG and encode as base64
+        from PIL import Image
+        pil_image = Image.fromarray(rgba_image, mode='RGBA')
+        
+        img_buffer = BytesIO()
+        pil_image.save(img_buffer, format='PNG')
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
+        # Create bounds for Folium ImageOverlay (SW and NE corners)
+        folium_bounds = [[min_lat, min_lon], [max_lat, max_lon]]
+        
+        print(f"🎯 RASTER CREATED: {width}x{height} pixels, bounds {folium_bounds}")
+        
+        return {
+            'image_base64': img_base64,
+            'bounds': folium_bounds,
+            'opacity': opacity,
+            'method': 'direct_kriging_raster',
+            'grid_info': {
+                'original_shape': Z_grid.shape,
+                'raster_shape': (height, width),
+                'value_range': [float(Z_grid.min()), float(Z_grid.max())]
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in direct Kriging raster generation: {e}")
+        return None
+
 def generate_vector_grid_overlay(geojson_data, bounds, global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
     """
     ARCHITECT SOLUTION: Vector-based grid overlay using GeoJSON rectangles for deterministic positioning

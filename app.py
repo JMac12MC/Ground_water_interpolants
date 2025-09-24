@@ -2096,6 +2096,12 @@ with main_col1:
                             feature['properties']['yield'] = feature['properties']['value']
                         combined_geojson['features'].append(feature)
                     
+                    # OFFSET FIX: Preserve Kriging data from source heatmaps for direct raster method
+                    if ('_kriging_data' not in combined_geojson and 
+                        geojson_data.get('_kriging_data', {}).get('direct_raster_available', False)):
+                        combined_geojson['_kriging_data'] = geojson_data['_kriging_data']
+                        print(f"🎯 OFFSET FIX: Preserved Kriging data from {stored_heatmap.get('heatmap_name', 'unknown')} for direct raster method")
+                    
                     # Update overall bounds to cover all heatmaps
                     feature_count = 0
                     coord_samples = []

@@ -3933,7 +3933,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         # Use rasterio to create proper geotransform from pixel edges (not centers)
         import rasterio
-        from rasterio.transform import from_bounds
+        from rasterio.transform import from_origin
         from rasterio.warp import calculate_default_transform, reproject, Resampling
         from rasterio.crs import CRS
         import tempfile
@@ -3950,17 +3950,25 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         print(f"🔧 PIXEL EDGE BOUNDS: N={raster_north:.8f}, S={raster_south:.8f}, E={raster_east:.8f}, W={raster_west:.8f}")
         
-        # Create geotransform using rasterio's from_bounds (handles edge vs center correctly)
-        transform = from_bounds(raster_west, raster_south, raster_east, raster_north, width, height)
-        print(f"🔧 GEOTRANSFORM: {transform}")
+        # 🎯 EXPERT FIX: Calculate pixel size correctly for from_origin
+        # from_origin expects pixel spacing between centers, not total extent
+        xres = (raster_east - raster_west) / width   # longitude spacing per pixel
+        yres = (raster_north - raster_south) / height # latitude spacing per pixel
         
-        # Verify transform maps correctly
-        # Top-left pixel (0,0) should map to (raster_west, raster_north)
-        x0, y0 = transform * (0, 0)
-        # Bottom-right pixel (width-1, height-1) should map to (raster_east, raster_south)  
-        x1, y1 = transform * (width-1, height-1)
-        print(f"🔧 TRANSFORM CHECK: pixel(0,0) -> geo({x0:.8f}, {y0:.8f}) [should be W,N]")
-        print(f"🔧 TRANSFORM CHECK: pixel({width-1},{height-1}) -> geo({x1:.8f}, {y1:.8f}) [should be E,S]")
+        print(f"🎯 PIXEL SIZE: xres={xres:.8f}°, yres={yres:.8f}°")
+        print(f"🎯 PIXEL SIZE: xres={xres*111000:.1f}m, yres={yres*111000:.1f}m")
+        
+        # 🎯 EXPERT FIX: Use from_origin(west, north, xres, yres) for proper pixel registration
+        # This treats (west, north) as the upper-left corner and uses positive pixel sizes
+        transform = from_origin(raster_west, raster_north, xres, yres)
+        print(f"🎯 GEOTRANSFORM (from_origin): {transform}")
+        
+        # Verify transform maps correctly with center offsets
+        # Pixel center (0.5, 0.5) should map near (west + xres/2, north - yres/2)
+        x0, y0 = transform * (0.5, 0.5)
+        x1, y1 = transform * (width-0.5, height-0.5)
+        print(f"🎯 TRANSFORM CHECK: pixel(0.5,0.5) -> geo({x0:.8f}, {y0:.8f}) [center of first pixel]")
+        print(f"🎯 TRANSFORM CHECK: pixel({width-0.5},{height-0.5}) -> geo({x1:.8f}, {y1:.8f}) [center of last pixel]")
         
         # ARCHITECT FIX: Crop to visible pixels to eliminate transparent padding offset
         print(f"🔧 CROPPING TO VISIBLE PIXELS (alpha > 0)...")
@@ -4049,6 +4057,18 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         lat_diff_meters = (bounds['north'] - legacy_center_north) * meters_per_degree_lat
         lon_diff_meters = (bounds['east'] - legacy_center_east) * meters_per_degree_lon
         print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
+        
+        # 🎯 EXPERT DIAGNOSTIC: Check if offset is ~half a pixel (indicates pixel registration bug)
+        pixel_res_m = 286.0  # Current resolution
+        offset_pixels_north = abs(lat_diff_meters) / pixel_res_m
+        offset_pixels_east = abs(lon_diff_meters) / pixel_res_m
+        print(f"🎯 PIXEL OFFSET DIAGNOSTIC:")
+        print(f"🎯   North offset: {lat_diff_meters:.1f}m = {offset_pixels_north:.2f} pixels")
+        print(f"🎯   East offset:  {lon_diff_meters:.1f}m = {offset_pixels_east:.2f} pixels")
+        if 0.4 <= offset_pixels_north <= 0.6:
+            print(f"🚨 PIXEL REGISTRATION BUG DETECTED: North offset ~0.5 pixels indicates image flip or origin issue!")
+        if 0.4 <= offset_pixels_east <= 0.6:
+            print(f"🚨 PIXEL REGISTRATION BUG DETECTED: East offset ~0.5 pixels indicates origin issue!")
         
         # Overlay center vs grid center 
         overlay_center_lat = (bounds['north'] + bounds['south']) / 2

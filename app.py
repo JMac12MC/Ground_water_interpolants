@@ -10,7 +10,7 @@ import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
+from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay, generate_raster_from_kriging_grid
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
@@ -2171,15 +2171,34 @@ with main_col1:
                     except Exception as e:
                         print(f"🚫 SMOOTH RASTER: Error applying red/orange exclusion clipping: {e}")
                 
-                # Generate single unified smooth raster across ALL triangulated data
-                raster_overlay = generate_smooth_raster_overlay(
-                    combined_geojson, 
-                    overall_bounds, 
-                    raster_size=(512, 512), 
-                    global_colormap_func=lambda value: get_global_unified_color(value, method),
-                    opacity=st.session_state.get('heatmap_opacity', 0.7),
-                    clipping_polygon=combined_clipping_polygon
-                )
+                # OFFSET FIX: Check for direct Kriging data and use direct raster method to bypass triangulation
+                raster_overlay = None
+                if (combined_geojson and 
+                    combined_geojson.get('_kriging_data', {}).get('direct_raster_available', False)):
+                    
+                    # Use direct Kriging raster method to avoid 6-pixel offset
+                    kriging_data = combined_geojson['_kriging_data']
+                    print(f"🎯 OFFSET FIX: Using direct Kriging raster method (bypassing triangulation)")
+                    raster_overlay = generate_raster_from_kriging_grid(
+                        Z_grid=kriging_data['Z_grid'],
+                        x_vals_m=kriging_data['x_vals_m'], 
+                        y_vals_m=kriging_data['y_vals_m'],
+                        global_colormap_func=lambda value: get_global_unified_color(value, method),
+                        opacity=st.session_state.get('heatmap_opacity', 0.7),
+                        raster_size=(512, 512)
+                    )
+                
+                # Fallback to triangulated raster method if direct method not available
+                if raster_overlay is None:
+                    print(f"🔄 FALLBACK: Using triangulated raster method (no direct Kriging data available)")
+                    raster_overlay = generate_smooth_raster_overlay(
+                        combined_geojson, 
+                        overall_bounds, 
+                        raster_size=(512, 512), 
+                        global_colormap_func=lambda value: get_global_unified_color(value, method),
+                        opacity=st.session_state.get('heatmap_opacity', 0.7),
+                        clipping_polygon=combined_clipping_polygon
+                    )
                 
                 if raster_overlay:
                     # Add single unified raster overlay to map

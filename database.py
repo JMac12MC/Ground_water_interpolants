@@ -139,11 +139,23 @@ class PolygonDatabase:
                             interpolation_method VARCHAR(100) NOT NULL,
                             heatmap_data JSON NOT NULL,
                             geojson_data JSON,
+                            clipped_geojson_data JSON,
+                            clipping_version VARCHAR(50),
+                            is_clipped BOOLEAN DEFAULT FALSE,
                             well_count INTEGER DEFAULT 0,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     """))
                     print("Created stored_heatmaps table")
+                else:
+                    # Add new columns for pre-clipped data if they don't exist
+                    try:
+                        conn.execute(text("ALTER TABLE stored_heatmaps ADD COLUMN IF NOT EXISTS clipped_geojson_data JSON"))
+                        conn.execute(text("ALTER TABLE stored_heatmaps ADD COLUMN IF NOT EXISTS clipping_version VARCHAR(50)"))
+                        conn.execute(text("ALTER TABLE stored_heatmaps ADD COLUMN IF NOT EXISTS is_clipped BOOLEAN DEFAULT FALSE"))
+                        print("Added pre-clipped heatmap columns")
+                    except Exception as e:
+                        print(f"Columns may already exist: {e}")
                 
                 conn.commit()
         except Exception as e:
@@ -867,3 +879,140 @@ class PolygonDatabase:
         except Exception as e:
             print(f"Error storing polygon: {e}")
             return None
+
+    def store_pre_clipped_heatmap(self, heatmap_id, clipped_geojson_data, clipping_version):
+        """
+        Store pre-clipped GeoJSON data for a heatmap to eliminate real-time clipping operations
+        
+        Parameters:
+        -----------
+        heatmap_id : int
+            ID of the heatmap to store clipped data for
+        clipped_geojson_data : dict
+            Pre-clipped GeoJSON data
+        clipping_version : str
+            Version identifier for the clipping configuration used
+            
+        Returns:
+        --------
+        bool
+            True if storage was successful
+        """
+        try:
+            if not hasattr(self, 'engine') or self.engine is None:
+                if not self.database_url:
+                    return False
+                self.engine = create_engine(self.database_url)
+            
+            with self.engine.connect() as conn:
+                # Update the heatmap with pre-clipped data
+                conn.execute(text("""
+                    UPDATE stored_heatmaps 
+                    SET clipped_geojson_data = :clipped_data,
+                        clipping_version = :clipping_version,
+                        is_clipped = TRUE
+                    WHERE id = :heatmap_id
+                """), {
+                    'heatmap_id': heatmap_id,
+                    'clipped_data': json.dumps(clipped_geojson_data),
+                    'clipping_version': clipping_version
+                })
+                
+                conn.commit()
+                
+                feature_count = len(clipped_geojson_data.get('features', []))
+                print(f"✅ Stored pre-clipped data for heatmap {heatmap_id}: {feature_count} features")
+                return True
+                
+        except Exception as e:
+            print(f"❌ Error storing pre-clipped heatmap: {e}")
+            return False
+
+    def get_pre_clipped_heatmap(self, heatmap_id, clipping_version):
+        """
+        Retrieve pre-clipped GeoJSON data for a heatmap if available and version matches
+        
+        Parameters:
+        -----------
+        heatmap_id : int
+            ID of the heatmap
+        clipping_version : str
+            Required clipping version
+            
+        Returns:
+        --------
+        dict or None
+            Pre-clipped GeoJSON data if available and version matches
+        """
+        try:
+            if not hasattr(self, 'engine') or self.engine is None:
+                return None
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT clipped_geojson_data 
+                    FROM stored_heatmaps 
+                    WHERE id = :heatmap_id 
+                    AND clipping_version = :clipping_version
+                    AND is_clipped = TRUE
+                """), {
+                    'heatmap_id': heatmap_id,
+                    'clipping_version': clipping_version
+                })
+                
+                row = result.fetchone()
+                if row and row[0]:
+                    clipped_data = row[0]
+                    if isinstance(clipped_data, str):
+                        clipped_data = json.loads(clipped_data)
+                    
+                    feature_count = len(clipped_data.get('features', []))
+                    print(f"🚀 Cache hit: Retrieved pre-clipped data for heatmap {heatmap_id}: {feature_count} features")
+                    return clipped_data
+                    
+                return None
+                
+        except Exception as e:
+            print(f"❌ Error retrieving pre-clipped heatmap: {e}")
+            return None
+
+    def clear_pre_clipped_data(self, clipping_version=None):
+        """
+        Clear pre-clipped data (e.g., when clipping configuration changes)
+        
+        Parameters:
+        -----------
+        clipping_version : str, optional
+            If specified, only clear data for this version
+        """
+        try:
+            if not hasattr(self, 'engine') or self.engine is None:
+                return False
+            
+            with self.engine.connect() as conn:
+                if clipping_version:
+                    # Clear specific version
+                    result = conn.execute(text("""
+                        UPDATE stored_heatmaps 
+                        SET clipped_geojson_data = NULL,
+                            clipping_version = NULL,
+                            is_clipped = FALSE
+                        WHERE clipping_version = :clipping_version
+                    """), {'clipping_version': clipping_version})
+                    print(f"🧹 Cleared pre-clipped data for version: {clipping_version}")
+                else:
+                    # Clear all pre-clipped data
+                    result = conn.execute(text("""
+                        UPDATE stored_heatmaps 
+                        SET clipped_geojson_data = NULL,
+                            clipping_version = NULL,
+                            is_clipped = FALSE
+                    """))
+                    print("🧹 Cleared all pre-clipped data")
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            print(f"❌ Error clearing pre-clipped data: {e}")
+            return False

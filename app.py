@@ -10,7 +10,7 @@ import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
+from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay, generate_raster_from_kriging_grid
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
@@ -571,51 +571,6 @@ with st.sidebar:
                         st.error(f"Generation error: {e}")
             else:
                 st.error("Wells data or database not available")
-    
-    # Performance Optimization Section
-    st.markdown("---")
-    st.subheader("⚡ Performance Optimization")
-    st.write("Pre-compute clipped heatmaps to eliminate 29,008+ geometric operations per load. **Reduces loading time from 5+ minutes to under 30 seconds!**")
-    
-    # Check if pre-computation is available
-    if st.session_state.stored_heatmaps:
-        if st.button("🚀 Pre-Compute Clipped Heatmaps", help="Process all stored heatmaps once and store clipped results for instant loading"):
-            if st.session_state.polygon_db is not None:
-                with st.spinner("Pre-computing clipped heatmaps for ultra-fast loading..."):
-                    try:
-                        from interpolation import get_prepared_exclusion_union, precompute_and_store_clipped_heatmaps
-                        
-                        # Get exclusion data
-                        exclusion_data = get_prepared_exclusion_union()
-                        
-                        if exclusion_data is not None:
-                            _, _, _, exclusion_version = exclusion_data
-                            clipping_version = f"red_orange_{exclusion_version}"
-                            
-                            # Run pre-computation
-                            result = precompute_and_store_clipped_heatmaps(
-                                st.session_state.polygon_db, 
-                                exclusion_data, 
-                                clipping_version
-                            )
-                            
-                            if result['status'] == 'success':
-                                st.success(f"✅ Pre-computation complete! Processed {result['heatmaps_processed']} heatmaps in {result['processing_time_seconds']}s")
-                                st.info(f"🚀 Performance gain: {result['performance_gain']}")
-                                st.balloons()
-                            elif result['status'] == 'no_data':
-                                st.warning("⚠️ No heatmaps found to process")
-                            else:
-                                st.error(f"❌ Pre-computation failed: {result.get('error', 'Unknown error')}")
-                        else:
-                            st.warning("⚠️ No red/orange exclusion zones found - pre-computation not needed")
-                            
-                    except Exception as e:
-                        st.error(f"Pre-computation error: {e}")
-            else:
-                st.error("Database not available")
-    else:
-        st.info("📝 No stored heatmaps available. Generate heatmaps first using the buttons above.")
     
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -2141,6 +2096,12 @@ with main_col1:
                             feature['properties']['yield'] = feature['properties']['value']
                         combined_geojson['features'].append(feature)
                     
+                    # OFFSET FIX: Preserve Kriging data from source heatmaps for direct raster method
+                    if ('_kriging_data' not in combined_geojson and 
+                        geojson_data.get('_kriging_data', {}).get('direct_raster_available', False)):
+                        combined_geojson['_kriging_data'] = geojson_data['_kriging_data']
+                        print(f"🎯 OFFSET FIX: Preserved Kriging data from {stored_heatmap.get('heatmap_name', 'unknown')} for direct raster method")
+                    
                     # Update overall bounds to cover all heatmaps
                     feature_count = 0
                     coord_samples = []
@@ -2216,15 +2177,34 @@ with main_col1:
                     except Exception as e:
                         print(f"🚫 SMOOTH RASTER: Error applying red/orange exclusion clipping: {e}")
                 
-                # Generate single unified smooth raster across ALL triangulated data
-                raster_overlay = generate_smooth_raster_overlay(
-                    combined_geojson, 
-                    overall_bounds, 
-                    raster_size=(512, 512), 
-                    global_colormap_func=lambda value: get_global_unified_color(value, method),
-                    opacity=st.session_state.get('heatmap_opacity', 0.7),
-                    clipping_polygon=combined_clipping_polygon
-                )
+                # OFFSET FIX: Check for direct Kriging data and use direct raster method to bypass triangulation
+                raster_overlay = None
+                if (combined_geojson and 
+                    combined_geojson.get('_kriging_data', {}).get('direct_raster_available', False)):
+                    
+                    # Use direct Kriging raster method to avoid 6-pixel offset
+                    kriging_data = combined_geojson['_kriging_data']
+                    print(f"🎯 OFFSET FIX: Using direct Kriging raster method (bypassing triangulation)")
+                    raster_overlay = generate_raster_from_kriging_grid(
+                        Z_grid=kriging_data['Z_grid'],
+                        x_vals_m=kriging_data['x_vals_m'], 
+                        y_vals_m=kriging_data['y_vals_m'],
+                        global_colormap_func=lambda value: get_global_unified_color(value, method),
+                        opacity=st.session_state.get('heatmap_opacity', 0.7),
+                        raster_size=(512, 512)
+                    )
+                
+                # Fallback to triangulated raster method if direct method not available
+                if raster_overlay is None:
+                    print(f"🔄 FALLBACK: Using triangulated raster method (no direct Kriging data available)")
+                    raster_overlay = generate_smooth_raster_overlay(
+                        combined_geojson, 
+                        overall_bounds, 
+                        raster_size=(512, 512), 
+                        global_colormap_func=lambda value: get_global_unified_color(value, method),
+                        opacity=st.session_state.get('heatmap_opacity', 0.7),
+                        clipping_polygon=combined_clipping_polygon
+                    )
                 
                 if raster_overlay:
                     # Add single unified raster overlay to map
@@ -2303,37 +2283,16 @@ with main_col1:
             with st.spinner(f"⚡ Loading {len(visible_heatmaps)} visible heatmaps (optimized)..."):
                 pass  # Visual feedback for user
         
-        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache with pre-clipped data support
+        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache
         def get_preprocessed_heatmap(heatmap_id, raw_geojson_data, method):
-            """Get or create preprocessed heatmap data - now with PRE-CLIPPED DATA SUPPORT"""
-            cache_key = f"preprocessed_{heatmap_id}_{method}_v3"  # Updated version for pre-clipped support
+            """Get or create preprocessed heatmap data"""
+            cache_key = f"preprocessed_{heatmap_id}_{method}_v2"
             
             if cache_key in st.session_state:
                 return st.session_state[cache_key]
             
-            # OPTIMIZATION 1: Try to get pre-clipped data first (eliminates 29,008 geometric operations!)
+            # Apply exclusion clipping and preprocessing
             if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
-                try:
-                    from interpolation import get_prepared_exclusion_union
-                    exclusion_data = get_prepared_exclusion_union()
-                    
-                    if exclusion_data is not None:
-                        _, _, _, exclusion_version = exclusion_data
-                        clipping_version = f"red_orange_{exclusion_version}"
-                        
-                        # Try to get pre-clipped data from database
-                        pre_clipped_data = st.session_state.polygon_db.get_pre_clipped_heatmap(heatmap_id, clipping_version)
-                        
-                        if pre_clipped_data is not None:
-                            print(f"🚀 PERFORMANCE: Using pre-clipped data for heatmap {heatmap_id} (skipped {259} geometric operations!)")
-                            st.session_state[cache_key] = pre_clipped_data
-                            return pre_clipped_data
-                        else:
-                            print(f"⚡ FALLBACK: No pre-clipped data for heatmap {heatmap_id}, using real-time clipping")
-                except Exception as e:
-                    print(f"❌ Pre-clipped data error: {e}, falling back to real-time clipping")
-                
-                # FALLBACK: Use real-time clipping if pre-clipped data not available
                 from interpolation import apply_exclusion_clipping_to_stored_heatmap
                 processed_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method, heatmap_id=heatmap_id)
             else:

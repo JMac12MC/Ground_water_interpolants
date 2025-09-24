@@ -3883,6 +3883,20 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Use the interpolated zi for display
         zi_smooth = zi
         
+        # 🎯 EXPERT FIX: Test array flip to resolve vertical offset
+        # External AI expert diagnosis: Likely mismatch between coordinate grid orientation (north-to-south)
+        # and how interpolated array is created. Test flipping to see if it resolves the offset.
+        print(f"🎯 TESTING ARRAY FLIP: zi_smooth original shape {zi_smooth.shape}")
+        print(f"🎯 BEFORE FLIP: zi_smooth[0,0]={zi_smooth[0,0]:.3f} (should be NW corner)")
+        print(f"🎯 BEFORE FLIP: zi_smooth[-1,-1]={zi_smooth[-1,-1]:.3f} (should be SE corner)")
+        
+        # Apply vertical flip to test if this resolves the systematic offset
+        zi_smooth = np.flipud(zi_smooth)
+        
+        print(f"🎯 AFTER FLIP: zi_smooth[0,0]={zi_smooth[0,0]:.3f} (should now be NW corner)")
+        print(f"🎯 AFTER FLIP: zi_smooth[-1,-1]={zi_smooth[-1,-1]:.3f} (should now be SE corner)")
+        print(f"🎯 Array flipped vertically - testing if this resolves 143m north offset")
+        
         # Convert values to colors using global colormap function
         if global_colormap_func:
             # Create RGBA image

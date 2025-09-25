@@ -161,6 +161,15 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 )
                 
                 if geo_json_result and isinstance(geo_json_result, dict) and 'features' in geo_json_result:
+                    # Check if GeoJSON has actual features (prevent storing empty heatmaps)
+                    feature_count = len(geo_json_result.get('features', []))
+                    if feature_count == 0:
+                        print(f"⚠️  Grid point {i+1} generated 0 features after clipping - skipping storage")
+                        error_messages.append(f"Grid point {i+1}: No features after clipping")
+                        continue
+                    
+                    print(f"✅ Grid point {i+1} generated {feature_count} features - proceeding with storage")
+                    
                     # Create unique heatmap identifier based on grid point
                     heatmap_id = f"{interpolation_method}_gridpoint{i+1}_{grid_point[0]:.3f}_{grid_point[1]:.3f}"
                     

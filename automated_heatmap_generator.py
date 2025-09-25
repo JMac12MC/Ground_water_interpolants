@@ -6,7 +6,6 @@ Leverages the proven sequential heatmap system to generate comprehensive coverag
 import streamlit as st
 import pandas as pd
 import numpy as np
-from utils import get_distance
 
 def test_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, num_tiles=5):
     """
@@ -179,7 +178,6 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     This is the main function called by app.py for full automated generation.
     """
     
-    print("🚨🚨🚨 CRITICAL: generate_automated_heatmaps FUNCTION CALLED! 🚨🚨🚨")
     print(f"🚀 FULL AUTOMATED GENERATION: Covering all well data with up to {max_tiles} heatmaps")
     print(f"📋 Available columns: {list(wells_data.columns)}")
     
@@ -249,256 +247,37 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     # Get bounds for grid generation
     min_x, min_y, max_x, max_y = hull_polygon.bounds
     
-    # Generate grid points using GEODETIC SPACING (not flat projection)
-    # This accounts for Earth's curvature for survey-grade precision
+    # Generate grid points at dynamic spacing based on search area size
     grid_spacing_km = search_radius_km - 0.180
+    grid_spacing = int(grid_spacing_km * 1000)  # Convert km to meters (NZTM units)
     
-    print(f"🌍 USING GEODETIC GRID GENERATION (Earth-curvature aware)")
-    print(f"   Target spacing: {grid_spacing_km:.3f}km between centers")
-    print(f"   Using survey-grade precision calculations...")
+    # Calculate grid bounds with padding
+    start_x = int(min_x // grid_spacing) * grid_spacing
+    start_y = int(min_y // grid_spacing) * grid_spacing
+    end_x = int(max_x // grid_spacing + 1) * grid_spacing
+    end_y = int(max_y // grid_spacing + 1) * grid_spacing
     
-    # Use center of convex hull as starting point for geodetic grid
-    hull_center_x = (hull_min_x + hull_max_x) / 2
-    hull_center_y = (hull_min_y + hull_max_y) / 2
-    hull_center_lon, hull_center_lat = transformer_to_latlon.transform(hull_center_x, hull_center_y)
-    
-    print(f"   Grid origin: ({hull_center_lat:.6f}, {hull_center_lon:.6f})")
-    
-    # PRECISE GEODETIC OFFSET CALCULATIONS
-    # Same algorithm as manual system for survey-grade accuracy
-    MAX_ITERATIONS = 200
-    TOLERANCE_KM = 0.0001  # 10cm tolerance
-    ADAPTIVE_STEP_SIZE = 0.000001
-    
-    # Step 1: Calculate precise latitude offset
-    target_offset_km = grid_spacing_km
-    lat_offset_degrees = target_offset_km / 111.0  # Initial estimate
-    best_lat_offset = lat_offset_degrees
-    best_lat_error = float('inf')
-    
-    for i in range(MAX_ITERATIONS):
-        test_lat = hull_center_lat - lat_offset_degrees
-        actual_distance = get_distance(hull_center_lat, hull_center_lon, test_lat, hull_center_lon)
-        error = abs(actual_distance - target_offset_km)
-        
-        if error < best_lat_error:
-            best_lat_offset = lat_offset_degrees
-            best_lat_error = error
-        
-        if error < TOLERANCE_KM:
-            break
-            
-        # Adaptive convergence algorithm
-        if error > 0.001:  # > 1 meter error - proportional adjustment
-            adjustment_factor = target_offset_km / actual_distance  
-            lat_offset_degrees *= adjustment_factor
-        else:  # Precision phase - adaptive micro-adjustments
-            step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
-            if actual_distance > target_offset_km:
-                lat_offset_degrees -= step_size
-            else:
-                lat_offset_degrees += step_size
-    
-    lat_offset_degrees = best_lat_offset
-    final_lat_distance = get_distance(hull_center_lat, hull_center_lon, hull_center_lat - lat_offset_degrees, hull_center_lon)
-    print(f"   Latitude offset: {lat_offset_degrees:.10f}° (achieved: {final_lat_distance:.6f}km)")
-    
-    print(f"   Latitude offset calculated - will be used for all rows")
-    
-    # Estimate grid dimensions needed to cover convex hull
-    # Convert hull bounds to lat/lon for distance calculations
-    hull_width_km = get_distance(hull_center_lat, hull_sw_lon, hull_center_lat, hull_ne_lon)
-    hull_height_km = get_distance(hull_sw_lat, hull_center_lon, hull_ne_lat, hull_center_lon)
-    
-    grid_cols_needed = int(hull_width_km / grid_spacing_km) + 3  # Add padding
-    grid_rows_needed = int(hull_height_km / grid_spacing_km) + 3  # Add padding
-    
-    print(f"   Hull dimensions: {hull_width_km:.1f}km × {hull_height_km:.1f}km")
-    print(f"   Grid dimensions needed: {grid_rows_needed} rows × {grid_cols_needed} cols")
-    
-    # Generate geodetic grid with PER-ROW longitude compensation (same as manual system)
-    # This eliminates cumulative longitude offset errors across the north-south extent
-    print(f"🔧 CALCULATING ROW-SPECIFIC LONGITUDE OFFSETS:")
-    print(f"   Each row will have its own precise longitude offset calculated")
-    
+    # Generate all grid points within convex hull
+    grid_points_nztm = []
     grid_points_latlon = []
     
-    # Start from northwest corner to cover hull area
-    start_row = -(grid_rows_needed // 2)
-    start_col = -(grid_cols_needed // 2)
-    
-    # Pre-calculate row-specific longitude offsets (same approach as manual system)
-    row_longitude_offsets = []
-    
-    for row in range(grid_rows_needed):
-        current_row = start_row + row
-        row_lat = hull_center_lat - (current_row * lat_offset_degrees)
-        
-        # Step 2: Calculate precise longitude offset for THIS ROW'S latitude
-        # Use same adaptive convergence as manual system
-        lon_offset_initial = target_offset_km / (111.0 * abs(np.cos(np.radians(row_lat))))
-        best_lon_offset = lon_offset_initial
-        best_lon_error = float('inf')
-        
-        for i in range(MAX_ITERATIONS):
-            test_lon = hull_center_lon + lon_offset_initial
-            actual_distance = get_distance(row_lat, hull_center_lon, row_lat, test_lon)
-            error = abs(actual_distance - target_offset_km)
-            
-            if error < best_lon_error:
-                best_lon_offset = lon_offset_initial
-                best_lon_error = error
-            
-            if error < TOLERANCE_KM:
-                break
-                
-            # Adaptive longitude precision targeting (same as manual system)
-            if error > 0.001:  # > 1 meter error
-                adjustment_factor = target_offset_km / actual_distance
-                lon_offset_initial *= adjustment_factor
-            else:  # Adaptive precision phase
-                step_size = max(ADAPTIVE_STEP_SIZE, error / 10.0)
-                if actual_distance > target_offset_km:
-                    lon_offset_initial -= step_size
-                else:
-                    lon_offset_initial += step_size
-        
-        row_longitude_offsets.append(best_lon_offset)
-        
-        # Verify achieved precision for this row
-        final_row_distance = get_distance(row_lat, hull_center_lon, row_lat, hull_center_lon + best_lon_offset)
-        
-        if row < 3 or row == grid_rows_needed - 1:  # Log first few and last row
-            print(f"   Row {row:2d} (lat {row_lat:.6f}°): offset {best_lon_offset:.10f}° (achieved: {final_row_distance:.6f}km, error: {abs(final_row_distance-target_offset_km)*1000:.1f}m)")
-    
-    print(f"   All {len(row_longitude_offsets)} rows calculated with survey-grade precision")
-    
-    # Generate grid points using row-specific longitude offsets
-    for row in range(grid_rows_needed):
-        current_row = start_row + row
-        row_lat = hull_center_lat - (current_row * lat_offset_degrees)
-        row_lon_offset = row_longitude_offsets[row]
-        
-        for col in range(grid_cols_needed):
-            current_col = start_col + col
-            row_lon = hull_center_lon + (current_col * row_lon_offset)
-            
-            # Convert to NZTM to check if within convex hull
-            nztm_x, nztm_y = transformer_to_nztm.transform(row_lon, row_lat)
-            point_nztm = Point(nztm_x, nztm_y)
-            
-            # Double validation: within convex hull AND has wells within search radius
+    y = start_y
+    while y <= end_y:
+        x = start_x
+        while x <= end_x:
+            point_nztm = Point(x, y)
+            # Check if point is within convex hull
             if hull_polygon.contains(point_nztm):
-                # Check if this grid point has wells within search radius
-                from utils import is_within_square
-                wells_in_radius = valid_wells[valid_wells.apply(
-                    lambda well: is_within_square(
-                        well['latitude'], 
-                        well['longitude'], 
-                        row_lat, 
-                        row_lon, 
-                        search_radius_km
-                    ), 
-                    axis=1
-                )]
-                
-                if len(wells_in_radius) > 0:
-                    grid_points_latlon.append([row_lat, row_lon])
-                # If no wells within search radius, skip this grid point silently
+                grid_points_nztm.append((x, y))
+                # Convert to lat/lon for heatmap generation
+                lon, lat = transformer_to_latlon.transform(x, y)
+                grid_points_latlon.append([lat, lon])
+            x += grid_spacing
+        y += grid_spacing
     
     total_grid_points = len(grid_points_latlon)
     
-    print(f"📐 Generated {total_grid_points} precise {grid_spacing_km:.2f}km grid points within convex hull WITH wells in {search_radius_km}km radius")
-    
-    # COMPREHENSIVE PRECISION VERIFICATION: Test achieved center-to-center distances
-    if total_grid_points > 1:
-        print(f"🎯 COMPREHENSIVE PRECISION VERIFICATION:")
-        print(f"   Testing actual achieved center-to-center distances...")
-        
-        # Find grid structure for proper adjacent testing
-        grid_structure = {}
-        for i, (lat, lon) in enumerate(grid_points_latlon):
-            # Group by row (latitude) with small tolerance
-            row_key = round(lat / lat_offset_degrees) * lat_offset_degrees
-            if row_key not in grid_structure:
-                grid_structure[row_key] = []
-            grid_structure[row_key].append((i, lat, lon))
-        
-        horizontal_distances = []
-        vertical_distances = []
-        
-        # Test horizontal distances (within rows)
-        for row_lat, row_points in grid_structure.items():
-            if len(row_points) > 1:
-                # Sort by longitude
-                row_points.sort(key=lambda x: x[2])  # Sort by lon
-                for j in range(len(row_points) - 1):
-                    _, lat1, lon1 = row_points[j]
-                    _, lat2, lon2 = row_points[j + 1]
-                    distance = get_distance(lat1, lon1, lat2, lon2)
-                    horizontal_distances.append(distance)
-        
-        # Test vertical distances (between rows)
-        row_keys = sorted(grid_structure.keys(), reverse=True)  # North to south
-        for i in range(len(row_keys) - 1):
-            row1_points = grid_structure[row_keys[i]]
-            row2_points = grid_structure[row_keys[i + 1]]
-            
-            # Test a few vertical pairs
-            min_pairs = min(len(row1_points), len(row2_points), 5)  # Test up to 5 pairs
-            for j in range(min_pairs):
-                if j < len(row1_points) and j < len(row2_points):
-                    _, lat1, lon1 = row1_points[j]
-                    _, lat2, lon2 = row2_points[j] 
-                    distance = get_distance(lat1, lon1, lat2, lon2)
-                    vertical_distances.append(distance)
-        
-        # Analyze horizontal spacing precision
-        if horizontal_distances:
-            h_errors = [abs(d - grid_spacing_km) for d in horizontal_distances]
-            h_max_error = max(h_errors)
-            h_avg_error = sum(h_errors) / len(h_errors)
-            
-            print(f"   HORIZONTAL (East-West) spacing:")
-            print(f"     Tested: {len(horizontal_distances)} adjacent pairs")
-            print(f"     Max error: {h_max_error:.6f}km ({h_max_error*1000:.1f}m)")
-            print(f"     Avg error: {h_avg_error:.6f}km ({h_avg_error*1000:.1f}m)")
-            
-            if h_max_error > 0.001:  # > 1m error
-                print(f"     ⚠️  HORIZONTAL ERROR: Max {h_max_error*1000:.1f}m exceeds 1m tolerance")
-        
-        # Analyze vertical spacing precision  
-        if vertical_distances:
-            v_errors = [abs(d - grid_spacing_km) for d in vertical_distances]
-            v_max_error = max(v_errors)
-            v_avg_error = sum(v_errors) / len(v_errors)
-            
-            print(f"   VERTICAL (North-South) spacing:")
-            print(f"     Tested: {len(vertical_distances)} adjacent pairs")
-            print(f"     Max error: {v_max_error:.6f}km ({v_max_error*1000:.1f}m)")
-            print(f"     Avg error: {v_avg_error:.6f}km ({v_avg_error*1000:.1f}m)")
-            
-            if v_max_error > 0.001:  # > 1m error
-                print(f"     ⚠️  VERTICAL ERROR: Max {v_max_error*1000:.1f}m exceeds 1m tolerance")
-        
-        # Overall assessment
-        all_distances = horizontal_distances + vertical_distances
-        if all_distances:
-            all_errors = [abs(d - grid_spacing_km) for d in all_distances]
-            overall_max_error = max(all_errors)
-            
-            print(f"   OVERALL GRID PRECISION:")
-            if overall_max_error < 0.0001:  # < 10cm  
-                print("     🏆 SURVEY-GRADE: All distances within 10cm - professional precision achieved")
-            elif overall_max_error < 0.001:  # < 1m
-                print("     ✅ EXCELLENT: All distances within 1 meter - suitable for geospatial applications") 
-            elif overall_max_error < 0.01:  # < 10m
-                print("     ✅ VERY GOOD: All distances within 10 meters - good for seamless joining")
-            else:
-                print(f"     ❌ CRITICAL: Max error {overall_max_error*1000:.1f}m exceeds acceptable tolerance")
-                print(f"     This will cause visible raster offset issues - needs refinement")
-        else:
-            print("   No adjacent grid points found for precision testing")
+    print(f"📐 Generated {total_grid_points} precise {grid_spacing_km:.2f}km grid points within convex hull")
     print(f"📍 Using pre-calculated grid points for efficient coverage")
     
     # Limit to max_tiles if necessary

@@ -2237,11 +2237,11 @@ with main_col1:
                     overlay = folium.raster_layers.ImageOverlay(
                         image=f"data:image/png;base64,{raster_overlay['image_base64']}",
                         bounds=raster_overlay['bounds'],
-                        opacity=max(0.8, raster_overlay['opacity']),  # Ensure minimum visibility
-                        name=f"Smooth Raster ({len(valid_heatmaps_for_raster)} tiles)",
-                        overlay=True,  # Mark as overlay layer
-                        control=True,  # Include in layer control
-                        show=True      # Ensure it's shown by default
+                        opacity=1.0,  # MAXIMUM VISIBILITY TEST - fully opaque
+                        name=f"🌊 SMOOTH-TEST ({len(valid_heatmaps_for_raster)} tiles) 🌊",
+                        overlay=False,  # Try as base layer instead of overlay
+                        control=True,   # Include in layer control
+                        show=True       # Ensure it's shown by default
                     )
                     overlay.add_to(m)
                     print(f"🎯 IMAGEOVERLAY ADDED SUCCESSFULLY with enhanced visibility")
@@ -2461,11 +2461,11 @@ with main_col1:
             overlay = folium.raster_layers.ImageOverlay(
                 image=f"data:image/png;base64,{combined_raster['image_base64']}",
                 bounds=combined_raster['bounds'],
-                opacity=max(0.8, combined_raster['opacity']),  # Ensure minimum visibility
-                name=f"Combined Heatmap Overlay ({len(visible_heatmaps)} tiles)",
-                overlay=True,  # Mark as overlay layer
-                control=True,  # Include in layer control
-                show=True      # Ensure it's shown by default
+                opacity=1.0,  # MAXIMUM VISIBILITY TEST - fully opaque
+                name=f"🔥 HEATMAP-TEST ({len(visible_heatmaps)} tiles) 🔥",
+                overlay=False,  # Try as base layer instead of overlay
+                control=True,   # Include in layer control
+                show=True       # Ensure it's shown by default
             )
             overlay.add_to(m)
             print(f"🎯 COMBINED RASTER ADDED SUCCESSFULLY with enhanced visibility")

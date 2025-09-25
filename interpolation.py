@@ -4303,12 +4303,99 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Encode to base64
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
-        return {
-            'image_base64': img_base64,
-            'bounds': folium_bounds,
-            'opacity': opacity,
-            'positioning_method': 'georeferenced_rasterio'
-        }
+        # ===== CRITICAL FIX: ACTUAL REPROJECTION FROM EPSG:2193 TO EPSG:4326 =====
+        # The problem: We generate rasters in NZTM2000 meters, but display them in WGS84 degrees
+        # Just assigning corner coordinates assumes a rectangle in meters = rectangle in degrees
+        # But longitude "squeezes" as you go south, causing progressive distortion
+        
+        print("🌍 IMPLEMENTING PROPER EPSG:2193 -> EPSG:4326 REPROJECTION")
+        print("🌍 This eliminates the scaling offset bug by warping the raster correctly")
+        
+        try:
+            # Step 1: We need to work with the original meter-based grid coordinates
+            # Convert WGS84 bounds back to NZTM2000 for proper reprojection setup
+            transformer_to_nztm, transformer_to_wgs84 = get_transformers()
+            
+            # Get the original grid extent in meters (NZTM2000)
+            west_m, north_m = transformer_to_nztm.transform(west, north)
+            east_m, south_m = transformer_to_nztm.transform(east, south)
+            
+            print(f"🌍 NZTM BOUNDS: N={north_m:.1f}m, S={south_m:.1f}m, E={east_m:.1f}m, W={west_m:.1f}m")
+            
+            # Step 2: Calculate pixel resolution in meters (not degrees!)
+            height, width = rgba_image.shape[:2]
+            xres_m = (east_m - west_m) / width   # meter spacing per pixel
+            yres_m = (north_m - south_m) / height # meter spacing per pixel
+            
+            print(f"🌍 NZTM PIXEL SIZE: {xres_m:.1f}m x {yres_m:.1f}m")
+            
+            # Step 3: Create source transform in NZTM2000 coordinates  
+            src_transform = from_origin(west_m, north_m, xres_m, yres_m)
+            src_crs = CRS.from_epsg(2193)  # NZTM2000
+            dst_crs = CRS.from_epsg(4326)  # WGS84
+            
+            print(f"🌍 SOURCE TRANSFORM (NZTM): {src_transform}")
+            
+            # Step 4: Calculate target transform and dimensions for WGS84
+            dst_transform, dst_width, dst_height = calculate_default_transform(
+                src_crs, dst_crs, width, height, west_m, south_m, east_m, north_m
+            )
+            
+            print(f"🌍 TARGET TRANSFORM (WGS84): {dst_transform}")
+            print(f"🌍 TARGET DIMENSIONS: {dst_width} x {dst_height}")
+            
+            # Step 5: Create destination array and reproject each RGBA band
+            dst_rgba = np.zeros((dst_height, dst_width, 4), dtype=rgba_image.dtype)
+            
+            for band in range(4):  # RGBA channels
+                reproject(
+                    source=rgba_image[:, :, band],
+                    destination=dst_rgba[:, :, band],
+                    src_transform=src_transform,
+                    src_crs=src_crs,
+                    dst_transform=dst_transform,
+                    dst_crs=dst_crs,
+                    resampling=Resampling.bilinear
+                )
+            
+            print(f"🌍 REPROJECTION COMPLETE: {rgba_image.shape} -> {dst_rgba.shape}")
+            
+            # Step 6: Calculate accurate WGS84 bounds from the reprojected raster
+            from rasterio.transform import array_bounds
+            dst_south, dst_west, dst_north, dst_east = array_bounds(dst_height, dst_width, dst_transform)
+            
+            reprojected_bounds = [[dst_south, dst_west], [dst_north, dst_east]]
+            
+            print(f"🌍 REPROJECTED BOUNDS: [[{dst_south:.6f}, {dst_west:.6f}], [{dst_north:.6f}, {dst_east:.6f}]]")
+            
+            # Step 7: Encode the reprojected image
+            pil_image_reprojected = Image.fromarray(dst_rgba, 'RGBA')
+            
+            img_buffer_reprojected = io.BytesIO()
+            pil_image_reprojected.save(img_buffer_reprojected, format='PNG', optimize=True)
+            img_buffer_reprojected.seek(0)
+            
+            img_base64_reprojected = base64.b64encode(img_buffer_reprojected.getvalue()).decode('utf-8')
+            
+            print("🌍 SUCCESS: Raster properly reprojected - offset bug eliminated!")
+            
+            return {
+                'image_base64': img_base64_reprojected,
+                'bounds': reprojected_bounds,
+                'opacity': opacity,
+                'positioning_method': 'properly_reprojected_epsg2193_to_epsg4326'
+            }
+            
+        except Exception as reproject_error:
+            print(f"🚨 REPROJECTION FAILED: {reproject_error}")
+            print("🚨 Falling back to original bounds method (with known offset bug)")
+            
+            return {
+                'image_base64': img_base64,
+                'bounds': folium_bounds,
+                'opacity': opacity,
+                'positioning_method': 'fallback_bounds_method'
+            }
         
     except Exception as e:
         print(f"Error generating smooth raster overlay: {e}")

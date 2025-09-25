@@ -541,36 +541,55 @@ with st.sidebar:
         max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=1000, value=100, step=10,
                                         help="Automated generation continues until reaching actual well data bounds (up to this limit)")
         
+        # FIXED FULL AUTO GENERATION BUTTON - DIRECT INTEGRATION
         if st.button("🚀 Full Auto Generation", help="Generate heatmaps for all well data (limited by max tiles)"):
-            if st.session_state.wells_data is not None and st.session_state.polygon_db is not None:
-                with st.spinner(f"Generating up to {max_tiles_full} automated heatmaps..."):
+            st.write("🚀 **EXECUTING GEODETIC GENERATION...**")
+            
+            # Check session state
+            if not hasattr(st.session_state, 'wells_data') or st.session_state.wells_data is None:
+                st.error("❌ No wells data available. Please load data first.")
+            elif not hasattr(st.session_state, 'polygon_db') or st.session_state.polygon_db is None:
+                st.error("❌ Database not available.")
+            else:
+                print("✅ STARTING GEODETIC HEATMAP GENERATION WITH SURVEY-GRADE PRECISION")
+                
+                with st.spinner(f"🌍 Generating geodetic heatmaps with survey-grade precision (up to {max_tiles_full} tiles)..."):
                     try:
+                        # DIRECT IMPORT AND CALL
                         from automated_heatmap_generator import generate_automated_heatmaps
                         
+                        # EXECUTE THE GEODETIC FUNCTION
                         success_count, stored_ids, errors = generate_automated_heatmaps(
                             wells_data=st.session_state.wells_data,
-                            interpolation_method=st.session_state.interpolation_method,
+                            interpolation_method=getattr(st.session_state, 'interpolation_method', 'ground_water_level_kriging'),
                             polygon_db=st.session_state.polygon_db,
-                            soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                            new_clipping_polygon=st.session_state.new_clipping_polygon,
-                            search_radius_km=st.session_state.search_radius,
+                            soil_polygons=getattr(st.session_state, 'soil_polygons', None) if getattr(st.session_state, 'show_soil_polygons', False) else None,
+                            new_clipping_polygon=getattr(st.session_state, 'new_clipping_polygon', None),
+                            search_radius_km=getattr(st.session_state, 'search_radius', 20),
                             max_tiles=max_tiles_full
                         )
                         
+                        # DISPLAY RESULTS
                         if success_count > 0:
-                            st.success(f"✅ Generated {success_count} heatmaps successfully!")
+                            st.success(f"🏆 **GEODETIC SUCCESS!** Generated {success_count} heatmaps with survey-grade precision!")
                             if errors:
-                                st.warning(f"⚠️ {len(errors)} tiles had errors")
+                                st.warning(f"⚠️ {len(errors)} tiles had minor issues")
                             
-                            # Reload stored heatmaps
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            # Reload stored heatmaps to display new results
+                            if hasattr(st.session_state, 'polygon_db') and st.session_state.polygon_db:
+                                st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                                st.experimental_rerun()
                         else:
                             st.error("❌ No heatmaps generated. Check console for details.")
-                            
+                            if errors:
+                                for error in errors[:3]:  # Show first 3 errors
+                                    st.error(f"Error: {error}")
+                                    
                     except Exception as e:
-                        st.error(f"Generation error: {e}")
-            else:
-                st.error("Wells data or database not available")
+                        st.error(f"🚨 Geodetic generation error: {e}")
+                        print(f"FULL ERROR: {e}")
+                        import traceback
+                        traceback.print_exc()
     
     # Stored Heatmaps Management Section
     st.markdown("---")

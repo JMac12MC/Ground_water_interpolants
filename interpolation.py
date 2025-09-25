@@ -4379,6 +4379,19 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             
             print("🌍 SUCCESS: Raster properly reprojected - offset bug eliminated!")
             
+            # DEBUGGING: Check reprojected image properties
+            print(f"🌍 REPROJECTED IMAGE DEBUG:")
+            print(f"🌍   Image shape: {dst_rgba.shape}")
+            print(f"🌍   Non-zero alpha pixels: {np.sum(dst_rgba[:, :, 3] > 0)}")
+            print(f"🌍   Total pixels: {dst_rgba.shape[0] * dst_rgba.shape[1]}")
+            print(f"🌍   Bounds format: {reprojected_bounds}")
+            print(f"🌍   Bounds validation: south < north = {reprojected_bounds[0][0] < reprojected_bounds[1][0]}")
+            print(f"🌍   Bounds validation: west < east = {reprojected_bounds[0][1] < reprojected_bounds[1][1]}")
+            
+            # Additional check: ensure image isn't empty
+            if np.sum(dst_rgba[:, :, 3] > 0) == 0:
+                print("🚨 WARNING: Reprojected image has no visible pixels!")
+            
             return {
                 'image_base64': img_base64_reprojected,
                 'bounds': reprojected_bounds,

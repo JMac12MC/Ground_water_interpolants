@@ -111,10 +111,6 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 35573
-externalPort = 5173
-
-[[ports]]
 localPort = 36381
 externalPort = 5000
 
@@ -137,5 +133,9 @@ externalPort = 3000
 [[ports]]
 localPort = 45609
 externalPort = 3002
+
+[[ports]]
+localPort = 46105
+externalPort = 5173
 
 [agent]

@@ -4364,7 +4364,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             from rasterio.transform import array_bounds
             dst_south, dst_west, dst_north, dst_east = array_bounds(dst_height, dst_width, dst_transform)
             
-            reprojected_bounds = [[dst_south, dst_west], [dst_north, dst_east]]
+            # CRITICAL FIX: Ensure bounds are regular Python floats, not numpy types
+            reprojected_bounds = [[float(dst_south), float(dst_west)], [float(dst_north), float(dst_east)]]
             
             print(f"🌍 REPROJECTED BOUNDS: [[{dst_south:.6f}, {dst_west:.6f}], [{dst_north:.6f}, {dst_east:.6f}]]")
             
@@ -4391,6 +4392,20 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             # Additional check: ensure image isn't empty
             if np.sum(dst_rgba[:, :, 3] > 0) == 0:
                 print("🚨 WARNING: Reprojected image has no visible pixels!")
+                # Fall back to original method if reprojected image is empty
+                return {
+                    'image_base64': img_base64,
+                    'bounds': folium_bounds,
+                    'opacity': opacity,
+                    'positioning_method': 'fallback_original_bounds_method'
+                }
+            
+            # Final validation before returning
+            print(f"🌍 FINAL VALIDATION:")
+            print(f"🌍   Base64 length: {len(img_base64_reprojected)} chars")
+            print(f"🌍   Bounds type: {type(reprojected_bounds)}")
+            print(f"🌍   Bounds: {reprojected_bounds}")
+            print(f"🌍   Opacity: {opacity}")
             
             return {
                 'image_base64': img_base64_reprojected,

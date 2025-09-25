@@ -179,6 +179,7 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     This is the main function called by app.py for full automated generation.
     """
     
+    print("🚨🚨🚨 CRITICAL: generate_automated_heatmaps FUNCTION CALLED! 🚨🚨🚨")
     print(f"🚀 FULL AUTOMATED GENERATION: Covering all well data with up to {max_tiles} heatmaps")
     print(f"📋 Available columns: {list(wells_data.columns)}")
     

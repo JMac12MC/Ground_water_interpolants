@@ -2451,12 +2451,25 @@ with main_col1:
             
         if combined_raster:
             # Add single combined raster overlay
-            folium.raster_layers.ImageOverlay(
+            # CRITICAL FIX: Ensure combined raster overlay is visible
+            print(f"🎯 ADDING COMBINED RASTER TO MAP:")
+            print(f"🎯   Image size: {len(combined_raster['image_base64'])} chars")
+            print(f"🎯   Bounds: {combined_raster['bounds']}")
+            print(f"🎯   Opacity: {combined_raster['opacity']}")
+            print(f"🎯   Positioning method: {combined_raster.get('positioning_method', 'unknown')}")
+            
+            overlay = folium.raster_layers.ImageOverlay(
                 image=f"data:image/png;base64,{combined_raster['image_base64']}",
                 bounds=combined_raster['bounds'],
-                opacity=combined_raster['opacity'],
-                name=f"Combined Heatmap Overlay ({len(visible_heatmaps)} tiles)"
-            ).add_to(m)
+                opacity=max(0.8, combined_raster['opacity']),  # Ensure minimum visibility
+                name=f"Combined Heatmap Overlay ({len(visible_heatmaps)} tiles)",
+                overlay=True,  # Mark as overlay layer
+                control=True,  # Include in layer control
+                show=True      # Ensure it's shown by default
+            )
+            overlay.add_to(m)
+            print(f"🎯 COMBINED RASTER ADDED SUCCESSFULLY with enhanced visibility")
+            
             stored_heatmap_count = len(visible_heatmaps)
             print(f"🎨 SUCCESS: Added combined raster overlay for {len(visible_heatmaps)} heatmaps")
         

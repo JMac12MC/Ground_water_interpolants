@@ -2226,13 +2226,25 @@ with main_col1:
                     )
                 
                 if raster_overlay:
-                    # Add single unified raster overlay to map
-                    folium.raster_layers.ImageOverlay(
+                    # CRITICAL FIX: Ensure raster overlay is visible and properly configured
+                    print(f"🎯 ADDING IMAGEOVERLAY TO MAP:")
+                    print(f"🎯   Image size: {len(raster_overlay['image_base64'])} chars")
+                    print(f"🎯   Bounds: {raster_overlay['bounds']}")
+                    print(f"🎯   Opacity: {raster_overlay['opacity']}")
+                    print(f"🎯   Positioning method: {raster_overlay.get('positioning_method', 'unknown')}")
+                    
+                    # Add single unified raster overlay to map with enhanced visibility settings
+                    overlay = folium.raster_layers.ImageOverlay(
                         image=f"data:image/png;base64,{raster_overlay['image_base64']}",
                         bounds=raster_overlay['bounds'],
-                        opacity=raster_overlay['opacity'],
-                        name=f"Unified Smooth Raster ({len(valid_heatmaps_for_raster)} tiles)"
-                    ).add_to(m)
+                        opacity=max(0.8, raster_overlay['opacity']),  # Ensure minimum visibility
+                        name=f"Smooth Raster ({len(valid_heatmaps_for_raster)} tiles)",
+                        overlay=True,  # Mark as overlay layer
+                        control=True,  # Include in layer control
+                        show=True      # Ensure it's shown by default
+                    )
+                    overlay.add_to(m)
+                    print(f"🎯 IMAGEOVERLAY ADDED SUCCESSFULLY with enhanced visibility")
                     stored_heatmap_count = len(valid_heatmaps_for_raster)
                     print(f"🌬️  SUCCESS: Added unified smooth raster covering {len(valid_heatmaps_for_raster)} heatmap areas")
                     print(f"🌬️  Using snapped boundary vertices from stored triangulated data - no gaps or overlaps")

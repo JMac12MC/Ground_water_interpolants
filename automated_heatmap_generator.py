@@ -386,13 +386,28 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
             nztm_x, nztm_y = transformer_to_nztm.transform(row_lon, row_lat)
             point_nztm = Point(nztm_x, nztm_y)
             
-            # Only include points within the convex hull
+            # Double validation: within convex hull AND has wells within search radius
             if hull_polygon.contains(point_nztm):
-                grid_points_latlon.append([row_lat, row_lon])
+                # Check if this grid point has wells within search radius
+                from utils import is_within_square
+                wells_in_radius = valid_wells[valid_wells.apply(
+                    lambda well: is_within_square(
+                        well['latitude'], 
+                        well['longitude'], 
+                        row_lat, 
+                        row_lon, 
+                        search_radius_km
+                    ), 
+                    axis=1
+                )]
+                
+                if len(wells_in_radius) > 0:
+                    grid_points_latlon.append([row_lat, row_lon])
+                # If no wells within search radius, skip this grid point silently
     
     total_grid_points = len(grid_points_latlon)
     
-    print(f"📐 Generated {total_grid_points} precise {grid_spacing_km:.2f}km grid points within convex hull")
+    print(f"📐 Generated {total_grid_points} precise {grid_spacing_km:.2f}km grid points within convex hull WITH wells in {search_radius_km}km radius")
     
     # COMPREHENSIVE PRECISION VERIFICATION: Test achieved center-to-center distances
     if total_grid_points > 1:

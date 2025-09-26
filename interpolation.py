@@ -657,11 +657,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Increase resolution significantly for smoother appearance like kriging software
     wells_count = len(wells_df)
     if wells_count > 5000:
-        grid_size = 200   # Ultra-high resolution for very large datasets  
+        grid_size = 80   # Higher resolution for very large datasets
     elif wells_count > 1000:
-        grid_size = 300  # Very high resolution for large datasets
+        grid_size = 120  # High resolution for large datasets
     else:
-        grid_size = 400  # Ultra-fine resolution for smaller datasets (smoother triangles)
+        grid_size = 150  # Very fine resolution for smaller datasets
 
     # Create the grid for our GeoJSON polygons
     lat_vals = np.linspace(min_lat, max_lat, grid_size)

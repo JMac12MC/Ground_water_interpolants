@@ -3008,7 +3008,7 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
-def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None, exclusion_polygons=None):
     """
     Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
     
@@ -3184,6 +3184,40 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             # Set areas outside clipping polygon to NaN to make them transparent
             zi[~clipping_mask] = np.nan
             print(f"🗺️ Applied clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
+        
+        # Apply exclusion polygon mask if provided (red/orange zones to clip out)
+        if exclusion_polygons is not None:
+            try:
+                from shapely.geometry import Point
+                from shapely.ops import unary_union
+                
+                print(f"🚫 Applying exclusion clipping to {width}x{height} raster grid...")
+                
+                # Create unified exclusion geometry for faster intersection testing
+                valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
+                if valid_geometries:
+                    exclusion_geometry = unary_union(valid_geometries)
+                    print(f"🚫 Created unified exclusion geometry from {len(valid_geometries)} exclusion zones")
+                    
+                    # Check each grid point and set to NaN if inside exclusion areas
+                    points_checked = 0
+                    points_excluded = 0
+                    for i in range(height):
+                        for j in range(width):
+                            if not np.isnan(zi[i, j]):  # Only check points that have data
+                                point = Point(xi[i, j], yi[i, j])
+                                is_excluded = exclusion_geometry.contains(point) or exclusion_geometry.intersects(point)
+                                if is_excluded:
+                                    zi[i, j] = np.nan  # Set to transparent
+                                    points_excluded += 1
+                                points_checked += 1
+                    
+                    print(f"🚫 Exclusion clipping results: {points_excluded}/{points_checked} grid points excluded from red/orange zones")
+                else:
+                    print("🚫 No valid exclusion geometries found")
+                    
+            except Exception as e:
+                print(f"❌ Error applying exclusion clipping to raster: {e}")
         
         # Use the interpolated zi for display
         zi_smooth = zi

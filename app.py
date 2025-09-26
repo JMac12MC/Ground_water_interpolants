@@ -1886,13 +1886,18 @@ with main_col1:
                                 'west': min(lons)
                             }
                             
+                            # Load exclusion polygons for red/orange zone clipping
+                            from interpolation import load_exclusion_polygons
+                            exclusion_polygons = load_exclusion_polygons()
+                            
                             # Generate smooth raster with global colormap function and configurable opacity
                             raster_overlay = generate_smooth_raster_overlay(
                                 geojson_data, 
                                 bounds, 
                                 raster_size=(512, 512), 
                                 global_colormap_func=lambda value: get_global_unified_color(value, st.session_state.interpolation_method),
-                                opacity=st.session_state.get('heatmap_opacity', 0.7)
+                                opacity=st.session_state.get('heatmap_opacity', 0.7),
+                                exclusion_polygons=exclusion_polygons
                             )
                             
                             if raster_overlay:
@@ -2124,6 +2129,10 @@ with main_col1:
                 # Use the stored heatmap's interpolation method for colormap consistency
                 method = st.session_state.stored_heatmaps[0].get('interpolation_method', 'kriging') if st.session_state.stored_heatmaps else 'kriging'
                 
+                # Load exclusion polygons for red/orange zone clipping
+                from interpolation import load_exclusion_polygons
+                exclusion_polygons = load_exclusion_polygons()
+                
                 # Generate single unified smooth raster across ALL triangulated data
                 raster_overlay = generate_smooth_raster_overlay(
                     combined_geojson, 
@@ -2131,7 +2140,8 @@ with main_col1:
                     raster_size=(512, 512), 
                     global_colormap_func=lambda value: get_global_unified_color(value, method),
                     opacity=st.session_state.get('heatmap_opacity', 0.7),
-                    clipping_polygon=st.session_state.new_clipping_polygon
+                    clipping_polygon=st.session_state.new_clipping_polygon,
+                    exclusion_polygons=exclusion_polygons
                 )
                 
                 if raster_overlay:
@@ -2278,13 +2288,18 @@ with main_col1:
                                     'west': min(lons)
                                 }
                                 
+                                # Load exclusion polygons for red/orange zone clipping
+                                from interpolation import load_exclusion_polygons
+                                exclusion_polygons = load_exclusion_polygons()
+                                
                                 # Generate smooth raster with global colormap function and configurable opacity
                                 raster_overlay = generate_smooth_raster_overlay(
                                     geojson_data, 
                                     bounds, 
                                     raster_size=(512, 512), 
                                     global_colormap_func=lambda value: get_global_unified_color(value, method),
-                                    opacity=st.session_state.get('heatmap_opacity', 0.7)
+                                    opacity=st.session_state.get('heatmap_opacity', 0.7),
+                                    exclusion_polygons=exclusion_polygons
                                 )
                                 
                                 if raster_overlay:

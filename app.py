@@ -126,22 +126,6 @@ def load_new_clipping_polygon():
 if 'polygon_db' not in st.session_state:
     st.session_state.polygon_db = get_database_connection()
 
-# Load existing red/orange zone boundary on startup (once per session)
-if not hasattr(st.session_state, 'loaded_existing_boundary'):
-    if st.session_state.polygon_db:
-        try:
-            from green_zone_extractor import get_stored_red_orange_polygon
-            existing_boundary = get_stored_red_orange_polygon(st.session_state.polygon_db)
-            
-            if existing_boundary:
-                st.session_state.green_zone_boundary = existing_boundary
-                st.session_state.show_green_zone_boundary = True
-                print("🔄 STARTUP: Loaded existing red/orange zone boundary from database")
-        except Exception as e:
-            print(f"❌ Error loading existing boundary: {e}")
-            
-    st.session_state.loaded_existing_boundary = True
-
 # Force complete reload and clear ALL caches for comprehensive polygon data
 print("🔄 CLEARING ALL CACHED POLYGON DATA...")
 st.cache_data.clear()  # Clear all cached data including load_new_clipping_polygon cache
@@ -329,7 +313,7 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
     elif visualization_method == "Depth to Groundwater (Auto-Fitted Spherical)":
-        st.session_state.interpolation_method = 'depth_kriging_auto'
+        st.session_state.interpolation_method = 'depth_kriging'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
@@ -566,69 +550,6 @@ with st.sidebar:
                         st.error(f"Error clearing heatmaps: {e}")
                 else:
                     st.error("Database not available")
-
-        # Red/Orange Zone Analysis section
-        st.subheader("🔴 Red/Orange Zone Analysis")
-        st.write("Extract and display boundary polygons around low/medium probability indicator zones (<0.7 threshold). Adjacent red and orange zones will be unified into continuous boundaries.")
-        
-        if st.button("🔴 Extract Red/Orange Zone Boundary", type="primary"):
-            if st.session_state.polygon_db:
-                with st.spinner("Extracting red/orange zones from indicator kriging heatmaps..."):
-                    try:
-                        from green_zone_extractor import extract_green_zones_from_indicator_heatmaps, store_green_zone_boundary
-                        
-                        # Extract red/orange zone boundary
-                        boundary_geojson = extract_green_zones_from_indicator_heatmaps(st.session_state.polygon_db)
-                        
-                        if boundary_geojson:
-                            # Store the boundary polygon
-                            polygon_id = store_green_zone_boundary(st.session_state.polygon_db, boundary_geojson)
-                            
-                            if polygon_id:
-                                st.success(f"✅ Red/orange zone boundary extracted and stored! Polygon ID: {polygon_id}")
-                                
-                                # Store boundary for map display
-                                st.session_state.green_zone_boundary = boundary_geojson
-                                st.session_state.show_green_zone_boundary = True
-                                
-                                # Show some stats
-                                total_zones = len(boundary_geojson['features'])
-                                st.info(f"📊 Created {total_zones} boundary polygon(s) around red/orange zones")
-                            else:
-                                st.error("❌ Failed to store boundary polygon")
-                        else:
-                            st.warning("⚠️ No red/orange zones found. Make sure indicator kriging heatmaps are available.")
-                            
-                    except Exception as e:
-                        st.error(f"Error extracting red/orange zones: {e}")
-                        print(f"Red/orange zone extraction error: {e}")
-            else:
-                st.error("Database not available")
-        
-        # Clear red/orange polygon button
-        if st.button("🗑️ Clear Red/Orange Zone Boundary", help="Remove stored red/orange zone boundary from database"):
-            if st.session_state.polygon_db:
-                from green_zone_extractor import clear_stored_red_orange_polygon
-                success = clear_stored_red_orange_polygon(st.session_state.polygon_db)
-                
-                if success:
-                    st.success("✅ Red/orange zone boundary cleared from database!")
-                    # Clear from session state too
-                    if hasattr(st.session_state, 'green_zone_boundary'):
-                        st.session_state.green_zone_boundary = None
-                        st.session_state.show_green_zone_boundary = False
-                else:
-                    st.warning("⚠️ No red/orange zone boundary found to clear")
-            else:
-                st.error("Database not available")
-        
-        # Display option for red/orange zone boundary
-        if hasattr(st.session_state, 'green_zone_boundary') and st.session_state.green_zone_boundary:
-            st.session_state.show_green_zone_boundary = st.checkbox(
-                "🔴 Show Red/Orange Zone Boundary", 
-                value=getattr(st.session_state, 'show_green_zone_boundary', False),
-                help="Display the boundary polygon around low/medium probability indicator zones"
-            )
 
         # Tile Boundary Snapping section
         st.subheader("🔧 Tile Boundary Optimization")
@@ -1115,24 +1036,6 @@ with main_col1:
                 sticky=False
             )
         ).add_to(m)
-
-    # Add green zone boundary if available and enabled
-    if (hasattr(st.session_state, 'show_green_zone_boundary') and 
-        st.session_state.show_green_zone_boundary and 
-        hasattr(st.session_state, 'green_zone_boundary') and 
-        st.session_state.green_zone_boundary):
-        
-        try:
-            from green_zone_extractor import display_green_zone_boundary_on_map
-            
-            success = display_green_zone_boundary_on_map(m, st.session_state.green_zone_boundary)
-            if success:
-                print("🔴 RED/ORANGE ZONE BOUNDARY: Added to map successfully")
-            else:
-                print("❌ RED/ORANGE ZONE BOUNDARY: Failed to add to map")
-                
-        except Exception as e:
-            print(f"Error displaying red/orange zone boundary: {e}")
 
     # UNIFIED COLORMAP PROCESSING: Use stored colormap metadata for consistent coloring
     global_min_value = float('inf')

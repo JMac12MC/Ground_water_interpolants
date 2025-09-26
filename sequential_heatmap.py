@@ -583,7 +583,6 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             ]
             
             if interpolation_method in methods_requiring_mask:
-                print(f"  🎯 INDICATOR KRIGING: Method '{interpolation_method}' requires indicator mask - generating...")
                 try:
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
@@ -593,18 +592,8 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         soil_polygons=soil_polygons,
                         threshold=0.7
                     )
-                    if indicator_mask and indicator_mask[2] is not None:
-                        high_prob_count = np.sum(indicator_mask[2] >= 0.7)
-                        total_points = len(indicator_mask[2])
-                        print(f"  ✅ INDICATOR MASK: Generated successfully - {high_prob_count}/{total_points} points ≥ 0.7 threshold")
-                    else:
-                        print(f"  ❌ INDICATOR MASK: Generated but empty or invalid")
-                        indicator_mask = None
                 except Exception as e:
-                    print(f"  ❌ INDICATOR MASK ERROR for {location_name}: {e}")
-                    indicator_mask = None
-            else:
-                print(f"  ⏭️  INDICATOR KRIGING: Method '{interpolation_method}' does not require indicator mask")
+                    print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
             
             # Generate heatmap with comprehensive clipping (full Canterbury Plains with holes removed)
             geojson_data = generate_geo_json_grid(

@@ -16,39 +16,6 @@ from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
 # Regional heatmap removed per user request
 
-def classify_well_viability(row):
-    """
-    Classify a well as viable (1) or not viable (0) using the same 3-rule system as indicator kriging.
-    
-    A well is viable if ANY of these conditions are met:
-    - yield_rate ≥ 0.1 L/s
-    - ground water level data exists (any valid depth means water was found)
-    - status = "Active (exist, present)"
-    
-    Returns:
-    --------
-    int: 1 if viable, 0 if not viable
-    """
-    yield_threshold = 0.1
-    
-    # Rule 1: Check yield rate
-    yield_rate = row.get('yield_rate', np.nan)
-    if pd.notna(yield_rate) and yield_rate >= yield_threshold:
-        return 1
-    
-    # Rule 2: Check ground water level data (any valid data means water was found)
-    gwl_value = row.get('ground water level', np.nan)
-    if pd.notna(gwl_value):
-        return 1
-    
-    # Rule 3: Check active status
-    status = row.get('status', '')
-    if status == "Active (exist, present)":
-        return 1
-    
-    # Not viable if none of the conditions are met
-    return 0
-
 # Set page configuration with stability settings
 st.set_page_config(
     page_title="Groundwater Mapper",
@@ -312,9 +279,7 @@ with st.sidebar:
             "Depth to Groundwater (Standard Kriging)",
             "Depth to Groundwater (Auto-Fitted Spherical)",
             "Ground Water Level (Spherical Kriging)",
-            "Indicator Kriging (Yield Suitability)",
-            "Indicator Kriging (Spherical)",
-            "Indicator Kriging (Spherical Continuous)"
+            "Indicator Kriging (Yield Suitability)"
         ],
         index=5,  # Default to Ground Water Level (Spherical Kriging)
         help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
@@ -378,18 +343,6 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'linear'
-    elif visualization_method == "Indicator Kriging (Spherical)":
-        st.session_state.interpolation_method = 'indicator_kriging_spherical'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
-    elif visualization_method == "Indicator Kriging (Spherical Continuous)":
-        st.session_state.interpolation_method = 'indicator_kriging_spherical_continuous'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
-        # Log confirmation that enhanced functionality is active
-        print(f"🎯 ENHANCED CONTINUOUS INDICATOR: Selected method with 2x well search radius functionality")
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")
@@ -1236,14 +1189,7 @@ with main_col1:
         total_values = 0
         
         for stored_heatmap in st.session_state.stored_heatmaps:
-            raw_geojson_data = stored_heatmap.get('geojson_data')
-            # Apply exclusion clipping for colormap calculation
-            if raw_geojson_data:
-                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
-            else:
-                geojson_data = raw_geojson_data
-                
+            geojson_data = stored_heatmap.get('geojson_data')
             if geojson_data and geojson_data.get('features'):
                 for feature in geojson_data['features']:
                     value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -1256,14 +1202,7 @@ with main_col1:
             # Calculate percentile-based range for better color distribution
             all_values = []
             for stored_heatmap in st.session_state.stored_heatmaps:
-                raw_geojson_data = stored_heatmap.get('geojson_data')
-                # Apply exclusion clipping for percentile color calculation
-                if raw_geojson_data:
-                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
-                else:
-                    geojson_data = raw_geojson_data
-                    
+                geojson_data = stored_heatmap.get('geojson_data')
                 if geojson_data and geojson_data.get('features'):
                     for feature in geojson_data['features']:
                         value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -1347,14 +1286,12 @@ with main_col1:
     # DEFINE GLOBAL UNIFIED COLOR FUNCTION 
     def get_global_unified_color(value, method='kriging'):
         """Global unified color function using stored global range for consistency"""
-        if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
-            # Four-tier classification: red (poor), orange (low-moderate), yellow (moderate), green (good)
+        if method == 'indicator_kriging':
+            # Three-tier classification: red (poor), orange (moderate), green (good)
             if value <= 0.4:
                 return '#FF0000'    # Red for poor
-            elif value <= 0.6:
-                return '#FF8000'    # Orange for low-moderate
             elif value <= 0.7:
-                return '#FFFF00'    # Yellow for moderate
+                return '#FF8000'    # Orange for moderate
             else:
                 return '#00FF00'    # Green for good
         else:
@@ -1999,14 +1936,7 @@ with main_col1:
                     # Include stored heatmap values
                     if st.session_state.stored_heatmaps:
                         for stored_heatmap in st.session_state.stored_heatmaps:
-                            raw_stored_geojson = stored_heatmap.get('geojson_data')
-                            # Apply exclusion clipping for global color range calculation
-                            if raw_stored_geojson:
-                                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                                stored_geojson = apply_exclusion_clipping_to_stored_heatmap(raw_stored_geojson)
-                            else:
-                                stored_geojson = raw_stored_geojson
-                                
+                            stored_geojson = stored_heatmap.get('geojson_data')
                             if stored_geojson and 'features' in stored_geojson:
                                 for feature in stored_geojson['features']:
                                     value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -2050,14 +1980,7 @@ with main_col1:
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     continue
                     
-                raw_geojson_data = stored_heatmap.get('geojson_data')
-                # Apply exclusion clipping to stored heatmap data for smooth raster
-                if raw_geojson_data:
-                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
-                else:
-                    geojson_data = raw_geojson_data
-                    
+                geojson_data = stored_heatmap.get('geojson_data')
                 if geojson_data and geojson_data.get('features'):
                     # Add features to combined dataset
                     for feature in geojson_data['features']:
@@ -2131,15 +2054,8 @@ with main_col1:
                     # All stored heatmaps should display
 
                     # Prefer GeoJSON data for triangular mesh visualization
-                    raw_geojson_data = stored_heatmap.get('geojson_data')
+                    geojson_data = stored_heatmap.get('geojson_data')
                     heatmap_data = stored_heatmap.get('heatmap_data', [])
-                    
-                    # Apply exclusion clipping to stored heatmap GeoJSON data
-                    if raw_geojson_data:
-                        from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                        geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
-                    else:
-                        geojson_data = raw_geojson_data
 
                     if geojson_data and geojson_data.get('features'):
                         print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
@@ -2294,16 +2210,14 @@ with main_col1:
         
         # Add colormap legend AFTER all heatmaps are processed
         if stored_heatmap_count > 0:
-            if (st.session_state.interpolation_method == 'indicator_kriging' or 
-                st.session_state.interpolation_method == 'indicator_kriging_spherical' or 
-                st.session_state.interpolation_method == 'indicator_kriging_spherical_continuous'):
-                # Four-tier indicator kriging legend
-                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
+            if st.session_state.interpolation_method == 'indicator_kriging':
+                # Three-tier indicator kriging legend
+                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
                 colormap = folium.StepColormap(
-                    colors=['#FF0000', '#FF8000', '#FFFF00', '#00FF00'],  # Red, Orange, Yellow, Green
+                    colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
                     vmin=0,
                     vmax=1.0,
-                    index=[0, 0.4, 0.6, 0.7, 1.0],  # Four-tier thresholds
+                    index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
                     caption=caption_text
                 )
             else:
@@ -2426,7 +2340,7 @@ with main_col1:
                         fill=True,
                         fill_color='darkblue',
                         fill_opacity=0.7,
-                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m - Indicator: {classify_well_viability(row)}"
+                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m"
                     ).add_to(wells_layer)
                 except Exception as e:
                     print(f"Error creating marker for well: {e}")
@@ -2803,23 +2717,6 @@ with main_col2:
                     file_name="nearby_wells_east.csv",
                     mime="text/csv"
                 )
-        
-        # Export red/orange polygon data if available
-        if st.session_state.polygon_db is not None:
-            if st.button("Download Red/Orange Polygons"):
-                from utils import get_red_orange_polygon_for_download
-                success, geojson_data, message = get_red_orange_polygon_for_download(st.session_state.polygon_db)
-                
-                if success:
-                    st.download_button(
-                        label="Download GeoJSON",
-                        data=geojson_data,
-                        file_name="red_orange_zones.geojson",
-                        mime="application/json"
-                    )
-                    st.success("✅ Red/orange polygon data ready for download")
-                else:
-                    st.error(f"❌ {message}")
     elif st.session_state.get('selected_point'):
         st.info("Location selected. View the dual interpolated heatmaps on the left.")
     else:

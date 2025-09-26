@@ -26,7 +26,7 @@ except ImportError:
         """Simple database connection"""
         return sqlite3.connect('heatmaps.db')
 
-SNAP_DISTANCE_METERS = 1500  # Snap vertices within 1.5km
+SNAP_DISTANCE_METERS = 100  # Snap vertices within 100 meters
 MIN_TRIANGLE_AREA = 1000    # Minimum triangle area in square meters to avoid degenerate triangles
 
 def extract_vertices_from_geojson(geojson_data):

@@ -3090,9 +3090,24 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         lat_step = sampling_distance_meters / meters_per_degree_lat
         lon_step = sampling_distance_meters / meters_per_degree_lon
         
-        # Create regular sampling grid
-        lats = np.arange(south, north + lat_step, lat_step)
-        lons = np.arange(west, east + lon_step, lon_step)
+        # Create ALIGNED sampling grid using grid snapping for perfect pixel alignment
+        # Snap grid starting points to common reference (0,0) to ensure all heatmaps align
+        
+        # Calculate aligned grid starting points
+        aligned_south = np.floor(south / lat_step) * lat_step
+        aligned_west = np.floor(west / lon_step) * lon_step
+        
+        # Extend grid bounds to ensure full coverage
+        aligned_north = np.ceil(north / lat_step) * lat_step
+        aligned_east = np.ceil(east / lon_step) * lon_step
+        
+        # Create perfectly aligned grid
+        lats = np.arange(aligned_south, aligned_north + lat_step, lat_step)
+        lons = np.arange(aligned_west, aligned_east + lon_step, lon_step)
+        
+        print(f"🎯 GRID ALIGNMENT: Original bounds S={south:.6f} N={north:.6f} W={west:.6f} E={east:.6f}")
+        print(f"🎯 ALIGNED GRID: S={aligned_south:.6f} N={aligned_north:.6f} W={aligned_west:.6f} E={aligned_east:.6f}")
+        print(f"🎯 Grid spacing: lat={lat_step:.6f}° lon={lon_step:.6f}° ({sampling_distance_meters}m)")
         
         print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
         

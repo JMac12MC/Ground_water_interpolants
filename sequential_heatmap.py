@@ -147,17 +147,11 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                     error_messages.append(f"Indicator mask error for grid point {i+1}: {str(e)}")
                     continue
             
-            # Generate the heatmap - add detailed logging for coordinate debugging
+            # Generate the heatmap
             try:
-                center_lat, center_lon = grid_point[0], grid_point[1]
-                print(f"  🔍 COORDINATE DEBUG GRID POINT {i+1}:")
-                print(f"     Grid point coordinates: lat={center_lat:.6f}, lon={center_lon:.6f}")
-                print(f"     Passing to generate_geo_json_grid as: center_point=({center_lat}, {center_lon})")
-                print(f"     Wells found: {len(filtered_wells)} wells within {search_radius}km")
-                
                 geo_json_result = generate_geo_json_grid(
                     filtered_wells.copy(),
-                    center_point=(center_lat, center_lon),  # Explicitly pass as (lat, lon)
+                    center_point=(grid_point[0], grid_point[1]),
                     radius_km=search_radius,
                     resolution=100,  # Fixed resolution
                     method=interpolation_method,

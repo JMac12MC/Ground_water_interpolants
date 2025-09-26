@@ -1071,8 +1071,8 @@ with main_col1:
                         x = start_x
                         while x <= end_x:
                             point_nztm = Point(x, y)
-                            # Check if point is within convex hull
-                            if hull_polygon.contains(point_nztm):
+                            # Check if point is within convex hull (using covers to include boundary points)
+                            if hull_polygon.covers(point_nztm):
                                 grid_points_nztm.append((x, y))
                                 # Convert to lat/lon for display
                                 lon, lat = transformer_to_latlon.transform(x, y)

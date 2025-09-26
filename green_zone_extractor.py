@@ -305,20 +305,7 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
     """
     Add the green zone boundary to a Folium map.
     """
-    if not boundary_geojson:
-        return False
-    
-    # Ensure boundary_geojson is a dictionary, not a string
-    if isinstance(boundary_geojson, str):
-        try:
-            import json
-            boundary_geojson = json.loads(boundary_geojson)
-        except json.JSONDecodeError as e:
-            print(f"❌ Error parsing boundary GeoJSON string: {e}")
-            return False
-    
-    if not isinstance(boundary_geojson, dict) or 'features' not in boundary_geojson:
-        print(f"❌ Invalid boundary data: {type(boundary_geojson)}")
+    if not boundary_geojson or 'features' not in boundary_geojson:
         return False
         
     try:
@@ -328,20 +315,8 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
         zones_added = 0
         
         for feature in boundary_geojson['features']:
-            if not isinstance(feature, dict) or 'geometry' not in feature or 'properties' not in feature:
-                print(f"⚠️ Skipping invalid feature: {feature}")
-                continue
-                
-            geometry = feature['geometry']
-            properties = feature['properties']
-            
-            if not isinstance(geometry, dict) or 'coordinates' not in geometry:
-                print(f"⚠️ Skipping feature with invalid geometry: {geometry}")
-                continue
-                
-            coords = geometry['coordinates'][0]
-            zone_name = properties.get('name', 'Unknown Zone')
-            threshold = properties.get('threshold', '0.7')
+            coords = feature['geometry']['coordinates'][0]
+            zone_name = feature['properties']['name']
             
             # Convert coordinates to lat/lon format for Folium
             folium_coords = [[coord[1], coord[0]] for coord in coords]
@@ -353,7 +328,7 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
                 weight=3,
                 opacity=0.8,
                 fill=False,  # No fill, just boundary
-                popup=f"{zone_name}<br>Low/medium probability zone (<{threshold})<br>Detailed boundary following actual red/orange areas"
+                popup=f"{zone_name}<br>Low/medium probability zone (<{feature['properties']['threshold']})<br>Detailed boundary following actual red/orange areas"
             ).add_to(folium_map)
             
             zones_added += 1
@@ -363,6 +338,4 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
         
     except Exception as e:
         print(f"❌ Error displaying boundary on map: {e}")
-        import traceback
-        print(f"Stack trace: {traceback.format_exc()}")
         return False

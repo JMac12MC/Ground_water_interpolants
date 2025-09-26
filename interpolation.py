@@ -1573,8 +1573,11 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             return []
 
         # Ensure all wells have valid ground water level data
-        # Allow all numeric values including 0 and negative values (consistent with other GWL function)
-        valid_gwl_mask = wells_df_filtered['ground water level'].notna()
+        valid_gwl_mask = (
+            wells_df_filtered['ground water level'].notna() & 
+            (wells_df_filtered['ground water level'] != 0) &
+            (wells_df_filtered['ground water level'].abs() > 0.1)  # Exclude very small values
+        )
 
         wells_df_filtered = wells_df_filtered[valid_gwl_mask].copy()
 

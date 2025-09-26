@@ -657,11 +657,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Increase resolution significantly for smoother appearance like kriging software
     wells_count = len(wells_df)
     if wells_count > 5000:
-        grid_size = 80   # Higher resolution for very large datasets
+        grid_size = 200   # Ultra-high resolution for very large datasets  
     elif wells_count > 1000:
-        grid_size = 120  # High resolution for large datasets
+        grid_size = 300  # Very high resolution for large datasets
     else:
-        grid_size = 150  # Very fine resolution for smaller datasets
+        grid_size = 400  # Ultra-fine resolution for smaller datasets (smoother triangles)
 
     # Create the grid for our GeoJSON polygons
     lat_vals = np.linspace(min_lat, max_lat, grid_size)
@@ -1253,7 +1253,40 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     value_threshold = 0.0001  # Show almost all variance values
                 else:
                     vertex_values = interpolated_z[simplex]
-                    avg_value = float(np.mean(vertex_values))
+                    
+                    # SMOOTHING ENHANCEMENT: Apply local averaging for smoother transitions
+                    # Get values from all nearby triangles for smoother color transitions
+                    triangle_center = np.mean(vertices, axis=0)
+                    nearby_indices = []
+                    
+                    # Find nearby grid points within smoothing radius
+                    smoothing_radius = 2  # Points within 2 grid cells
+                    for i, (grid_lon, grid_lat) in enumerate(zip(grid_lons.flatten(), grid_lats.flatten())):
+                        distance = np.sqrt((grid_lon - triangle_center[0])**2 + (grid_lat - triangle_center[1])**2)
+                        if distance <= smoothing_radius * (grid_lons[1,1] - grid_lons[0,0]):  # Grid spacing
+                            nearby_indices.append(i)
+                    
+                    # Apply distance-weighted smoothing using nearby values
+                    if len(nearby_indices) > 3:
+                        nearby_values = interpolated_z.flatten()[nearby_indices]
+                        # Weight by inverse distance from triangle center
+                        weights = []
+                        for idx in nearby_indices:
+                            grid_row, grid_col = divmod(idx, grid_lons.shape[1])
+                            grid_point = np.array([grid_lons[grid_row, grid_col], grid_lats[grid_row, grid_col]])
+                            dist = np.linalg.norm(triangle_center - grid_point)
+                            weights.append(1.0 / (dist + 0.001))  # Avoid division by zero
+                        
+                        weights = np.array(weights)
+                        weights /= np.sum(weights)  # Normalize weights
+                        
+                        # Smoothed value combines triangle average with nearby weighted average
+                        triangle_avg = float(np.mean(vertex_values))
+                        nearby_avg = float(np.sum(nearby_values * weights))
+                        avg_value = 0.7 * triangle_avg + 0.3 * nearby_avg  # 70% original, 30% smoothed
+                    else:
+                        avg_value = float(np.mean(vertex_values))
+                    
                     value_threshold = 0.01  # Only show meaningful yield values
 
                 avg_yield = avg_value  # Keep for backwards compatibility

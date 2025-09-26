@@ -1452,30 +1452,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     features = final_clipped_features
     print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
 
-    # Apply exclusion clipping ONLY for non-indicator interpolation methods
-    # Indicator methods already show probability values, so user wants to see full distribution
-    indicator_methods = [
-        'indicator_kriging', 
-        'indicator_kriging_spherical', 
-        'indicator_kriging_spherical_continuous'
-    ]
-    
-    # TEMPORARILY DISABLE exclusion clipping to debug missing heatmaps
-    if False and method not in indicator_methods:
-        # Apply exclusion clipping if exclusion polygons are provided
-        if exclusion_polygons is not None:
+    # Apply exclusion clipping if exclusion polygons are provided
+    if exclusion_polygons is not None:
+        features_before_exclusion = len(features)
+        features = apply_exclusion_clipping_to_geojson(features, exclusion_polygons)
+        print(f"🚫 PRODUCTION: Applied exclusion clipping: {features_before_exclusion} -> {len(features)} features")
+    elif exclusion_polygons is None:
+        # Try to load exclusion polygons automatically
+        auto_exclusion_polygons = load_exclusion_polygons()
+        if auto_exclusion_polygons is not None:
             features_before_exclusion = len(features)
-            features = apply_exclusion_clipping_to_geojson(features, exclusion_polygons)
-            print(f"🚫 PRODUCTION: Applied exclusion clipping for {method}: {features_before_exclusion} -> {len(features)} features")
-        elif exclusion_polygons is None:
-            # Try to load exclusion polygons automatically
-            auto_exclusion_polygons = load_exclusion_polygons()
-            if auto_exclusion_polygons is not None:
-                features_before_exclusion = len(features)
-                features = apply_exclusion_clipping_to_geojson(features, auto_exclusion_polygons)
-                print(f"🚫 PRODUCTION: Applied auto-loaded exclusion clipping for {method}: {features_before_exclusion} -> {len(features)} features")
-    else:
-        print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for {method} (preserving full probability distribution)")
+            features = apply_exclusion_clipping_to_geojson(features, auto_exclusion_polygons)
+            print(f"🚫 PRODUCTION: Applied auto-loaded exclusion clipping: {features_before_exclusion} -> {len(features)} features")
+        else:
+            print(f"🚫 PRODUCTION: No exclusion polygons found - showing {len(features)} features without exclusion clipping")
 
     # Create the full GeoJSON object
     geojson = {

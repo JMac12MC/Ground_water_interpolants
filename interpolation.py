@@ -3304,7 +3304,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         return {
             'image_base64': img_base64,
-            'bounds': [[aligned_south, aligned_west], [aligned_north, aligned_east]],  # Use ALIGNED bounds to match the actual image grid
+            'bounds': [[south, west], [north, east]],
             'opacity': opacity
         }
         

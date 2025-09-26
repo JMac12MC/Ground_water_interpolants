@@ -1450,13 +1450,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             final_clipped_features.append(feature)
     
     features = final_clipped_features
-    print(f"🔲 Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
-    
-    # DEBUG: Check if final square clipping is too restrictive for auto-generated grid points
-    if len(features) == 0 and features_before_final_clip > 0:
-        print(f"🚨 WARNING: Final square clipping removed ALL {features_before_final_clip} features!")
-        print(f"🚨 Grid center: ({center_lat:.6f}, {center_lon:.6f}), final radius: {final_radius_km:.1f}km")
-        print(f"🚨 This suggests the final square clipping (50% factor) is too restrictive for this grid point")
+    print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
 
     # Apply exclusion clipping ONLY for non-indicator interpolation methods
     # Indicator methods already show probability values, so user wants to see full distribution
@@ -3014,7 +3008,7 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
-def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None, exclusion_polygons=None):
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
     """
     Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
     
@@ -3090,24 +3084,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         lat_step = sampling_distance_meters / meters_per_degree_lat
         lon_step = sampling_distance_meters / meters_per_degree_lon
         
-        # Create ALIGNED sampling grid using grid snapping for perfect pixel alignment
-        # Snap grid starting points to common reference (0,0) to ensure all heatmaps align
-        
-        # Calculate aligned grid starting points
-        aligned_south = np.floor(south / lat_step) * lat_step
-        aligned_west = np.floor(west / lon_step) * lon_step
-        
-        # Extend grid bounds to ensure full coverage
-        aligned_north = np.ceil(north / lat_step) * lat_step
-        aligned_east = np.ceil(east / lon_step) * lon_step
-        
-        # Create perfectly aligned grid
-        lats = np.arange(aligned_south, aligned_north + lat_step, lat_step)
-        lons = np.arange(aligned_west, aligned_east + lon_step, lon_step)
-        
-        print(f"🎯 GRID ALIGNMENT: Original bounds S={south:.6f} N={north:.6f} W={west:.6f} E={east:.6f}")
-        print(f"🎯 ALIGNED GRID: S={aligned_south:.6f} N={aligned_north:.6f} W={aligned_west:.6f} E={aligned_east:.6f}")
-        print(f"🎯 Grid spacing: lat={lat_step:.6f}° lon={lon_step:.6f}° ({sampling_distance_meters}m)")
+        # Create regular sampling grid
+        lats = np.arange(south, north + lat_step, lat_step)
+        lons = np.arange(west, east + lon_step, lon_step)
         
         print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
         
@@ -3204,46 +3183,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         if clipping_mask is not None:
             # Set areas outside clipping polygon to NaN to make them transparent
             zi[~clipping_mask] = np.nan
-            print(f"🗺️ Applied comprehensive clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
-            
-            # DEBUG: Check if comprehensive clipping is too restrictive
-            if np.sum(clipping_mask) == 0:
-                print(f"🚨 WARNING: Comprehensive clipping polygon removed ALL pixels from grid!")
-                print(f"🚨 This suggests the grid point is outside the Canterbury Plains boundary")
-        
-        # Apply exclusion polygon mask if provided (red/orange zones to clip out)
-        if exclusion_polygons is not None:
-            try:
-                from shapely.geometry import Point
-                from shapely.ops import unary_union
-                
-                print(f"🚫 Applying exclusion clipping to {width}x{height} raster grid...")
-                
-                # Create unified exclusion geometry for faster intersection testing
-                valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
-                if valid_geometries:
-                    exclusion_geometry = unary_union(valid_geometries)
-                    print(f"🚫 Created unified exclusion geometry from {len(valid_geometries)} exclusion zones")
-                    
-                    # Check each grid point and set to NaN if inside exclusion areas
-                    points_checked = 0
-                    points_excluded = 0
-                    for i in range(height):
-                        for j in range(width):
-                            if not np.isnan(zi[i, j]):  # Only check points that have data
-                                point = Point(xi[i, j], yi[i, j])
-                                is_excluded = exclusion_geometry.contains(point) or exclusion_geometry.intersects(point)
-                                if is_excluded:
-                                    zi[i, j] = np.nan  # Set to transparent
-                                    points_excluded += 1
-                                points_checked += 1
-                    
-                    print(f"🚫 Exclusion clipping results: {points_excluded}/{points_checked} grid points excluded from red/orange zones")
-                else:
-                    print("🚫 No valid exclusion geometries found")
-                    
-            except Exception as e:
-                print(f"❌ Error applying exclusion clipping to raster: {e}")
+            print(f"🗺️ Applied clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
         
         # Use the interpolated zi for display
         zi_smooth = zi
@@ -3304,7 +3244,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         return {
             'image_base64': img_base64,
-            'bounds': [[aligned_south, aligned_west], [aligned_north, aligned_east]],
+            'bounds': [[south, west], [north, east]],
             'opacity': opacity
         }
         

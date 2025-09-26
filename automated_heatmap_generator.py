@@ -291,62 +291,31 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         print(f"📐 Using all {total_grid_points} grid points")
     
     try:
-        # Use the WORKING 2x3 system for each grid point (1x1 grid per point)
-        from sequential_heatmap import generate_quad_heatmaps_sequential
+        from sequential_heatmap import generate_grid_heatmaps_from_points
+        result = generate_grid_heatmaps_from_points(
+            wells_data, 
+            grid_points_latlon, 
+            search_radius_km,  # use the parameter value
+            interpolation_method, 
+            polygon_db, 
+            soil_polygons, 
+            new_clipping_polygon
+        )
         
-        print(f"🚀 USING PROVEN 2x3 SYSTEM: Processing {actual_total} grid points individually")
-        
-        all_success_count = 0
-        all_stored_heatmap_ids = []
-        all_error_messages = []
-        
-        # Process each grid point using the working 2x3 system with 1x1 grid
-        for i, grid_point in enumerate(grid_points_latlon):
-            try:
-                print(f"🔄 Processing grid point {i+1}/{actual_total}: ({grid_point[0]:.6f}, {grid_point[1]:.6f})")
-                
-                # Use the proven 2x3 system with 1x1 grid (single heatmap) for this point
-                result = generate_quad_heatmaps_sequential(
-                    wells_data, 
-                    grid_point,  # Use this grid point as the click point
-                    search_radius_km,
-                    interpolation_method, 
-                    polygon_db, 
-                    soil_polygons, 
-                    new_clipping_polygon, 
-                    grid_size=(1, 1)  # Single heatmap per grid point
-                )
-                
-                if isinstance(result, tuple) and len(result) >= 2:
-                    success_count, stored_heatmap_ids = result[0], result[1]
-                    
-                    all_success_count += success_count
-                    all_stored_heatmap_ids.extend(stored_heatmap_ids)
-                    
-                    if success_count > 0:
-                        print(f"  ✅ Grid point {i+1}: Success! Generated {success_count} heatmap(s)")
-                    else:
-                        error_msg = f"Grid point {i+1}: No heatmaps generated"
-                        all_error_messages.append(error_msg)
-                        print(f"  ❌ {error_msg}")
-                else:
-                    error_msg = f"Grid point {i+1}: Unexpected result format"
-                    all_error_messages.append(error_msg)
-                    print(f"  ❌ {error_msg}")
-                    
-            except Exception as e:
-                error_msg = f"Grid point {i+1}: Error - {str(e)}"
-                all_error_messages.append(error_msg)
-                print(f"  ❌ {error_msg}")
-                
-        # Final results using the working 2x3 system
-        print(f"📋 FULL GENERATION RESULTS:")
-        print(f"   Grid points processed: {actual_total}")
-        print(f"   Successful heatmaps: {all_success_count}")
-        print(f"   Stored heatmap IDs: {len(all_stored_heatmap_ids)}")
-        print(f"   Errors: {len(all_error_messages)}")
-        
-        return all_success_count, all_stored_heatmap_ids, all_error_messages
+        if isinstance(result, tuple) and len(result) >= 3:
+            success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
+            
+            print(f"📋 FULL GENERATION RESULTS:")
+            print(f"   Grid points processed: {actual_total}")
+            print(f"   Successful heatmaps: {success_count}")
+            print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
+            print(f"   Errors: {len(error_messages)}")
+            
+            return success_count, stored_heatmap_ids, error_messages
+        else:
+            error_msg = "Unexpected result format from sequential generation"
+            print(f"❌ {error_msg}")
+            return 0, [], [error_msg]
             
     except Exception as e:
         error_msg = f"Error in full automated generation: {str(e)}"

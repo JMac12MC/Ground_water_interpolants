@@ -1450,7 +1450,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             final_clipped_features.append(feature)
     
     features = final_clipped_features
-    print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
+    print(f"🔲 Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
+    
+    # DEBUG: Check if final square clipping is too restrictive for auto-generated grid points
+    if len(features) == 0 and features_before_final_clip > 0:
+        print(f"🚨 WARNING: Final square clipping removed ALL {features_before_final_clip} features!")
+        print(f"🚨 Grid center: ({center_lat:.6f}, {center_lon:.6f}), final radius: {final_radius_km:.1f}km")
+        print(f"🚨 This suggests the final square clipping (50% factor) is too restrictive for this grid point")
 
     # Apply exclusion clipping ONLY for non-indicator interpolation methods
     # Indicator methods already show probability values, so user wants to see full distribution
@@ -3183,7 +3189,12 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         if clipping_mask is not None:
             # Set areas outside clipping polygon to NaN to make them transparent
             zi[~clipping_mask] = np.nan
-            print(f"🗺️ Applied clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
+            print(f"🗺️ Applied comprehensive clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
+            
+            # DEBUG: Check if comprehensive clipping is too restrictive
+            if np.sum(clipping_mask) == 0:
+                print(f"🚨 WARNING: Comprehensive clipping polygon removed ALL pixels from grid!")
+                print(f"🚨 This suggests the grid point is outside the Canterbury Plains boundary")
         
         # Apply exclusion polygon mask if provided (red/orange zones to clip out)
         if exclusion_polygons is not None:

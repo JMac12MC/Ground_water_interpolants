@@ -266,12 +266,12 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         x = start_x
         while x <= end_x:
             point_nztm = Point(x, y)
-            # Check if point is within convex hull
-            if hull_polygon.contains(point_nztm):
+            # Check if point is within convex hull (using covers to include boundary points)
+            if hull_polygon.covers(point_nztm):
                 grid_points_nztm.append((x, y))
-                # Convert to lat/lon for heatmap generation
+                # Convert to lat/lon for heatmap generation (ensure correct lat, lon ordering)
                 lon, lat = transformer_to_latlon.transform(x, y)
-                grid_points_latlon.append([lat, lon])
+                grid_points_latlon.append([lat, lon])  # Store as [lat, lon] for consistent ordering
             x += grid_spacing
         y += grid_spacing
     

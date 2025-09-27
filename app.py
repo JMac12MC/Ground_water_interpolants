@@ -527,8 +527,14 @@ with st.sidebar:
                         
                         if success:
                             st.success("✅ Test completed! Check console for details.")
-                            # Reload stored heatmaps
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            # Reload stored heatmaps with progressive loading
+                            all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            max_initial_heatmaps = 20
+                            if len(all_heatmaps) > max_initial_heatmaps:
+                                st.session_state.stored_heatmaps = all_heatmaps[:max_initial_heatmaps]
+                                print(f"🚀 PROGRESSIVE LOADING: Limited to {max_initial_heatmaps} of {len(all_heatmaps)} heatmaps after test completion")
+                            else:
+                                st.session_state.stored_heatmaps = all_heatmaps
                         else:
                             st.error("❌ Test failed. Check console for details.")
                             
@@ -562,8 +568,14 @@ with st.sidebar:
                             if errors:
                                 st.warning(f"⚠️ {len(errors)} tiles had errors")
                             
-                            # Reload stored heatmaps
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            # Reload stored heatmaps with progressive loading
+                            all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            max_initial_heatmaps = 20
+                            if len(all_heatmaps) > max_initial_heatmaps:
+                                st.session_state.stored_heatmaps = all_heatmaps[:max_initial_heatmaps]
+                                print(f"🚀 PROGRESSIVE LOADING: Limited to {max_initial_heatmaps} of {len(all_heatmaps)} heatmaps after generation")
+                            else:
+                                st.session_state.stored_heatmaps = all_heatmaps
                         else:
                             st.error("❌ No heatmaps generated. Check console for details.")
                             
@@ -579,7 +591,14 @@ with st.sidebar:
     # Load stored heatmaps only if not already loaded
     if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
         try:
-            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+            all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+            # 🚀 PROGRESSIVE LOADING: Limit to 20 heatmaps to prevent system overwhelm
+            max_initial_heatmaps = 20
+            if len(all_heatmaps) > max_initial_heatmaps:
+                st.session_state.stored_heatmaps = all_heatmaps[:max_initial_heatmaps]
+                print(f"🚀 PROGRESSIVE LOADING: Limited to {max_initial_heatmaps} of {len(all_heatmaps)} heatmaps for stability")
+            else:
+                st.session_state.stored_heatmaps = all_heatmaps
         except Exception as e:
             print(f"Failed to load stored heatmaps for sidebar: {e}")
             st.session_state.stored_heatmaps = []
@@ -593,9 +612,15 @@ with st.sidebar:
             if st.button("🔄 Refresh List", help="Reload stored heatmaps from database"):
                 if st.session_state.polygon_db:
                     try:
-                        stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                        st.session_state.stored_heatmaps = stored_heatmaps
-                        st.success(f"Refreshed: {len(stored_heatmaps)} heatmaps found")
+                        all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        # 🚀 PROGRESSIVE LOADING: Limit to 20 heatmaps to prevent system overwhelm
+                        max_initial_heatmaps = 20
+                        if len(all_heatmaps) > max_initial_heatmaps:
+                            st.session_state.stored_heatmaps = all_heatmaps[:max_initial_heatmaps]
+                            st.success(f"Refreshed: {max_initial_heatmaps} of {len(all_heatmaps)} heatmaps loaded for stability")
+                        else:
+                            st.session_state.stored_heatmaps = all_heatmaps
+                            st.success(f"Refreshed: {len(all_heatmaps)} heatmaps found")
                     except Exception as e:
                         st.error(f"Error refreshing: {e}")
                         st.session_state.stored_heatmaps = []
@@ -746,9 +771,15 @@ with st.sidebar:
                             
                             print(f"📊 DISPLAYED {stats_found} statistics lines")
                             
-                            # Refresh stored heatmaps to show updated data
+                            # Refresh stored heatmaps with progressive loading
                             print("🔄 REFRESHING SESSION STATE...")
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            max_initial_heatmaps = 20
+                            if len(all_heatmaps) > max_initial_heatmaps:
+                                st.session_state.stored_heatmaps = all_heatmaps[:max_initial_heatmaps]
+                                print(f"🚀 PROGRESSIVE LOADING: Limited to {max_initial_heatmaps} of {len(all_heatmaps)} heatmaps after boundary refresh")
+                            else:
+                                st.session_state.stored_heatmaps = all_heatmaps
                             print("🔄 CALLING st.rerun()...")
                             st.rerun()
                             
@@ -1793,8 +1824,14 @@ with main_col1:
                         print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
                         
                         if success_count > 0:
-                            # Reload stored heatmaps to display the new ones
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            # Reload stored heatmaps with progressive loading
+                            all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                            max_initial_heatmaps = 20
+                            if len(all_heatmaps) > max_initial_heatmaps:
+                                st.session_state.stored_heatmaps = all_heatmaps[:max_initial_heatmaps]
+                                print(f"🚀 PROGRESSIVE LOADING: Limited to {max_initial_heatmaps} of {len(all_heatmaps)} heatmaps after interpolation")
+                            else:
+                                st.session_state.stored_heatmaps = all_heatmaps
                             st.session_state.new_heatmap_added = True
                             st.session_state.fresh_heatmap_displayed = False
                             
@@ -2071,8 +2108,13 @@ with main_col1:
                              'east': float('-inf'), 'west': float('inf')}
             valid_heatmaps_for_raster = []
             
-            # Collect all triangulated data from stored heatmaps
-            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
+            # 🚀 PROGRESSIVE LOADING: Limit smooth raster collection to prevent crashes
+            max_heatmaps = 20  # Same limit as individual processing
+            heatmaps_for_raster = st.session_state.stored_heatmaps[:max_heatmaps]
+            print(f"🌬️ SMOOTH RASTER: Processing {min(max_heatmaps, len(st.session_state.stored_heatmaps))} of {len(st.session_state.stored_heatmaps)} heatmaps for stable performance")
+            
+            # Collect triangulated data from limited stored heatmaps
+            for i, stored_heatmap in enumerate(heatmaps_for_raster):
                 # Skip fresh heatmap to avoid duplication
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     continue
@@ -2166,16 +2208,12 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster OR if unified failed
         if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # 🚀 PROGRESSIVE LOADING: Limit initial load to prevent system overwhelm
-            max_initial_heatmaps = st.session_state.get('max_heatmaps_to_load', 25)  # Default: only load 25 heatmaps initially
+            # 🚀 AUTOMATIC PROGRESSIVE LOADING: Limit to 20 heatmaps to prevent crashes
+            max_heatmaps = 20  # Fixed limit to prevent system overwhelm
             total_heatmaps = len(st.session_state.stored_heatmaps)
-            heatmaps_to_process = st.session_state.stored_heatmaps[:max_initial_heatmaps]
+            heatmaps_to_process = st.session_state.stored_heatmaps[:max_heatmaps]
             
-            if total_heatmaps > max_initial_heatmaps:
-                print(f"🚀 PROGRESSIVE LOADING: Processing {max_initial_heatmaps} of {total_heatmaps} heatmaps to prevent system overwhelm")
-                print(f"🚀 Use sidebar controls to load more heatmaps progressively")
-            else:
-                print(f"🚀 LOADING ALL: Processing all {total_heatmaps} heatmaps")
+            print(f"🚀 STABILITY: Processing {min(max_heatmaps, total_heatmaps)} of {total_heatmaps} heatmaps for stable performance")
             
             for i, stored_heatmap in enumerate(heatmaps_to_process):
                 try:

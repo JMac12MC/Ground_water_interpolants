@@ -2166,7 +2166,18 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster OR if unified failed
         if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
+            # 🚀 PROGRESSIVE LOADING: Limit initial load to prevent system overwhelm
+            max_initial_heatmaps = st.session_state.get('max_heatmaps_to_load', 25)  # Default: only load 25 heatmaps initially
+            total_heatmaps = len(st.session_state.stored_heatmaps)
+            heatmaps_to_process = st.session_state.stored_heatmaps[:max_initial_heatmaps]
+            
+            if total_heatmaps > max_initial_heatmaps:
+                print(f"🚀 PROGRESSIVE LOADING: Processing {max_initial_heatmaps} of {total_heatmaps} heatmaps to prevent system overwhelm")
+                print(f"🚀 Use sidebar controls to load more heatmaps progressively")
+            else:
+                print(f"🚀 LOADING ALL: Processing all {total_heatmaps} heatmaps")
+            
+            for i, stored_heatmap in enumerate(heatmaps_to_process):
                 try:
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders
@@ -2202,9 +2213,9 @@ with main_col1:
                         print(f"⚠️ Missing data for heatmap: {stored_heatmap['heatmap_name']}")
                     
                     if geojson_data and geojson_data.get('features'):
-                        # Simplified logging: only log once per batch of 10 heatmaps
-                        if (i+1) % 10 == 0 or (i+1) == len(st.session_state.stored_heatmaps):
-                            print(f"⚡ FAST LOADING: Processed {i+1}/{len(st.session_state.stored_heatmaps)} stored heatmaps")
+                        # Simplified logging: only log once per batch of 10 heatmaps  
+                        if (i+1) % 10 == 0 or (i+1) == len(heatmaps_to_process):
+                            print(f"⚡ FAST LOADING: Processed {i+1}/{len(heatmaps_to_process)} stored heatmaps ({total_heatmaps} total available)")
 
                         # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
                         # Handle multiple possible property names for ground water level heatmaps

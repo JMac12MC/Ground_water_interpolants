@@ -18,15 +18,22 @@ from PIL import Image
 import matplotlib.colors as mcolors
 from scipy.interpolate import griddata
 
+# Global cache for exclusion polygons to avoid repeated file loading
+_exclusion_polygons_cache = None
+_exclusion_polygons_cache_file = None
+_unified_exclusion_geometry = None
+
 def load_exclusion_polygons():
     """
-    Load red/orange exclusion polygons from GeoJSON file
+    Load red/orange exclusion polygons from GeoJSON file with caching for performance
     
     Returns:
     --------
     geopandas.GeoDataFrame or None
         GeoDataFrame containing exclusion polygon geometries
     """
+    global _exclusion_polygons_cache, _exclusion_polygons_cache_file
+    
     try:
         import os
         
@@ -39,9 +46,17 @@ def load_exclusion_polygons():
         
         for file_path in exclusion_files:
             if os.path.exists(file_path):
+                # Return cached data if same file
+                if _exclusion_polygons_cache is not None and _exclusion_polygons_cache_file == file_path:
+                    print(f"🚀 PERFORMANCE: Using cached exclusion polygons ({len(_exclusion_polygons_cache)} polygons)")
+                    return _exclusion_polygons_cache
+                
+                # Load and cache new data
                 exclusion_gdf = gpd.read_file(file_path)
                 if exclusion_gdf is not None and not exclusion_gdf.empty:
-                    print(f"✅ Loaded {len(exclusion_gdf)} exclusion polygons from {file_path}")
+                    _exclusion_polygons_cache = exclusion_gdf
+                    _exclusion_polygons_cache_file = file_path
+                    print(f"✅ LOADED & CACHED: {len(exclusion_gdf)} exclusion polygons from {file_path}")
                     return exclusion_gdf
                     
         print("⚠️ No red/orange exclusion polygon file found")
@@ -151,7 +166,7 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
 
 def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
     """
-    Apply negative clipping to remove GeoJSON features within exclusion areas
+    Apply negative clipping to remove GeoJSON features within exclusion areas with caching
     
     Parameters:
     -----------
@@ -165,6 +180,8 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
     list
         Filtered GeoJSON features with exclusion areas removed
     """
+    global _unified_exclusion_geometry
+    
     if exclusion_polygons is None or len(exclusion_polygons) == 0:
         return features
         
@@ -175,13 +192,20 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
         from shapely.geometry import Point, Polygon as ShapelyPolygon
         from shapely.ops import unary_union
         
-        # Create unified exclusion geometry for faster intersection testing
-        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
-        if not valid_geometries:
-            return features
-            
-        exclusion_geometry = unary_union(valid_geometries)
-        print(f"🚫 Applying exclusion clipping to GeoJSON features with {len(valid_geometries)} exclusion zones")
+        # Use cached unified exclusion geometry if available
+        if _unified_exclusion_geometry is None:
+            # Create unified exclusion geometry for faster intersection testing
+            valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
+            if not valid_geometries:
+                return features
+                
+            _unified_exclusion_geometry = unary_union(valid_geometries)
+            print(f"🚀 PERFORMANCE: Created & cached unified exclusion geometry from {len(valid_geometries)} polygons")
+        else:
+            print(f"🚀 PERFORMANCE: Using cached unified exclusion geometry")
+        
+        exclusion_geometry = _unified_exclusion_geometry
+        print(f"🚫 Applying exclusion clipping to GeoJSON features with cached exclusion geometry")
         
         # Filter out features that intersect with exclusion areas
         filtered_features = []

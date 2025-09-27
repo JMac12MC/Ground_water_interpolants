@@ -2173,19 +2173,50 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster OR if unified failed
         if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # 🎯 DISPLAY ALL HEATMAPS: Process all available heatmaps as requested by user
+            # 🎯 COMPOSITE SOLUTION: Combine all heatmaps into single optimized overlay
             total_heatmaps = len(st.session_state.stored_heatmaps)
-            heatmaps_to_process = st.session_state.stored_heatmaps
             
-            print(f"🎯 DISPLAYING ALL: Processing {total_heatmaps} heatmaps as requested by user")
+            # Try composite raster approach first to prevent WebSocket crashes
+            try:
+                from composite_heatmap import create_composite_heatmap_overlay
+                print(f"🎯 COMPOSITE RASTER: Creating single overlay from {total_heatmaps} heatmaps to prevent WebSocket crashes")
+                
+                # Create composite overlay
+                composite_overlay = create_composite_heatmap_overlay(
+                    stored_heatmaps=st.session_state.stored_heatmaps,
+                    opacity=st.session_state.get('heatmap_opacity', 0.7)
+                )
+                
+                if composite_overlay:
+                    # Add single composite overlay instead of 98 separate layers
+                    folium.raster_layers.ImageOverlay(
+                        image=f"data:image/png;base64,{composite_overlay['image_base64']}",
+                        bounds=composite_overlay['bounds'],
+                        opacity=composite_overlay['opacity'],
+                        name=f"Composite Heatmap ({composite_overlay['processed_count']} combined)"
+                    ).add_to(m)
+                    
+                    stored_heatmap_count = composite_overlay['processed_count']
+                    print(f"✅ COMPOSITE SUCCESS: Single overlay displaying {stored_heatmap_count} heatmaps")
+                else:
+                    print("⚠️ COMPOSITE FALLBACK: Composite failed, falling back to individual processing")
+                    
+            except Exception as e:
+                print(f"⚠️ COMPOSITE ERROR: {e}, falling back to individual processing")
+                composite_overlay = None
             
-            for i, stored_heatmap in enumerate(heatmaps_to_process):
-                try:
-                    # Don't skip the current fresh heatmap - let it display as a stored heatmap too
-                    # This ensures continuity when the page re-renders
-                    if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
-                        print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
-                    # All stored heatmaps should display
+            # Fallback to individual processing only if composite failed
+            if not composite_overlay:
+                print(f"🎯 DISPLAYING ALL: Processing {total_heatmaps} heatmaps individually (composite failed)")
+                heatmaps_to_process = st.session_state.stored_heatmaps
+                
+                for i, stored_heatmap in enumerate(heatmaps_to_process):
+                    try:
+                        # Don't skip the current fresh heatmap - let it display as a stored heatmap too
+                        # This ensures continuity when the page re-renders
+                        if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
+                            print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
+                        # All stored heatmaps should display
 
                     # Prefer GeoJSON data for triangular mesh visualization
                     raw_geojson_data = stored_heatmap.get('geojson_data')

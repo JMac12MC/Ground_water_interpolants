@@ -2218,124 +2218,143 @@ with main_col1:
                             print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
                         # All stored heatmaps should display
 
-                    # Prefer GeoJSON data for triangular mesh visualization
-                    raw_geojson_data = stored_heatmap.get('geojson_data')
-                    heatmap_data = stored_heatmap.get('heatmap_data', [])
-                    
-                    # Apply exclusion clipping ONLY to non-indicator methods
-                    # Indicator methods already show probability values, so preserve full distribution
-                    method = stored_heatmap.get('interpolation_method', 'kriging')
-                    indicator_methods = [
-                        'indicator_kriging', 
-                        'indicator_kriging_spherical', 
-                        'indicator_kriging_spherical_continuous'
-                    ]
-                    
-                    if raw_geojson_data:
-                        if method not in indicator_methods:
-                            from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                            geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                        # Prefer GeoJSON data for triangular mesh visualization
+                        raw_geojson_data = stored_heatmap.get('geojson_data')
+                        heatmap_data = stored_heatmap.get('heatmap_data', [])
+                        
+                        # Apply exclusion clipping ONLY to non-indicator methods
+                        # Indicator methods already show probability values, so preserve full distribution
+                        method = stored_heatmap.get('interpolation_method', 'kriging')
+                        indicator_methods = [
+                            'indicator_kriging', 
+                            'indicator_kriging_spherical', 
+                            'indicator_kriging_spherical_continuous'
+                        ]
+                        
+                        if raw_geojson_data:
+                            if method not in indicator_methods:
+                                from interpolation import apply_exclusion_clipping_to_stored_heatmap
+                                geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
+                            else:
+                                geojson_data = raw_geojson_data
+                                print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for stored {method} heatmap (preserving full probability distribution)")
                         else:
                             geojson_data = raw_geojson_data
-                            print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for stored {method} heatmap (preserving full probability distribution)")
-                    else:
-                        geojson_data = raw_geojson_data
 
-                    # Minimal validation (only for errors)
-                    if raw_geojson_data is None:
-                        print(f"⚠️ Missing data for heatmap: {stored_heatmap['heatmap_name']}")
-                    
-                    if geojson_data and geojson_data.get('features'):
-                        # Simplified logging: only log once per batch of 10 heatmaps  
-                        if (i+1) % 10 == 0 or (i+1) == len(heatmaps_to_process):
-                            print(f"⚡ FAST LOADING: Processed {i+1}/{len(heatmaps_to_process)} stored heatmaps ({total_heatmaps} total available)")
-
-                        # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
-                        # Handle multiple possible property names for ground water level heatmaps
-                        value_keys_to_check = ['value', 'yield', 'ground_water_level', 'ground water level', 'z', 'prediction', 'gwl_value', 'depth', 'level']
+                        # Minimal validation (only for errors)
+                        if raw_geojson_data is None:
+                            print(f"⚠️ Missing data for heatmap: {stored_heatmap['heatmap_name']}")
                         
-                        for feature in geojson_data['features']:
-                            if 'properties' in feature:
-                                # Find the first available numeric value from possible property names
-                                found_value = None
-                                found_key = None
-                                
-                                for key in value_keys_to_check:
-                                    if key in feature['properties']:
-                                        val = feature['properties'][key]
-                                        if isinstance(val, (int, float)) and not (isinstance(val, bool)):
-                                            found_value = val
-                                            found_key = key
-                                            break
-                                
-                                # If we found a value, ensure both 'value' and 'yield' exist
-                                if found_value is not None:
-                                    feature['properties']['value'] = found_value
-                                    feature['properties']['yield'] = found_value
-                                    if found_key not in ['value', 'yield']:
-                                        print(f"  PROPERTY NORMALIZATION: Found data in '{found_key}' property, normalized to 'value' and 'yield'")
-                                else:
-                                    # Log what properties are available for debugging
-                                    available_props = list(feature['properties'].keys())
-                                    print(f"  WARNING: No numeric value found in feature properties: {available_props}")
-                                    # Set default values to prevent errors
-                                    feature['properties']['value'] = 0
-                                    feature['properties']['yield'] = 0
+                        if geojson_data and geojson_data.get('features'):
+                            # Simplified logging: only log once per batch of 10 heatmaps  
+                            if (i+1) % 10 == 0 or (i+1) == len(heatmaps_to_process):
+                                print(f"⚡ FAST LOADING: Processed {i+1}/{len(heatmaps_to_process)} stored heatmaps ({total_heatmaps} total available)")
 
-                        # Use the UPDATED global unified color function with method info
-                        method = stored_heatmap.get('interpolation_method', 'kriging')
-                        
-                        # Performance optimization: Skip individual heatmap color sampling during bulk loading
-                        # (This was causing ~90% of loading time due to 98 × colormap calculations)
-
-                        # Choose visualization style based on user selection
-                        if heatmap_style == "Smooth Raster (Windy.com Style)":
-                            # Generate smooth raster overlay
-                            print(f"  Generating smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                            # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
+                            # Handle multiple possible property names for ground water level heatmaps
+                            value_keys_to_check = ['value', 'yield', 'ground_water_level', 'ground water level', 'z', 'prediction', 'gwl_value', 'depth', 'level']
                             
-                            # Calculate bounds for the heatmap
-                            all_coords = []
                             for feature in geojson_data['features']:
-                                if feature['geometry']['type'] == 'Polygon':
-                                    coords = feature['geometry']['coordinates'][0]
-                                    all_coords.extend(coords)
+                                if 'properties' in feature:
+                                    # Find the first available numeric value from possible property names
+                                    found_value = None
+                                    found_key = None
+                                    
+                                    for key in value_keys_to_check:
+                                        if key in feature['properties']:
+                                            val = feature['properties'][key]
+                                            if isinstance(val, (int, float)) and not (isinstance(val, bool)):
+                                                found_value = val
+                                                found_key = key
+                                                break
+                                    
+                                    # If we found a value, ensure both 'value' and 'yield' exist
+                                    if found_value is not None:
+                                        feature['properties']['value'] = found_value
+                                        feature['properties']['yield'] = found_value
+                                        if found_key not in ['value', 'yield']:
+                                            print(f"  PROPERTY NORMALIZATION: Found data in '{found_key}' property, normalized to 'value' and 'yield'")
+                                    else:
+                                        # Log what properties are available for debugging
+                                        available_props = list(feature['properties'].keys())
+                                        print(f"  WARNING: No numeric value found in feature properties: {available_props}")
+                                        # Set default values to prevent errors
+                                        feature['properties']['value'] = 0
+                                        feature['properties']['yield'] = 0
+
+                            # Use the UPDATED global unified color function with method info
+                            method = stored_heatmap.get('interpolation_method', 'kriging')
                             
-                            if all_coords:
-                                lons = [coord[0] for coord in all_coords]
-                                lats = [coord[1] for coord in all_coords]
-                                bounds = {
-                                    'north': max(lats),
-                                    'south': min(lats),
-                                    'east': max(lons),
-                                    'west': min(lons)
-                                }
+                            # Performance optimization: Skip individual heatmap color sampling during bulk loading
+                            # (This was causing ~90% of loading time due to 98 × colormap calculations)
+
+                            # Choose visualization style based on user selection
+                            if heatmap_style == "Smooth Raster (Windy.com Style)":
+                                # Generate smooth raster overlay
+                                print(f"  Generating smooth raster overlay for {stored_heatmap['heatmap_name']}")
                                 
-                                # Load exclusion polygons for red/orange zone clipping
-                                from interpolation import load_exclusion_polygons
-                                exclusion_polygons = load_exclusion_polygons()
+                                # Calculate bounds for the heatmap
+                                all_coords = []
+                                for feature in geojson_data['features']:
+                                    if feature['geometry']['type'] == 'Polygon':
+                                        coords = feature['geometry']['coordinates'][0]
+                                        all_coords.extend(coords)
                                 
-                                # Generate smooth raster with global colormap function and configurable opacity
-                                raster_overlay = generate_smooth_raster_overlay(
-                                    geojson_data, 
-                                    bounds, 
-                                    raster_size=(512, 512), 
-                                    global_colormap_func=lambda value: get_global_unified_color(value, method),
-                                    opacity=st.session_state.get('heatmap_opacity', 0.7),
-                                    exclusion_polygons=exclusion_polygons
-                                )
-                                
-                                if raster_overlay:
-                                    # Add raster overlay to map
-                                    folium.raster_layers.ImageOverlay(
-                                        image=f"data:image/png;base64,{raster_overlay['image_base64']}",
-                                        bounds=raster_overlay['bounds'],
-                                        opacity=raster_overlay['opacity'],
-                                        name=f"Smooth: {stored_heatmap['heatmap_name']}"
-                                    ).add_to(m)
-                                    stored_heatmap_count += 1
-                                    print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                                if all_coords:
+                                    lons = [coord[0] for coord in all_coords]
+                                    lats = [coord[1] for coord in all_coords]
+                                    bounds = {
+                                        'north': max(lats),
+                                        'south': min(lats),
+                                        'east': max(lons),
+                                        'west': min(lons)
+                                    }
+                                    
+                                    # Load exclusion polygons for red/orange zone clipping
+                                    from interpolation import load_exclusion_polygons
+                                    exclusion_polygons = load_exclusion_polygons()
+                                    
+                                    # Generate smooth raster with global colormap function and configurable opacity
+                                    raster_overlay = generate_smooth_raster_overlay(
+                                        geojson_data, 
+                                        bounds, 
+                                        raster_size=(512, 512), 
+                                        global_colormap_func=lambda value: get_global_unified_color(value, method),
+                                        opacity=st.session_state.get('heatmap_opacity', 0.7),
+                                        exclusion_polygons=exclusion_polygons
+                                    )
+                                    
+                                    if raster_overlay:
+                                        # Add raster overlay to map
+                                        folium.raster_layers.ImageOverlay(
+                                            image=f"data:image/png;base64,{raster_overlay['image_base64']}",
+                                            bounds=raster_overlay['bounds'],
+                                            opacity=raster_overlay['opacity'],
+                                            name=f"Smooth: {stored_heatmap['heatmap_name']}"
+                                        ).add_to(m)
+                                        stored_heatmap_count += 1
+                                        print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                                    else:
+                                        print(f"  Failed to generate smooth raster, falling back to triangle mesh")
+                                        # Fallback to triangle mesh
+                                        folium.GeoJson(
+                                            geojson_data,
+                                            name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                            style_function=lambda feature, method=method: {
+                                                'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                                'color': 'none',
+                                                'weight': 0,
+                                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                            },
+                                            tooltip=folium.GeoJsonTooltip(
+                                                fields=['yield'],
+                                                aliases=['Value:'],
+                                                localize=True
+                                            )
+                                        ).add_to(m)
+                                        stored_heatmap_count += 1
                                 else:
-                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh")
+                                    print(f"  No valid coordinates found for smooth raster, using triangle mesh")
                                     # Fallback to triangle mesh
                                     folium.GeoJson(
                                         geojson_data,
@@ -2354,8 +2373,7 @@ with main_col1:
                                     ).add_to(m)
                                     stored_heatmap_count += 1
                             else:
-                                print(f"  No valid coordinates found for smooth raster, using triangle mesh")
-                                # Fallback to triangle mesh
+                                # Default: Triangle Mesh (Scientific) visualization
                                 folium.GeoJson(
                                     geojson_data,
                                     name=f"Stored: {stored_heatmap['heatmap_name']}",
@@ -2366,50 +2384,32 @@ with main_col1:
                                         'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                     },
                                     tooltip=folium.GeoJsonTooltip(
-                                        fields=['yield'],
+                                        fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
                                         aliases=['Value:'],
                                         localize=True
                                     )
                                 ).add_to(m)
                                 stored_heatmap_count += 1
-                        else:
-                            # Default: Triangle Mesh (Scientific) visualization
-                            folium.GeoJson(
-                                geojson_data,
-                                name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                style_function=lambda feature, method=method: {
-                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                    'color': 'none',
-                                    'weight': 0,
-                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                },
-                                tooltip=folium.GeoJsonTooltip(
-                                    fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                                    aliases=['Value:'],
-                                    localize=True
-                                )
-                            ).add_to(m)
+
+                        elif heatmap_data and len(heatmap_data) > 0:
+                            print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
+
+                            # Fallback to HeatMap if no GeoJSON
+                            HeatMap(heatmap_data, 
+                                   radius=20, 
+                                   blur=10, 
+                                   name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                   overlay=True,
+                                   control=True,
+                                   max_zoom=1).add_to(m)
                             stored_heatmap_count += 1
-
-                    elif heatmap_data and len(heatmap_data) > 0:
-                        print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
-
-                        # Fallback to HeatMap if no GeoJSON
-                        HeatMap(heatmap_data, 
-                               radius=20, 
-                               blur=10, 
-                               name=f"Stored: {stored_heatmap['heatmap_name']}",
-                               overlay=True,
-                               control=True,
-                               max_zoom=1).add_to(m)
-                        stored_heatmap_count += 1
-                    else:
-                        print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
+                        else:
+                            print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
 
                     # Removed centroid marker as per user request - no purple "i" icons needed
 
-                except Exception as e:
-                    print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
+                    except Exception as e:
+                        print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
 
         print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
         

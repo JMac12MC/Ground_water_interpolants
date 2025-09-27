@@ -4123,6 +4123,11 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             # This ensures display bounds match interpolation bounds exactly
             folium_bounds = bounds['folium_format']
             
+            # USER-REQUESTED FIX: Shift raster north by 2 pixels to improve alignment
+            pixel_lat_degrees = 286 / 111000  # ~286m pixel size converted to degrees
+            north_shift = 2 * pixel_lat_degrees  # 2 pixels northward
+            folium_bounds[1][0] += north_shift  # folium_bounds format: [[south, west], [north, east]]
+            
             print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
             print(f"🔧 COORDINATE VALIDATION:")
             print(f"🔧   North > South: {accurate_north > accurate_south} ({accurate_north:.6f} > {accurate_south:.6f})")

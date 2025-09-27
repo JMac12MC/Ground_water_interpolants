@@ -130,7 +130,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             indicator_mask = None
             methods_requiring_mask = [
                 'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
-                'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
+                'depth_kriging', 'depth_kriging_auto'
             ]
             
             if interpolation_method in methods_requiring_mask:
@@ -579,7 +579,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             indicator_mask = None
             methods_requiring_mask = [
                 'kriging', 'yield_kriging_spherical', 'specific_capacity_kriging', 
-                'depth_kriging', 'depth_kriging_auto', 'ground_water_level_kriging'
+                'depth_kriging', 'depth_kriging_auto'
             ]
             
             if interpolation_method in methods_requiring_mask:

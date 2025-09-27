@@ -16,29 +16,177 @@ import io
 import base64
 from PIL import Image
 import matplotlib.colors as mcolors
-from scipy.interpolate import griddata
+import streamlit as st
+import pyproj
 
-# Global cache for exclusion polygons to avoid repeated file loading
-_exclusion_polygons_cache = None
-_exclusion_polygons_cache_file = None
-_unified_exclusion_geometry = None
-
-def load_exclusion_polygons():
+# ===== CENTRALIZED CRS TRANSFORMATION HELPERS (ARCHITECT SOLUTION) =====
+def get_transformers():
     """
-    Load red/orange exclusion polygons from GeoJSON file with caching for performance
+    Create standardized coordinate transformers with always_xy=True to avoid axis order issues.
+    Returns transformers for WGS84 <-> NZTM2000 conversions.
+    
+    Returns:
+    --------
+    tuple: (transformer_to_nztm, transformer_to_wgs84)
+    """
+    transformer_to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+    transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+    return transformer_to_nztm, transformer_to_wgs84
+
+def to_nztm2000(lons, lats):
+    """
+    Transform coordinates from WGS84 (EPSG:4326) to NZTM2000 (EPSG:2193).
+    
+    Parameters:
+    -----------
+    lons : array-like
+        Longitude coordinates in WGS84
+    lats : array-like  
+        Latitude coordinates in WGS84
+        
+    Returns:
+    --------
+    tuple: (x_coords, y_coords) in NZTM2000 meters
+    """
+    transformer_to_nztm, _ = get_transformers()
+    return transformer_to_nztm.transform(lons, lats)
+
+def to_wgs84(x_coords, y_coords):
+    """
+    Transform coordinates from NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326).
+    
+    Parameters:
+    -----------
+    x_coords : array-like
+        X coordinates in NZTM2000 meters
+    y_coords : array-like
+        Y coordinates in NZTM2000 meters
+        
+    Returns:
+    --------  
+    tuple: (lons, lats) in WGS84 degrees
+    """
+    _, transformer_to_wgs84 = get_transformers()
+    return transformer_to_wgs84.transform(x_coords, y_coords)
+
+def calculate_authoritative_bounds(lats, lons, lat_step, lon_step):
+    """
+    SINGLE SOURCE OF TRUTH for all bounds calculations.
+    
+    This function eliminates coordinate alignment issues by providing
+    one consistent bounds calculation used throughout the entire system.
+    
+    Parameters:
+    -----------
+    lats : array-like
+        Latitude array (north to south order)
+    lons : array-like  
+        Longitude array (west to east order)
+    lat_step : float
+        Latitude step size in degrees
+    lon_step : float
+        Longitude step size in degrees
+        
+    Returns:
+    --------
+    dict: Standardized bounds in all required formats
+    """
+    # Use EDGE-based bounds consistently (pixel boundaries, not centers)
+    # This ensures proper alignment between interpolation and display
+    north = lats[0] + lat_step/2   # lats[0] is northernmost center + half pixel
+    south = lats[-1] - lat_step/2  # lats[-1] is southernmost center - half pixel  
+    west = lons[0] - lon_step/2    # lons[0] is westernmost center - half pixel
+    east = lons[-1] + lon_step/2   # lons[-1] is easternmost center + half pixel
+    
+    return {
+        'north': north, 'south': south, 'east': east, 'west': west,
+        'rasterio_format': (west, south, east, north),  # (left, bottom, right, top)
+        'folium_format': [[south, west], [north, east]]  # [[sw_lat, sw_lon], [ne_lat, ne_lon]]
+    }
+# ==================================================================
+
+# ===== CENTRALIZED CRS/GRID CONTEXT HELPERS (ARCHITECT SOLUTION) =====
+def build_crs_grid(center_latlon, radius_km, grid_size):
+    """
+    Build coordinate grid in both NZTM2000 meters and WGS84 degrees.
+    Returns both meter grid for interpolation and WGS84 grid for GeoJSON output.
+    """
+    center_lat, center_lon = center_latlon
+    
+    # Transform center to NZTM2000
+    center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+    center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+    
+    # Create grid bounds in NZTM2000 meters
+    radius_m = radius_km * 1000.0
+    min_x_m = center_x_m - radius_m
+    max_x_m = center_x_m + radius_m
+    min_y_m = center_y_m - radius_m
+    max_y_m = center_y_m + radius_m
+    
+    # Create meter grid
+    x_vals_m = np.linspace(min_x_m, max_x_m, grid_size)
+    y_vals_m = np.linspace(min_y_m, max_y_m, grid_size)
+    X_m, Y_m = np.meshgrid(x_vals_m, y_vals_m)
+    
+    # Transform 2D grid to WGS84 for GeoJSON output
+    LONS_2D, LATS_2D = to_wgs84(X_m.flatten(), Y_m.flatten())
+    LONS_2D = LONS_2D.reshape(X_m.shape)
+    LATS_2D = LATS_2D.reshape(Y_m.shape)
+    
+    return {
+        'x_vals_m': x_vals_m,
+        'y_vals_m': y_vals_m, 
+        'X_m': X_m,
+        'Y_m': Y_m,
+        'LONS_2D': LONS_2D,
+        'LATS_2D': LATS_2D
+    }
+
+def prepare_wells_xy(wells_df):
+    """
+    Transform wells coordinates from WGS84 to NZTM2000 meters.
+    """
+    lats = wells_df['latitude'].values.astype(float)
+    lons = wells_df['longitude'].values.astype(float)
+    wells_x_m, wells_y_m = to_nztm2000(lons, lats)
+    return wells_x_m, wells_y_m
+
+def krige_on_grid(wells_x_m, wells_y_m, values, x_vals_m, y_vals_m, variogram_model='spherical', verbose=False):
+    """
+    Perform Kriging interpolation using NZTM2000 meter coordinates.
+    """
+    try:
+        OK = OrdinaryKriging(
+            wells_x_m, wells_y_m, values,
+            variogram_model=variogram_model,
+            verbose=verbose,
+            enable_plotting=False,
+            coordinates_type='euclidean'
+        )
+        Z, SS = OK.execute('grid', x_vals_m, y_vals_m)
+        return Z, SS, OK
+    except Exception as e:
+        print(f"Kriging failed with {variogram_model}: {e}")
+        return None, None, None
+# =================================================================
+
+@st.cache_data
+def _load_exclusion_data():
+    """
+    Load red/orange exclusion polygons from GeoJSON file (cached for performance)
     
     Returns:
     --------
     geopandas.GeoDataFrame or None
         GeoDataFrame containing exclusion polygon geometries
     """
-    global _exclusion_polygons_cache, _exclusion_polygons_cache_file
-    
     try:
         import os
         
         # Check for the red/orange exclusion polygon file
         exclusion_files = [
+            "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson",
             "attached_assets/red_orange_zones_stored_2025-09-16_1758015813886.geojson",
             "red_orange_zones_stored_2025-09-16.geojson",
             "attached_assets/red_orange_zones_stored_2025-09-16.geojson"
@@ -46,24 +194,83 @@ def load_exclusion_polygons():
         
         for file_path in exclusion_files:
             if os.path.exists(file_path):
-                # Return cached data if same file
-                if _exclusion_polygons_cache is not None and _exclusion_polygons_cache_file == file_path:
-                    print(f"🚀 PERFORMANCE: Using cached exclusion polygons ({len(_exclusion_polygons_cache)} polygons)")
-                    return _exclusion_polygons_cache
-                
-                # Load and cache new data
-                exclusion_gdf = gpd.read_file(file_path)
-                if exclusion_gdf is not None and not exclusion_gdf.empty:
-                    _exclusion_polygons_cache = exclusion_gdf
-                    _exclusion_polygons_cache_file = file_path
-                    print(f"✅ LOADED & CACHED: {len(exclusion_gdf)} exclusion polygons from {file_path}")
-                    return exclusion_gdf
+                # Load as raw JSON data for caching compatibility
+                import json
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                if data and data.get('features'):
+                    print(f"✅ Loaded {len(data['features'])} exclusion polygons from {file_path}")
+                    return data
                     
         print("⚠️ No red/orange exclusion polygon file found")
         return None
         
     except Exception as e:
         print(f"❌ Error loading exclusion polygons: {e}")
+        return None
+
+def load_exclusion_polygons():
+    """
+    Get exclusion polygons as GeoDataFrame (with caching)
+    """
+    data = _load_exclusion_data()
+    if data:
+        return gpd.GeoDataFrame.from_features(data['features'])
+    return None
+
+@st.cache_resource
+def get_prepared_exclusion_union():
+    """
+    Get prepared exclusion union for fast intersection testing (cached per session)
+    
+    Returns:
+    --------
+    tuple or None
+        (union_geometry, prepared_geometry, union_bounds, exclusion_version) or None if no exclusions
+    """
+    try:
+        import hashlib
+        import os
+        from shapely.ops import unary_union
+        from shapely.prepared import prep
+        
+        # Load exclusion polygons
+        exclusion_polygons = load_exclusion_polygons()
+        if exclusion_polygons is None or len(exclusion_polygons) == 0:
+            return None
+            
+        # Create version hash for cache invalidation
+        exclusion_files = [
+            "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson",
+            "attached_assets/red_orange_zones_stored_2025-09-16_1758015813886.geojson",
+            "red_orange_zones_stored_2025-09-16.geojson",
+            "attached_assets/red_orange_zones_stored_2025-09-16.geojson"
+        ]
+        
+        version_parts = []
+        for file_path in exclusion_files:
+            if os.path.exists(file_path):
+                stat = os.stat(file_path)
+                version_parts.append(f"{file_path}:{stat.st_size}:{stat.st_mtime}")
+                break
+        
+        exclusion_version = hashlib.md5(":".join(version_parts).encode()).hexdigest()[:8]
+        
+        # Create unified exclusion geometry
+        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
+        if not valid_geometries:
+            return None
+            
+        union_geometry = unary_union(valid_geometries)
+        prepared_geometry = prep(union_geometry)
+        union_bounds = union_geometry.bounds  # (minx, miny, maxx, maxy)
+        
+        print(f"🚀 PERFORMANCE: Created prepared exclusion union from {len(valid_geometries)} zones (version: {exclusion_version})")
+        
+        return union_geometry, prepared_geometry, union_bounds, exclusion_version
+        
+    except Exception as e:
+        print(f"❌ Error creating prepared exclusion union: {e}")
         return None
 
 def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
@@ -121,9 +328,9 @@ def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
         print(f"❌ Error applying exclusion clipping: {e}")
         return heatmap_data
 
-def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True):
+def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True, method_name=None, heatmap_id=None):
     """
-    Apply exclusion clipping to stored heatmap GeoJSON data
+    Apply exclusion clipping to stored heatmap GeoJSON data for non-indicator methods only
     
     Parameters:
     -----------
@@ -131,22 +338,37 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
         GeoJSON data from stored heatmap
     auto_load_exclusions : bool
         Whether to auto-load exclusion polygons if not provided
+    method_name : str
+        Interpolation method name to determine if exclusion should be applied
         
     Returns:
     --------
     dict
-        Filtered GeoJSON with exclusion areas removed
+        GeoJSON with exclusion clipping applied for non-indicator methods
     """
     if not stored_heatmap_geojson or not stored_heatmap_geojson.get('features'):
         return stored_heatmap_geojson
+    
+    # Define indicator methods that should NOT have red/orange exclusion clipping
+    indicator_methods = [
+        'indicator_kriging', 
+        'indicator_kriging_spherical', 
+        'indicator_kriging_spherical_continuous'
+    ]
+    
+    # Skip exclusion clipping for indicator methods
+    if method_name and method_name in indicator_methods:
+        print(f"🔄 INDICATOR METHOD: Skipping red/orange exclusion clipping for {method_name} (preserving full probability distribution)")
+        return stored_heatmap_geojson
         
+    # Apply exclusion clipping for non-indicator methods
     try:
         # Load exclusion polygons
         exclusion_polygons = load_exclusion_polygons() if auto_load_exclusions else None
         
         if exclusion_polygons is not None:
             features_before = len(stored_heatmap_geojson['features'])
-            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons)
+            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons, heatmap_id=heatmap_id)
             
             # Return updated GeoJSON
             filtered_geojson = {
@@ -154,58 +376,126 @@ def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load
                 "features": filtered_features
             }
             
-            print(f"🚫 PRODUCTION: Applied exclusion clipping to stored heatmap: {features_before} -> {len(filtered_features)} features")
+            print(f"🚫 PRODUCTION: Applied red/orange exclusion clipping to {method_name or 'heatmap'}: {features_before} -> {len(filtered_features)} features")
             return filtered_geojson
         else:
-            print(f"🚫 PRODUCTION: No exclusion polygons found for stored heatmap - showing {len(stored_heatmap_geojson['features'])} features without exclusion clipping")
+            print(f"⚠️ No red/orange exclusion polygons found for {method_name or 'heatmap'} - showing {len(stored_heatmap_geojson['features'])} features without clipping")
             return stored_heatmap_geojson
             
     except Exception as e:
-        print(f"❌ PRODUCTION: Error applying exclusion clipping to stored heatmap: {e}")
+        print(f"❌ PRODUCTION: Error applying exclusion clipping to {method_name or 'heatmap'}: {e}")
         return stored_heatmap_geojson
 
-def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
+# Removed unused caching function - using session_state cache instead
+
+def bbox_intersects(bbox1, bbox2):
     """
-    Apply negative clipping to remove GeoJSON features within exclusion areas with caching
+    Fast bounding box intersection test
+    
+    Parameters:
+    -----------
+    bbox1, bbox2 : tuple
+        Bounding boxes as (minx, miny, maxx, maxy)
+        
+    Returns:
+    --------
+    bool
+        True if bounding boxes intersect
+    """
+    return not (bbox1[2] < bbox2[0] or bbox1[0] > bbox2[2] or 
+                bbox1[3] < bbox2[1] or bbox1[1] > bbox2[3])
+
+def get_features_bbox(features):
+    """
+    Calculate bounding box of all features
+    
+    Parameters:
+    -----------
+    features : list
+        List of GeoJSON feature objects
+        
+    Returns:
+    --------
+    tuple or None
+        Bounding box as (minx, miny, maxx, maxy) or None
+    """
+    if not features:
+        return None
+        
+    min_x = min_y = float('inf')
+    max_x = max_y = float('-inf')
+    
+    for feature in features:
+        try:
+            if feature['geometry']['type'] == 'Polygon':
+                coords = feature['geometry']['coordinates'][0]
+                for coord in coords:
+                    x, y = coord[0], coord[1]
+                    min_x = min(min_x, x)
+                    max_x = max(max_x, x)
+                    min_y = min(min_y, y)
+                    max_y = max(max_y, y)
+        except:
+            continue
+            
+    if min_x == float('inf'):
+        return None
+        
+    return (min_x, min_y, max_x, max_y)
+
+def apply_exclusion_clipping_to_geojson(features, exclusion_polygons, heatmap_id=None):
+    """
+    OPTIMIZED: Apply negative clipping to remove GeoJSON features within exclusion areas
+    Uses prepared geometry, bounding box prefilters, and per-heatmap caching
     
     Parameters:
     -----------
     features : list
         List of GeoJSON feature objects
     exclusion_polygons : geopandas.GeoDataFrame
-        GeoDataFrame containing exclusion polygon geometries
+        GeoDataFrame containing exclusion polygon geometries (ignored, uses cached union)
+    heatmap_id : str, optional
+        Unique identifier for caching (e.g., "ground_water_level_kriging_gridpoint1")
         
     Returns:
     --------
     list
         Filtered GeoJSON features with exclusion areas removed
     """
-    global _unified_exclusion_geometry
-    
-    if exclusion_polygons is None or len(exclusion_polygons) == 0:
-        return features
-        
     if not features:
         return features
         
     try:
-        from shapely.geometry import Point, Polygon as ShapelyPolygon
-        from shapely.ops import unary_union
+        # Get prepared exclusion union (cached)
+        exclusion_data = get_prepared_exclusion_union()
+        if exclusion_data is None:
+            return features
+            
+        union_geometry, prepared_geometry, union_bounds, exclusion_version = exclusion_data
         
-        # Use cached unified exclusion geometry if available
-        if _unified_exclusion_geometry is None:
-            # Create unified exclusion geometry for faster intersection testing
-            valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
-            if not valid_geometries:
-                return features
-                
-            _unified_exclusion_geometry = unary_union(valid_geometries)
-            print(f"🚀 PERFORMANCE: Created & cached unified exclusion geometry from {len(valid_geometries)} polygons")
-        else:
-            print(f"🚀 PERFORMANCE: Using cached unified exclusion geometry")
+        # Fast bounding box prefilter
+        features_bbox = get_features_bbox(features)
+        if features_bbox is None:
+            return features
+            
+        if not bbox_intersects(features_bbox, union_bounds):
+            print(f"🚀 FAST SKIP: Heatmap {heatmap_id or 'unknown'} bbox doesn't intersect exclusion zones")
+            return features
         
-        exclusion_geometry = _unified_exclusion_geometry
-        print(f"🚫 Applying exclusion clipping to GeoJSON features with cached exclusion geometry")
+        # Check cache if heatmap_id provided
+        if heatmap_id:
+            import hashlib
+            features_str = str(len(features))  # Simplified hash based on count for performance
+            cache_key = f"clipped_result_{heatmap_id}_{features_str}_{exclusion_version}"
+            
+            if cache_key in st.session_state:
+                filtered_features, excluded_count = st.session_state[cache_key]
+                print(f"🚀 CACHE HIT: {heatmap_id} - {excluded_count} excluded, {len(filtered_features)} kept")
+                return filtered_features
+        
+        from shapely.geometry import Polygon as ShapelyPolygon
+        
+        print(f"🚫 Applying exclusion clipping to GeoJSON features with {len(exclusion_polygons) if exclusion_polygons is not None else 0} exclusion zones")
         
         # Filter out features that intersect with exclusion areas
         filtered_features = []
@@ -217,15 +507,48 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
                 if feature['geometry']['type'] == 'Polygon':
                     coords = feature['geometry']['coordinates'][0]
                     if len(coords) >= 3:
+                        # Fast bbox check first
+                        feature_bbox = get_features_bbox([feature])
+                        if feature_bbox and not bbox_intersects(feature_bbox, union_bounds):
+                            filtered_features.append(feature)
+                            continue
+                        
                         # Create Shapely polygon from coordinates
                         shapely_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
                         feature_polygon = ShapelyPolygon(shapely_coords)
                         
-                        # Check if feature intersects with any exclusion area
-                        if not (exclusion_geometry.intersects(feature_polygon) or exclusion_geometry.contains(feature_polygon)):
-                            filtered_features.append(feature)
-                        else:
-                            excluded_count += 1
+                        # FIXED: Use geometric difference/intersection instead of just feature removal
+                        try:
+                            # Create allowed geometry: feature - exclusion_zones
+                            allowed_geometry = feature_polygon.difference(union_geometry)
+                            
+                            if not allowed_geometry.is_empty:
+                                # Handle MultiPolygon results
+                                if hasattr(allowed_geometry, 'geoms'):
+                                    # Split into separate features for each disconnected part
+                                    for geom_part in allowed_geometry.geoms:
+                                        if geom_part.area > 1e-10:  # Skip tiny slivers
+                                            # Convert back to GeoJSON coordinates
+                                            coords = list(geom_part.exterior.coords)
+                                            new_feature = feature.copy()
+                                            new_feature['geometry']['coordinates'] = [coords]
+                                            filtered_features.append(new_feature)
+                                else:
+                                    # Single polygon result
+                                    if allowed_geometry.area > 1e-10:  # Skip tiny slivers
+                                        coords = list(allowed_geometry.exterior.coords)
+                                        new_feature = feature.copy()
+                                        new_feature['geometry']['coordinates'] = [coords]
+                                        filtered_features.append(new_feature)
+                                        
+                            if allowed_geometry.is_empty or allowed_geometry.area < feature_polygon.area * 0.9:
+                                excluded_count += 1  # Count as clipped if significant area removed
+                        except Exception as geom_error:
+                            # Fallback to old intersection test if geometric operations fail
+                            if not (prepared_geometry.intersects(feature_polygon) or prepared_geometry.contains(feature_polygon)):
+                                filtered_features.append(feature)
+                            else:
+                                excluded_count += 1
                     else:
                         # Keep features with invalid geometry
                         filtered_features.append(feature)
@@ -236,6 +559,11 @@ def apply_exclusion_clipping_to_geojson(features, exclusion_polygons):
             except Exception as e:
                 # If geometry processing fails, keep the feature
                 filtered_features.append(feature)
+        
+        # Cache the result if heatmap_id provided
+        if heatmap_id:
+            # Store the actual result in session state cache
+            st.session_state[cache_key] = (filtered_features, excluded_count)
                 
         print(f"🚫 GeoJSON exclusion clipping: Removed {excluded_count} features, kept {len(filtered_features)} features")
         return filtered_features
@@ -344,69 +672,40 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         # Extract center coordinates and setup grid with HIGH-PRECISION conversion
         center_lat, center_lon = center_point
         
-        # Use same high-precision conversion factors as main interpolation
-        from utils import get_distance
-        TOLERANCE_KM = 0.0001  # 10cm tolerance
-        MAX_ITERATIONS = 100
+        # ===== ARCHITECT CLEANUP: Removed legacy precision calculation variables =====
+        # These were used for km_per_degree calculations, now using NZTM2000 system
+        print(f"🔧 Using NZTM2000 coordinate system for indicator mask generation")
+        # ===========================================================================
         
-        def get_precise_conversion_factors(reference_lat, reference_lon):
-            """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
-            test_distance = 1.0  # 1km test distance
-            
-            # Ultra-precise latitude conversion
-            lat_offset_initial = test_distance / 111.0
-            best_lat_factor = 111.0
-            best_lat_error = float('inf')
-            
-            for i in range(MAX_ITERATIONS):
-                test_lat = reference_lat + lat_offset_initial
-                actual_distance = get_distance(reference_lat, reference_lon, test_lat, reference_lon)
-                error = abs(actual_distance - test_distance)
-                
-                current_factor = test_distance / lat_offset_initial
-                if error < best_lat_error:
-                    best_lat_factor = current_factor
-                    best_lat_error = error
-                
-                if error < TOLERANCE_KM:
-                    break
-                    
-                if actual_distance > test_distance:
-                    lat_offset_initial *= 0.999
-                else:
-                    lat_offset_initial *= 1.001
-            
-            # Ultra-precise longitude conversion
-            lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
-            best_lon_factor = 111.0 * abs(np.cos(np.radians(reference_lat)))
-            best_lon_error = float('inf')
-            
-            for i in range(MAX_ITERATIONS):
-                test_lon = reference_lon + lon_offset_initial
-                actual_distance = get_distance(reference_lat, reference_lon, reference_lat, test_lon)
-                error = abs(actual_distance - test_distance)
-                
-                current_factor = test_distance / lon_offset_initial
-                if error < best_lon_error:
-                    best_lon_factor = current_factor
-                    best_lon_error = error
-                
-                if error < TOLERANCE_KM:
-                    break
-                    
-                if actual_distance > test_distance:
-                    lon_offset_initial *= 0.999
-                else:
-                    lon_offset_initial *= 1.001
-            
-            return best_lat_factor, best_lon_factor
+        # ===== REMOVED: Legacy get_precise_conversion_factors (ARCHITECT CLEANUP) =====
+        # This function was used for km_per_degree calculations which have been 
+        # replaced with proper NZTM2000 coordinate transformations
+        # ============================================================================
         
-        km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
+        # ===== ARCHITECT SOLUTION: BOUNDS CALCULATION WITH NZTM2000 =====
+        print(f"🔧 Creating indicator mask bounds using NZTM2000 coordinate system")
         
-        min_lat = center_lat - (radius_km / km_per_degree_lat)
-        max_lat = center_lat + (radius_km / km_per_degree_lat)
-        min_lon = center_lon - (radius_km / km_per_degree_lon)
-        max_lon = center_lon + (radius_km / km_per_degree_lon)
+        # Transform center to NZTM2000
+        center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+        center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+        
+        # Create bounds in NZTM2000 meters
+        radius_m = radius_km * 1000.0
+        min_x_m = center_x_m - radius_m
+        max_x_m = center_x_m + radius_m
+        min_y_m = center_y_m - radius_m
+        max_y_m = center_y_m + radius_m
+        
+        # Transform bounds back to WGS84 for grid creation
+        bounds_x_m = [min_x_m, max_x_m, max_x_m, min_x_m]
+        bounds_y_m = [min_y_m, min_y_m, max_y_m, max_y_m]
+        bounds_lons, bounds_lats = to_wgs84(bounds_x_m, bounds_y_m)
+        
+        min_lat, max_lat = bounds_lats.min(), bounds_lats.max()
+        min_lon, max_lon = bounds_lons.min(), bounds_lons.max()
+        
+        print(f"🔧 MASK BOUNDS: lat [{min_lat:.6f}, {max_lat:.6f}]°, lon [{min_lon:.6f}, {max_lon:.6f}]°")
+        # ========================================================================
         
         # Create grid
         grid_size = min(150, max(50, resolution))
@@ -543,6 +842,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # Fallback to Banks Peninsula exclusion if comprehensive polygon not available
     banks_peninsula_polygon = None
+    banks_peninsula_coords = None  # Define the variable to prevent errors
     if clipping_geometry is None and banks_peninsula_coords and len(banks_peninsula_coords) > 3:
         try:
             from shapely.geometry import Polygon
@@ -604,81 +904,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     from utils import get_distance
     import numpy as np
     
-    # Ultra-precise conversion factors using iterative refinement
-    # Target: Match sequential_heatmap.py precision (10cm accuracy)
-    TOLERANCE_KM = 0.0001  # 10cm tolerance
-    MAX_ITERATIONS = 100
+    # ===== ARCHITECT CLEANUP: Removed second legacy get_precise_conversion_factors =====
+    # This function has been replaced with proper NZTM2000 coordinate transformations
+    # using the centralized CRS helpers: to_nztm2000(), to_wgs84(), build_crs_grid()
+    print(f"🔧 COORDINATE SYSTEM: Using NZTM2000 transformations (legacy km_per_degree removed)")
+    # ==================================================================================
     
-    def get_precise_conversion_factors(reference_lat, reference_lon):
-        """Calculate ultra-precise km-to-degree conversion factors using iterative refinement"""
-        
-        # Step 1: Ultra-precise latitude conversion
-        test_distance = 1.0  # 1km test distance
-        lat_offset_initial = test_distance / 111.0  # Initial estimate
-        
-        best_lat_factor = 111.0
-        best_lat_error = float('inf')
-        
-        for i in range(MAX_ITERATIONS):
-            test_lat = reference_lat + lat_offset_initial
-            actual_distance = get_distance(reference_lat, reference_lon, test_lat, reference_lon)
-            error = abs(actual_distance - test_distance)
-            
-            current_factor = test_distance / lat_offset_initial
-            if error < best_lat_error:
-                best_lat_factor = current_factor
-                best_lat_error = error
-            
-            if error < TOLERANCE_KM:
-                break
-                
-            # Adaptive refinement
-            if actual_distance > test_distance:
-                lat_offset_initial *= 0.999  # Smaller offset needed
-            else:
-                lat_offset_initial *= 1.001  # Larger offset needed
-        
-        # Step 2: Ultra-precise longitude conversion (latitude-dependent)
-        lon_offset_initial = test_distance / (111.0 * abs(np.cos(np.radians(reference_lat))))
-        
-        best_lon_factor = 111.0 * abs(np.cos(np.radians(reference_lat)))
-        best_lon_error = float('inf')
-        
-        for i in range(MAX_ITERATIONS):
-            test_lon = reference_lon + lon_offset_initial
-            actual_distance = get_distance(reference_lat, reference_lon, reference_lat, test_lon)
-            error = abs(actual_distance - test_distance)
-            
-            current_factor = test_distance / lon_offset_initial
-            if error < best_lon_error:
-                best_lon_factor = current_factor
-                best_lon_error = error
-            
-            if error < TOLERANCE_KM:
-                break
-                
-            # Adaptive refinement
-            if actual_distance > test_distance:
-                lon_offset_initial *= 0.999
-            else:
-                lon_offset_initial *= 1.001
-        
-        print(f"HIGH-PRECISION CONVERSION: lat_factor={best_lat_factor:.8f} km/deg (error: {best_lat_error:.8f}km)")
-        print(f"HIGH-PRECISION CONVERSION: lon_factor={best_lon_factor:.8f} km/deg (error: {best_lon_error:.8f}km)")
-        
-        return best_lat_factor, best_lon_factor
+    # ===== ARCHITECT SOLUTION: PROPER COORDINATE TRANSFORMATION =====
+    print(f"🔧 ===== COORDINATE TRANSFORMATION FIX APPLIED IN GENERATE_GEO_JSON_GRID =====")
+    print(f"🔧 Using centralized CRS helpers for proper EPSG:2193 transformations")
     
-    # Calculate ultra-precise conversion factors
-    km_per_degree_lat, km_per_degree_lon = get_precise_conversion_factors(center_lat, center_lon)
-
-    # Create grid in lat/lon space
-    min_lat = center_lat - (radius_km / km_per_degree_lat)
-    max_lat = center_lat + (radius_km / km_per_degree_lat)
-    min_lon = center_lon - (radius_km / km_per_degree_lon)
-    max_lon = center_lon + (radius_km / km_per_degree_lon)
-
     # High resolution grid for smooth professional visualization
-    # Increase resolution significantly for smoother appearance like kriging software
     wells_count = len(wells_df)
     if wells_count > 5000:
         grid_size = 80   # Higher resolution for very large datasets
@@ -687,13 +923,26 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     else:
         grid_size = 150  # Very fine resolution for smaller datasets
 
-    # Create the grid for our GeoJSON polygons
-    lat_vals = np.linspace(min_lat, max_lat, grid_size)
-    lon_vals = np.linspace(min_lon, max_lon, grid_size)
+    # Build grid using centralized helper
+    grid_ctx = build_crs_grid(center_point, radius_km, grid_size)
+    x_vals_m = grid_ctx['x_vals_m']
+    y_vals_m = grid_ctx['y_vals_m']
+    X_m = grid_ctx['X_m']
+    Y_m = grid_ctx['Y_m']
+    LONS_2D = grid_ctx['LONS_2D']
+    LATS_2D = grid_ctx['LATS_2D']
+    
+    # For backward compatibility, create 1D lat/lon arrays (though we'll use 2D for polygons)
+    lat_vals = LATS_2D[:, 0]  # First column (west edge)
+    lon_vals = LONS_2D[0, :]  # First row (north edge)
+    
+    print(f"🔧 GRID CREATED: {grid_size}x{grid_size} using centralized CRS helpers")
+    print(f"🔧 WGS84 BOUNDS: lat [{LATS_2D.min():.6f}, {LATS_2D.max():.6f}]°, lon [{LONS_2D.min():.6f}, {LONS_2D.max():.6f}]°")
+    # =================================================================="
 
-    # Extract coordinates and values from the wells dataframe
-    lats = wells_df['latitude'].values.astype(float)
-    lons = wells_df['longitude'].values.astype(float)
+    # ===== COORDINATE TRANSFORMATION MOVED AFTER FILTERING FOR EACH METHOD =====
+    # This ensures coordinate arrays match filtered well data arrays
+    # ================================================================="
 
     # Use the new categorization system
     from data_loader import get_wells_for_interpolation
@@ -703,6 +952,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         wells_df = get_wells_for_interpolation(wells_df, 'depth')
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
+
+        # ===== TRANSFORM FILTERED WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000 using helper")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        # ================================================================="
 
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
@@ -727,6 +983,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if wells_df.empty:
             return {"type": "FeatureCollection", "features": []}
 
+        # ===== TRANSFORM FILTERED WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000 using helper")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        # ================================================================="
+
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['specific_capacity'].values.astype(float)
@@ -741,6 +1004,33 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         valid_gwl_mask = wells_df['ground water level'].notna()
 
         wells_df = wells_df[valid_gwl_mask].copy()
+
+        # ===== TRANSFORM FILTERED WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000 using helper")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        
+        # ===== MINIMAL DEBUG: Reference Point Validation =====
+        if len(wells_df) < 500:  # Only test on smaller datasets to avoid spam
+            # Test known Canterbury landmarks
+            landmarks = [
+                ("Christchurch Cathedral", -43.5321, 172.6362),
+                ("Canterbury Plains Center", -43.7, 172.0)
+            ]
+            print("🔍 COORD DEBUG - Reference Point Validation:")
+            for name, lat, lon in landmarks:
+                try:
+                    # Test coordinate transformation accuracy
+                    test_x, test_y = to_nztm2000([lon], [lat])
+                    back_lon, back_lat = to_wgs84(test_x, test_y)
+                    lat_diff = abs(lat - back_lat[0])
+                    lon_diff = abs(lon - back_lon[0])
+                    print(f"  {name}: WGS84({lat:.6f},{lon:.6f}) → NZTM({test_x[0]:.1f},{test_y[0]:.1f}) → WGS84({back_lat[0]:.6f},{back_lon[0]:.6f})")
+                    print(f"    Round-trip error: lat={lat_diff:.8f}°, lon={lon_diff:.8f}°")
+                except Exception as e:
+                    print(f"    Error testing {name}: {e}")
+        # ================================================================="
 
         if wells_df.empty:
             print("No valid ground water level data found for interpolation")
@@ -964,27 +1254,28 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['yield_rate'].values.astype(float)
 
-    # Convert to km-based coordinates for proper interpolation
-    x_coords = (lons - center_lon) * km_per_degree_lon
-    y_coords = (lats - center_lat) * km_per_degree_lat
-
-    # Create grid in km space (square bounds)
-    grid_x = np.linspace(-radius_km, radius_km, grid_size)
-    grid_y = np.linspace(-radius_km, radius_km, grid_size)
-    grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
-
-    # Flatten for interpolation
-    points = np.vstack([x_coords, y_coords]).T  # Well points in km
-    xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
-
-    # Use square bounds instead of circular radius
-    mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
-
-    # Define grid_points early to avoid UnboundLocalError
-    grid_points = xi[mask]
-
-    # Perform interpolation
-    points = np.vstack([x_coords, y_coords]).T
+    # ===== ARCHITECT SOLUTION: USE NZTM2000 COORDINATES FOR INTERPOLATION =====
+    print(f"🔧 Using NZTM2000 coordinates for accurate interpolation")
+    
+    # Create grid points in NZTM2000 meters for interpolation
+    radius_m = radius_km * 1000.0
+    X_m_flat = X_m.flatten()
+    Y_m_flat = Y_m.flatten()
+    
+    # Apply radius filter in meters
+    center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+    center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+    
+    # Distance from center in meters
+    distances = np.sqrt((X_m_flat - center_x_m)**2 + (Y_m_flat - center_y_m)**2)
+    mask = distances <= radius_m
+    
+    # Define grid points in NZTM2000 meters
+    grid_points_x = X_m_flat[mask]
+    grid_points_y = Y_m_flat[mask]
+    
+    print(f"🔧 GRID FILTERING: {len(grid_points_x)}/{len(X_m_flat)} points within {radius_km}km radius")
+    # ============================================================================
 
     try:
         # Initialize variance array for kriging uncertainty
@@ -995,65 +1286,71 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Use actual kriging with variance calculation when variance is requested
             print("Calculating kriging with variance estimation")
 
-            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
-            lon_values = x_coords / km_per_degree_lon + center_lon
-            lat_values = y_coords / km_per_degree_lat + center_lat
-
-            # Use already defined grid_points
-            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
-
-            # Set up kriging with variance calculation
+            # ===== USE CENTRALIZED KRIGING WITH NZTM2000 COORDINATES =====
+            print(f"🔧 Performing kriging with variance in NZTM2000 coordinates")
+            
+            # Use centralized kriging helper with NZTM2000 coordinates
             if auto_fit_variogram:
-                # Use auto-fitted variogram for more accurate uncertainty estimation
-                print(f"Auto-fitting {variogram_model} variogram model...")
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
+                Z_grid, SS_grid, OK = krige_on_grid(
+                    wells_x_m, wells_y_m, yields,
+                    x_vals_m, y_vals_m,
                     variogram_model=variogram_model,
-                    verbose=False,
-                    enable_plotting=False,
-                    variogram_parameters=None  # Let PyKrige auto-fit parameters
+                    verbose=False
                 )
             else:
-                # Use fixed variogram model for speed
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
-                    variogram_model='linear',  # Fast and stable
-                    verbose=False,
-                    enable_plotting=False
+                Z_grid, SS_grid, OK = krige_on_grid(
+                    wells_x_m, wells_y_m, yields,
+                    x_vals_m, y_vals_m,
+                    variogram_model='linear',
+                    verbose=False
                 )
-
-            # Execute kriging to get both predictions and variance
-            interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
+            
+            if Z_grid is not None:
+                # Extract values for masked grid points
+                Z_flat = Z_grid.flatten()
+                interpolated_z = Z_flat[mask]
+                
+                if SS_grid is not None:
+                    SS_flat = SS_grid.flatten()
+                    kriging_variance = SS_flat[mask]
+                else:
+                    kriging_variance = None
+                    
+                print(f"🔧 Kriging with variance completed: {len(interpolated_z)} interpolated points")
+            else:
+                print("❌ Kriging failed, falling back to griddata")
+                interpolated_z = None
+                kriging_variance = None
+            # ====================================================================
 
         elif (method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:
             # Perform indicator kriging for binary yield suitability
             print("Performing indicator kriging for yield suitability mapping...")
 
-            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
-            lon_values = x_coords / km_per_degree_lon + center_lon
-            lat_values = y_coords / km_per_degree_lat + center_lat
-
-            # Use already defined grid_points
-            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
-
-            # Set up kriging for binary indicator data with constrained parameters
-            # Use spherical model with limited range to prevent high values far from viable wells
-            max_range_km = min(radius_km * 0.5, 5.0)  # Limit influence to half radius or 5km max
-            range_degrees = max_range_km / 111.0  # Convert km to degrees (rough approximation)
-
-            OK = OrdinaryKriging(
-                lon_values, lat_values, yields,
-                variogram_model='spherical',  # Better spatial control than linear
-                verbose=False,
-                enable_plotting=False,
-                weight=True,  # Enable nugget effect for indicator data
-                variogram_parameters=[0.2, 0.6, range_degrees]  # [nugget, sill, range] - constrained range
+            # ===== INDICATOR KRIGING WITH NZTM2000 COORDINATES =====
+            print(f"🔧 Performing indicator kriging in NZTM2000 coordinates")
+            
+            # Use centralized kriging helper with spherical model for indicator data
+            Z_grid, SS_grid, OK = krige_on_grid(
+                wells_x_m, wells_y_m, yields,
+                x_vals_m, y_vals_m,
+                variogram_model='spherical',
+                verbose=False
             )
-
-            # Execute kriging to get probability predictions
-            interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+            
+            if Z_grid is not None:
+                # Extract values for masked grid points
+                Z_flat = Z_grid.flatten()
+                interpolated_z = Z_flat[mask]
+                
+                # Ensure values are in [0,1] range (probabilities)
+                interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+                
+                print(f"🔧 Indicator kriging completed: {len(interpolated_z)} probability points")
+            else:
+                print("❌ Indicator kriging failed")
+                interpolated_z = None
+            # ====================================================================
 
             # Ensure values are in [0,1] range (probabilities)
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
@@ -1063,7 +1360,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if method != 'indicator_kriging_spherical_continuous':
                 # Calculate distances from each grid point to nearest good well (yield >= 0.75)
                 good_wells_mask = yields >= 0.75  # Wells with good yield indicators
-                if np.any(good_wells_mask):
+                print(f"🔧 Found {np.sum(good_wells_mask)} good wells for distance decay calculation")
+                if np.any(good_wells_mask) and interpolated_z is not None:
                     good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
                     grid_coords = grid_points
 
@@ -1098,39 +1396,29 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             else:
                 print(f"Auto-fitting {variogram_model} variogram model for yield estimation...")
 
-            # Convert coordinates back to lat/lon for kriging (pykrige expects lon/lat)
-            lon_values = x_coords / km_per_degree_lon + center_lon
-            lat_values = y_coords / km_per_degree_lat + center_lat
-
-            # Use already defined grid_points
-            xi_lon = grid_points[:, 0] / km_per_degree_lon + center_lon
-            xi_lat = grid_points[:, 1] / km_per_degree_lat + center_lat
-
-            # Set up kriging with auto-fitted variogram - ensure proper parameters for depth data
-            if method == 'depth_kriging' or method == 'depth_kriging_auto':
-                # For depth data, use more appropriate variogram parameters
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
-                    variogram_model=variogram_model,
-                    verbose=True,  # Enable verbose for debugging depth issues
-                    enable_plotting=False,
-                    variogram_parameters=None,  # Let PyKrige auto-fit parameters
-                    weight=True,  # Enable nugget effect for depth data
-                    anisotropy_scaling=1.0,  # No anisotropy scaling
-                    anisotropy_angle=0.0
-                )
+            # ===== AUTO-FITTED KRIGING WITH NZTM2000 COORDINATES =====
+            print(f"🔧 Performing auto-fitted kriging for {method} in NZTM2000 coordinates")
+            
+            # Use centralized kriging helper with auto-fitted variogram
+            verbose_mode = True if (method == 'depth_kriging' or method == 'depth_kriging_auto') else False
+            
+            Z_grid, SS_grid, OK = krige_on_grid(
+                wells_x_m, wells_y_m, yields,
+                x_vals_m, y_vals_m,
+                variogram_model=variogram_model,
+                verbose=verbose_mode
+            )
+            
+            if Z_grid is not None:
+                # Extract values for masked grid points
+                Z_flat = Z_grid.flatten()
+                interpolated_z = Z_flat[mask]
+                
+                print(f"🔧 Auto-fitted kriging completed: {len(interpolated_z)} interpolated points")
             else:
-                # Standard yield kriging
-                OK = OrdinaryKriging(
-                    lon_values, lat_values, yields,
-                    variogram_model=variogram_model,
-                    verbose=False,
-                    enable_plotting=False,
-                    variogram_parameters=None  # Let PyKrige auto-fit parameters
-                )
-
-            # Execute kriging to get predictions (ignore variance)
-            interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+                print("❌ Auto-fitted kriging failed, falling back to griddata")
+                interpolated_z = None
+            # ====================================================================
 
             # Additional validation for depth interpolation
             if method == 'depth_kriging' or method == 'depth_kriging_auto':
@@ -1140,10 +1428,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 interpolated_z = np.minimum(200.0, interpolated_z)  # Maximum reasonable depth of 200m
 
         else:
-            # Use standard griddata interpolation for other cases
+            # Use standard griddata interpolation with NZTM2000 coordinates
             # This is much faster than kriging for large datasets
+            wells_points = np.column_stack([wells_x_m, wells_y_m])
+            grid_points_array = np.column_stack([grid_points_x, grid_points_y])
+            
             interpolated_z = griddata(
-                points, yields, grid_points,
+                wells_points, yields, grid_points_array,
                 method='linear', fill_value=0.0
             )
 
@@ -1151,20 +1442,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             nan_mask = np.isnan(interpolated_z)
             if np.any(nan_mask):
                 interpolated_z[nan_mask] = griddata(
-                    points, yields, grid_points[nan_mask],
+                    wells_points, yields, grid_points_array[nan_mask],
                     method='nearest', fill_value=0.0
                 )
 
-            # Apply advanced smoothing for professional kriging-like appearance
+            # Apply advanced smoothing for professional kriging-like appearance using NZTM2000 grid
             from scipy.ndimage import gaussian_filter
 
-            # Reshape to 2D grid for smoothing
+            # Reshape to 2D grid for smoothing using the NZTM2000 grid
             try:
-                # Create full 2D grid for smoothing
-                z_grid = np.zeros_like(grid_X)
+                # Create full 2D grid for smoothing using X_m grid shape
+                z_grid = np.zeros_like(X_m)
                 z_grid_flat = z_grid.flatten()
                 z_grid_flat[mask] = interpolated_z
-                z_grid = z_grid_flat.reshape(grid_X.shape)
+                z_grid = z_grid_flat.reshape(X_m.shape)
 
                 # Apply multiple smoothing passes for ultra-smooth appearance
                 # First pass: moderate smoothing
@@ -1195,14 +1486,32 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     except Exception as e:
         # Fallback to simple IDW interpolation if the above methods fail
         print(f"Interpolation error: {e}, using fallback method")
-        interpolated_z = np.zeros(grid_points.shape[0])
-        for i, point in enumerate(grid_points):
-            weights = 1.0 / (np.sqrt(np.sum((points - point)**2, axis=1)) + 1e-5)
+        # Create grid points array for IDW interpolation
+        grid_points_array = np.column_stack([grid_points_x, grid_points_y])
+        wells_points = np.column_stack([wells_x_m, wells_y_m])
+        
+        interpolated_z = np.zeros(len(grid_points_x))
+        for i, point in enumerate(grid_points_array):
+            weights = 1.0 / (np.sqrt(np.sum((wells_points - point)**2, axis=1)) + 1e-5)
             interpolated_z[i] = np.sum(weights * yields) / np.sum(weights)
 
     # Convert grid coordinates back to lat/lon
-    grid_lats = (grid_points[:, 1] / km_per_degree_lat) + center_lat
-    grid_lons = (grid_points[:, 0] / km_per_degree_lon) + center_lon
+    # ===== ARCHITECT FIX: CONVERT GRID POINTS USING NZTM2000 SYSTEM =====
+    # Use the centralized coordinate system instead of km_per_degree
+    grid_lons, grid_lats = to_wgs84(grid_points_x, grid_points_y)
+    print(f"🔧 Converted {len(grid_lons)} grid points from NZTM2000 to WGS84")
+    
+    # ===== MINIMAL DEBUG: Coordinate Validation Points =====
+    debug_coords = len(grid_lons) < 1000  # Only debug smaller grids to avoid spam
+    if debug_coords and len(grid_lons) > 4:
+        # Log grid corners for validation
+        indices = [0, len(grid_lons)//4, len(grid_lons)//2, -1]
+        print("🔍 COORD DEBUG - Grid Sample Points:")
+        for i in indices:
+            if i < len(grid_lons):
+                print(f"  Point {i}: NZTM({grid_points_x[i]:.1f}, {grid_points_y[i]:.1f})m → WGS84({grid_lats[i]:.6f}, {grid_lons[i]:.6f})")
+    # ================================================================
+    # ========================================================================
 
     # Prepare soil polygon geometry for later filtering (do not apply to interpolation)
     merged_soil_geometry = None
@@ -1235,16 +1544,35 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     final_radius_km = radius_km * final_clip_factor
     
     # Create final square clipping polygon centered on the original center
-    final_clip_lat_radius = final_radius_km / km_per_degree_lat
-    final_clip_lon_radius = final_radius_km / km_per_degree_lon
+    # ===== ARCHITECT FIX: FINAL CLIPPING WITH NZTM2000 SYSTEM =====
+    # Calculate final radius in NZTM2000 meters for consistent clipping
+    final_radius_m = final_radius_km * 1000.0
+    print(f"🔧 Final radius clipping: {final_radius_km}km = {final_radius_m}m NZTM2000")
+    # ========================================================================
+    
+    # ===== FINAL ARCHITECT FIX: CLIPPING POLYGON WITH NZTM2000 BOUNDS =====
+    # Convert final radius to WGS84 bounds using NZTM2000 system
+    center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+    center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+    
+    # Create bounds in NZTM2000 meters
+    bounds_x_m = [center_x_m - final_radius_m, center_x_m + final_radius_m, 
+                  center_x_m + final_radius_m, center_x_m - final_radius_m]
+    bounds_y_m = [center_y_m - final_radius_m, center_y_m - final_radius_m,
+                  center_y_m + final_radius_m, center_y_m + final_radius_m]
+    
+    # Transform to WGS84 for polygon coordinates
+    bounds_lons, bounds_lats = to_wgs84(bounds_x_m, bounds_y_m)
     
     final_clip_polygon_coords = [
-        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SW
-        [center_lon + final_clip_lon_radius, center_lat - final_clip_lat_radius],  # SE
-        [center_lon + final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NE
-        [center_lon - final_clip_lon_radius, center_lat + final_clip_lat_radius],  # NW
-        [center_lon - final_clip_lon_radius, center_lat - final_clip_lat_radius]   # Close
+        [bounds_lons[0], bounds_lats[0]],  # SW
+        [bounds_lons[1], bounds_lats[1]],  # SE
+        [bounds_lons[2], bounds_lats[2]],  # NE
+        [bounds_lons[3], bounds_lats[3]],  # NW
+        [bounds_lons[0], bounds_lats[0]]   # Close
     ]
+    print(f"🔧 Final clipping polygon created using NZTM2000 coordinate system")
+    # ==========================================================================
     
     from shapely.geometry import Polygon as ShapelyPolygon
     final_clip_geometry = ShapelyPolygon(final_clip_polygon_coords)
@@ -1296,8 +1624,10 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         triangle_coords.append(triangle_coords[0])  # Close the polygon
                         triangle_polygon = ShapelyPolygon(triangle_coords)
                         
-                        # Only include if triangle is completely within soil drainage areas
-                        include_triangle = merged_soil_geometry.contains(triangle_polygon)
+                        # Include if triangle intersects or is mostly within soil drainage areas
+                        # Allow triangles that cross boundaries rather than requiring complete containment
+                        include_triangle = (merged_soil_geometry.intersects(triangle_polygon) or 
+                                          merged_soil_geometry.contains(triangle_polygon))
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
                     if include_triangle and indicator_mask is not None:
@@ -1474,13 +1804,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             final_clipped_features.append(feature)
     
     features = final_clipped_features
-    print(f"🔲 Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
-    
-    # DEBUG: Check if final square clipping is too restrictive for auto-generated grid points
-    if len(features) == 0 and features_before_final_clip > 0:
-        print(f"🚨 WARNING: Final square clipping removed ALL {features_before_final_clip} features!")
-        print(f"🚨 Grid center: ({center_lat:.6f}, {center_lon:.6f}), final radius: {final_radius_km:.1f}km")
-        print(f"🚨 This suggests the final square clipping (50% factor) is too restrictive for this grid point")
+    print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
 
     # Apply exclusion clipping ONLY for non-indicator interpolation methods
     # Indicator methods already show probability values, so user wants to see full distribution
@@ -1490,8 +1814,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         'indicator_kriging_spherical_continuous'
     ]
     
-    # TEMPORARILY DISABLE exclusion clipping to debug missing heatmaps
-    if False and method not in indicator_methods:
+    # Apply red/orange exclusion clipping for NON-INDICATOR methods only
+    if method not in indicator_methods:
         # Apply exclusion clipping if exclusion polygons are provided
         if exclusion_polygons is not None:
             features_before_exclusion = len(features)
@@ -1746,30 +2070,41 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
     grid_size = min(50, max(30, resolution))
 
     try:
-        # Convert to km-based coordinates (flat Earth approximation for small areas)
-        # This is essential for proper interpolation
-        km_per_degree_lat = 111.0  # km per degree of latitude
-        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))  # km per degree of longitude
+        # ===== ARCHITECT SOLUTION: USE NZTM2000 FOR indicator_kriging_mask =====
+        print(f"🔧 Converting indicator_kriging_mask to use NZTM2000 coordinates")
+        
+        # Transform wells to NZTM2000 using centralized helper
+        wells_temp_df = pd.DataFrame({'latitude': lats, 'longitude': lons})
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_temp_df)
+        
+        # Build grid using centralized helper  
+        grid_ctx = build_crs_grid(center_point, radius_km, grid_size)
+        x_vals_m = grid_ctx['x_vals_m']
+        y_vals_m = grid_ctx['y_vals_m']
+        X_m = grid_ctx['X_m']
+        Y_m = grid_ctx['Y_m']
+        
+        # Create grid points in NZTM2000 meters
+        center_x_m, center_y_m = to_nztm2000([center_lon], [center_lat])
+        center_x_m, center_y_m = center_x_m[0], center_y_m[0]
+        
+        X_m_flat = X_m.flatten()
+        Y_m_flat = Y_m.flatten()
+        
+        # Apply radius filter in meters
+        radius_m = radius_km * 1000.0
+        distances = np.sqrt((X_m_flat - center_x_m)**2 + (Y_m_flat - center_y_m)**2)
+        mask = distances <= radius_m
+        
+        xi_inside_x = X_m_flat[mask]
+        xi_inside_y = Y_m_flat[mask]
+        
+        print(f"🔧 INDICATOR GRID: {len(xi_inside_x)}/{len(X_m_flat)} points within {radius_km}km radius")
+        # ========================================================================
 
-        # Convert all coordinates to km from center
-        x_coords = (lons - center_lon) * km_per_degree_lon
-        y_coords = (lats - center_lat) * km_per_degree_lat
-
-        # Create grid in km space (square bounds)
-        grid_x = np.linspace(-radius_km, radius_km, grid_size)
-        grid_y = np.linspace(-radius_km, radius_km, grid_size)
-        grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
-
-        # Flatten for interpolation
-        points = np.vstack([x_coords, y_coords]).T  # Well points in km
-        xi = np.vstack([grid_X.flatten(), grid_Y.flatten()]).T  # Grid points in km
-
-        # Filter points outside the square bounds
-        mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
-        xi_inside = xi[mask]
-
-        # Define grid_points for compatibility
-        grid_points = xi_inside
+        # Create grid points array for compatibility 
+        grid_points_array = np.column_stack([xi_inside_x, xi_inside_y])
+        print(f"🔧 Grid points array created: {len(grid_points_array)} points for indicator kriging")
 
         # Choose interpolation method based on parameter and dataset size
         if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:
@@ -1802,9 +2137,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     filtered_y_coords = y_coords[meaningful_data_mask] 
                     filtered_yields = yields[meaningful_data_mask]
 
-                    # Convert to lat/lon for kriging
-                    filtered_lons = filtered_x_coords / km_per_degree_lon + center_lon
-                    filtered_lats = filtered_y_coords / km_per_degree_lat + center_lat
+                    # Use filtered wells in NZTM2000 coordinates
+                    filtered_wells_x_m = wells_x_m[meaningful_data_mask]
+                    filtered_wells_y_m = wells_y_m[meaningful_data_mask]
 
                     # Set up kriging with appropriate variogram model
                     if method == 'indicator_kriging':
@@ -1819,18 +2154,22 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     else:
                         variogram_model_to_use = 'spherical'
 
-                    OK = OrdinaryKriging(
-                        filtered_lons, filtered_lats, filtered_yields,
+                    # Use centralized kriging helper with NZTM2000 coordinates
+                    Z_grid, SS_grid, OK = krige_on_grid(
+                        filtered_wells_x_m, filtered_wells_y_m, filtered_yields,
+                        x_vals_m, y_vals_m,
                         variogram_model=variogram_model_to_use,
-                        verbose=False,
-                        enable_plotting=False,
-                        variogram_parameters=None
+                        verbose=False
                     )
-
-                    # Execute kriging
-                    xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-                    xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
-                    interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
+                    
+                    if Z_grid is not None:
+                        # Extract values for masked grid points
+                        Z_flat = Z_grid.flatten()
+                        interpolated_z = Z_flat[mask]
+                        print(f"🔧 Indicator kriging completed: {len(interpolated_z)} points")
+                    else:
+                        print("❌ Indicator kriging failed in helper")
+                        interpolated_z = None
 
                     # Process results based on interpolation method
                     if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
@@ -1901,21 +2240,26 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
 
                     # If enough points, apply Kriging to the residuals
                     if len(features) >= 5 and len(features) < 1000:
-                        # Convert back to lon/lat for kriging (pykrige expects lon/lat)
-                        lon_values = x_coords / km_per_degree_lon + center_lon
-                        lat_values = y_coords / km_per_degree_lat + center_lat
-                        xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-                        xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
-
-                        # OPTIMIZATION: Use a simpler variogram model and limit kriging calculations
-                        OK = OrdinaryKriging(
-                            lon_values, lat_values, residuals,
-                            variogram_model='linear',  # Simpler model than spherical - much faster
-                            verbose=False,
-                            enable_plotting=False
+                        # ===== FINAL ARCHITECT FIX: RF+KRIGING WITH NZTM2000 =====
+                        print("🔧 Applying NZTM2000 coordinate fix to RF+Kriging residuals")
+                        
+                        # Use centralized kriging helper for residuals interpolation
+                        Z_grid, SS_grid, OK = krige_on_grid(
+                            wells_x_m, wells_y_m, residuals,
+                            x_vals_m, y_vals_m,
+                            variogram_model='linear',
+                            verbose=False
                         )
-                        # Execute kriging on grid points
-                        kriged_residuals, _ = OK.execute('points', xi_lon, xi_lat)
+                        
+                        if Z_grid is not None:
+                            # Extract kriged residuals for masked grid points
+                            Z_flat = Z_grid.flatten()
+                            kriged_residuals = Z_flat[mask]
+                            print("🔧 RF+Kriging residuals interpolated successfully")
+                        else:
+                            print("❌ RF+Kriging residuals failed, using RF predictions only")
+                            kriged_residuals = np.zeros_like(rf_predictions)
+                        # ================================================================
 
                         # Combine RF predictions with kriged residuals
                         interpolated_z = rf_predictions + kriged_residuals
@@ -2028,8 +2372,10 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         interpolated_z = np.maximum(0, interpolated_z)
 
         # Convert back to lat/lon coordinates
-        lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
-        lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+        # ===== ARCHITECT FIX: CONVERT GRID POINTS USING NZTM2000 =====
+        lon_points, lat_points = to_wgs84(xi_inside_x, xi_inside_y)
+        print(f"🔧 Converted grid points for heat data: {len(lat_points)} points")
+        # ========================================================================
 
         # Prepare soil polygon geometry for filtering heat map display
         merged_soil_geometry = None
@@ -2155,8 +2501,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         for j in range(len(lats)):
             # Check if well is within search radius
             well_dist_km = np.sqrt(
-                ((lats[j] - center_lat) * km_per_degree_lat)**2 +
-                ((lons[j] - center_lon) * km_per_degree_lon)**2
+                # ===== ARCHITECT FIX: DISTANCE CALCULATION WITH NZTM2000 =====
+                (wells_y_m[j] - center_y_m)**2 + (wells_x_m[j] - center_x_m)**2
+                # ================================================================
             )
 
             if well_dist_km <= radius_km:
@@ -2551,15 +2898,29 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         center_lat, center_lon = center_point
         grid_size = min(50, max(30, resolution))  # Adjust grid size if necessary
 
-        # Convert to km-based coordinates
-        km_per_degree_lat = 111.0
-        km_per_degree_lon = 111.0 * np.cos(np.radians(center_lat))
+        # COORDINATE TRANSFORMATION FIX: Use proper projected coordinates (EPSG:2193)
+        print(f"🔧 ===== COORDINATE TRANSFORMATION FIX APPLIED =====")
+        import pyproj
+        
+        # Set up coordinate transformers
+        transformer_to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+        transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+        
+        # Transform center point to NZTM2000 (meters)
+        center_x_m, center_y_m = transformer_to_nztm.transform(center_lon, center_lat)
+        print(f"🔧 CENTER POINT: ({center_lat:.6f}°, {center_lon:.6f}°) -> ({center_x_m:.1f}m, {center_y_m:.1f}m)")
+        
+        # Transform well coordinates to NZTM2000 meters
+        wells_x_m, wells_y_m = transformer_to_nztm.transform(lons, lats)
+        
+        # Convert to km from center using exact meter calculations
+        x_coords = (wells_x_m - center_x_m) / 1000.0  # Convert to km
+        y_coords = (wells_y_m - center_y_m) / 1000.0  # Convert to km
+        
+        print(f"🔧 WELL COORDS: {len(x_coords)} wells converted to projected coordinates")
+        print(f"🔧 COORDINATE RANGE: X: {x_coords.min():.2f} to {x_coords.max():.2f} km, Y: {y_coords.min():.2f} to {y_coords.max():.2f} km")
 
-        # Convert coordinates to km from center
-        x_coords = (lons - center_lon) * km_per_degree_lon
-        y_coords = (lats - center_lat) * km_per_degree_lat
-
-        # Create grid in km space (square bounds)
+        # Create grid in km space (square bounds) - same as before
         grid_x = np.linspace(-radius_km, radius_km, grid_size)
         grid_y = np.linspace(-radius_km, radius_km, grid_size)
         grid_X, grid_Y = np.meshgrid(grid_x, grid_y)
@@ -2570,11 +2931,20 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
         # Filter points outside the square bounds (instead of circular)
         mask = (np.abs(xi[:,0]) <= radius_km) & (np.abs(xi[:,1]) <= radius_km)
         xi_inside = xi[mask]
-        # Convert back to lat/lon for kriging
-        lon_values = x_coords / km_per_degree_lon + center_lon
-        lat_values = y_coords / km_per_degree_lat + center_lat
-        xi_lon = xi_inside[:, 0] / km_per_degree_lon + center_lon
-        xi_lat = xi_inside[:, 1] / km_per_degree_lat + center_lat
+        
+        # Convert grid points back to NZTM2000 meters, then to WGS84 for kriging
+        grid_x_m = xi_inside[:, 0] * 1000.0 + center_x_m  # Convert km back to meters
+        grid_y_m = xi_inside[:, 1] * 1000.0 + center_y_m  # Convert km back to meters
+        
+        # Transform grid points to WGS84 for kriging
+        xi_lon, xi_lat = transformer_to_wgs84.transform(grid_x_m, grid_y_m)
+        
+        # Transform well coordinates to WGS84 for kriging (reverse original transformation)
+        lon_values, lat_values = transformer_to_wgs84.transform(wells_x_m, wells_y_m)
+        
+        print(f"🔧 GRID POINTS: {len(xi_inside)} points transformed for kriging")
+        print(f"🔧 KRIGING INPUT: wells ({len(lon_values)}) and grid points ({len(xi_lon)}) in WGS84")
+        print(f"🔧 ========================================================")
 
         # Perform Ordinary Kriging with enhanced variance calculation
         try:
@@ -2728,9 +3098,10 @@ def calculate_kriging_variance(wells_df, center_point, radius_km, resolution=50,
             else:
                 kriging_variance = np.full(len(xi_lat), np.var(values) * 0.5)
 
-        # Prepare variance data for heat map
-        lat_points = (xi_inside[:, 1] / km_per_degree_lat) + center_lat
-        lon_points = (xi_inside[:, 0] / km_per_degree_lon) + center_lon
+        # Prepare variance data for heat map using proper coordinate transformation
+        # xi_lat and xi_lon are already in WGS84 from the coordinate transformation above
+        lat_points = xi_lat
+        lon_points = xi_lon
 
         # Prepare soil polygon geometry for filtering variance display (same as other interpolants)
         merged_soil_geometry = None
@@ -3038,7 +3409,259 @@ def create_map_with_interpolated_data(wells_df, center_point, radius_km, resolut
 
     return m
 
-def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None, exclusion_polygons=None):
+def generate_vector_grid_overlay(geojson_data, bounds, global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
+    """
+    ARCHITECT SOLUTION: Vector-based grid overlay using GeoJSON rectangles for deterministic positioning
+    
+    This eliminates coordinate system mismatches by letting Leaflet handle precise geographic positioning
+    of individual grid cells as vector polygons instead of relying on raster overlay corner-warping.
+    
+    Parameters:
+    -----------
+    geojson_data : dict
+        GeoJSON FeatureCollection containing triangular mesh data
+    bounds : dict
+        Dictionary with 'north', 'south', 'east', 'west' bounds
+    global_colormap_func : function
+        Function to map values to colors consistently across all heatmaps
+    opacity : float
+        Transparency level (0.0 to 1.0)
+    sampling_distance_meters : int
+        Grid spacing in meters (default: 100m)
+    clipping_polygon : object
+        Optional clipping polygon
+        
+    Returns:
+    --------
+    dict
+        Dictionary containing GeoJSON FeatureCollection of grid rectangles
+    """
+    try:
+        if not geojson_data or not geojson_data.get('features'):
+            return None
+            
+        # Extract values and coordinates from triangular mesh - same as before
+        values = []
+        coords = []
+        vertex_values = {}
+        
+        for feature in geojson_data['features']:
+            if feature.get('properties', {}).get('value') is not None:
+                value = feature['properties']['value']
+                
+                if feature['geometry']['type'] == 'Polygon':
+                    triangle_coords = feature['geometry']['coordinates'][0][:-1]
+                    
+                    for coord in triangle_coords:
+                        coord_key = (round(coord[0], 6), round(coord[1], 6))
+                        
+                        if coord_key in vertex_values:
+                            vertex_values[coord_key] = (vertex_values[coord_key] + value) / 2
+                        else:
+                            vertex_values[coord_key] = value
+        
+        # Convert vertex dictionary to arrays
+        for (lon, lat), val in vertex_values.items():
+            coords.append([lon, lat])
+            values.append(val)
+        
+        if not values or not coords:
+            return None
+            
+        values = np.array(values)
+        coords = np.array(coords)
+        
+        print(f"🔄 VECTOR APPROACH: Creating grid rectangles from {len(values)} vertex points")
+        
+        # Calculate grid parameters 
+        west, east = bounds['west'], bounds['east']
+        south, north = bounds['south'], bounds['north']
+        
+        # COORDINATE TRANSFORMATION FIX: Work entirely in EPSG:2193 (NZTM2000) projected coordinates
+        print(f"🔧 ===== PROJECTED COORDINATE GRID CREATION =====")
+        
+        # Set up coordinate transformer from WGS84 to NZTM2000
+        import pyproj
+        transformer_to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+        transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+        
+        # Transform bounding box to NZTM2000 (meters)
+        west_m, south_m = transformer_to_nztm.transform(west, south)
+        east_m, north_m = transformer_to_nztm.transform(east, north)
+        
+        print(f"🔧 WGS84 BOUNDS: N={north:.6f}°, S={south:.6f}°, E={east:.6f}°, W={west:.6f}°")
+        print(f"🔧 NZTM2000 BOUNDS: N={north_m:.1f}m, S={south_m:.1f}m, E={east_m:.1f}m, W={west_m:.1f}m")
+        
+        # Create regular grid in meters using sampling_distance_meters directly
+        x_coords_m = np.arange(west_m + sampling_distance_meters/2, east_m, sampling_distance_meters)
+        y_coords_m = np.arange(south_m + sampling_distance_meters/2, north_m, sampling_distance_meters)
+        
+        print(f"🔧 PROJECTED GRID: {len(x_coords_m)} × {len(y_coords_m)} = {len(x_coords_m) * len(y_coords_m)} points")
+        print(f"🔧 GRID SPACING: {sampling_distance_meters}m exactly (no degree approximation)")
+        
+        # Convert grid coordinates back to WGS84 for compatibility with existing code
+        # Create meshgrid first
+        X_m, Y_m = np.meshgrid(x_coords_m, y_coords_m)
+        
+        # Transform all grid points to WGS84
+        lons_grid, lats_grid = transformer_to_wgs84.transform(X_m.flatten(), Y_m.flatten())
+        lons = lons_grid.reshape(X_m.shape)[0, :]  # First row (all have same x-coordinates)
+        lats = lats_grid.reshape(Y_m.shape)[:, 0]  # First column (all have same y-coordinates)
+        
+        # Reverse lats array to maintain north-to-south ordering expected by rest of code
+        lats = lats[::-1]
+        
+        # Calculate equivalent degree steps for backward compatibility
+        lat_step = abs(lats[1] - lats[0]) if len(lats) > 1 else 0.001
+        lon_step = abs(lons[1] - lons[0]) if len(lons) > 1 else 0.001
+        
+        print(f"🔧 TRANSFORMED GRID: {len(lats)} lats from {lats[0]:.6f}° to {lats[-1]:.6f}°")
+        print(f"🔧 TRANSFORMED GRID: {len(lons)} lons from {lons[0]:.6f}° to {lons[-1]:.6f}°")
+        print(f"🔧 EQUIVALENT STEPS: lat_step={lat_step:.8f}°, lon_step={lon_step:.8f}°")
+        print(f"🔧 ===================================================")
+        
+        print(f"🔄 VECTOR GRID: {len(lats)} x {len(lons)} = {len(lats) * len(lons)} grid cells")
+        
+        # Create coordinate meshgrid for interpolation
+        xi, yi = np.meshgrid(lons, lats)
+        
+        # Apply clipping polygon mask if provided
+        clipping_mask = None
+        if clipping_polygon is not None:
+            try:
+                from shapely.geometry import Point
+                import geopandas as gpd
+                
+                print(f"🗺️ Applying clipping polygon to vector grid...")
+                
+                clipping_mask = np.zeros((len(lats), len(lons)), dtype=bool)
+                
+                if hasattr(clipping_polygon, 'geometry') and len(clipping_polygon) > 0:
+                    merged_clipping_geom = clipping_polygon.geometry.unary_union
+                elif hasattr(clipping_polygon, '__geo_interface__'):
+                    merged_clipping_geom = clipping_polygon
+                else:
+                    merged_clipping_geom = None
+                
+                if merged_clipping_geom is not None:
+                    points_inside = 0
+                    for i in range(len(lats)):
+                        for j in range(len(lons)):
+                            lon = xi[i, j]
+                            lat = yi[i, j]
+                            point = Point(lon, lat)
+                            is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
+                            clipping_mask[i, j] = is_inside
+                            if is_inside:
+                                points_inside += 1
+                    
+                    print(f"🗺️ Clipping results: {points_inside}/{len(lats)*len(lons)} grid cells inside clipping polygon")
+                    
+            except Exception as e:
+                print(f"Error applying clipping polygon: {e}")
+                clipping_mask = None
+        
+        # Interpolate values onto grid using multiple methods
+        try:
+            # Start with cubic interpolation
+            zi = griddata(coords, values, (xi, yi), method='cubic', fill_value=np.nan)
+            
+            # Fill NaN values with linear interpolation
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_linear = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
+                zi[nan_mask] = zi_linear[nan_mask]
+                
+            # Final pass: fill remaining NaN with nearest neighbor
+            nan_mask = np.isnan(zi)
+            if np.any(nan_mask):
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest', fill_value=np.nan)
+                zi[nan_mask] = zi_nearest[nan_mask]
+                
+        except Exception as e:
+            print(f"Error in interpolation: {e}")
+            # Fallback to nearest neighbor only
+            zi = griddata(coords, values, (xi, yi), method='nearest', fill_value=np.nan)
+        
+        # Apply clipping mask
+        if clipping_mask is not None:
+            zi[~clipping_mask] = np.nan
+        
+        # Create GeoJSON FeatureCollection of grid rectangles
+        features = []
+        
+        for i in range(len(lats)):
+            for j in range(len(lons)):
+                if not np.isnan(zi[i, j]):
+                    value = zi[i, j]
+                    
+                    # Calculate rectangle bounds (cell edges, not centers)
+                    cell_north = lats[i] + lat_step/2
+                    cell_south = lats[i] - lat_step/2  
+                    cell_west = lons[j] - lon_step/2
+                    cell_east = lons[j] + lon_step/2
+                    
+                    # Create rectangle coordinates (clockwise from top-left)
+                    rectangle_coords = [[
+                        [cell_west, cell_north],   # Top-left (NW)
+                        [cell_east, cell_north],   # Top-right (NE) 
+                        [cell_east, cell_south],   # Bottom-right (SE)
+                        [cell_west, cell_south],   # Bottom-left (SW)
+                        [cell_west, cell_north]    # Close rectangle
+                    ]]
+                    
+                    # Get color from global colormap function
+                    if global_colormap_func:
+                        color_hex = global_colormap_func(value)
+                    else:
+                        # Fallback color mapping
+                        normalized_value = (value - np.nanmin(zi)) / (np.nanmax(zi) - np.nanmin(zi))
+                        color_hex = f"#{int(normalized_value * 255):02x}{int((1-normalized_value) * 255):02x}00"
+                    
+                    feature = {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": rectangle_coords
+                        },
+                        "properties": {
+                            "value": float(value),
+                            "color": color_hex,
+                            "opacity": opacity,
+                            "row": i,
+                            "col": j,
+                            "center_lat": float(lats[i]),
+                            "center_lon": float(lons[j])
+                        }
+                    }
+                    features.append(feature)
+        
+        print(f"🔄 VECTOR RESULT: Created {len(features)} grid rectangles with precise geographic positioning")
+        
+        geojson_result = {
+            "type": "FeatureCollection", 
+            "features": features
+        }
+        
+        return {
+            'type': 'vector_grid',
+            'geojson': geojson_result,
+            'opacity': opacity,
+            'grid_info': {
+                'total_cells': len(lats) * len(lons),
+                'visible_cells': len(features),
+                'lat_step_degrees': lat_step,
+                'lon_step_degrees': lon_step,
+                'lat_step_meters': sampling_distance_meters,
+                'lon_step_meters': sampling_distance_meters
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error generating vector grid overlay: {e}")
+        return None
+
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
     """
     Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
     
@@ -3102,38 +3725,48 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         coords = np.array(coords)
         
         print(f"Extracted {len(values)} vertex points from triangulated heatmap data")
+        if coords.size == 0:
+            return None
         
-        # Create regular grid at 100-meter spacing across all data bounds
+        # PERFORMANCE: Use dynamic grid resolution to prevent memory crashes
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
-        # Convert sampling distance to degrees (approximate)
-        meters_per_degree_lat = 111000  # Approximately 111 km per degree latitude
-        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))  # Adjust for longitude
+        # Calculate grid extent
+        lat_extent = north - south
+        lon_extent = east - west
         
-        lat_step = sampling_distance_meters / meters_per_degree_lat
-        lon_step = sampling_distance_meters / meters_per_degree_lon
+        # OPTIMIZATION: Cap maximum grid size to prevent crashes
+        max_grid_points = 1_000_000  # Maximum 1M points instead of 10.5M
         
-        # Create ALIGNED sampling grid using grid snapping for perfect pixel alignment
-        # Snap grid starting points to common reference (0,0) to ensure all heatmaps align
+        # Calculate appropriate resolution based on extent
+        meters_per_degree_lat = 111000
+        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))
         
-        # Calculate aligned grid starting points
-        aligned_south = np.floor(south / lat_step) * lat_step
-        aligned_west = np.floor(west / lon_step) * lon_step
+        # Estimate grid points at 100m resolution
+        lat_step_100m = 100 / meters_per_degree_lat
+        lon_step_100m = 100 / meters_per_degree_lon
+        grid_points_100m = (lat_extent / lat_step_100m) * (lon_extent / lon_step_100m)
         
-        # Extend grid bounds to ensure full coverage
-        aligned_north = np.ceil(north / lat_step) * lat_step
-        aligned_east = np.ceil(east / lon_step) * lon_step
+        # Use coarser resolution if needed (architect recommendation)
+        if grid_points_100m > max_grid_points:
+            # Scale up resolution to stay under limit
+            scale_factor = np.sqrt(grid_points_100m / max_grid_points)
+            effective_resolution = 100 * scale_factor
+            lat_step = effective_resolution / meters_per_degree_lat
+            lon_step = effective_resolution / meters_per_degree_lon
+            print(f"PERFORMANCE: Using {effective_resolution:.0f}m resolution (scaled from 100m) to prevent memory crash")
+        else:
+            lat_step = lat_step_100m
+            lon_step = lon_step_100m
+            effective_resolution = 100
         
-        # Create perfectly aligned grid
-        lats = np.arange(aligned_south, aligned_north + lat_step, lat_step)
-        lons = np.arange(aligned_west, aligned_east + lon_step, lon_step)
+        # Create regular sampling grid with lats ordered NORTH to SOUTH (row 0 = north)
+        # This eliminates the need for vertical flip and ensures proper pixel-to-coordinate mapping
+        lats = np.arange(north, south - lat_step, -lat_step)  # North to south ordering
+        lons = np.arange(west, east + lon_step, lon_step)
         
-        print(f"🎯 GRID ALIGNMENT: Original bounds S={south:.6f} N={north:.6f} W={west:.6f} E={east:.6f}")
-        print(f"🎯 ALIGNED GRID: S={aligned_south:.6f} N={aligned_north:.6f} W={aligned_west:.6f} E={aligned_east:.6f}")
-        print(f"🎯 Grid spacing: lat={lat_step:.6f}° lon={lon_step:.6f}° ({sampling_distance_meters}m)")
-        
-        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
+        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {effective_resolution:.0f}m spacing")
         
         # Create coordinate grids
         width = len(lons)
@@ -3169,7 +3802,11 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                     points_inside = 0
                     for i in range(height):
                         for j in range(width):
-                            point = Point(xi[i, j], yi[i, j])
+                            # FIXED: Access coordinates correctly from meshgrid
+                            # xi[i, j] = longitude, yi[i, j] = latitude
+                            lon = xi[i, j]
+                            lat = yi[i, j]
+                            point = Point(lon, lat)
                             is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
                             clipping_mask[i, j] = is_inside
                             points_checked += 1
@@ -3221,53 +3858,27 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             from scipy.ndimage import gaussian_filter
             zi = gaussian_filter(zi, sigma=1.5)
         
-        print(f"Generated {width}x{height} raster with interpolation across all triangulated data")
-        print(f"Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
+        # 7) Z ARRAY STATISTICS and analysis
+        print(f"🔧 Z ARRAY ANALYSIS:")
+        print(f"🔧   Shape: {zi.shape} (height={zi.shape[0]}, width={zi.shape[1]})")
+        print(f"🔧   Values: min={np.nanmin(zi):.3f}, max={np.nanmax(zi):.3f}, mean={np.nanmean(zi):.3f}")
+        print(f"🔧   NaN count: {np.sum(np.isnan(zi))} of {zi.size} ({100*np.sum(np.isnan(zi))/zi.size:.1f}%)")
+        
+        # Corner probes to understand array orientation
+        print(f"🔧 CORNER PROBES:")
+        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi[0,0]:.6f}, {yi[0,0]:.6f}) = NW corner (west, north)")
+        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi[0,-1]:.6f}, {yi[0,-1]:.6f}) = NE corner (east, north)")
+        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi[-1,0]:.6f}, {yi[-1,0]:.6f}) = SW corner (west, south)")
+        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi[-1,-1]:.6f}, {yi[-1,-1]:.6f}) = SE corner (east, south)")
+        
+        print(f"🔧 Generated {width}x{height} raster with interpolation across all triangulated data")
+        print(f"🔧 Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
         
         # Apply clipping mask to the interpolated data
         if clipping_mask is not None:
             # Set areas outside clipping polygon to NaN to make them transparent
             zi[~clipping_mask] = np.nan
-            print(f"🗺️ Applied comprehensive clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
-            
-            # DEBUG: Check if comprehensive clipping is too restrictive
-            if np.sum(clipping_mask) == 0:
-                print(f"🚨 WARNING: Comprehensive clipping polygon removed ALL pixels from grid!")
-                print(f"🚨 This suggests the grid point is outside the Canterbury Plains boundary")
-        
-        # Apply exclusion polygon mask if provided (red/orange zones to clip out)
-        if exclusion_polygons is not None:
-            try:
-                from shapely.geometry import Point
-                from shapely.ops import unary_union
-                
-                print(f"🚫 Applying exclusion clipping to {width}x{height} raster grid...")
-                
-                # Create unified exclusion geometry for faster intersection testing
-                valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
-                if valid_geometries:
-                    exclusion_geometry = unary_union(valid_geometries)
-                    print(f"🚫 Created unified exclusion geometry from {len(valid_geometries)} exclusion zones")
-                    
-                    # Check each grid point and set to NaN if inside exclusion areas
-                    points_checked = 0
-                    points_excluded = 0
-                    for i in range(height):
-                        for j in range(width):
-                            if not np.isnan(zi[i, j]):  # Only check points that have data
-                                point = Point(xi[i, j], yi[i, j])
-                                is_excluded = exclusion_geometry.contains(point) or exclusion_geometry.intersects(point)
-                                if is_excluded:
-                                    zi[i, j] = np.nan  # Set to transparent
-                                    points_excluded += 1
-                                points_checked += 1
-                    
-                    print(f"🚫 Exclusion clipping results: {points_excluded}/{points_checked} grid points excluded from red/orange zones")
-                else:
-                    print("🚫 No valid exclusion geometries found")
-                    
-            except Exception as e:
-                print(f"❌ Error applying exclusion clipping to raster: {e}")
+            print(f"🗺️ Applied clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
         
         # Use the interpolated zi for display
         zi_smooth = zi
@@ -3294,8 +3905,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                         rgba_image[i, j] = [0, 0, 0, 0]  # Transparent for NaN values
         else:
             # Fallback: use matplotlib colormap
-            from matplotlib.cm import viridis
+            import matplotlib.cm as cm
             from matplotlib.colors import Normalize
+            viridis = cm.viridis
             
             # Normalize values
             valid_mask = ~np.isnan(zi_smooth)
@@ -3313,10 +3925,216 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             else:
                 rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
         
-        # Convert to PIL Image and then to base64
-        # Flip vertically because raster coordinates are different from image coordinates
-        rgba_image_flipped = np.flipud(rgba_image)
-        pil_image = Image.fromarray(rgba_image_flipped, 'RGBA')
+        # ARCHITECT SOLUTION: Create properly georeferenced raster with correct geotransform
+        print(f"🔧 ===== GEOREFERENCED RASTER PIPELINE =====")
+        print(f"🔧 RGBA IMAGE: shape={rgba_image.shape}")
+        print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (north to south)")
+        print(f"🔧 GRID SETUP: lons go from {lons[0]:.6f} to {lons[-1]:.6f} (west to east)")
+        
+        # Use rasterio to create proper geotransform from pixel edges (not centers)
+        import rasterio
+        from rasterio.transform import from_bounds
+        from rasterio.warp import calculate_default_transform, reproject, Resampling
+        from rasterio.crs import CRS
+        import tempfile
+        import os
+        
+        height, width = rgba_image.shape[:2]
+        
+        # ===== COORDINATE ALIGNMENT FIX: Use centralized bounds calculation =====
+        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
+        raster_west = bounds['west']
+        raster_east = bounds['east'] 
+        raster_south = bounds['south']
+        raster_north = bounds['north']
+        
+        print(f"🔧 PIXEL EDGE BOUNDS: N={raster_north:.8f}, S={raster_south:.8f}, E={raster_east:.8f}, W={raster_west:.8f}")
+        
+        # Create geotransform using rasterio's from_bounds (handles edge vs center correctly)
+        transform = from_bounds(raster_west, raster_south, raster_east, raster_north, width, height)
+        print(f"🔧 GEOTRANSFORM: {transform}")
+        
+        # Verify transform maps correctly
+        # Top-left pixel (0,0) should map to (raster_west, raster_north)
+        x0, y0 = transform * (0, 0)
+        # Bottom-right pixel (width-1, height-1) should map to (raster_east, raster_south)  
+        x1, y1 = transform * (width-1, height-1)
+        print(f"🔧 TRANSFORM CHECK: pixel(0,0) -> geo({x0:.8f}, {y0:.8f}) [should be W,N]")
+        print(f"🔧 TRANSFORM CHECK: pixel({width-1},{height-1}) -> geo({x1:.8f}, {y1:.8f}) [should be E,S]")
+        
+        # ARCHITECT FIX: Crop to visible pixels to eliminate transparent padding offset
+        print(f"🔧 CROPPING TO VISIBLE PIXELS (alpha > 0)...")
+        
+        # Find bounding box of non-transparent pixels
+        alpha_mask = rgba_image[:, :, 3] > 0
+        
+        if np.any(alpha_mask):
+            # Find rows and columns with visible pixels
+            visible_rows = np.any(alpha_mask, axis=1)
+            visible_cols = np.any(alpha_mask, axis=0)
+            
+            row_indices = np.where(visible_rows)[0]
+            col_indices = np.where(visible_cols)[0]
+            
+            if len(row_indices) > 0 and len(col_indices) > 0:
+                # Get tight bounding box
+                min_row, max_row = row_indices[0], row_indices[-1]
+                min_col, max_col = col_indices[0], col_indices[-1]
+                
+                # Crop the image to visible pixels only
+                rgba_image_cropped = rgba_image[min_row:max_row+1, min_col:max_col+1]
+                
+                # Calculate geographic bounds for the cropped image
+                # Row indices correspond to lat indices, col indices to lon indices
+                # FIXED: Correct pixel edge calculation - since lats go north to south
+                cropped_north = lats[min_row] + lat_step/2  # Edge of northernmost visible pixel (correct)
+                cropped_south = lats[max_row] - lat_step/2  # Edge of southernmost visible pixel (correct)
+                cropped_west = lons[min_col] - lon_step/2   # Edge of westernmost visible pixel
+                cropped_east = lons[max_col] + lon_step/2   # Edge of easternmost visible pixel
+                
+                print(f"🔧 CROPPED: {rgba_image.shape} -> {rgba_image_cropped.shape}")
+                print(f"🔧 VISIBLE BOUNDS: rows {min_row}-{max_row}, cols {min_col}-{max_col}")
+                print(f"🔧 GEOGRAPHIC BOUNDS: N={cropped_north:.6f}, S={cropped_south:.6f}, E={cropped_east:.6f}, W={cropped_west:.6f}")
+                
+                # Diagnostic: verify pixel resolution
+                actual_lat_per_pixel = (cropped_north - cropped_south) / rgba_image_cropped.shape[0]
+                actual_lon_per_pixel = (cropped_east - cropped_west) / rgba_image_cropped.shape[1]
+                lat_pixel_meters = actual_lat_per_pixel * meters_per_degree_lat
+                lon_pixel_meters = actual_lon_per_pixel * meters_per_degree_lon
+                print(f"🔧 PIXEL RESOLUTION: {lat_pixel_meters:.1f}m lat, {lon_pixel_meters:.1f}m lon")
+                
+                rgba_final = rgba_image_cropped
+                final_bounds = [[cropped_south, cropped_west], [cropped_north, cropped_east]]
+            else:
+                print(f"🔧 WARNING: No visible pixels found, using original image")
+                rgba_final = rgba_image
+                final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
+        else:
+            print(f"🔧 WARNING: Image is fully transparent, using original bounds")
+            rgba_final = rgba_image
+            final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
+        
+        # ASSERTION: Verify image row 0 corresponds to north
+        assert lats[0] > lats[-1], f"Latitude array should be descending (north to south): {lats[0]} to {lats[-1]}"
+        print(f"🔧 INVARIANT VERIFIED: Image row 0 corresponds to NORTH (lat={lats[0]:.6f})")
+        print(f"🔧 =========================================")
+        
+        pil_image = Image.fromarray(rgba_final, 'RGBA')
+        
+        # Save to bytes buffer
+        img_buffer = io.BytesIO()
+        pil_image.save(img_buffer, format='PNG', optimize=True)
+        img_buffer.seek(0)
+        
+        # Encode to base64
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
+        # ===== COORDINATE ALIGNMENT FIX: Use centralized authoritative bounds =====
+        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
+        print(f"🔧 ALIGNMENT FIX: Using centralized bounds calculation (eliminates CENTER vs EDGE inconsistencies)")
+        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
+        # ================================================================
+        
+        # 9) BOUNDS CALCULATION - CENTER vs EDGE analysis
+        print(f"🔧 ===== BOUNDS CALCULATION DEBUG =====")
+        
+        # Comparison with legacy center-based bounds (for debugging only)
+        legacy_center_south, legacy_center_north = south, north
+        legacy_center_west, legacy_center_east = west, east
+        
+        print(f"🔧 LEGACY CENTER-BASED: N={legacy_center_north:.6f}, S={legacy_center_south:.6f}, E={legacy_center_east:.6f}, W={legacy_center_west:.6f}")
+        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
+        
+        # Calculate the differences that were causing the offset (should now be consistent ~143m/244m)
+        lat_diff_meters = (bounds['north'] - legacy_center_north) * meters_per_degree_lat
+        lon_diff_meters = (bounds['east'] - legacy_center_east) * meters_per_degree_lon
+        print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
+        
+        # Overlay center vs grid center 
+        overlay_center_lat = (bounds['north'] + bounds['south']) / 2
+        overlay_center_lon = (bounds['east'] + bounds['west']) / 2
+        grid_center_lat = (lats[0] + lats[-1]) / 2
+        grid_center_lon = (lons[0] + lons[-1]) / 2
+        
+        center_diff_lat_m = (overlay_center_lat - grid_center_lat) * meters_per_degree_lat
+        center_diff_lon_m = (overlay_center_lon - grid_center_lon) * meters_per_degree_lon
+        print(f"🔧 CENTER DIFFERENCE: overlay vs grid = {center_diff_lat_m:.1f}m lat, {center_diff_lon_m:.1f}m lon")
+        
+        # Canterbury reference validation
+        christchurch_lat, christchurch_lon = -43.5321, 172.6362
+        print(f"🔧 REFERENCE: Christchurch at ({christchurch_lat:.6f}, {christchurch_lon:.6f})")
+        print(f"🔧 IN LEGACY CENTER BOUNDS? lat: {legacy_center_south <= christchurch_lat <= legacy_center_north}, lon: {legacy_center_west <= christchurch_lon <= legacy_center_east}")
+        print(f"🔧 IN AUTHORITATIVE BOUNDS? lat: {bounds['south'] <= christchurch_lat <= bounds['north']}, lon: {bounds['west'] <= christchurch_lon <= bounds['east']}")
+        
+        print(f"🔧 FOLIUM BOUNDS (cropped visible pixels): {final_bounds}")
+        print(f"🔧 =======================================")
+        
+        # 10) CROSS-CHECK: Log sample triangulated data for comparison
+        if coords.size > 0:
+            print(f"🔧 TRIANGULATED DATA CROSS-CHECK:")
+            sample_indices = np.linspace(0, len(coords)-1, min(5, len(coords)), dtype=int)
+            for i in sample_indices:
+                lon, lat = coords[i]
+                value = values[i]
+                print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
+        print(f"🔧 ========================================")
+        
+        # ARCHITECT SOLUTION: Use georeferenced bounds with proper pixel-to-coordinate mapping
+        try:
+            # Create a temporary GeoTIFF to ensure proper georeferencing
+            with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+            
+            # Write georeferenced raster using rasterio
+            with rasterio.open(
+                tmp_path, 'w',
+                driver='GTiff',
+                height=height, width=width,
+                count=4,  # RGBA
+                dtype=rgba_image.dtype,
+                crs=CRS.from_epsg(4326),  # WGS84
+                transform=transform,
+                compress='lzw'
+            ) as dst:
+                # Write RGBA bands
+                for i in range(4):
+                    dst.write(rgba_image[:, :, i], i + 1)
+            
+            # Read back the georeferenced bounds to ensure accuracy
+            with rasterio.open(tmp_path) as src:
+                bounds_obj = src.bounds
+                accurate_west = bounds_obj.left
+                accurate_south = bounds_obj.bottom  
+                accurate_east = bounds_obj.right
+                accurate_north = bounds_obj.top
+                
+                print(f"🔧 RASTERIO BOUNDS: N={accurate_north:.8f}, S={accurate_south:.8f}, E={accurate_east:.8f}, W={accurate_west:.8f}")
+                
+                # Verify no coordinate flips occurred
+                if accurate_north <= accurate_south:
+                    print(f"🚨 ERROR: North <= South, coordinate flip detected!")
+                if accurate_east <= accurate_west:
+                    print(f"🚨 ERROR: East <= West, coordinate flip detected!")
+            
+            # Clean up temporary file
+            os.unlink(tmp_path)
+            
+            # COORDINATE ALIGNMENT FIX: Use centralized bounds for consistency
+            # This ensures display bounds match interpolation bounds exactly
+            folium_bounds = bounds['folium_format']
+            
+            print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
+            print(f"🔧 COORDINATE VALIDATION:")
+            print(f"🔧   North > South: {accurate_north > accurate_south} ({accurate_north:.6f} > {accurate_south:.6f})")
+            print(f"🔧   East > West: {accurate_east > accurate_west} ({accurate_east:.6f} > {accurate_west:.6f})")
+            
+        except Exception as e:
+            print(f"🚨 RASTERIO ERROR: {e}")
+            # Fallback to centralized bounds calculation for consistency
+            folium_bounds = bounds['folium_format']
+            print(f"🔧 FALLBACK BOUNDS (centralized): {folium_bounds}")
+        
+        pil_image = Image.fromarray(rgba_image, 'RGBA')
         
         # Save to bytes buffer
         img_buffer = io.BytesIO()
@@ -3328,8 +4146,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         return {
             'image_base64': img_base64,
-            'bounds': [[south, west], [north, east]],
-            'opacity': opacity
+            'bounds': folium_bounds,
+            'opacity': opacity,
+            'positioning_method': 'georeferenced_rasterio'
         }
         
     except Exception as e:

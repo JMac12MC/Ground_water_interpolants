@@ -110,5 +110,16 @@ waitForPort = 5000
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 37563
+externalPort = 3001
+
+[[ports]]
+localPort = 42223
+externalPort = 3000
+
+[[ports]]
+localPort = 45609
+externalPort = 3002
+
 [agent]
-integrations = ["flask_supabase==1.0.0"]

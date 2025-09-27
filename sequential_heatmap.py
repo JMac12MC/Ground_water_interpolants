@@ -52,7 +52,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         
         if len(filtered_wells_temp) > 0:
             # Get values from this area's wells for global range calculation
-            if interpolation_method == 'indicator_kriging':
+            if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
                 # For indicator kriging, values are always 0-1
                 global_values.extend([0.0, 1.0])
             else:
@@ -78,7 +78,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         
     else:
         # Fallback defaults
-        if interpolation_method == 'indicator_kriging':
+        if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
             global_min_value, global_max_value = 0.0, 1.0
         else:
             global_min_value, global_max_value = 0.0, 25.0
@@ -237,13 +237,13 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     import numpy as np
     import math
     
-    # Calculate positions for all heatmaps using PERFECT 19.82km spacing
-    # Each heatmap covers 40km × 40km (radius_km=20), but centers are 19.82km apart
+    # Calculate positions for all heatmaps using dynamic spacing based on search area
+    # Each heatmap uses search_radius, but centers are (search_radius - 0.180km) apart
     # This creates overlapping coverage for seamless visual joining
     clicked_lat, clicked_lng = click_point
     
-    # Use perfect 19.82km offset - all adjacent heatmaps exactly 19.82km apart
-    target_offset_km = 19.82
+    # Use dynamic offset - all adjacent heatmaps spaced at (search_radius - 0.180km)
+    target_offset_km = search_radius - 0.180
     
     # SURVEY-GRADE GEODETIC CALCULATIONS with adaptive precision targeting
     # Achieves professional-grade accuracy through intelligent convergence algorithms
@@ -252,7 +252,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     TOLERANCE_KM = 0.0001  # 10cm tolerance for practical applications  
     ADAPTIVE_STEP_SIZE = 0.000001  # Dynamic adjustment precision
     
-    print(f"SURVEY-GRADE SPACING WITH ADAPTIVE PRECISION (target: {target_offset_km}km):")
+    print(f"SURVEY-GRADE SPACING WITH ADAPTIVE PRECISION (target: {target_offset_km:.2f}km based on {search_radius}km search area):")
     print(f"  Using adaptive convergence for optimal real-world accuracy")
     
     # Step 1: Ultra-precise latitude offset with micro-adjustment optimization
@@ -501,7 +501,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         
         if len(filtered_wells_temp) > 0:
             # Get values from this area's wells for global range calculation
-            if interpolation_method == 'indicator_kriging':
+            if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
                 # For indicator kriging, values are always 0-1
                 global_values.extend([0.0, 1.0])
             else:
@@ -528,7 +528,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         
     else:
         # Fallback defaults
-        if interpolation_method == 'indicator_kriging':
+        if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
             global_min_value, global_max_value = 0.0, 1.0
         else:
             global_min_value, global_max_value = 0.0, 25.0
@@ -583,6 +583,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             ]
             
             if interpolation_method in methods_requiring_mask:
+                print(f"  🎯 INDICATOR KRIGING: Method '{interpolation_method}' requires indicator mask - generating...")
                 try:
                     indicator_mask = generate_indicator_kriging_mask(
                         filtered_wells.copy(),
@@ -592,8 +593,18 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         soil_polygons=soil_polygons,
                         threshold=0.7
                     )
+                    if indicator_mask and indicator_mask[2] is not None:
+                        high_prob_count = np.sum(indicator_mask[2] >= 0.7)
+                        total_points = len(indicator_mask[2])
+                        print(f"  ✅ INDICATOR MASK: Generated successfully - {high_prob_count}/{total_points} points ≥ 0.7 threshold")
+                    else:
+                        print(f"  ❌ INDICATOR MASK: Generated but empty or invalid")
+                        indicator_mask = None
                 except Exception as e:
-                    print(f"  Warning: Could not generate indicator mask for {location_name}: {e}")
+                    print(f"  ❌ INDICATOR MASK ERROR for {location_name}: {e}")
+                    indicator_mask = None
+            else:
+                print(f"  ⏭️  INDICATOR KRIGING: Method '{interpolation_method}' does not require indicator mask")
             
             # Generate heatmap with comprehensive clipping (full Canterbury Plains with holes removed)
             geojson_data = generate_geo_json_grid(

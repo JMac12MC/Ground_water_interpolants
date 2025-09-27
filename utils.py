@@ -66,3 +66,40 @@ def download_as_csv(dataframe):
     csv_string = buffer.getvalue()
     
     return csv_string
+
+def get_red_orange_polygon_for_download(polygon_db):
+    """
+    Retrieve stored red/orange zone polygons from database for download
+    
+    Returns:
+        tuple: (success: bool, data: str/None, message: str)
+    """
+    try:
+        from green_zone_extractor import get_stored_red_orange_polygon
+        
+        # Retrieve the stored polygon data
+        polygon_data = get_stored_red_orange_polygon(polygon_db)
+        
+        if polygon_data:
+            import json
+            
+            # Handle both dict and string returns from get_stored_red_orange_polygon
+            if isinstance(polygon_data, str):
+                # Data is already a JSON string, validate it
+                try:
+                    # Parse to validate it's valid JSON
+                    parsed_data = json.loads(polygon_data)
+                    # Re-format with proper indentation
+                    geojson_string = json.dumps(parsed_data, indent=2)
+                except json.JSONDecodeError:
+                    return False, None, "Invalid JSON data in stored polygon"
+            else:
+                # Data is a dict/object, convert to JSON string
+                geojson_string = json.dumps(polygon_data, indent=2)
+            
+            return True, geojson_string, "Red/orange polygon data retrieved successfully"
+        else:
+            return False, None, "No red/orange polygon data found. Generate indicator kriging heatmaps first, then extract boundaries."
+            
+    except Exception as e:
+        return False, None, f"Error retrieving polygon data: {str(e)}"

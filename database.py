@@ -569,6 +569,22 @@ class PolygonDatabase:
                             print(f"⚠️  JSON decode error for geojson_data in ID {row[0]}")
                             geojson_data = None
                     
+                    # Validate GeoJSON structure
+                    if geojson_data and isinstance(geojson_data, dict):
+                        if 'features' not in geojson_data:
+                            print(f"⚠️  GeoJSON missing 'features' for ID {row[0]}")
+                            geojson_data = None
+                        elif not isinstance(geojson_data['features'], list):
+                            print(f"⚠️  GeoJSON 'features' is not a list for ID {row[0]}")
+                            geojson_data = None
+                        elif len(geojson_data['features']) == 0:
+                            print(f"⚠️  GeoJSON has 0 features for ID {row[0]}")
+                        else:
+                            print(f"  ✅ Valid GeoJSON with {len(geojson_data['features'])} features for ID {row[0]}")
+                    elif geojson_data is not None:
+                        print(f"⚠️  Invalid GeoJSON type {type(geojson_data)} for ID {row[0]}")
+                        geojson_data = None
+                    
                     # Parse colormap metadata if available
                     colormap_metadata = None
                     try:
@@ -790,3 +806,64 @@ class PolygonDatabase:
         except Exception as e:
             print(f"Error updating heatmap {heatmap_id}: {e}")
             return False
+
+    def store_polygon(self, name, polygon_type, coordinates, metadata=None):
+        """
+        Store a polygon in the database for persistent display
+        
+        Parameters:
+        -----------
+        name : str
+            Name or identifier for the polygon
+        polygon_type : str
+            Type of polygon (e.g., 'indicator_boundary', 'green_zone', etc.)
+        coordinates : list
+            List of coordinate pairs [(lon, lat), ...]
+        metadata : dict, optional
+            Additional metadata for the polygon
+            
+        Returns:
+        --------
+        int
+            The ID of the stored polygon, or None if failed
+        """
+        try:
+            if not hasattr(self, 'engine') or self.engine is None:
+                if not self.database_url:
+                    return None
+                self.engine = create_engine(self.database_url)
+            
+            with self.engine.connect() as conn:
+                # Check if polygons table exists, if not create it
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS stored_polygons (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        polygon_type TEXT NOT NULL,
+                        coordinates TEXT NOT NULL,
+                        metadata TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                
+                # Insert the polygon
+                result = conn.execute(text("""
+                    INSERT INTO stored_polygons (name, polygon_type, coordinates, metadata)
+                    VALUES (:name, :polygon_type, :coordinates, :metadata)
+                    RETURNING id
+                """), {
+                    'name': name,
+                    'polygon_type': polygon_type,
+                    'coordinates': json.dumps(coordinates),
+                    'metadata': json.dumps(metadata) if metadata else None
+                })
+                
+                conn.commit()
+                polygon_id = result.fetchone()[0]
+                
+                print(f"✅ Stored polygon '{name}' with ID {polygon_id}")
+                return polygon_id
+                
+        except Exception as e:
+            print(f"Error storing polygon: {e}")
+            return None

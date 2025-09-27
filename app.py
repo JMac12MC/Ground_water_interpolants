@@ -11,6 +11,7 @@ import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
+from composite_heatmap import create_composite_heatmap_overlay
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time

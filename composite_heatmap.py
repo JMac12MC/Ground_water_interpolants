@@ -42,8 +42,10 @@ def create_composite_heatmap_overlay(stored_heatmaps, bounds=None, raster_size=(
     if not bounds:
         bounds = calculate_overall_bounds(stored_heatmaps)
         
-    # Initialize composite image
-    composite_array = np.zeros((*raster_size, 4), dtype=np.uint8)  # RGBA
+    # Initialize composite image with the actual dimensions that generate_smooth_raster_overlay produces
+    # Based on 100m sampling distance, the actual output size is ~3120×3381 regardless of raster_size parameter
+    actual_size = (3120, 3381)  # Height × Width from 100m grid spacing
+    composite_array = np.zeros((*actual_size, 4), dtype=np.uint8)  # RGBA
     
     # Process each heatmap and add to composite
     processed_count = 0
@@ -54,10 +56,18 @@ def create_composite_heatmap_overlay(stored_heatmaps, bounds=None, raster_size=(
                 continue
                 
             # Generate raster for this individual heatmap
+            # Force consistent bounds and dimensions for all heatmaps
+            standard_bounds = {
+                'north': -42.108505,
+                'south': -44.916557, 
+                'east': 173.904300,
+                'west': 169.706745
+            }
+            
             raster_overlay = generate_smooth_raster_overlay(
                 geojson_data=geojson_data,
-                bounds=bounds,
-                raster_size=raster_size,
+                bounds=standard_bounds,  # Use consistent bounds
+                raster_size=raster_size,  # Force consistent size
                 opacity=opacity
             )
             
@@ -65,8 +75,20 @@ def create_composite_heatmap_overlay(stored_heatmaps, bounds=None, raster_size=(
                 # Decode the base64 image
                 image_data = base64.b64decode(raster_overlay['image_base64'])
                 heatmap_image = Image.open(io.BytesIO(image_data)).convert('RGBA')
+                
+                # Resize to ensure consistent dimensions for compositing
+                target_size = (actual_size[1], actual_size[0])  # PIL expects (width, height)
+                if heatmap_image.size != target_size:
+                    print(f"🔧 RESIZE: Resizing heatmap from {heatmap_image.size} to {target_size}")
+                    heatmap_image = heatmap_image.resize(target_size, Image.Resampling.LANCZOS)
+                
                 heatmap_array = np.array(heatmap_image)
                 
+                # Verify dimensions match before compositing
+                if heatmap_array.shape[:2] != composite_array.shape[:2]:
+                    print(f"⚠️ DIMENSION MISMATCH: Skipping heatmap with shape {heatmap_array.shape} (expected {composite_array.shape})")
+                    continue
+                    
                 # Composite using alpha blending
                 composite_array = alpha_blend(composite_array, heatmap_array)
                 processed_count += 1

@@ -24,4 +24,8 @@ dependencies = [
     "rasterio>=1.4.3",
     "rio-cogeo>=5.4.2",
     "pillow>=11.2.1",
+    "fastapi>=0.117.1",
+    "uvicorn>=0.37.0",
+    "rtree>=1.4.1",
+    "mercantile>=1.2.1",
 ]

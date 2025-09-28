@@ -69,6 +69,160 @@ def to_wgs84(x_coords, y_coords):
     _, transformer_to_wgs84 = get_transformers()
     return transformer_to_wgs84.transform(x_coords, y_coords)
 
+def warp_raster_nztm_to_wgs84(rgba_image, nztm_bounds, target_width=None, target_height=None):
+    """
+    Warp a raster from NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326) using proper CRS transformation.
+    
+    This fixes the raster offset issue by handling projection distortion correctly
+    instead of assuming NZTM2000 coordinates form a perfect rectangle in WGS84.
+    
+    Parameters:
+    -----------
+    rgba_image : numpy.ndarray
+        RGBA image array with shape (height, width, 4)
+    nztm_bounds : tuple
+        NZTM2000 bounds as (west_m, south_m, east_m, north_m) in meters
+    target_width : int, optional
+        Target width for output raster (defaults to input width)
+    target_height : int, optional  
+        Target height for output raster (defaults to input height)
+        
+    Returns:
+    --------
+    dict: Contains warped RGBA image, WGS84 bounds, and transform info
+    """
+    import rasterio
+    from rasterio.transform import from_bounds
+    from rasterio.warp import calculate_default_transform, reproject, Resampling
+    from rasterio.crs import CRS
+    import tempfile
+    import os
+    
+    try:
+        height, width = rgba_image.shape[:2]
+        if target_width is None:
+            target_width = width
+        if target_height is None:
+            target_height = height
+            
+        west_m, south_m, east_m, north_m = nztm_bounds
+        
+        print(f"🔧 WARPING: NZTM2000 bounds ({west_m:.1f}, {south_m:.1f}, {east_m:.1f}, {north_m:.1f})m")
+        
+        # Create source transform for NZTM2000 raster
+        src_transform = from_bounds(west_m, south_m, east_m, north_m, width, height)
+        src_crs = CRS.from_epsg(2193)  # NZTM2000
+        dst_crs = CRS.from_epsg(4326)  # WGS84
+        
+        # Calculate target transform and dimensions for WGS84
+        dst_transform, dst_width, dst_height = calculate_default_transform(
+            src_crs, dst_crs, width, height, 
+            left=west_m, bottom=south_m, right=east_m, top=north_m,
+            dst_width=target_width, dst_height=target_height
+        )
+        
+        print(f"🔧 WARPING: {width}x{height} NZTM2000 -> {dst_width}x{dst_height} WGS84")
+        
+        # Create temporary files for rasterio processing
+        with tempfile.NamedTemporaryFile(suffix='_src.tif', delete=False) as src_tmp:
+            src_path = src_tmp.name
+        with tempfile.NamedTemporaryFile(suffix='_dst.tif', delete=False) as dst_tmp:
+            dst_path = dst_tmp.name
+            
+        try:
+            # Write source raster in NZTM2000
+            with rasterio.open(
+                src_path, 'w',
+                driver='GTiff',
+                height=height, width=width,
+                count=4, dtype=rgba_image.dtype,
+                crs=src_crs, transform=src_transform
+            ) as src_ds:
+                for i in range(4):
+                    src_ds.write(rgba_image[:, :, i], i + 1)
+            
+            # Create destination raster in WGS84
+            with rasterio.open(
+                dst_path, 'w',
+                driver='GTiff', 
+                height=dst_height, width=dst_width,
+                count=4, dtype=rgba_image.dtype,
+                crs=dst_crs, transform=dst_transform
+            ) as dst_ds:
+                # Warp each band from NZTM2000 to WGS84
+                with rasterio.open(src_path) as src_ds:
+                    for i in range(1, 5):  # Bands 1-4 (RGBA)
+                        reproject(
+                            source=rasterio.band(src_ds, i),
+                            destination=rasterio.band(dst_ds, i),
+                            src_transform=src_transform,
+                            src_crs=src_crs,
+                            dst_transform=dst_transform,
+                            dst_crs=dst_crs,
+                            resampling=Resampling.bilinear  # Smooth interpolation
+                        )
+            
+            # Read back the warped result
+            with rasterio.open(dst_path) as dst_ds:
+                warped_rgba = np.zeros((dst_height, dst_width, 4), dtype=rgba_image.dtype)
+                for i in range(4):
+                    warped_rgba[:, :, i] = dst_ds.read(i + 1)
+                
+                # Get accurate WGS84 bounds from warped raster
+                bounds_obj = dst_ds.bounds
+                wgs84_west = bounds_obj.left
+                wgs84_south = bounds_obj.bottom
+                wgs84_east = bounds_obj.right  
+                wgs84_north = bounds_obj.top
+                
+                print(f"🔧 WARPED BOUNDS: N={wgs84_north:.8f}, S={wgs84_south:.8f}, E={wgs84_east:.8f}, W={wgs84_west:.8f}")
+                
+                # Create Folium-compatible bounds
+                folium_bounds = [[wgs84_south, wgs84_west], [wgs84_north, wgs84_east]]
+                
+                return {
+                    'rgba_image': warped_rgba,
+                    'bounds': folium_bounds,
+                    'wgs84_bounds': (wgs84_west, wgs84_south, wgs84_east, wgs84_north),
+                    'transform': dst_transform,
+                    'width': dst_width,
+                    'height': dst_height
+                }
+                
+        finally:
+            # Clean up temporary files
+            for tmp_path in [src_path, dst_path]:
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+                    
+    except Exception as e:
+        print(f"🚨 WARPING ERROR: {e}")
+        # Fallback to original image with approximate bounds conversion
+        center_x_m = (west_m + east_m) / 2
+        center_y_m = (south_m + north_m) / 2
+        center_lon, center_lat = to_wgs84([center_x_m], [center_y_m])
+        center_lon, center_lat = center_lon[0], center_lat[0]
+        
+        # Approximate bounds using center point transformation
+        width_deg = (east_m - west_m) / 111000  # Rough conversion  
+        height_deg = (north_m - south_m) / 111000
+        
+        fallback_bounds = [
+            [center_lat - height_deg/2, center_lon - width_deg/2],
+            [center_lat + height_deg/2, center_lon + width_deg/2]
+        ]
+        
+        return {
+            'rgba_image': rgba_image,
+            'bounds': fallback_bounds,
+            'wgs84_bounds': None,
+            'transform': None,
+            'width': width,
+            'height': height
+        }
+
 def calculate_authoritative_bounds(lats, lons, lat_step, lon_step):
     """
     SINGLE SOURCE OF TRUTH for all bounds calculations.

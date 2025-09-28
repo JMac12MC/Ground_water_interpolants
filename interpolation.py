@@ -3964,23 +3964,32 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                     merged_clipping_geom = None
                 
                 if merged_clipping_geom is not None:
-                    # Check each grid point (convert NZTM2000 grid points back to WGS84 for clipping test)
+                    # PERFORMANCE FIX: Convert all NZTM2000 grid points to WGS84 in batch, not individually
+                    # Flatten the grids for batch conversion
+                    x_m_flat = xi_m.flatten()
+                    y_m_flat = yi_m.flatten()
+                    
+                    # Batch convert all grid points from NZTM2000 to WGS84
+                    print(f"🔧 PERFORMANCE: Converting {len(x_m_flat)} grid points from NZTM2000 to WGS84 in batch...")
+                    lons_flat, lats_flat = to_wgs84(x_m_flat, y_m_flat)
+                    
+                    # Check each grid point against clipping polygon
                     points_checked = 0
                     points_inside = 0
-                    for i in range(height):
-                        for j in range(width):
-                            # Get NZTM2000 coordinates
-                            x_m = xi_m[i, j]
-                            y_m = yi_m[i, j]
-                            # Convert to WGS84 for clipping polygon test
-                            lon, lat = to_wgs84([x_m], [y_m])
-                            lon, lat = lon[0], lat[0]
-                            point = Point(lon, lat)
-                            is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
-                            clipping_mask[i, j] = is_inside
-                            points_checked += 1
-                            if is_inside:
-                                points_inside += 1
+                    for idx in range(len(x_m_flat)):
+                        if idx % 50000 == 0:  # Progress indicator every 50k points
+                            print(f"🔧 CLIPPING PROGRESS: {idx}/{len(x_m_flat)} points checked...")
+                        
+                        lon, lat = lons_flat[idx], lats_flat[idx]
+                        point = Point(lon, lat)
+                        is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
+                        
+                        # Convert flat index back to 2D indices
+                        i, j = divmod(idx, width)
+                        clipping_mask[i, j] = is_inside
+                        points_checked += 1
+                        if is_inside:
+                            points_inside += 1
                     
                     print(f"🗺️ Clipping results: {points_inside}/{points_checked} grid points inside clipping polygon")
                 else:

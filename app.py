@@ -2522,79 +2522,175 @@ with main_col1:
                                     stored_heatmap_count += 1
                                     print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
                                 else:
-                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh via tile service")
-                                    # Fallback to triangle mesh using tile service
-                                    layer_id = stored_heatmap['heatmap_name']
+                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh with optimized chunking")
+                                    # Fallback to triangle mesh using optimized chunking
+                                    feature_count = len(geojson_data['features'])
                                     
-                                    # Get tile service and add heatmap data
-                                    tile_svc = get_tile_service()
-                                    tile_svc.add_heatmap(
-                                        layer_id, 
-                                        geojson_data, 
-                                        color_func=lambda value: get_global_unified_color(value, method)
-                                    )
-                                    
-                                    # Add tile layer to map
-                                    tile_layer = folium.raster_layers.TileLayer(
-                                        tiles=f"http://localhost:{tile_svc.port}/tiles/{layer_id}/{{z}}/{{x}}/{{y}}.png",
-                                        attr="Triangle Mesh",
-                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                        overlay=True,
-                                        control=True,
-                                        opacity=st.session_state.get('heatmap_opacity', 0.7)
-                                    )
-                                    tile_layer.add_to(m)
-                                    stored_heatmap_count += 1
-                                    print(f"  🎯 TILE SERVICE: Added tile layer for {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
+                                    if feature_count > 1000:
+                                        # Split into chunks
+                                        chunk_size = 800
+                                        features = geojson_data['features']
+                                        
+                                        for chunk_i, start_idx in enumerate(range(0, feature_count, chunk_size)):
+                                            end_idx = min(start_idx + chunk_size, feature_count)
+                                            chunk_features = features[start_idx:end_idx]
+                                            
+                                            chunk_geojson = {
+                                                'type': 'FeatureCollection',
+                                                'features': chunk_features
+                                            }
+                                            
+                                            folium.GeoJson(
+                                                chunk_geojson,
+                                                name=f"Stored: {stored_heatmap['heatmap_name']} (Part {chunk_i+1})",
+                                                style_function=lambda feature, method=method: {
+                                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                                    'color': 'none',
+                                                    'weight': 0,
+                                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                                },
+                                                tooltip=folium.GeoJsonTooltip(
+                                                    fields=['yield'],
+                                                    aliases=['Value:'],
+                                                    localize=True
+                                                )
+                                            ).add_to(m)
+                                        
+                                        stored_heatmap_count += 1
+                                        print(f"  ✅ FALLBACK CHUNKED: {stored_heatmap['heatmap_name']} split into {chunk_i+1} chunks with {feature_count} total features")
+                                    else:
+                                        folium.GeoJson(
+                                            geojson_data,
+                                            name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                            style_function=lambda feature, method=method: {
+                                                'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                                'color': 'none',
+                                                'weight': 0,
+                                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                            },
+                                            tooltip=folium.GeoJsonTooltip(
+                                                fields=['yield'],
+                                                aliases=['Value:'],
+                                                localize=True
+                                            )
+                                        ).add_to(m)
+                                        stored_heatmap_count += 1
+                                        print(f"  📐 FALLBACK SINGLE: Added {feature_count} triangular features for {stored_heatmap['heatmap_name']}")
                             else:
-                                print(f"  No valid coordinates found for smooth raster, using triangle mesh via tile service")
-                                # Fallback to triangle mesh using tile service
-                                layer_id = stored_heatmap['heatmap_name']
+                                print(f"  No valid coordinates found for smooth raster, using triangle mesh with optimized chunking")
+                                # Fallback to triangle mesh using optimized chunking
+                                feature_count = len(geojson_data['features'])
                                 
-                                # Get tile service and add heatmap data
-                                tile_svc = get_tile_service()
-                                tile_svc.add_heatmap(
-                                    layer_id, 
-                                    geojson_data, 
-                                    color_func=lambda value: get_global_unified_color(value, method)
-                                )
-                                
-                                # Add tile layer to map
-                                tile_layer = folium.raster_layers.TileLayer(
-                                    tiles=f"http://localhost:{tile_svc.port}/tiles/{layer_id}/{{z}}/{{x}}/{{y}}.png",
-                                    attr="Triangle Mesh",
-                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                    overlay=True,
-                                    control=True,
-                                    opacity=st.session_state.get('heatmap_opacity', 0.7)
-                                )
-                                tile_layer.add_to(m)
-                                stored_heatmap_count += 1
-                                print(f"  🎯 TILE SERVICE: Added tile layer for {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
+                                if feature_count > 1000:
+                                    # Split into chunks
+                                    chunk_size = 800
+                                    features = geojson_data['features']
+                                    
+                                    for chunk_i, start_idx in enumerate(range(0, feature_count, chunk_size)):
+                                        end_idx = min(start_idx + chunk_size, feature_count)
+                                        chunk_features = features[start_idx:end_idx]
+                                        
+                                        chunk_geojson = {
+                                            'type': 'FeatureCollection',
+                                            'features': chunk_features
+                                        }
+                                        
+                                        folium.GeoJson(
+                                            chunk_geojson,
+                                            name=f"Stored: {stored_heatmap['heatmap_name']} (Part {chunk_i+1})",
+                                            style_function=lambda feature, method=method: {
+                                                'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                                'color': 'none',
+                                                'weight': 0,
+                                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                            },
+                                            tooltip=folium.GeoJsonTooltip(
+                                                fields=['yield'],
+                                                aliases=['Value:'],
+                                                localize=True
+                                            )
+                                        ).add_to(m)
+                                    
+                                    stored_heatmap_count += 1
+                                    print(f"  ✅ NO COORDS CHUNKED: {stored_heatmap['heatmap_name']} split into {chunk_i+1} chunks with {feature_count} total features")
+                                else:
+                                    folium.GeoJson(
+                                        geojson_data,
+                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                        style_function=lambda feature, method=method: {
+                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                            'color': 'none',
+                                            'weight': 0,
+                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                        },
+                                        tooltip=folium.GeoJsonTooltip(
+                                            fields=['yield'],
+                                            aliases=['Value:'],
+                                            localize=True
+                                        )
+                                    ).add_to(m)
+                                    stored_heatmap_count += 1
+                                    print(f"  📐 NO COORDS SINGLE: Added {feature_count} triangular features for {stored_heatmap['heatmap_name']}")
                         else:
-                            # Default: Triangle Mesh (Scientific) visualization using tile service
-                            layer_id = stored_heatmap['heatmap_name']
+                            # Default: Triangle Mesh (Scientific) visualization with optimized batching
+                            feature_count = len(geojson_data['features'])
                             
-                            # Get tile service and add heatmap data
-                            tile_svc = get_tile_service()
-                            tile_svc.add_heatmap(
-                                layer_id, 
-                                geojson_data, 
-                                color_func=lambda value: get_global_unified_color(value, method)
-                            )
-                            
-                            # Add tile layer to map
-                            tile_layer = folium.raster_layers.TileLayer(
-                                tiles=f"http://localhost:{tile_svc.port}/tiles/{layer_id}/{{z}}/{{x}}/{{y}}.png",
-                                attr="Triangle Mesh",
-                                name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                overlay=True,
-                                control=True,
-                                opacity=st.session_state.get('heatmap_opacity', 0.7)
-                            )
-                            tile_layer.add_to(m)
-                            stored_heatmap_count += 1
-                            print(f"  🎯 TILE SERVICE: Added tile layer for {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
+                            # OPTIMIZED APPROACH: Split large heatmaps into smaller feature groups to prevent WebSocket timeouts
+                            # while preserving all triangular detail
+                            if feature_count > 1000:
+                                # Split into chunks of 800 features each to stay under WebSocket limits
+                                chunk_size = 800
+                                features = geojson_data['features']
+                                
+                                for chunk_i, start_idx in enumerate(range(0, feature_count, chunk_size)):
+                                    end_idx = min(start_idx + chunk_size, feature_count)
+                                    chunk_features = features[start_idx:end_idx]
+                                    
+                                    chunk_geojson = {
+                                        'type': 'FeatureCollection',
+                                        'features': chunk_features
+                                    }
+                                    
+                                    # Add chunk as separate layer
+                                    folium.GeoJson(
+                                        chunk_geojson,
+                                        name=f"Stored: {stored_heatmap['heatmap_name']} (Part {chunk_i+1})",
+                                        style_function=lambda feature, method=method: {
+                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                            'color': 'none',
+                                            'weight': 0,
+                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                        },
+                                        tooltip=folium.GeoJsonTooltip(
+                                            fields=['yield'],
+                                            aliases=['Value:'],
+                                            localize=True
+                                        )
+                                    ).add_to(m)
+                                    
+                                    print(f"  📐 CHUNK {chunk_i+1}: Added {len(chunk_features)} triangular features for {stored_heatmap['heatmap_name']}")
+                                
+                                stored_heatmap_count += 1
+                                print(f"  ✅ COMPLETED: {stored_heatmap['heatmap_name']} split into {chunk_i+1} chunks with {feature_count} total triangular features")
+                            else:
+                                # Small heatmaps can be added as single layer
+                                folium.GeoJson(
+                                    geojson_data,
+                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                    style_function=lambda feature, method=method: {
+                                        'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                        'color': 'none',
+                                        'weight': 0,
+                                        'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                    },
+                                    tooltip=folium.GeoJsonTooltip(
+                                        fields=['yield'],
+                                        aliases=['Value:'],
+                                        localize=True
+                                    )
+                                ).add_to(m)
+                                stored_heatmap_count += 1
+                                print(f"  📐 SINGLE LAYER: Added {feature_count} triangular features for {stored_heatmap['heatmap_name']}")
 
                     elif heatmap_data and len(heatmap_data) > 0:
                         print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")

@@ -31,9 +31,10 @@ class TileService:
         self.color_function = None  # Global color mapping function
         self.server_thread = None
         
-        # Web Mercator projection
-        self.web_mercator = pyproj.Proj(init='epsg:3857')
-        self.wgs84 = pyproj.Proj(init='epsg:4326')
+        # Web Mercator projection - use modern pyproj syntax
+        self.web_mercator = pyproj.CRS.from_epsg(3857)
+        self.wgs84 = pyproj.CRS.from_epsg(4326)
+        self.transformer = pyproj.Transformer.from_crs(self.wgs84, self.web_mercator, always_xy=True)
         
         # Setup FastAPI routes
         self.setup_routes()
@@ -135,9 +136,8 @@ class TileService:
                 # Transform coordinates to tile pixel space
                 pixel_coords = []
                 for lon, lat in coords:
-                    # Convert to Web Mercator
-                    result = pyproj.transform(self.wgs84, self.web_mercator, lon, lat)
-                    x_merc, y_merc = result[0], result[1]
+                    # Convert to Web Mercator using modern pyproj
+                    x_merc, y_merc = self.transformer.transform(lon, lat)
                     
                     # Convert to tile pixel coordinates
                     pixel_x = int((x_merc - mercantile.xy_bounds(x, y, z).left) / 

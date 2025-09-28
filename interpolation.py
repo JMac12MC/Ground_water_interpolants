@@ -3936,8 +3936,20 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         print(f"🔧 GRID CREATED: {len(y_vals_m)} x {len(x_vals_m)} = {len(y_vals_m) * len(x_vals_m)} points at {effective_resolution:.0f}m spacing")
         print(f"🔧 COORDINATE DATA: {len(coords_nztm)} interpolation points transformed to NZTM2000")
         
-        # Store NZTM2000 bounds for warping
-        nztm_bounds = (west_m, south_m, east_m, north_m)
+        # ALIGNMENT FIX: Calculate pixel-edge bounds (not center bounds) for rasterio.transform.from_bounds
+        # from_bounds expects edge coordinates, but our grid uses center coordinates
+        dx = x_vals_m[1] - x_vals_m[0] if len(x_vals_m) > 1 else effective_resolution
+        dy = y_vals_m[1] - y_vals_m[0] if len(y_vals_m) > 1 else effective_resolution
+        
+        edge_west_m = x_vals_m[0] - dx/2
+        edge_east_m = x_vals_m[-1] + dx/2  
+        edge_south_m = y_vals_m[0] - dy/2
+        edge_north_m = y_vals_m[-1] + dy/2
+        
+        # Store NZTM2000 edge bounds for warping (this fixes the regional pixel offset issue)
+        nztm_bounds = (edge_west_m, edge_south_m, edge_east_m, edge_north_m)
+        
+        print(f"🔧 PIXEL-EDGE BOUNDS: ({edge_west_m:.1f}, {edge_south_m:.1f}, {edge_east_m:.1f}, {edge_north_m:.1f})m")
         
         # Set grid dimensions
         width = len(x_vals_m)

@@ -2388,9 +2388,11 @@ with main_col1:
                 print(f"❌ COMBINED RASTER FAILED: {e}")
                 return None
         
-        # Try to create combined raster overlay for better performance
+        # Try to create combined raster overlay for better performance (only for Smooth Raster mode)
         combined_raster = None
-        if len(visible_heatmaps) > 5 and heatmap_style != "Smooth Raster (Windy.com Style)":
+        # NOTE: Combined raster should only be used for Smooth Raster mode, not Triangle Mesh mode
+        # Triangle Mesh mode should always show individual triangular polygons, not raster overlays
+        if len(visible_heatmaps) > 5 and heatmap_style == "Smooth Raster (Windy.com Style)":
             combined_raster = create_combined_raster_overlay(visible_heatmaps, heatmap_style)
             
         if combined_raster:

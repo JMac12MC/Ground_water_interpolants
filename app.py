@@ -13,7 +13,6 @@ from data_loader import load_sample_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
-from tile_service import get_tile_service
 import time
 # Regional heatmap removed per user request
 
@@ -2409,13 +2408,16 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, display all heatmaps with smart processing
-            # Use simplified features for large heatmaps to prevent WebSocket timeouts
-            max_individual_layers = len(visible_heatmaps)  # Show all heatmaps
+            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, use reasonable batch sizes to prevent WebSocket timeouts
+            # Process in batches to avoid overwhelming the browser and WebSocket connection
+            max_individual_layers = 50  # Reasonable limit to prevent WebSocket errors while still showing many heatmaps
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
-            print(f"📐 TRIANGLE MESH: Processing all {len(visible_heatmaps)} visible heatmaps as individual triangular polygons")
-            print(f"📐 Will simplify large heatmaps (>2000 features) to prevent WebSocket overload")
+            if len(visible_heatmaps) > max_individual_layers:
+                print(f"📐 TRIANGLE MESH BATCH: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent WebSocket overload")
+                print(f"📐 Use zoom/pan to see different heatmaps, or reduce heatmap count for full display")
+            else:
+                print(f"📐 TRIANGLE MESH: Processing all {len(visible_heatmaps)} visible heatmaps as individual triangular polygons")
             
             for i, stored_heatmap in enumerate(heatmaps_to_process):
                 try:
@@ -2478,7 +2480,6 @@ with main_col1:
                         method = stored_heatmap.get('interpolation_method', 'kriging')
                         
                         # Apply global color mapping to heatmap
-                        
 
                         # Choose visualization style based on user selection
                         if heatmap_style == "Smooth Raster (Windy.com Style)":
@@ -2522,98 +2523,8 @@ with main_col1:
                                     stored_heatmap_count += 1
                                     print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
                                 else:
-                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh with optimized chunking")
-                                    # Fallback to triangle mesh using optimized chunking
-                                    feature_count = len(geojson_data['features'])
-                                    
-                                    if feature_count > 1000:
-                                        # Split into chunks
-                                        chunk_size = 800
-                                        features = geojson_data['features']
-                                        
-                                        for chunk_i, start_idx in enumerate(range(0, feature_count, chunk_size)):
-                                            end_idx = min(start_idx + chunk_size, feature_count)
-                                            chunk_features = features[start_idx:end_idx]
-                                            
-                                            chunk_geojson = {
-                                                'type': 'FeatureCollection',
-                                                'features': chunk_features
-                                            }
-                                            
-                                            folium.GeoJson(
-                                                chunk_geojson,
-                                                name=f"Stored: {stored_heatmap['heatmap_name']} (Part {chunk_i+1})",
-                                                style_function=lambda feature, method=method: {
-                                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                                    'color': 'none',
-                                                    'weight': 0,
-                                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                                },
-                                                tooltip=folium.GeoJsonTooltip(
-                                                    fields=['yield'],
-                                                    aliases=['Value:'],
-                                                    localize=True
-                                                )
-                                            ).add_to(m)
-                                        
-                                        stored_heatmap_count += 1
-                                        print(f"  ✅ FALLBACK CHUNKED: {stored_heatmap['heatmap_name']} split into {chunk_i+1} chunks with {feature_count} total features")
-                                    else:
-                                        folium.GeoJson(
-                                            geojson_data,
-                                            name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                            style_function=lambda feature, method=method: {
-                                                'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                                'color': 'none',
-                                                'weight': 0,
-                                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                            },
-                                            tooltip=folium.GeoJsonTooltip(
-                                                fields=['yield'],
-                                                aliases=['Value:'],
-                                                localize=True
-                                            )
-                                        ).add_to(m)
-                                        stored_heatmap_count += 1
-                                        print(f"  📐 FALLBACK SINGLE: Added {feature_count} triangular features for {stored_heatmap['heatmap_name']}")
-                            else:
-                                print(f"  No valid coordinates found for smooth raster, using triangle mesh with optimized chunking")
-                                # Fallback to triangle mesh using optimized chunking
-                                feature_count = len(geojson_data['features'])
-                                
-                                if feature_count > 1000:
-                                    # Split into chunks
-                                    chunk_size = 800
-                                    features = geojson_data['features']
-                                    
-                                    for chunk_i, start_idx in enumerate(range(0, feature_count, chunk_size)):
-                                        end_idx = min(start_idx + chunk_size, feature_count)
-                                        chunk_features = features[start_idx:end_idx]
-                                        
-                                        chunk_geojson = {
-                                            'type': 'FeatureCollection',
-                                            'features': chunk_features
-                                        }
-                                        
-                                        folium.GeoJson(
-                                            chunk_geojson,
-                                            name=f"Stored: {stored_heatmap['heatmap_name']} (Part {chunk_i+1})",
-                                            style_function=lambda feature, method=method: {
-                                                'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                                'color': 'none',
-                                                'weight': 0,
-                                                'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                            },
-                                            tooltip=folium.GeoJsonTooltip(
-                                                fields=['yield'],
-                                                aliases=['Value:'],
-                                                localize=True
-                                            )
-                                        ).add_to(m)
-                                    
-                                    stored_heatmap_count += 1
-                                    print(f"  ✅ NO COORDS CHUNKED: {stored_heatmap['heatmap_name']} split into {chunk_i+1} chunks with {feature_count} total features")
-                                else:
+                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh")
+                                    # Fallback to triangle mesh
                                     folium.GeoJson(
                                         geojson_data,
                                         name=f"Stored: {stored_heatmap['heatmap_name']}",
@@ -2630,50 +2541,9 @@ with main_col1:
                                         )
                                     ).add_to(m)
                                     stored_heatmap_count += 1
-                                    print(f"  📐 NO COORDS SINGLE: Added {feature_count} triangular features for {stored_heatmap['heatmap_name']}")
-                        else:
-                            # Default: Triangle Mesh (Scientific) visualization with optimized batching
-                            feature_count = len(geojson_data['features'])
-                            
-                            # OPTIMIZED APPROACH: Split large heatmaps into smaller feature groups to prevent WebSocket timeouts
-                            # while preserving all triangular detail
-                            if feature_count > 1000:
-                                # Split into chunks of 800 features each to stay under WebSocket limits
-                                chunk_size = 800
-                                features = geojson_data['features']
-                                
-                                for chunk_i, start_idx in enumerate(range(0, feature_count, chunk_size)):
-                                    end_idx = min(start_idx + chunk_size, feature_count)
-                                    chunk_features = features[start_idx:end_idx]
-                                    
-                                    chunk_geojson = {
-                                        'type': 'FeatureCollection',
-                                        'features': chunk_features
-                                    }
-                                    
-                                    # Add chunk as separate layer
-                                    folium.GeoJson(
-                                        chunk_geojson,
-                                        name=f"Stored: {stored_heatmap['heatmap_name']} (Part {chunk_i+1})",
-                                        style_function=lambda feature, method=method: {
-                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                            'color': 'none',
-                                            'weight': 0,
-                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                        },
-                                        tooltip=folium.GeoJsonTooltip(
-                                            fields=['yield'],
-                                            aliases=['Value:'],
-                                            localize=True
-                                        )
-                                    ).add_to(m)
-                                    
-                                    print(f"  📐 CHUNK {chunk_i+1}: Added {len(chunk_features)} triangular features for {stored_heatmap['heatmap_name']}")
-                                
-                                stored_heatmap_count += 1
-                                print(f"  ✅ COMPLETED: {stored_heatmap['heatmap_name']} split into {chunk_i+1} chunks with {feature_count} total triangular features")
                             else:
-                                # Small heatmaps can be added as single layer
+                                print(f"  No valid coordinates found for smooth raster, using triangle mesh")
+                                # Fallback to triangle mesh
                                 folium.GeoJson(
                                     geojson_data,
                                     name=f"Stored: {stored_heatmap['heatmap_name']}",
@@ -2690,7 +2560,24 @@ with main_col1:
                                     )
                                 ).add_to(m)
                                 stored_heatmap_count += 1
-                                print(f"  📐 SINGLE LAYER: Added {feature_count} triangular features for {stored_heatmap['heatmap_name']}")
+                        else:
+                            # Default: Triangle Mesh (Scientific) visualization
+                            folium.GeoJson(
+                                geojson_data,
+                                name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                style_function=lambda feature, method=method: {
+                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                    'color': 'none',
+                                    'weight': 0,
+                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                },
+                                tooltip=folium.GeoJsonTooltip(
+                                    fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
+                                    aliases=['Value:'],
+                                    localize=True
+                                )
+                            ).add_to(m)
+                            stored_heatmap_count += 1
 
                     elif heatmap_data and len(heatmap_data) > 0:
                         print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")

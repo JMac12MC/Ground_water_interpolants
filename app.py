@@ -2478,14 +2478,6 @@ with main_col1:
                         
                         # Apply global color mapping to heatmap
                         
-                        # SMART FEATURE SIMPLIFICATION: Reduce features for large heatmaps to prevent WebSocket overload
-                        original_feature_count = len(geojson_data['features'])
-                        if original_feature_count > 2000:
-                            # Sample every Nth feature to reduce data load while maintaining visual coverage
-                            sample_rate = max(1, original_feature_count // 1500)  # Target ~1500 features max
-                            geojson_data['features'] = geojson_data['features'][::sample_rate]
-                            simplified_count = len(geojson_data['features'])
-                            print(f"  📉 SIMPLIFIED: Reduced from {original_feature_count} to {simplified_count} features (sample rate: 1/{sample_rate})")
 
                         # Choose visualization style based on user selection
                         if heatmap_style == "Smooth Raster (Windy.com Style)":

@@ -138,8 +138,11 @@ def warp_raster_nztm_to_wgs84(rgba_image, nztm_bounds, target_width=None, target
                 count=4, dtype=rgba_image.dtype,
                 crs=src_crs, transform=src_transform
             ) as src_ds:
+                # GEOMETRIC FIX: Flip vertically to correct orientation
+                # Rasterio expects row 0 to be northernmost, but our NZTM grid has row 0 as southernmost
+                src_rgba = np.flipud(rgba_image)
                 for i in range(4):
-                    src_ds.write(rgba_image[:, :, i], i + 1)
+                    src_ds.write(src_rgba[:, :, i], i + 1)
             
             # Create destination raster in WGS84
             with rasterio.open(

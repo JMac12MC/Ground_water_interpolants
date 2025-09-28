@@ -2058,7 +2058,6 @@ with main_col1:
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
         # For smooth raster style, collect ALL triangulated data first for unified processing
-        print(f"🔧 DEBUG: heatmap_style = '{heatmap_style}'")
         if heatmap_style == "Smooth Raster (Windy.com Style)":
             combined_geojson = {"type": "FeatureCollection", "features": []}
             overall_bounds = {'north': float('-inf'), 'south': float('inf'), 
@@ -2409,12 +2408,15 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # PERFORMANCE OPTIMIZATION 6: Limit individual processing to prevent browser overload
-            max_individual_layers = 10  # Limit to prevent DOM bloat
+            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, display all heatmaps as individual polygons
+            # Only limit for performance if absolutely necessary (browser can handle 100+ layers)
+            max_individual_layers = 200  # Increased limit to show all available heatmaps
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
             if len(visible_heatmaps) > max_individual_layers:
                 print(f"⚠️  LIMITING INDIVIDUAL LAYERS: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent browser overload")
+            else:
+                print(f"📐 TRIANGLE MESH: Processing all {len(visible_heatmaps)} visible heatmaps as individual triangular polygons")
             
             for i, stored_heatmap in enumerate(heatmaps_to_process):
                 try:
@@ -2436,21 +2438,7 @@ with main_col1:
                     else:
                         geojson_data = raw_geojson_data
 
-                    # DEBUG: Check what we actually have
-                    print(f"  🐛 DEBUG HEATMAP {stored_heatmap['heatmap_name']}:")
-                    print(f"     raw_geojson_data type: {type(raw_geojson_data)}")
-                    print(f"     raw_geojson_data is None: {raw_geojson_data is None}")
-                    if raw_geojson_data:
-                        print(f"     raw_geojson_data keys: {list(raw_geojson_data.keys()) if isinstance(raw_geojson_data, dict) else 'not a dict'}")
-                    print(f"     geojson_data type: {type(geojson_data)}")
-                    print(f"     geojson_data is None: {geojson_data is None}")
-                    if geojson_data:
-                        print(f"     geojson_data keys: {list(geojson_data.keys()) if isinstance(geojson_data, dict) else 'not a dict'}")
-                        if isinstance(geojson_data, dict) and 'features' in geojson_data:
-                            print(f"     features count: {len(geojson_data['features'])}")
-                            if geojson_data['features']:
-                                first_feature = geojson_data['features'][0]
-                                print(f"     first feature properties: {list(first_feature.get('properties', {}).keys())}")
+                    # Process the heatmap data
                     
                     if geojson_data and geojson_data.get('features'):
                         print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
@@ -2490,20 +2478,7 @@ with main_col1:
                         # Use the UPDATED global unified color function with method info
                         method = stored_heatmap.get('interpolation_method', 'kriging')
                         
-                        # Debug individual heatmap color mapping
-                        sample_values = []
-                        for feature in geojson_data['features'][:5]:  # Sample first 5 features
-                            value = feature['properties'].get('yield', 0)
-                            color = get_global_unified_color(value, method)
-                            sample_values.append(f"{value:.2f}→{color}")
-                        # Debug the actual value distribution in this heatmap
-                        all_values_in_heatmap = [feature['properties'].get('yield', 0) for feature in geojson_data['features']]
-                        if all_values_in_heatmap:
-                            heatmap_min = min(all_values_in_heatmap)
-                            heatmap_max = max(all_values_in_heatmap)
-                            heatmap_mean = sum(all_values_in_heatmap) / len(all_values_in_heatmap)
-                            print(f"  HEATMAP DATA RANGE for {stored_heatmap['heatmap_name']}: min={heatmap_min:.2f}, max={heatmap_max:.2f}, mean={heatmap_mean:.2f}, global_range=({global_min_value:.2f}-{global_max_value:.2f})")
-                        print(f"  COLORMAP SAMPLE for {stored_heatmap['heatmap_name']}: {', '.join(sample_values)}")
+                        # Apply global color mapping to heatmap
 
                         # Choose visualization style based on user selection
                         if heatmap_style == "Smooth Raster (Windy.com Style)":

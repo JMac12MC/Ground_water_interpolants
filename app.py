@@ -13,6 +13,7 @@ from data_loader import load_sample_data, load_nz_govt_data, load_api_data
 from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
+from tile_service import get_tile_service
 import time
 # Regional heatmap removed per user request
 
@@ -2521,61 +2522,79 @@ with main_col1:
                                     stored_heatmap_count += 1
                                     print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
                                 else:
-                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh")
-                                    # Fallback to triangle mesh
-                                    folium.GeoJson(
-                                        geojson_data,
-                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                        style_function=lambda feature, method=method: {
-                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                            'color': 'none',
-                                            'weight': 0,
-                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                        },
-                                        tooltip=folium.GeoJsonTooltip(
-                                            fields=['yield'],
-                                            aliases=['Value:'],
-                                            localize=True
-                                        )
-                                    ).add_to(m)
-                                    stored_heatmap_count += 1
-                            else:
-                                print(f"  No valid coordinates found for smooth raster, using triangle mesh")
-                                # Fallback to triangle mesh
-                                folium.GeoJson(
-                                    geojson_data,
-                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                    style_function=lambda feature, method=method: {
-                                        'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                        'color': 'none',
-                                        'weight': 0,
-                                        'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                    },
-                                    tooltip=folium.GeoJsonTooltip(
-                                        fields=['yield'],
-                                        aliases=['Value:'],
-                                        localize=True
+                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh via tile service")
+                                    # Fallback to triangle mesh using tile service
+                                    layer_id = stored_heatmap['heatmap_name']
+                                    
+                                    # Get tile service and add heatmap data
+                                    tile_svc = get_tile_service()
+                                    tile_svc.add_heatmap(
+                                        layer_id, 
+                                        geojson_data, 
+                                        color_func=lambda value: get_global_unified_color(value, method)
                                     )
-                                ).add_to(m)
-                                stored_heatmap_count += 1
-                        else:
-                            # Default: Triangle Mesh (Scientific) visualization
-                            folium.GeoJson(
-                                geojson_data,
-                                name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                style_function=lambda feature, method=method: {
-                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                    'color': 'none',
-                                    'weight': 0,
-                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                },
-                                tooltip=folium.GeoJsonTooltip(
-                                    fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                                    aliases=['Value:'],
-                                    localize=True
+                                    
+                                    # Add tile layer to map
+                                    tile_layer = folium.raster_layers.TileLayer(
+                                        tiles=f"http://localhost:{tile_svc.port}/tiles/{layer_id}/{{z}}/{{x}}/{{y}}.png",
+                                        attr="Triangle Mesh",
+                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                        overlay=True,
+                                        control=True,
+                                        opacity=st.session_state.get('heatmap_opacity', 0.7)
+                                    )
+                                    tile_layer.add_to(m)
+                                    stored_heatmap_count += 1
+                                    print(f"  🎯 TILE SERVICE: Added tile layer for {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
+                            else:
+                                print(f"  No valid coordinates found for smooth raster, using triangle mesh via tile service")
+                                # Fallback to triangle mesh using tile service
+                                layer_id = stored_heatmap['heatmap_name']
+                                
+                                # Get tile service and add heatmap data
+                                tile_svc = get_tile_service()
+                                tile_svc.add_heatmap(
+                                    layer_id, 
+                                    geojson_data, 
+                                    color_func=lambda value: get_global_unified_color(value, method)
                                 )
-                            ).add_to(m)
+                                
+                                # Add tile layer to map
+                                tile_layer = folium.raster_layers.TileLayer(
+                                    tiles=f"http://localhost:{tile_svc.port}/tiles/{layer_id}/{{z}}/{{x}}/{{y}}.png",
+                                    attr="Triangle Mesh",
+                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                    overlay=True,
+                                    control=True,
+                                    opacity=st.session_state.get('heatmap_opacity', 0.7)
+                                )
+                                tile_layer.add_to(m)
+                                stored_heatmap_count += 1
+                                print(f"  🎯 TILE SERVICE: Added tile layer for {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
+                        else:
+                            # Default: Triangle Mesh (Scientific) visualization using tile service
+                            layer_id = stored_heatmap['heatmap_name']
+                            
+                            # Get tile service and add heatmap data
+                            tile_svc = get_tile_service()
+                            tile_svc.add_heatmap(
+                                layer_id, 
+                                geojson_data, 
+                                color_func=lambda value: get_global_unified_color(value, method)
+                            )
+                            
+                            # Add tile layer to map
+                            tile_layer = folium.raster_layers.TileLayer(
+                                tiles=f"http://localhost:{tile_svc.port}/tiles/{layer_id}/{{z}}/{{x}}/{{y}}.png",
+                                attr="Triangle Mesh",
+                                name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                overlay=True,
+                                control=True,
+                                opacity=st.session_state.get('heatmap_opacity', 0.7)
+                            )
+                            tile_layer.add_to(m)
                             stored_heatmap_count += 1
+                            print(f"  🎯 TILE SERVICE: Added tile layer for {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
 
                     elif heatmap_data and len(heatmap_data) > 0:
                         print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")

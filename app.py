@@ -2408,16 +2408,13 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, use reasonable batch sizes to prevent WebSocket timeouts
-            # Process in batches to avoid overwhelming the browser and WebSocket connection
-            max_individual_layers = 50  # Reasonable limit to prevent WebSocket errors while still showing many heatmaps
+            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, display all heatmaps with smart processing
+            # Use simplified features for large heatmaps to prevent WebSocket timeouts
+            max_individual_layers = len(visible_heatmaps)  # Show all heatmaps
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
-            if len(visible_heatmaps) > max_individual_layers:
-                print(f"📐 TRIANGLE MESH BATCH: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent WebSocket overload")
-                print(f"📐 Use zoom/pan to see different heatmaps, or reduce heatmap count for full display")
-            else:
-                print(f"📐 TRIANGLE MESH: Processing all {len(visible_heatmaps)} visible heatmaps as individual triangular polygons")
+            print(f"📐 TRIANGLE MESH: Processing all {len(visible_heatmaps)} visible heatmaps as individual triangular polygons")
+            print(f"📐 Will simplify large heatmaps (>2000 features) to prevent WebSocket overload")
             
             for i, stored_heatmap in enumerate(heatmaps_to_process):
                 try:
@@ -2480,6 +2477,15 @@ with main_col1:
                         method = stored_heatmap.get('interpolation_method', 'kriging')
                         
                         # Apply global color mapping to heatmap
+                        
+                        # SMART FEATURE SIMPLIFICATION: Reduce features for large heatmaps to prevent WebSocket overload
+                        original_feature_count = len(geojson_data['features'])
+                        if original_feature_count > 2000:
+                            # Sample every Nth feature to reduce data load while maintaining visual coverage
+                            sample_rate = max(1, original_feature_count // 1500)  # Target ~1500 features max
+                            geojson_data['features'] = geojson_data['features'][::sample_rate]
+                            simplified_count = len(geojson_data['features'])
+                            print(f"  📉 SIMPLIFIED: Reduced from {original_feature_count} to {simplified_count} features (sample rate: 1/{sample_rate})")
 
                         # Choose visualization style based on user selection
                         if heatmap_style == "Smooth Raster (Windy.com Style)":

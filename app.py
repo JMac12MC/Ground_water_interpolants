@@ -2408,13 +2408,14 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, display all heatmaps as individual polygons
-            # Only limit for performance if absolutely necessary (browser can handle 100+ layers)
-            max_individual_layers = 200  # Increased limit to show all available heatmaps
+            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, use reasonable batch sizes to prevent WebSocket timeouts
+            # Process in batches to avoid overwhelming the browser and WebSocket connection
+            max_individual_layers = 50  # Reasonable limit to prevent WebSocket errors while still showing many heatmaps
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
             if len(visible_heatmaps) > max_individual_layers:
-                print(f"⚠️  LIMITING INDIVIDUAL LAYERS: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent browser overload")
+                print(f"📐 TRIANGLE MESH BATCH: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent WebSocket overload")
+                print(f"📐 Use zoom/pan to see different heatmaps, or reduce heatmap count for full display")
             else:
                 print(f"📐 TRIANGLE MESH: Processing all {len(visible_heatmaps)} visible heatmaps as individual triangular polygons")
             

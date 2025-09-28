@@ -69,163 +69,6 @@ def to_wgs84(x_coords, y_coords):
     _, transformer_to_wgs84 = get_transformers()
     return transformer_to_wgs84.transform(x_coords, y_coords)
 
-def warp_raster_nztm_to_wgs84(rgba_image, nztm_bounds, target_width=None, target_height=None):
-    """
-    Warp a raster from NZTM2000 (EPSG:2193) to WGS84 (EPSG:4326) using proper CRS transformation.
-    
-    This fixes the raster offset issue by handling projection distortion correctly
-    instead of assuming NZTM2000 coordinates form a perfect rectangle in WGS84.
-    
-    Parameters:
-    -----------
-    rgba_image : numpy.ndarray
-        RGBA image array with shape (height, width, 4)
-    nztm_bounds : tuple
-        NZTM2000 bounds as (west_m, south_m, east_m, north_m) in meters
-    target_width : int, optional
-        Target width for output raster (defaults to input width)
-    target_height : int, optional  
-        Target height for output raster (defaults to input height)
-        
-    Returns:
-    --------
-    dict: Contains warped RGBA image, WGS84 bounds, and transform info
-    """
-    import rasterio
-    from rasterio.transform import from_bounds
-    from rasterio.warp import calculate_default_transform, reproject, Resampling
-    from rasterio.crs import CRS
-    import tempfile
-    import os
-    
-    try:
-        height, width = rgba_image.shape[:2]
-        if target_width is None:
-            target_width = width
-        if target_height is None:
-            target_height = height
-            
-        west_m, south_m, east_m, north_m = nztm_bounds
-        
-        print(f"🔧 WARPING: NZTM2000 bounds ({west_m:.1f}, {south_m:.1f}, {east_m:.1f}, {north_m:.1f})m")
-        
-        # Create source transform for NZTM2000 raster
-        src_transform = from_bounds(west_m, south_m, east_m, north_m, width, height)
-        src_crs = CRS.from_epsg(2193)  # NZTM2000
-        dst_crs = CRS.from_epsg(4326)  # WGS84
-        
-        # Calculate target transform and dimensions for WGS84
-        dst_transform, dst_width, dst_height = calculate_default_transform(
-            src_crs, dst_crs, width, height, 
-            left=west_m, bottom=south_m, right=east_m, top=north_m,
-            dst_width=target_width, dst_height=target_height
-        )
-        
-        print(f"🔧 WARPING: {width}x{height} NZTM2000 -> {dst_width}x{dst_height} WGS84")
-        
-        # Create temporary files for rasterio processing
-        with tempfile.NamedTemporaryFile(suffix='_src.tif', delete=False) as src_tmp:
-            src_path = src_tmp.name
-        with tempfile.NamedTemporaryFile(suffix='_dst.tif', delete=False) as dst_tmp:
-            dst_path = dst_tmp.name
-            
-        try:
-            # Write source raster in NZTM2000
-            with rasterio.open(
-                src_path, 'w',
-                driver='GTiff',
-                height=height, width=width,
-                count=4, dtype=rgba_image.dtype,
-                crs=src_crs, transform=src_transform
-            ) as src_ds:
-                # GEOMETRIC FIX: Flip vertically to correct orientation
-                # Rasterio expects row 0 to be northernmost, but our NZTM grid has row 0 as southernmost
-                src_rgba = np.flipud(rgba_image)
-                for i in range(4):
-                    src_ds.write(src_rgba[:, :, i], i + 1)
-            
-            # Create destination raster in WGS84
-            with rasterio.open(
-                dst_path, 'w',
-                driver='GTiff', 
-                height=dst_height, width=dst_width,
-                count=4, dtype=rgba_image.dtype,
-                crs=dst_crs, transform=dst_transform
-            ) as dst_ds:
-                # Warp each band from NZTM2000 to WGS84
-                with rasterio.open(src_path) as src_ds:
-                    for i in range(1, 5):  # Bands 1-4 (RGBA)
-                        reproject(
-                            source=rasterio.band(src_ds, i),
-                            destination=rasterio.band(dst_ds, i),
-                            src_transform=src_transform,
-                            src_crs=src_crs,
-                            dst_transform=dst_transform,
-                            dst_crs=dst_crs,
-                            resampling=Resampling.bilinear  # Smooth interpolation
-                        )
-            
-            # Read back the warped result
-            with rasterio.open(dst_path) as dst_ds:
-                warped_rgba = np.zeros((dst_height, dst_width, 4), dtype=rgba_image.dtype)
-                for i in range(4):
-                    warped_rgba[:, :, i] = dst_ds.read(i + 1)
-                
-                # Get accurate WGS84 bounds from warped raster
-                bounds_obj = dst_ds.bounds
-                wgs84_west = bounds_obj.left
-                wgs84_south = bounds_obj.bottom
-                wgs84_east = bounds_obj.right  
-                wgs84_north = bounds_obj.top
-                
-                print(f"🔧 WARPED BOUNDS: N={wgs84_north:.8f}, S={wgs84_south:.8f}, E={wgs84_east:.8f}, W={wgs84_west:.8f}")
-                
-                # Create Folium-compatible bounds
-                folium_bounds = [[wgs84_south, wgs84_west], [wgs84_north, wgs84_east]]
-                
-                return {
-                    'rgba_image': warped_rgba,
-                    'bounds': folium_bounds,
-                    'wgs84_bounds': (wgs84_west, wgs84_south, wgs84_east, wgs84_north),
-                    'transform': dst_transform,
-                    'width': dst_width,
-                    'height': dst_height
-                }
-                
-        finally:
-            # Clean up temporary files
-            for tmp_path in [src_path, dst_path]:
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
-                    
-    except Exception as e:
-        print(f"🚨 WARPING ERROR: {e}")
-        # Fallback to original image with approximate bounds conversion
-        center_x_m = (west_m + east_m) / 2
-        center_y_m = (south_m + north_m) / 2
-        center_lon, center_lat = to_wgs84([center_x_m], [center_y_m])
-        center_lon, center_lat = center_lon[0], center_lat[0]
-        
-        # Approximate bounds using center point transformation
-        width_deg = (east_m - west_m) / 111000  # Rough conversion  
-        height_deg = (north_m - south_m) / 111000
-        
-        fallback_bounds = [
-            [center_lat - height_deg/2, center_lon - width_deg/2],
-            [center_lat + height_deg/2, center_lon + width_deg/2]
-        ]
-        
-        return {
-            'rgba_image': rgba_image,
-            'bounds': fallback_bounds,
-            'wgs84_bounds': None,
-            'transform': None,
-            'width': width,
-            'height': height
-        }
-
 def calculate_authoritative_bounds(lats, lons, lat_step, lon_step):
     """
     SINGLE SOURCE OF TRUTH for all bounds calculations.
@@ -3885,72 +3728,59 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         if coords.size == 0:
             return None
         
-        # ===== COORDINATE SYSTEM FIX: Generate grid in NZTM2000 to eliminate projection distortion =====
-        # Convert WGS84 bounds to NZTM2000 for accurate grid generation
-        west_wgs84, east_wgs84 = bounds['west'], bounds['east']
-        south_wgs84, north_wgs84 = bounds['south'], bounds['north']
+        # PERFORMANCE: Use dynamic grid resolution to prevent memory crashes
+        west, east = bounds['west'], bounds['east']
+        south, north = bounds['south'], bounds['north']
         
-        # Transform bounds to NZTM2000 meters for accurate grid spacing
-        west_m, south_m = to_nztm2000([west_wgs84, east_wgs84], [south_wgs84, south_wgs84])
-        east_m, north_m = to_nztm2000([west_wgs84, east_wgs84], [north_wgs84, north_wgs84])
-        west_m, east_m = west_m[0], east_m[1]  # Take appropriate components
-        south_m, north_m = south_m[0], north_m[1]
-        
-        print(f"🔧 BOUNDS CONVERSION: WGS84 ({west_wgs84:.6f}, {south_wgs84:.6f}) -> NZTM2000 ({west_m:.1f}, {south_m:.1f})m")
-        print(f"🔧 BOUNDS CONVERSION: WGS84 ({east_wgs84:.6f}, {north_wgs84:.6f}) -> NZTM2000 ({east_m:.1f}, {north_m:.1f})m")
-        
-        # Calculate grid extent in NZTM2000 meters (accurate distances)
-        extent_x_m = east_m - west_m
-        extent_y_m = north_m - south_m
-        
-        print(f"🔧 GRID EXTENT: {extent_x_m:.1f}m x {extent_y_m:.1f}m in NZTM2000")
+        # Calculate grid extent
+        lat_extent = north - south
+        lon_extent = east - west
         
         # OPTIMIZATION: Cap maximum grid size to prevent crashes
-        max_grid_points = 1_000_000  # Maximum 1M points
+        max_grid_points = 1_000_000  # Maximum 1M points instead of 10.5M
         
-        # Use consistent sampling distance in meters (no degree conversion needed)
-        effective_resolution = sampling_distance_meters
+        # Calculate appropriate resolution based on extent
+        meters_per_degree_lat = 111000
+        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))
         
-        # Estimate grid points at specified resolution
-        grid_points_estimated = (extent_x_m / effective_resolution) * (extent_y_m / effective_resolution)
+        # Estimate grid points at 100m resolution
+        lat_step_100m = 100 / meters_per_degree_lat
+        lon_step_100m = 100 / meters_per_degree_lon
+        grid_points_100m = (lat_extent / lat_step_100m) * (lon_extent / lon_step_100m)
         
-        # Use coarser resolution if needed
-        if grid_points_estimated > max_grid_points:
-            scale_factor = np.sqrt(grid_points_estimated / max_grid_points)
-            effective_resolution = sampling_distance_meters * scale_factor
-            print(f"PERFORMANCE: Using {effective_resolution:.0f}m resolution (scaled from {sampling_distance_meters}m) to prevent memory crash")
+        # Use coarser resolution if needed (architect recommendation)
+        if grid_points_100m > max_grid_points:
+            # Scale up resolution to stay under limit
+            scale_factor = np.sqrt(grid_points_100m / max_grid_points)
+            effective_resolution = 100 * scale_factor
+            lat_step = effective_resolution / meters_per_degree_lat
+            lon_step = effective_resolution / meters_per_degree_lon
+            print(f"PERFORMANCE: Using {effective_resolution:.0f}m resolution (scaled from 100m) to prevent memory crash")
+        else:
+            lat_step = lat_step_100m
+            lon_step = lon_step_100m
+            effective_resolution = 100
         
-        # Create regular sampling grid in NZTM2000 meters
-        x_vals_m = np.arange(west_m, east_m + effective_resolution, effective_resolution)
-        y_vals_m = np.arange(south_m, north_m + effective_resolution, effective_resolution)
+        # Create regular sampling grid with lats ordered NORTH to SOUTH (row 0 = north)
+        # This eliminates the need for vertical flip and ensures proper pixel-to-coordinate mapping
+        lats = np.arange(north, south - lat_step, -lat_step)  # North to south ordering
+        lons = np.arange(west, east + lon_step, lon_step)
         
-        # Create coordinate grid in NZTM2000 space  
-        xi_m, yi_m = np.meshgrid(x_vals_m, y_vals_m)
+        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {effective_resolution:.0f}m spacing")
         
-        # Transform coordinate data to NZTM2000 for interpolation
-        coords_lons = coords[:, 0] 
-        coords_lats = coords[:, 1]
-        coords_x_m, coords_y_m = to_nztm2000(coords_lons, coords_lats)
-        coords_nztm = np.column_stack([coords_x_m, coords_y_m])
+        # Create coordinate grids
+        width = len(lons)
+        height = len(lats)
+        xi, yi = np.meshgrid(lons, lats)
         
-        print(f"🔧 GRID CREATED: {len(y_vals_m)} x {len(x_vals_m)} = {len(y_vals_m) * len(x_vals_m)} points at {effective_resolution:.0f}m spacing")
-        print(f"🔧 COORDINATE DATA: {len(coords_nztm)} interpolation points transformed to NZTM2000")
-        
-        # Store NZTM2000 bounds for warping
-        nztm_bounds = (west_m, south_m, east_m, north_m)
-        
-        # Set grid dimensions
-        width = len(x_vals_m)
-        height = len(y_vals_m)
-        
-        # Apply clipping polygon mask if provided (transform clipping to NZTM2000 space)
+        # Apply clipping polygon mask if provided
         clipping_mask = None
         if clipping_polygon is not None:
             try:
                 from shapely.geometry import Point
                 import geopandas as gpd
                 
-                print(f"🗺️ Applying clipping polygon to {width}x{height} raster grid in NZTM2000 space...")
+                print(f"🗺️ Applying clipping polygon to {width}x{height} raster grid...")
                 
                 # Create mask for clipping
                 clipping_mask = np.zeros((height, width), dtype=bool)
@@ -3967,32 +3797,21 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                     merged_clipping_geom = None
                 
                 if merged_clipping_geom is not None:
-                    # PERFORMANCE FIX: Convert all NZTM2000 grid points to WGS84 in batch, not individually
-                    # Flatten the grids for batch conversion
-                    x_m_flat = xi_m.flatten()
-                    y_m_flat = yi_m.flatten()
-                    
-                    # Batch convert all grid points from NZTM2000 to WGS84
-                    print(f"🔧 PERFORMANCE: Converting {len(x_m_flat)} grid points from NZTM2000 to WGS84 in batch...")
-                    lons_flat, lats_flat = to_wgs84(x_m_flat, y_m_flat)
-                    
-                    # Check each grid point against clipping polygon
+                    # Check each grid point
                     points_checked = 0
                     points_inside = 0
-                    for idx in range(len(x_m_flat)):
-                        if idx % 50000 == 0:  # Progress indicator every 50k points
-                            print(f"🔧 CLIPPING PROGRESS: {idx}/{len(x_m_flat)} points checked...")
-                        
-                        lon, lat = lons_flat[idx], lats_flat[idx]
-                        point = Point(lon, lat)
-                        is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
-                        
-                        # Convert flat index back to 2D indices
-                        i, j = divmod(idx, width)
-                        clipping_mask[i, j] = is_inside
-                        points_checked += 1
-                        if is_inside:
-                            points_inside += 1
+                    for i in range(height):
+                        for j in range(width):
+                            # FIXED: Access coordinates correctly from meshgrid
+                            # xi[i, j] = longitude, yi[i, j] = latitude
+                            lon = xi[i, j]
+                            lat = yi[i, j]
+                            point = Point(lon, lat)
+                            is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
+                            clipping_mask[i, j] = is_inside
+                            points_checked += 1
+                            if is_inside:
+                                points_inside += 1
                     
                     print(f"🗺️ Clipping results: {points_inside}/{points_checked} grid points inside clipping polygon")
                 else:
@@ -4002,22 +3821,22 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 print(f"Error applying clipping polygon: {e}")
                 clipping_mask = None
         
-        # Interpolate values onto grid using NZTM2000 coordinates for accurate distances
+        # Interpolate values onto 100m-spaced grid using multiple methods for complete coverage
         try:
-            # Start with cubic interpolation for smooth results using NZTM2000 coordinates
-            zi = griddata(coords_nztm, values, (xi_m, yi_m), method='cubic', fill_value=np.nan)
+            # Start with cubic interpolation for smooth results
+            zi = griddata(coords, values, (xi, yi), method='cubic', fill_value=np.nan)
             
             # Fill NaN values with linear interpolation
             nan_mask = np.isnan(zi)
             if np.any(nan_mask):
-                zi_linear = griddata(coords_nztm, values, (xi_m, yi_m), method='linear', fill_value=np.nan)
+                zi_linear = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
                 zi[nan_mask] = zi_linear[nan_mask]
                 
             # Final pass: fill remaining NaN with nearest neighbor only where triangle data exists
             # This preserves NaN boundaries where soil/Banks Peninsula clipping occurred
             nan_mask = np.isnan(zi)
             if np.any(nan_mask):
-                zi_nearest = griddata(coords_nztm, values, (xi_m, yi_m), method='nearest')
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
                 zi[nan_mask] = zi_nearest[nan_mask]
             
             # Apply Gaussian smoothing to create seamless blending between tiles
@@ -4026,13 +3845,13 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             
         except Exception as e:
             print(f"Cubic interpolation failed, using linear: {e}")
-            # Fallback to linear interpolation using NZTM2000 coordinates
-            zi = griddata(coords_nztm, values, (xi_m, yi_m), method='linear', fill_value=np.nan)
+            # Fallback to linear interpolation
+            zi = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
             
             # Fill NaN with nearest neighbor
             nan_mask = np.isnan(zi)
             if np.any(nan_mask):
-                zi_nearest = griddata(coords_nztm, values, (xi_m, yi_m), method='nearest')
+                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
                 zi[nan_mask] = zi_nearest[nan_mask]
             
             # Apply Gaussian smoothing to fallback too
@@ -4045,12 +3864,12 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         print(f"🔧   Values: min={np.nanmin(zi):.3f}, max={np.nanmax(zi):.3f}, mean={np.nanmean(zi):.3f}")
         print(f"🔧   NaN count: {np.sum(np.isnan(zi))} of {zi.size} ({100*np.sum(np.isnan(zi))/zi.size:.1f}%)")
         
-        # Corner probes to understand array orientation (show NZTM2000 coordinates)
-        print(f"🔧 CORNER PROBES (NZTM2000 meters):")
-        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi_m[0,0]:.1f}, {yi_m[0,0]:.1f})m = NW corner")
-        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi_m[0,-1]:.1f}, {yi_m[0,-1]:.1f})m = NE corner")
-        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi_m[-1,0]:.1f}, {yi_m[-1,0]:.1f})m = SW corner")
-        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi_m[-1,-1]:.1f}, {yi_m[-1,-1]:.1f})m = SE corner")
+        # Corner probes to understand array orientation
+        print(f"🔧 CORNER PROBES:")
+        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi[0,0]:.6f}, {yi[0,0]:.6f}) = NW corner (west, north)")
+        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi[0,-1]:.6f}, {yi[0,-1]:.6f}) = NE corner (east, north)")
+        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi[-1,0]:.6f}, {yi[-1,0]:.6f}) = SW corner (west, south)")
+        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi[-1,-1]:.6f}, {yi[-1,-1]:.6f}) = SE corner (east, south)")
         
         print(f"🔧 Generated {width}x{height} raster with interpolation across all triangulated data")
         print(f"🔧 Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
@@ -4106,35 +3925,101 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             else:
                 rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
         
-        # ===== COORDINATE SYSTEM FIX: Warp NZTM2000 raster to WGS84 =====
-        print(f"🔧 ===== NZTM2000 TO WGS84 RASTER WARPING PIPELINE =====")
+        # ARCHITECT SOLUTION: Create properly georeferenced raster with correct geotransform
+        print(f"🔧 ===== GEOREFERENCED RASTER PIPELINE =====")
         print(f"🔧 RGBA IMAGE: shape={rgba_image.shape}")
-        print(f"🔧 NZTM2000 BOUNDS: W={nztm_bounds[0]:.1f}, S={nztm_bounds[1]:.1f}, E={nztm_bounds[2]:.1f}, N={nztm_bounds[3]:.1f} meters")
+        print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (north to south)")
+        print(f"🔧 GRID SETUP: lons go from {lons[0]:.6f} to {lons[-1]:.6f} (west to east)")
         
-        # Use the new warping function to convert NZTM2000 raster to WGS84
-        warp_result = warp_raster_nztm_to_wgs84(
-            rgba_image=rgba_image,
-            nztm_bounds=nztm_bounds,
-            target_width=width,  # Keep same resolution
-            target_height=height
-        )
+        # Use rasterio to create proper geotransform from pixel edges (not centers)
+        import rasterio
+        from rasterio.transform import from_bounds
+        from rasterio.warp import calculate_default_transform, reproject, Resampling
+        from rasterio.crs import CRS
+        import tempfile
+        import os
         
-        if warp_result is None:
-            print(f"🚨 ERROR: Raster warping failed")
-            return None
+        height, width = rgba_image.shape[:2]
+        
+        # ===== COORDINATE ALIGNMENT FIX: Use centralized bounds calculation =====
+        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
+        raster_west = bounds['west']
+        raster_east = bounds['east'] 
+        raster_south = bounds['south']
+        raster_north = bounds['north']
+        
+        print(f"🔧 PIXEL EDGE BOUNDS: N={raster_north:.8f}, S={raster_south:.8f}, E={raster_east:.8f}, W={raster_west:.8f}")
+        
+        # Create geotransform using rasterio's from_bounds (handles edge vs center correctly)
+        transform = from_bounds(raster_west, raster_south, raster_east, raster_north, width, height)
+        print(f"🔧 GEOTRANSFORM: {transform}")
+        
+        # Verify transform maps correctly
+        # Top-left pixel (0,0) should map to (raster_west, raster_north)
+        x0, y0 = transform * (0, 0)
+        # Bottom-right pixel (width-1, height-1) should map to (raster_east, raster_south)  
+        x1, y1 = transform * (width-1, height-1)
+        print(f"🔧 TRANSFORM CHECK: pixel(0,0) -> geo({x0:.8f}, {y0:.8f}) [should be W,N]")
+        print(f"🔧 TRANSFORM CHECK: pixel({width-1},{height-1}) -> geo({x1:.8f}, {y1:.8f}) [should be E,S]")
+        
+        # ARCHITECT FIX: Crop to visible pixels to eliminate transparent padding offset
+        print(f"🔧 CROPPING TO VISIBLE PIXELS (alpha > 0)...")
+        
+        # Find bounding box of non-transparent pixels
+        alpha_mask = rgba_image[:, :, 3] > 0
+        
+        if np.any(alpha_mask):
+            # Find rows and columns with visible pixels
+            visible_rows = np.any(alpha_mask, axis=1)
+            visible_cols = np.any(alpha_mask, axis=0)
             
-        # Extract warped results
-        rgba_image_warped = warp_result['rgba_image']
-        folium_bounds = warp_result['bounds']
+            row_indices = np.where(visible_rows)[0]
+            col_indices = np.where(visible_cols)[0]
+            
+            if len(row_indices) > 0 and len(col_indices) > 0:
+                # Get tight bounding box
+                min_row, max_row = row_indices[0], row_indices[-1]
+                min_col, max_col = col_indices[0], col_indices[-1]
+                
+                # Crop the image to visible pixels only
+                rgba_image_cropped = rgba_image[min_row:max_row+1, min_col:max_col+1]
+                
+                # Calculate geographic bounds for the cropped image
+                # Row indices correspond to lat indices, col indices to lon indices
+                # FIXED: Correct pixel edge calculation - since lats go north to south
+                cropped_north = lats[min_row] + lat_step/2  # Edge of northernmost visible pixel (correct)
+                cropped_south = lats[max_row] - lat_step/2  # Edge of southernmost visible pixel (correct)
+                cropped_west = lons[min_col] - lon_step/2   # Edge of westernmost visible pixel
+                cropped_east = lons[max_col] + lon_step/2   # Edge of easternmost visible pixel
+                
+                print(f"🔧 CROPPED: {rgba_image.shape} -> {rgba_image_cropped.shape}")
+                print(f"🔧 VISIBLE BOUNDS: rows {min_row}-{max_row}, cols {min_col}-{max_col}")
+                print(f"🔧 GEOGRAPHIC BOUNDS: N={cropped_north:.6f}, S={cropped_south:.6f}, E={cropped_east:.6f}, W={cropped_west:.6f}")
+                
+                # Diagnostic: verify pixel resolution
+                actual_lat_per_pixel = (cropped_north - cropped_south) / rgba_image_cropped.shape[0]
+                actual_lon_per_pixel = (cropped_east - cropped_west) / rgba_image_cropped.shape[1]
+                lat_pixel_meters = actual_lat_per_pixel * meters_per_degree_lat
+                lon_pixel_meters = actual_lon_per_pixel * meters_per_degree_lon
+                print(f"🔧 PIXEL RESOLUTION: {lat_pixel_meters:.1f}m lat, {lon_pixel_meters:.1f}m lon")
+                
+                rgba_final = rgba_image_cropped
+                final_bounds = [[cropped_south, cropped_west], [cropped_north, cropped_east]]
+            else:
+                print(f"🔧 WARNING: No visible pixels found, using original image")
+                rgba_final = rgba_image
+                final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
+        else:
+            print(f"🔧 WARNING: Image is fully transparent, using original bounds")
+            rgba_final = rgba_image
+            final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
         
-        print(f"🔧 WARPING SUCCESSFUL: {rgba_image.shape} -> {rgba_image_warped.shape}")
-        print(f"🔧 WGS84 BOUNDS: {folium_bounds}")
+        # ASSERTION: Verify image row 0 corresponds to north
+        assert lats[0] > lats[-1], f"Latitude array should be descending (north to south): {lats[0]} to {lats[-1]}"
+        print(f"🔧 INVARIANT VERIFIED: Image row 0 corresponds to NORTH (lat={lats[0]:.6f})")
+        print(f"🔧 =========================================")
         
-        # Update dimensions if they changed during warping
-        height, width = rgba_image_warped.shape[:2]
-        
-        # Create PIL image and encode to base64
-        pil_image = Image.fromarray(rgba_image_warped, 'RGBA')
+        pil_image = Image.fromarray(rgba_final, 'RGBA')
         
         # Save to bytes buffer
         img_buffer = io.BytesIO()
@@ -4144,17 +4029,131 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Encode to base64
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
-        print(f"🔧 COORDINATE SYSTEM FIX COMPLETED:")
-        print(f"🔧   Method: NZTM2000 interpolation -> WGS84 warping")
-        print(f"🔧   Resolution: {effective_resolution:.0f}m effective sampling")
-        print(f"🔧   Final bounds: {folium_bounds}")
-        print(f"🔧   Manual offset hacks: REMOVED (no longer needed)")
+        # ===== COORDINATE ALIGNMENT FIX: Use centralized authoritative bounds =====
+        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
+        print(f"🔧 ALIGNMENT FIX: Using centralized bounds calculation (eliminates CENTER vs EDGE inconsistencies)")
+        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
+        # ================================================================
+        
+        # 9) BOUNDS CALCULATION - CENTER vs EDGE analysis
+        print(f"🔧 ===== BOUNDS CALCULATION DEBUG =====")
+        
+        # Comparison with legacy center-based bounds (for debugging only)
+        legacy_center_south, legacy_center_north = south, north
+        legacy_center_west, legacy_center_east = west, east
+        
+        print(f"🔧 LEGACY CENTER-BASED: N={legacy_center_north:.6f}, S={legacy_center_south:.6f}, E={legacy_center_east:.6f}, W={legacy_center_west:.6f}")
+        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
+        
+        # Calculate the differences that were causing the offset (should now be consistent ~143m/244m)
+        lat_diff_meters = (bounds['north'] - legacy_center_north) * meters_per_degree_lat
+        lon_diff_meters = (bounds['east'] - legacy_center_east) * meters_per_degree_lon
+        print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
+        
+        # Overlay center vs grid center 
+        overlay_center_lat = (bounds['north'] + bounds['south']) / 2
+        overlay_center_lon = (bounds['east'] + bounds['west']) / 2
+        grid_center_lat = (lats[0] + lats[-1]) / 2
+        grid_center_lon = (lons[0] + lons[-1]) / 2
+        
+        center_diff_lat_m = (overlay_center_lat - grid_center_lat) * meters_per_degree_lat
+        center_diff_lon_m = (overlay_center_lon - grid_center_lon) * meters_per_degree_lon
+        print(f"🔧 CENTER DIFFERENCE: overlay vs grid = {center_diff_lat_m:.1f}m lat, {center_diff_lon_m:.1f}m lon")
+        
+        # Canterbury reference validation
+        christchurch_lat, christchurch_lon = -43.5321, 172.6362
+        print(f"🔧 REFERENCE: Christchurch at ({christchurch_lat:.6f}, {christchurch_lon:.6f})")
+        print(f"🔧 IN LEGACY CENTER BOUNDS? lat: {legacy_center_south <= christchurch_lat <= legacy_center_north}, lon: {legacy_center_west <= christchurch_lon <= legacy_center_east}")
+        print(f"🔧 IN AUTHORITATIVE BOUNDS? lat: {bounds['south'] <= christchurch_lat <= bounds['north']}, lon: {bounds['west'] <= christchurch_lon <= bounds['east']}")
+        
+        print(f"🔧 FOLIUM BOUNDS (cropped visible pixels): {final_bounds}")
+        print(f"🔧 =======================================")
+        
+        # 10) CROSS-CHECK: Log sample triangulated data for comparison
+        if coords.size > 0:
+            print(f"🔧 TRIANGULATED DATA CROSS-CHECK:")
+            sample_indices = np.linspace(0, len(coords)-1, min(5, len(coords)), dtype=int)
+            for i in sample_indices:
+                lon, lat = coords[i]
+                value = values[i]
+                print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
+        print(f"🔧 ========================================")
+        
+        # ARCHITECT SOLUTION: Use georeferenced bounds with proper pixel-to-coordinate mapping
+        try:
+            # Create a temporary GeoTIFF to ensure proper georeferencing
+            with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+            
+            # Write georeferenced raster using rasterio
+            with rasterio.open(
+                tmp_path, 'w',
+                driver='GTiff',
+                height=height, width=width,
+                count=4,  # RGBA
+                dtype=rgba_image.dtype,
+                crs=CRS.from_epsg(4326),  # WGS84
+                transform=transform,
+                compress='lzw'
+            ) as dst:
+                # Write RGBA bands
+                for i in range(4):
+                    dst.write(rgba_image[:, :, i], i + 1)
+            
+            # Read back the georeferenced bounds to ensure accuracy
+            with rasterio.open(tmp_path) as src:
+                bounds_obj = src.bounds
+                accurate_west = bounds_obj.left
+                accurate_south = bounds_obj.bottom  
+                accurate_east = bounds_obj.right
+                accurate_north = bounds_obj.top
+                
+                print(f"🔧 RASTERIO BOUNDS: N={accurate_north:.8f}, S={accurate_south:.8f}, E={accurate_east:.8f}, W={accurate_west:.8f}")
+                
+                # Verify no coordinate flips occurred
+                if accurate_north <= accurate_south:
+                    print(f"🚨 ERROR: North <= South, coordinate flip detected!")
+                if accurate_east <= accurate_west:
+                    print(f"🚨 ERROR: East <= West, coordinate flip detected!")
+            
+            # Clean up temporary file
+            os.unlink(tmp_path)
+            
+            # COORDINATE ALIGNMENT FIX: Use centralized bounds for consistency
+            # This ensures display bounds match interpolation bounds exactly
+            folium_bounds = bounds['folium_format']
+            
+            # USER-REQUESTED FIX: Shift raster north by 2 pixels to improve alignment
+            pixel_lat_degrees = 286 / 111000  # ~286m pixel size converted to degrees
+            north_shift = 2 * pixel_lat_degrees  # 2 pixels northward
+            folium_bounds[1][0] += north_shift  # folium_bounds format: [[south, west], [north, east]]
+            
+            print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
+            print(f"🔧 COORDINATE VALIDATION:")
+            print(f"🔧   North > South: {accurate_north > accurate_south} ({accurate_north:.6f} > {accurate_south:.6f})")
+            print(f"🔧   East > West: {accurate_east > accurate_west} ({accurate_east:.6f} > {accurate_west:.6f})")
+            
+        except Exception as e:
+            print(f"🚨 RASTERIO ERROR: {e}")
+            # Fallback to centralized bounds calculation for consistency
+            folium_bounds = bounds['folium_format']
+            print(f"🔧 FALLBACK BOUNDS (centralized): {folium_bounds}")
+        
+        pil_image = Image.fromarray(rgba_image, 'RGBA')
+        
+        # Save to bytes buffer
+        img_buffer = io.BytesIO()
+        pil_image.save(img_buffer, format='PNG', optimize=True)
+        img_buffer.seek(0)
+        
+        # Encode to base64
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
         return {
             'image_base64': img_base64,
             'bounds': folium_bounds,
             'opacity': opacity,
-            'positioning_method': 'nztm2000_warped_to_wgs84'
+            'positioning_method': 'georeferenced_rasterio'
         }
         
     except Exception as e:

@@ -2058,6 +2058,7 @@ with main_col1:
         print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
         
         # For smooth raster style, collect ALL triangulated data first for unified processing
+        print(f"🔧 DEBUG: heatmap_style = '{heatmap_style}'")
         if heatmap_style == "Smooth Raster (Windy.com Style)":
             combined_geojson = {"type": "FeatureCollection", "features": []}
             overall_bounds = {'north': float('-inf'), 'south': float('inf'), 

@@ -65,30 +65,39 @@ def export_heatmaps_to_static_files(stored_heatmaps):
     print(f"📁 Exported {len(heatmap_urls)} heatmaps to static files for HTTP loading")
     return heatmap_urls
 
-def create_async_loading_map(heatmap_urls, base_map):
+def create_direct_embedding_map(processed_heatmaps, base_map):
     """
-    Add JavaScript to the Folium map for asynchronous heatmap loading via HTTP.
-    This bypasses WebSocket limitations entirely.
+    Directly embed GeoJSON data in JavaScript to bypass HTTP/CORS issues.
+    This provides immediate loading of all heatmaps without WebSocket limitations.
     
     Args:
-        heatmap_urls (dict): Mapping of heatmap names to file URLs
+        processed_heatmaps (list): List of processed heatmap dictionaries with GeoJSON data
         base_map (folium.Map): Base Folium map object
     
     Returns:
-        folium.Map: Map with async loading JavaScript added
+        folium.Map: Map with embedded heatmap data and loading JavaScript
     """
-    if not heatmap_urls:
+    if not processed_heatmaps:
         return base_map
     
-    # Create JavaScript for async loading - integrated properly with Folium
+    # Prepare embedded data - extract GeoJSON from each heatmap
+    embedded_data = {}
+    for heatmap in processed_heatmaps:
+        name = heatmap.get('heatmap_name', 'unknown')
+        geojson_data = heatmap.get('geojson_data')
+        if geojson_data:
+            embedded_data[name] = geojson_data
+    
+    # Create JavaScript with embedded data - no HTTP requests needed
     loading_script = f"""
     <script>
-    window.heatmapUrls = {json.dumps(heatmap_urls)};
+    // Embedded heatmap data - bypasses HTTP/CORS completely
+    window.embeddedHeatmaps = {json.dumps(embedded_data)};
     window.loadedLayers = [];
     
-    // Enhanced colormap function with data range handling
+    // Enhanced colormap function matching Python implementation
     function getHeatmapColor(value) {{
-        // Handle different data ranges for ground water level
+        // Ground water level colormap (blue scale)
         if (value >= 40) return '#000033';      // Very deep - dark blue  
         else if (value >= 25) return '#0000FF'; // Deep - blue
         else if (value >= 15) return '#0066FF'; // Moderate-deep - light blue
@@ -98,86 +107,120 @@ def create_async_loading_map(heatmap_urls, base_map):
         else return '#00FF00';                  // Very shallow - green
     }}
     
-    function loadHeatmapAsync(name, url, opacity) {{
-        console.log(`🔄 Loading heatmap: ${{name}} from ${{url}}`);
+    function addHeatmapLayer(name, geojsonData) {{
+        console.log(`🔄 Adding embedded heatmap: ${{name}} with ${{geojsonData.features?.length || 0}} features`);
         
-        fetch(url)
-            .then(response => {{
-                console.log(`📡 Response for ${{name}}:`, response.status, response.statusText);
-                if (!response.ok) {{
-                    throw new Error(`HTTP ${{response.status}}: ${{response.statusText}}`);
+        try {{
+            // Create GeoJSON layer with proper styling
+            let layer = L.geoJSON(geojsonData, {{
+                style: function(feature) {{
+                    let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
+                    return {{
+                        fillColor: getHeatmapColor(value),
+                        fillOpacity: 0.7,
+                        color: 'none',
+                        weight: 0
+                    }};
+                }},
+                onEachFeature: function(feature, layer) {{
+                    let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
+                    layer.bindTooltip(`Value: ${{value.toFixed(2)}}`);
                 }}
-                return response.json();
-            }})
-            .then(geojsonData => {{
-                console.log(`📊 Processing ${{name}}: ${{geojsonData.features?.length || 0}} features`);
-                
-                // Create GeoJSON layer with proper styling
-                let layer = L.geoJSON(geojsonData, {{
-                    style: function(feature) {{
-                        let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
-                        return {{
-                            fillColor: getHeatmapColor(value),
-                            fillOpacity: opacity || 0.7,
-                            color: 'none',
-                            weight: 0
-                        }};
-                    }},
-                    onEachFeature: function(feature, layer) {{
-                        let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
-                        layer.bindTooltip(`Value: ${{value.toFixed(2)}}`);
+            }});
+            
+            // Find and add to the map
+            let mapObj = null;
+            if (typeof window.map_id !== 'undefined' && window[window.map_id]) {{
+                mapObj = window[window.map_id];
+            }} else if (typeof window.map !== 'undefined') {{
+                mapObj = window.map;
+            }} else {{
+                // Try to find Leaflet map in global scope
+                Object.keys(window).forEach(key => {{
+                    if (window[key] && window[key]._container && window[key].addLayer) {{
+                        mapObj = window[key];
                     }}
                 }});
-                
-                // Add to the Folium map (window.map should be available)
-                if (typeof window.map !== 'undefined' && window.map) {{
-                    layer.addTo(window.map);
-                    window.loadedLayers.push({{name: name, layer: layer}});
-                    console.log(`✅ Successfully loaded heatmap: ${{name}} with ${{geojsonData.features?.length || 0}} features`);
-                }} else {{
-                    console.warn(`⚠️ Map not available for ${{name}}, trying alternative approach`);
-                    // Try to find map in global scope
-                    if (typeof map !== 'undefined') {{
-                        layer.addTo(map);
-                        console.log(`✅ Loaded ${{name}} using global map reference`);
-                    }}
-                }}
-            }})
-            .catch(error => {{
-                console.error(`❌ Failed to load heatmap ${{name}}:`, error);
-            }});
+            }}
+            
+            if (mapObj) {{
+                layer.addTo(mapObj);
+                window.loadedLayers.push({{name: name, layer: layer}});
+                console.log(`✅ Successfully added embedded heatmap: ${{name}}`);
+            }} else {{
+                console.error(`❌ Could not find map object for ${{name}}`);
+            }}
+            
+        }} catch (error) {{
+            console.error(`❌ Error adding heatmap ${{name}}:`, error);
+        }}
     }}
     
-    // Multiple loading strategies to ensure compatibility
-    function startAsyncLoading() {{
-        console.log('🚀 Starting async heatmap loading with', Object.keys(window.heatmapUrls).length, 'heatmaps');
+    function loadAllEmbeddedHeatmaps() {{
+        console.log('🚀 Loading', Object.keys(window.embeddedHeatmaps).length, 'embedded heatmaps');
         
-        Object.entries(window.heatmapUrls).forEach(([name, url], index) => {{
-            // Stagger requests to avoid overwhelming the browser
+        let count = 0;
+        Object.entries(window.embeddedHeatmaps).forEach(([name, geojsonData], index) => {{
+            // Stagger additions to prevent browser freeze
             setTimeout(() => {{
-                loadHeatmapAsync(name, url, 0.7);
-            }}, index * 100); // 100ms delay between requests
+                addHeatmapLayer(name, geojsonData);
+                count++;
+                if (count === Object.keys(window.embeddedHeatmaps).length) {{
+                    console.log(`✅ All ${{count}} heatmaps loaded successfully!`);
+                }}
+            }}, index * 50); // 50ms delay between layers
         }});
     }}
     
-    // Try multiple loading events to ensure execution
-    if (document.readyState === 'loading') {{
-        document.addEventListener('DOMContentLoaded', () => {{
-            setTimeout(startAsyncLoading, 2000);
-        }});
-    }} else {{
-        setTimeout(startAsyncLoading, 2000);
+    // Multiple loading strategies for maximum compatibility
+    function tryLoadHeatmaps() {{
+        if (typeof L !== 'undefined' && Object.keys(window.embeddedHeatmaps).length > 0) {{
+            loadAllEmbeddedHeatmaps();
+            return true;
+        }}
+        return false;
     }}
     
-    // Backup loading after page fully loads
+    // Immediate attempt
+    if (document.readyState === 'complete') {{
+        setTimeout(() => tryLoadHeatmaps(), 1000);
+    }}
+    
+    // DOMContentLoaded attempt
+    document.addEventListener('DOMContentLoaded', () => {{
+        setTimeout(() => {{
+            if (!tryLoadHeatmaps()) {{
+                console.log('🔄 Retrying heatmap loading...');
+                setTimeout(() => tryLoadHeatmaps(), 2000);
+            }}
+        }}, 1500);
+    }});
+    
+    // Window load attempt
     window.addEventListener('load', () => {{
         setTimeout(() => {{
             if (window.loadedLayers.length === 0) {{
-                console.log('🔄 Backup loading attempt...');
-                startAsyncLoading();
+                console.log('🔄 Final loading attempt...');
+                tryLoadHeatmaps();
             }}
-        }}, 3000);
+        }}, 2000);
     }});
+    
+    // Backup interval check
+    let attempts = 0;
+    const maxAttempts = 10;
+    const loadInterval = setInterval(() => {{
+        attempts++;
+        if (window.loadedLayers.length > 0 || attempts >= maxAttempts) {{
+            clearInterval(loadInterval);
+            if (window.loadedLayers.length === 0) {{
+                console.warn('⚠️ Failed to load heatmaps after', maxAttempts, 'attempts');
+            }}
+        }} else {{
+            console.log(`🔄 Attempt ${{attempts}}: Checking for map readiness...`);
+            tryLoadHeatmaps();
+        }}
+    }}, 1000);
     </script>
     """
     
@@ -2676,11 +2719,11 @@ with main_col1:
                         processed_heatmap['geojson_data'] = geojson_data
                         processed_heatmaps.append(processed_heatmap)
             
-            # Export all heatmaps to static files for HTTP loading
+            # Export all heatmaps to static files for HTTP loading (backup)
             heatmap_urls = export_heatmaps_to_static_files(processed_heatmaps)
             
-            # Add async loading JavaScript to map
-            m = create_async_loading_map(heatmap_urls, m)
+            # Add direct embedding JavaScript to map (bypasses HTTP/CORS entirely)
+            m = create_direct_embedding_map(processed_heatmaps, m)
             
             stored_heatmap_count = len(processed_heatmaps)
             print(f"🌐 HTTP ASYNC SETUP COMPLETE: {len(heatmap_urls)} heatmap files exported for client-side loading")

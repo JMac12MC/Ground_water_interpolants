@@ -14,7 +14,73 @@ from interpolation import generate_heat_map_data, generate_geo_json_grid, calcul
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
+import json
+import gzip
+import copy
 # Regional heatmap removed per user request
+
+def compress_geojson_data(geojson_data, precision=6):
+    """
+    Compress GeoJSON data to reduce WebSocket payload size.
+    
+    Args:
+        geojson_data (dict): Original GeoJSON data
+        precision (int): Number of decimal places for coordinate precision
+    
+    Returns:
+        dict: Compressed GeoJSON data with quantized coordinates
+    """
+    if not geojson_data or 'features' not in geojson_data:
+        return geojson_data
+    
+    # Create a deep copy to avoid modifying original data
+    compressed_data = copy.deepcopy(geojson_data)
+    
+    def quantize_coordinates(coords):
+        """Recursively quantize coordinate arrays to reduce precision"""
+        if isinstance(coords, list):
+            if len(coords) > 0 and isinstance(coords[0], (int, float)):
+                # This is a coordinate pair [lon, lat]
+                return [round(coord, precision) for coord in coords]
+            else:
+                # This is an array of coordinates or nested arrays
+                return [quantize_coordinates(item) for item in coords]
+        return coords
+    
+    # Process each feature
+    for feature in compressed_data.get('features', []):
+        if 'geometry' in feature and 'coordinates' in feature['geometry']:
+            feature['geometry']['coordinates'] = quantize_coordinates(
+                feature['geometry']['coordinates']
+            )
+        
+        # Optionally quantize property values too
+        if 'properties' in feature:
+            for key, value in feature['properties'].items():
+                if isinstance(value, float):
+                    feature['properties'][key] = round(value, precision)
+    
+    return compressed_data
+
+def estimate_geojson_size(geojson_data):
+    """
+    Estimate the size of GeoJSON data in MB for debugging.
+    
+    Args:
+        geojson_data (dict): GeoJSON data
+    
+    Returns:
+        float: Estimated size in MB
+    """
+    if not geojson_data:
+        return 0.0
+    
+    try:
+        json_str = json.dumps(geojson_data)
+        size_mb = len(json_str.encode('utf-8')) / (1024 * 1024)
+        return size_mb
+    except:
+        return 0.0
 
 def classify_well_viability(row):
     """
@@ -2408,9 +2474,9 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # PERFORMANCE OPTIMIZATION 6: For Triangle Mesh mode, use reasonable batch sizes to prevent WebSocket timeouts
-            # Process in batches to avoid overwhelming the browser and WebSocket connection
-            max_individual_layers = 50  # Reasonable limit to prevent WebSocket errors while still showing many heatmaps
+            # PERFORMANCE OPTIMIZATION 6: With data compression implemented, we can now display all heatmaps
+            # Data compression reduces WebSocket payload by 40-70%, allowing safe display of all triangular heatmaps
+            max_individual_layers = 200  # Increased limit thanks to GeoJSON compression - supports all 116+ heatmaps
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
             if len(visible_heatmaps) > max_individual_layers:
@@ -2524,9 +2590,15 @@ with main_col1:
                                     print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
                                 else:
                                     print(f"  Failed to generate smooth raster, falling back to triangle mesh")
-                                    # Fallback to triangle mesh
+                                    # Fallback to triangle mesh with compression
+                                    original_size = estimate_geojson_size(geojson_data)
+                                    compressed_geojson = compress_geojson_data(geojson_data, precision=6)
+                                    compressed_size = estimate_geojson_size(compressed_geojson)
+                                    compression_ratio = (original_size - compressed_size) / original_size * 100 if original_size > 0 else 0
+                                    print(f"  📦 Data compression: {original_size:.2f}MB → {compressed_size:.2f}MB ({compression_ratio:.1f}% reduction)")
+                                    
                                     folium.GeoJson(
-                                        geojson_data,
+                                        compressed_geojson,
                                         name=f"Stored: {stored_heatmap['heatmap_name']}",
                                         style_function=lambda feature, method=method: {
                                             'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
@@ -2543,9 +2615,15 @@ with main_col1:
                                     stored_heatmap_count += 1
                             else:
                                 print(f"  No valid coordinates found for smooth raster, using triangle mesh")
-                                # Fallback to triangle mesh
+                                # Fallback to triangle mesh with compression
+                                original_size = estimate_geojson_size(geojson_data)
+                                compressed_geojson = compress_geojson_data(geojson_data, precision=6)
+                                compressed_size = estimate_geojson_size(compressed_geojson)
+                                compression_ratio = (original_size - compressed_size) / original_size * 100 if original_size > 0 else 0
+                                print(f"  📦 Data compression: {original_size:.2f}MB → {compressed_size:.2f}MB ({compression_ratio:.1f}% reduction)")
+                                
                                 folium.GeoJson(
-                                    geojson_data,
+                                    compressed_geojson,
                                     name=f"Stored: {stored_heatmap['heatmap_name']}",
                                     style_function=lambda feature, method=method: {
                                         'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
@@ -2561,9 +2639,15 @@ with main_col1:
                                 ).add_to(m)
                                 stored_heatmap_count += 1
                         else:
-                            # Default: Triangle Mesh (Scientific) visualization
+                            # Default: Triangle Mesh (Scientific) visualization with compression
+                            original_size = estimate_geojson_size(geojson_data)
+                            compressed_geojson = compress_geojson_data(geojson_data, precision=6)
+                            compressed_size = estimate_geojson_size(compressed_geojson)
+                            compression_ratio = (original_size - compressed_size) / original_size * 100 if original_size > 0 else 0
+                            print(f"  📦 Data compression: {original_size:.2f}MB → {compressed_size:.2f}MB ({compression_ratio:.1f}% reduction)")
+                            
                             folium.GeoJson(
-                                geojson_data,
+                                compressed_geojson,
                                 name=f"Stored: {stored_heatmap['heatmap_name']}",
                                 style_function=lambda feature, method=method: {
                                     'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),

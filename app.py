@@ -19,46 +19,63 @@ import gzip
 import copy
 # Regional heatmap removed per user request
 
-def compress_geojson_data(geojson_data, precision=6):
+def compress_geojson_data(geojson_data, precision=4):
     """
-    Compress GeoJSON data to reduce WebSocket payload size.
+    Aggressively compress GeoJSON data to reduce WebSocket payload size.
     
     Args:
         geojson_data (dict): Original GeoJSON data
-        precision (int): Number of decimal places for coordinate precision
+        precision (int): Number of decimal places for coordinate precision (default 4 for ~10m accuracy)
     
     Returns:
-        dict: Compressed GeoJSON data with quantized coordinates
+        dict: Heavily compressed GeoJSON data
     """
     if not geojson_data or 'features' not in geojson_data:
         return geojson_data
     
-    # Create a deep copy to avoid modifying original data
-    compressed_data = copy.deepcopy(geojson_data)
+    # Create a compressed structure from scratch (don't deep copy)
+    compressed_data = {
+        "type": "FeatureCollection",
+        "features": []
+    }
     
     def quantize_coordinates(coords):
         """Recursively quantize coordinate arrays to reduce precision"""
         if isinstance(coords, list):
             if len(coords) > 0 and isinstance(coords[0], (int, float)):
-                # This is a coordinate pair [lon, lat]
+                # This is a coordinate pair [lon, lat] - aggressive rounding
                 return [round(coord, precision) for coord in coords]
             else:
                 # This is an array of coordinates or nested arrays
                 return [quantize_coordinates(item) for item in coords]
         return coords
     
-    # Process each feature
-    for feature in compressed_data.get('features', []):
-        if 'geometry' in feature and 'coordinates' in feature['geometry']:
-            feature['geometry']['coordinates'] = quantize_coordinates(
-                feature['geometry']['coordinates']
-            )
+    # Process each feature with aggressive compression
+    for feature in geojson_data.get('features', []):
+        if 'geometry' not in feature or 'coordinates' not in feature['geometry']:
+            continue
+            
+        # Create minimal feature structure
+        compressed_feature = {
+            "type": "Feature",
+            "geometry": {
+                "type": feature['geometry']['type'],
+                "coordinates": quantize_coordinates(feature['geometry']['coordinates'])
+            },
+            "properties": {}
+        }
         
-        # Optionally quantize property values too
+        # Keep only essential properties with aggressive compression
         if 'properties' in feature:
-            for key, value in feature['properties'].items():
-                if isinstance(value, float):
-                    feature['properties'][key] = round(value, precision)
+            props = feature['properties']
+            # Only keep essential value properties, round to fewer decimal places
+            for key in ['yield', 'value', 'ground_water_level', 'z']:
+                if key in props and isinstance(props[key], (int, float)):
+                    # Round values to 2 decimal places max
+                    compressed_feature['properties'][key] = round(float(props[key]), 2)
+                    break  # Only keep one value property to reduce data
+        
+        compressed_data['features'].append(compressed_feature)
     
     return compressed_data
 
@@ -2476,7 +2493,7 @@ with main_col1:
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
             # PERFORMANCE OPTIMIZATION 6: With data compression implemented, we can now display all heatmaps
             # Data compression reduces WebSocket payload by 40-70%, allowing safe display of all triangular heatmaps
-            max_individual_layers = 200  # Increased limit thanks to GeoJSON compression - supports all 116+ heatmaps
+            max_individual_layers = 120  # Conservative limit with aggressive compression - should support all 116 heatmaps safely
             heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
             if len(visible_heatmaps) > max_individual_layers:

@@ -1,6 +1,6 @@
 """
 Green Zone Polygon Extractor
-Creates boundary polygons around high-probability indicator kriging zones (≥0.7)
+Creates boundary polygons around low-probability indicator kriging zones (<0.5, red/orange zones)
 """
 
 import json
@@ -11,7 +11,7 @@ import geopandas as gpd
 
 def extract_green_zones_from_indicator_heatmaps(polygon_db):
     """
-    Extract red/orange zones (<0.7 probability) from stored indicator kriging heatmaps
+    Extract red/orange zones (<0.5 probability) from stored indicator kriging heatmaps
     and create a boundary polygon around them.
     Works directly with database - no need to load heatmaps on map first.
     
@@ -62,7 +62,7 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
         print("❌ No indicator kriging heatmaps found")
         return None
     
-    # Collect all red/orange zone features (<0.7)
+    # Collect all red/orange zone features (<0.5, excluding yellow zones)
     red_orange_features = []
     total_features = 0
     red_orange_feature_count = 0
@@ -79,9 +79,9 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
         heatmap_red_orange_count = 0
         for feature in features:
             if 'properties' in feature:
-                # Check for indicator value < 0.7 (red/orange zone)
+                # Check for indicator value < 0.5 (red/orange zone, excluding yellow 0.5-0.7)
                 value = feature['properties'].get('value', 0)
-                if value < 0.7:
+                if value < 0.5:
                     red_orange_features.append(feature)
                     heatmap_red_orange_count += 1
                     red_orange_feature_count += 1
@@ -91,7 +91,7 @@ def extract_green_zones_from_indicator_heatmaps(polygon_db):
     print(f"✅ EXTRACTED: {red_orange_feature_count}/{total_features} total red/orange zone features")
     
     if not red_orange_features:
-        print("❌ No red/orange zone features found (<0.7 threshold)")
+        print("❌ No red/orange zone features found (<0.5 threshold, excluding yellow zones)")
         return None
     
     # Create polygons from red/orange features
@@ -305,7 +305,20 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
     """
     Add the green zone boundary to a Folium map.
     """
-    if not boundary_geojson or 'features' not in boundary_geojson:
+    if not boundary_geojson:
+        return False
+    
+    # Ensure boundary_geojson is a dictionary, not a string
+    if isinstance(boundary_geojson, str):
+        try:
+            import json
+            boundary_geojson = json.loads(boundary_geojson)
+        except json.JSONDecodeError as e:
+            print(f"❌ Error parsing boundary GeoJSON string: {e}")
+            return False
+    
+    if not isinstance(boundary_geojson, dict) or 'features' not in boundary_geojson:
+        print(f"❌ Invalid boundary data: {type(boundary_geojson)}")
         return False
         
     try:
@@ -315,8 +328,20 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
         zones_added = 0
         
         for feature in boundary_geojson['features']:
-            coords = feature['geometry']['coordinates'][0]
-            zone_name = feature['properties']['name']
+            if not isinstance(feature, dict) or 'geometry' not in feature or 'properties' not in feature:
+                print(f"⚠️ Skipping invalid feature: {feature}")
+                continue
+                
+            geometry = feature['geometry']
+            properties = feature['properties']
+            
+            if not isinstance(geometry, dict) or 'coordinates' not in geometry:
+                print(f"⚠️ Skipping feature with invalid geometry: {geometry}")
+                continue
+                
+            coords = geometry['coordinates'][0]
+            zone_name = properties.get('name', 'Unknown Zone')
+            threshold = properties.get('threshold', '0.7')
             
             # Convert coordinates to lat/lon format for Folium
             folium_coords = [[coord[1], coord[0]] for coord in coords]
@@ -328,7 +353,7 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
                 weight=3,
                 opacity=0.8,
                 fill=False,  # No fill, just boundary
-                popup=f"{zone_name}<br>Low/medium probability zone (<{feature['properties']['threshold']})<br>Detailed boundary following actual red/orange areas"
+                popup=f"{zone_name}<br>Low/medium probability zone (<{threshold})<br>Detailed boundary following actual red/orange areas"
             ).add_to(folium_map)
             
             zones_added += 1
@@ -338,4 +363,6 @@ def display_green_zone_boundary_on_map(folium_map, boundary_geojson):
         
     except Exception as e:
         print(f"❌ Error displaying boundary on map: {e}")
+        import traceback
+        print(f"Stack trace: {traceback.format_exc()}")
         return False

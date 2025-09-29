@@ -10,7 +10,7 @@ import numpy as np
 def test_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, num_tiles=5):
     """
     Generate heatmaps automatically using the exact sequential system logic but extended to cover all well data.
-    Uses the proven 19.82km spacing and coordinate conversion from sequential_heatmap.py.
+    Uses dynamic spacing (search_radius - 0.180km) and coordinate conversion from sequential_heatmap.py.
     """
     
     from sequential_heatmap import generate_quad_heatmaps_sequential
@@ -101,13 +101,15 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
     lat_km = lat_span * 111.0  # degrees to km
     lon_km = lon_span * 111.0 * np.cos(np.radians(center_lat))
     
-    # Calculate grid size needed (with 19.82km spacing)
-    grid_spacing_km = 19.82
+    # Calculate grid size needed (with dynamic spacing based on search area)
+    # Use search radius from function call minus 0.180km for optimal spacing
+    search_radius_km = 20  # This function uses fixed 20km for testing
+    grid_spacing_km = search_radius_km - 0.180
     rows_needed = max(1, int(np.ceil(lat_km / grid_spacing_km)) + 1)
     cols_needed = max(1, int(np.ceil(lon_km / grid_spacing_km)) + 1)
     
     print(f"📐 Data extent: {lat_km:.1f}km × {lon_km:.1f}km")
-    print(f"📐 Grid needed: {rows_needed} × {cols_needed} = {rows_needed * cols_needed} heatmaps")
+    print(f"📐 Grid needed: {rows_needed} × {cols_needed} = {rows_needed * cols_needed} heatmaps ({grid_spacing_km:.2f}km spacing)")
     print(f"📐 Using {min(num_tiles, rows_needed * cols_needed)} tiles for this test")
     
     # Use the existing sequential system but start from a position that will cover the well data
@@ -236,7 +238,7 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     print(f"📐 Convex hull boundary: SW({hull_sw_lat:.6f}, {hull_sw_lon:.6f}) to NE({hull_ne_lat:.6f}, {hull_ne_lon:.6f})")
     print(f"📐 Hull area: {hull_area_km2:.0f} km² vs rectangular area: {((ne_lat-sw_lat)*111)*((ne_lon-sw_lon)*111*np.cos(np.radians((sw_lat+ne_lat)/2))):.0f} km²")
     
-    # Generate the exact same 19.82km grid points used in visualization
+    # Generate dynamic grid points based on search area size
     from shapely.geometry import Point, Polygon
     
     # Create Shapely polygon from convex hull
@@ -245,8 +247,9 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     # Get bounds for grid generation
     min_x, min_y, max_x, max_y = hull_polygon.bounds
     
-    # Generate grid points at 19.82km spacing (same as visualization)
-    grid_spacing = 19820  # 19.82km in meters (NZTM units)
+    # Generate grid points at dynamic spacing based on search area size
+    grid_spacing_km = search_radius_km - 0.180
+    grid_spacing = int(grid_spacing_km * 1000)  # Convert km to meters (NZTM units)
     
     # Calculate grid bounds with padding
     start_x = int(min_x // grid_spacing) * grid_spacing
@@ -274,7 +277,7 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     
     total_grid_points = len(grid_points_latlon)
     
-    print(f"📐 Generated {total_grid_points} precise 19.82km grid points within convex hull")
+    print(f"📐 Generated {total_grid_points} precise {grid_spacing_km:.2f}km grid points within convex hull")
     print(f"📍 Using pre-calculated grid points for efficient coverage")
     
     # Limit to max_tiles if necessary

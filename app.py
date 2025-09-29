@@ -17,67 +17,170 @@ import time
 import json
 import gzip
 import copy
+import os
+import tempfile
+import uuid
 # Regional heatmap removed per user request
 
-def compress_geojson_data(geojson_data, precision=4):
+def export_heatmaps_to_static_files(stored_heatmaps):
     """
-    Aggressively compress GeoJSON data to reduce WebSocket payload size.
+    Export heatmap GeoJSON data to static files for HTTP serving.
+    This bypasses WebSocket size limitations while maintaining full precision.
+    
+    Args:
+        stored_heatmaps (list): List of stored heatmap dictionaries
+    
+    Returns:
+        dict: Mapping of heatmap names to file URLs
+    """
+    # Create static directory for heatmap files
+    static_dir = "static_heatmaps"
+    if not os.path.exists(static_dir):
+        os.makedirs(static_dir)
+    
+    heatmap_urls = {}
+    
+    for heatmap in stored_heatmaps:
+        heatmap_name = heatmap.get('heatmap_name', 'unknown')
+        geojson_data = heatmap.get('geojson_data')
+        
+        if geojson_data and isinstance(geojson_data, dict):
+            # Create unique filename
+            safe_name = "".join(c for c in heatmap_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            filename = f"{safe_name}_{uuid.uuid4().hex[:8]}.geojson"
+            filepath = os.path.join(static_dir, filename)
+            
+            # Write GeoJSON to file with full precision (no compression)
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(geojson_data, f, separators=(',', ':'))  # Compact JSON but full precision
+                
+                # Store relative URL for client-side loading
+                heatmap_urls[heatmap_name] = f"./{static_dir}/{filename}"
+                print(f"📁 Exported {heatmap_name} to {filepath} (full precision)")
+                
+            except Exception as e:
+                print(f"❌ Failed to export {heatmap_name}: {e}")
+    
+    print(f"📁 Exported {len(heatmap_urls)} heatmaps to static files for HTTP loading")
+    return heatmap_urls
+
+def create_async_loading_map(heatmap_urls, base_map):
+    """
+    Add JavaScript to the Folium map for asynchronous heatmap loading via HTTP.
+    This bypasses WebSocket limitations entirely.
+    
+    Args:
+        heatmap_urls (dict): Mapping of heatmap names to file URLs
+        base_map (folium.Map): Base Folium map object
+    
+    Returns:
+        folium.Map: Map with async loading JavaScript added
+    """
+    if not heatmap_urls:
+        return base_map
+    
+    # Create JavaScript for async loading
+    loading_script = f"""
+    <script>
+    // Async heatmap loading to bypass WebSocket size limits
+    let heatmapUrls = {json.dumps(heatmap_urls)};
+    let loadedLayers = [];
+    
+    function loadHeatmapAsync(name, url, opacity) {{
+        fetch(url)
+            .then(response => response.json())
+            .then(geojsonData => {{
+                // Add GeoJSON layer with full precision data
+                let layer = L.geoJSON(geojsonData, {{
+                    style: function(feature) {{
+                        return {{
+                            fillColor: getHeatmapColor(feature.properties.yield || feature.properties.value || 0),
+                            fillOpacity: opacity || 0.7,
+                            color: 'none',
+                            weight: 0
+                        }};
+                    }},
+                    onEachFeature: function(feature, layer) {{
+                        let value = feature.properties.yield || feature.properties.value || 0;
+                        layer.bindTooltip(`Value: ${{value}}`);
+                    }}
+                }});
+                
+                // Add to map and layer control
+                layer.addTo(map);
+                loadedLayers.push({{name: name, layer: layer}});
+                
+                console.log(`✅ Loaded heatmap: ${{name}} with ${{Object.keys(geojsonData.features || {{}}).length}} features`);
+            }})
+            .catch(error => {{
+                console.error(`❌ Failed to load heatmap ${{name}}:`, error);
+            }});
+    }}
+    
+    function getHeatmapColor(value) {{
+        // Use global color function - this will be replaced with actual colormap
+        if (value <= 0.4) return '#FF0000';      // Red
+        else if (value <= 0.6) return '#FF8000'; // Orange  
+        else if (value <= 0.7) return '#FFFF00'; // Yellow
+        else return '#00FF00';                    // Green
+    }}
+    
+    // Load all heatmaps asynchronously after map is ready
+    document.addEventListener('DOMContentLoaded', function() {{
+        setTimeout(() => {{
+            console.log('🚀 Starting async heatmap loading...');
+            Object.entries(heatmapUrls).forEach(([name, url]) => {{
+                loadHeatmapAsync(name, url, 0.7);
+            }});
+        }}, 1000); // Small delay to ensure map is fully initialized
+    }});
+    </script>
+    """
+    
+    # Add the script to the map
+    base_map.get_root().html.add_child(folium.Element(loading_script))
+    
+    return base_map
+
+def optimize_geojson_structure(geojson_data):
+    """
+    Optimize GeoJSON structure for WebSocket transfer WITHOUT reducing accuracy.
+    Only removes JSON overhead, maintains full coordinate and value precision.
     
     Args:
         geojson_data (dict): Original GeoJSON data
-        precision (int): Number of decimal places for coordinate precision (default 4 for ~10m accuracy)
     
     Returns:
-        dict: Heavily compressed GeoJSON data
+        dict: Structurally optimized GeoJSON data with full precision maintained
     """
     if not geojson_data or 'features' not in geojson_data:
         return geojson_data
     
-    # Create a compressed structure from scratch (don't deep copy)
-    compressed_data = {
-        "type": "FeatureCollection",
+    # Create optimized structure without deep copy overhead
+    optimized_data = {
+        "type": "FeatureCollection", 
         "features": []
     }
     
-    def quantize_coordinates(coords):
-        """Recursively quantize coordinate arrays to reduce precision"""
-        if isinstance(coords, list):
-            if len(coords) > 0 and isinstance(coords[0], (int, float)):
-                # This is a coordinate pair [lon, lat] - aggressive rounding
-                return [round(coord, precision) for coord in coords]
-            else:
-                # This is an array of coordinates or nested arrays
-                return [quantize_coordinates(item) for item in coords]
-        return coords
-    
-    # Process each feature with aggressive compression
+    # Process each feature with structural optimization only
     for feature in geojson_data.get('features', []):
         if 'geometry' not in feature or 'coordinates' not in feature['geometry']:
             continue
             
-        # Create minimal feature structure
-        compressed_feature = {
+        # Create minimal feature structure but keep full precision
+        optimized_feature = {
             "type": "Feature",
             "geometry": {
                 "type": feature['geometry']['type'],
-                "coordinates": quantize_coordinates(feature['geometry']['coordinates'])
+                "coordinates": feature['geometry']['coordinates']  # FULL PRECISION MAINTAINED
             },
-            "properties": {}
+            "properties": feature.get('properties', {})  # KEEP ALL PROPERTIES AT FULL PRECISION
         }
         
-        # Keep only essential properties with aggressive compression
-        if 'properties' in feature:
-            props = feature['properties']
-            # Only keep essential value properties, round to fewer decimal places
-            for key in ['yield', 'value', 'ground_water_level', 'z']:
-                if key in props and isinstance(props[key], (int, float)):
-                    # Round values to 2 decimal places max
-                    compressed_feature['properties'][key] = round(float(props[key]), 2)
-                    break  # Only keep one value property to reduce data
-        
-        compressed_data['features'].append(compressed_feature)
+        optimized_data['features'].append(optimized_feature)
     
-    return compressed_data
+    return optimized_data
 
 def estimate_geojson_size(geojson_data):
     """
@@ -2491,214 +2594,54 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # PERFORMANCE OPTIMIZATION 6: With data compression implemented, we can now display all heatmaps
-            # Data compression reduces WebSocket payload by 40-70%, allowing safe display of all triangular heatmaps
-            max_individual_layers = 120  # Conservative limit with aggressive compression - should support all 116 heatmaps safely
-            heatmaps_to_process = visible_heatmaps[:max_individual_layers]
+            # 🚀 HTTP-BASED ASYNC LOADING: Bypass WebSocket limitations entirely
+            # Export all heatmaps to static files and load asynchronously via HTTP
+            # This allows ALL heatmaps to display at FULL PRECISION without WebSocket crashes
             
-            if len(visible_heatmaps) > max_individual_layers:
-                print(f"📐 TRIANGLE MESH BATCH: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent WebSocket overload")
-                print(f"📐 Use zoom/pan to see different heatmaps, or reduce heatmap count for full display")
-            else:
-                print(f"📐 TRIANGLE MESH: Processing all {len(visible_heatmaps)} visible heatmaps as individual triangular polygons")
+            print(f"🌐 HTTP ASYNC LOADING: Preparing {len(visible_heatmaps)} heatmaps for async loading (full precision maintained)")
             
-            for i, stored_heatmap in enumerate(heatmaps_to_process):
-                try:
-                    # Don't skip the current fresh heatmap - let it display as a stored heatmap too
-                    # This ensures continuity when the page re-renders
-                    if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
-                        print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
-                    # All stored heatmaps should display
-
-                    # OPTIMIZATION: Use preprocessed data instead of reprocessing
-                    raw_geojson_data = stored_heatmap.get('geojson_data')
-                    heatmap_data = stored_heatmap.get('heatmap_data', [])
-                    method = stored_heatmap.get('interpolation_method', 'kriging')
+            # Preprocess all visible heatmaps first
+            processed_heatmaps = []
+            for stored_heatmap in visible_heatmaps:
+                raw_geojson_data = stored_heatmap.get('geojson_data')
+                if raw_geojson_data:
+                    # Use preprocessed data with caching
+                    geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, stored_heatmap.get('interpolation_method', 'kriging'))
                     
-                    if raw_geojson_data:
-                        # Use preprocessed data with caching
-                        geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, method)
-                        print(f"🚀 OPTIMIZED: Using preprocessed data for {stored_heatmap['heatmap_name']}")
-                    else:
-                        geojson_data = raw_geojson_data
-
-                    # Process the heatmap data
-                    
+                    # Ensure property compatibility
                     if geojson_data and geojson_data.get('features'):
-                        print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
-
-                        # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
-                        # Handle multiple possible property names for ground water level heatmaps
                         value_keys_to_check = ['value', 'yield', 'ground_water_level', 'ground water level', 'z', 'prediction', 'gwl_value', 'depth', 'level']
                         
                         for feature in geojson_data['features']:
                             if 'properties' in feature:
-                                # Find the first available numeric value from possible property names
+                                # Find the first available numeric value
                                 found_value = None
-                                found_key = None
-                                
                                 for key in value_keys_to_check:
                                     if key in feature['properties']:
                                         val = feature['properties'][key]
-                                        if isinstance(val, (int, float)) and not (isinstance(val, bool)):
+                                        if isinstance(val, (int, float)) and not isinstance(val, bool):
                                             found_value = val
-                                            found_key = key
                                             break
                                 
-                                # If we found a value, ensure both 'value' and 'yield' exist
+                                # Ensure both 'value' and 'yield' exist
                                 if found_value is not None:
                                     feature['properties']['value'] = found_value
                                     feature['properties']['yield'] = found_value
-                                    if found_key not in ['value', 'yield']:
-                                        print(f"  PROPERTY NORMALIZATION: Found data in '{found_key}' property, normalized to 'value' and 'yield'")
-                                else:
-                                    # Log what properties are available for debugging
-                                    available_props = list(feature['properties'].keys())
-                                    print(f"  WARNING: No numeric value found in feature properties: {available_props}")
-                                    # Set default values to prevent errors
-                                    feature['properties']['value'] = 0
-                                    feature['properties']['yield'] = 0
-
-                        # Use the UPDATED global unified color function with method info
-                        method = stored_heatmap.get('interpolation_method', 'kriging')
                         
-                        # Apply global color mapping to heatmap
-
-                        # Choose visualization style based on user selection
-                        if heatmap_style == "Smooth Raster (Windy.com Style)":
-                            # Generate smooth raster overlay
-                            print(f"  Generating smooth raster overlay for {stored_heatmap['heatmap_name']}")
-                            
-                            # Calculate bounds for the heatmap
-                            all_coords = []
-                            for feature in geojson_data['features']:
-                                if feature['geometry']['type'] == 'Polygon':
-                                    coords = feature['geometry']['coordinates'][0]
-                                    all_coords.extend(coords)
-                            
-                            if all_coords:
-                                lons = [coord[0] for coord in all_coords]
-                                lats = [coord[1] for coord in all_coords]
-                                bounds = {
-                                    'north': max(lats),
-                                    'south': min(lats),
-                                    'east': max(lons),
-                                    'west': min(lons)
-                                }
-                                
-                                # Generate smooth raster with global colormap function and configurable opacity
-                                raster_overlay = generate_smooth_raster_overlay(
-                                    geojson_data, 
-                                    bounds, 
-                                    raster_size=(512, 512), 
-                                    global_colormap_func=lambda value: get_global_unified_color(value, method),
-                                    opacity=st.session_state.get('heatmap_opacity', 0.7)
-                                )
-                                
-                                if raster_overlay:
-                                    # Add raster overlay to map
-                                    folium.raster_layers.ImageOverlay(
-                                        image=f"data:image/png;base64,{raster_overlay['image_base64']}",
-                                        bounds=raster_overlay['bounds'],
-                                        opacity=raster_overlay['opacity'],
-                                        name=f"Smooth: {stored_heatmap['heatmap_name']}"
-                                    ).add_to(m)
-                                    stored_heatmap_count += 1
-                                    print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
-                                else:
-                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh")
-                                    # Fallback to triangle mesh with compression
-                                    original_size = estimate_geojson_size(geojson_data)
-                                    compressed_geojson = compress_geojson_data(geojson_data, precision=6)
-                                    compressed_size = estimate_geojson_size(compressed_geojson)
-                                    compression_ratio = (original_size - compressed_size) / original_size * 100 if original_size > 0 else 0
-                                    print(f"  📦 Data compression: {original_size:.2f}MB → {compressed_size:.2f}MB ({compression_ratio:.1f}% reduction)")
-                                    
-                                    folium.GeoJson(
-                                        compressed_geojson,
-                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                        style_function=lambda feature, method=method: {
-                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                            'color': 'none',
-                                            'weight': 0,
-                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                        },
-                                        tooltip=folium.GeoJsonTooltip(
-                                            fields=['yield'],
-                                            aliases=['Value:'],
-                                            localize=True
-                                        )
-                                    ).add_to(m)
-                                    stored_heatmap_count += 1
-                            else:
-                                print(f"  No valid coordinates found for smooth raster, using triangle mesh")
-                                # Fallback to triangle mesh with compression
-                                original_size = estimate_geojson_size(geojson_data)
-                                compressed_geojson = compress_geojson_data(geojson_data, precision=6)
-                                compressed_size = estimate_geojson_size(compressed_geojson)
-                                compression_ratio = (original_size - compressed_size) / original_size * 100 if original_size > 0 else 0
-                                print(f"  📦 Data compression: {original_size:.2f}MB → {compressed_size:.2f}MB ({compression_ratio:.1f}% reduction)")
-                                
-                                folium.GeoJson(
-                                    compressed_geojson,
-                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                    style_function=lambda feature, method=method: {
-                                        'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                        'color': 'none',
-                                        'weight': 0,
-                                        'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                    },
-                                    tooltip=folium.GeoJsonTooltip(
-                                        fields=['yield'],
-                                        aliases=['Value:'],
-                                        localize=True
-                                    )
-                                ).add_to(m)
-                                stored_heatmap_count += 1
-                        else:
-                            # Default: Triangle Mesh (Scientific) visualization with compression
-                            original_size = estimate_geojson_size(geojson_data)
-                            compressed_geojson = compress_geojson_data(geojson_data, precision=6)
-                            compressed_size = estimate_geojson_size(compressed_geojson)
-                            compression_ratio = (original_size - compressed_size) / original_size * 100 if original_size > 0 else 0
-                            print(f"  📦 Data compression: {original_size:.2f}MB → {compressed_size:.2f}MB ({compression_ratio:.1f}% reduction)")
-                            
-                            folium.GeoJson(
-                                compressed_geojson,
-                                name=f"Stored: {stored_heatmap['heatmap_name']}",
-                                style_function=lambda feature, method=method: {
-                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                    'color': 'none',
-                                    'weight': 0,
-                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                                },
-                                tooltip=folium.GeoJsonTooltip(
-                                    fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
-                                    aliases=['Value:'],
-                                    localize=True
-                                )
-                            ).add_to(m)
-                            stored_heatmap_count += 1
-
-                    elif heatmap_data and len(heatmap_data) > 0:
-                        print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
-
-                        # Fallback to HeatMap if no GeoJSON
-                        HeatMap(heatmap_data, 
-                               radius=20, 
-                               blur=10, 
-                               name=f"Stored: {stored_heatmap['heatmap_name']}",
-                               overlay=True,
-                               control=True,
-                               max_zoom=1).add_to(m)
-                        stored_heatmap_count += 1
-                    else:
-                        print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
-
-                    # Removed centroid marker as per user request - no purple "i" icons needed
-
-                except Exception as e:
-                    print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
+                        # Add to processed list with updated data
+                        processed_heatmap = stored_heatmap.copy()
+                        processed_heatmap['geojson_data'] = geojson_data
+                        processed_heatmaps.append(processed_heatmap)
+            
+            # Export all heatmaps to static files for HTTP loading
+            heatmap_urls = export_heatmaps_to_static_files(processed_heatmaps)
+            
+            # Add async loading JavaScript to map
+            m = create_async_loading_map(heatmap_urls, m)
+            
+            stored_heatmap_count = len(processed_heatmaps)
+            print(f"🌐 HTTP ASYNC SETUP COMPLETE: {len(heatmap_urls)} heatmap files exported for client-side loading")
+            print(f"🌐 ALL {len(visible_heatmaps)} visible heatmaps will load asynchronously at FULL PRECISION")
 
         print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
         

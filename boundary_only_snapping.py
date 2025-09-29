@@ -212,16 +212,20 @@ def convert_from_meters(vertices_meters, reference_coords, reference_lat):
     
     return np.column_stack([lons, lats])
 
-def run_boundary_only_snapping():
+def run_boundary_only_snapping(db=None):
     """
     Main function to run boundary-only tile snapping on stored heatmaps.
+    
+    Args:
+        db: Optional database connection to use. If None, creates a new one.
     """
     print("🔧 STARTING BOUNDARY-ONLY TILE SNAPPING PROCESS")
     
-    # Load stored heatmaps from database
-    from database import PolygonDatabase
+    # Use provided database connection or create new one
+    if db is None:
+        from database import PolygonDatabase
+        db = PolygonDatabase()
     
-    db = PolygonDatabase()
     stored_heatmaps = db.get_all_stored_heatmaps()
     
     if not stored_heatmaps:

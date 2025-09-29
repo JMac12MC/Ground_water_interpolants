@@ -717,8 +717,8 @@ with st.sidebar:
                         sys.stdout = captured_output = io.StringIO()
                         
                         print("🎯 CALLING run_boundary_only_snapping()...")
-                        # Run the boundary-only snapping
-                        run_boundary_only_snapping()
+                        # Run the boundary-only snapping using existing database connection
+                        run_boundary_only_snapping(st.session_state.polygon_db)
                         
                         # Restore stdout and get the output
                         sys.stdout = old_stdout

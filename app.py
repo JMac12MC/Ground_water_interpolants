@@ -14,279 +14,7 @@ from interpolation import generate_heat_map_data, generate_geo_json_grid, calcul
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
-import json
-import gzip
-import copy
-import os
-import tempfile
-import uuid
 # Regional heatmap removed per user request
-
-def export_heatmaps_to_static_files(stored_heatmaps):
-    """
-    Export heatmap GeoJSON data to static files for HTTP serving.
-    This bypasses WebSocket size limitations while maintaining full precision.
-    
-    Args:
-        stored_heatmaps (list): List of stored heatmap dictionaries
-    
-    Returns:
-        dict: Mapping of heatmap names to file URLs
-    """
-    # Create static directory for heatmap files
-    static_dir = "static_heatmaps"
-    if not os.path.exists(static_dir):
-        os.makedirs(static_dir)
-    
-    heatmap_urls = {}
-    
-    for heatmap in stored_heatmaps:
-        heatmap_name = heatmap.get('heatmap_name', 'unknown')
-        geojson_data = heatmap.get('geojson_data')
-        
-        if geojson_data and isinstance(geojson_data, dict):
-            # Create unique filename
-            safe_name = "".join(c for c in heatmap_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            filename = f"{safe_name}_{uuid.uuid4().hex[:8]}.geojson"
-            filepath = os.path.join(static_dir, filename)
-            
-            # Write GeoJSON to file with full precision (no compression)
-            try:
-                with open(filepath, 'w') as f:
-                    json.dump(geojson_data, f, separators=(',', ':'))  # Compact JSON but full precision
-                
-                # Store relative URL for client-side loading
-                heatmap_urls[heatmap_name] = f"./{static_dir}/{filename}"
-                print(f"📁 Exported {heatmap_name} to {filepath} (full precision)")
-                
-            except Exception as e:
-                print(f"❌ Failed to export {heatmap_name}: {e}")
-    
-    print(f"📁 Exported {len(heatmap_urls)} heatmaps to static files for HTTP loading")
-    return heatmap_urls
-
-def create_direct_embedding_map(processed_heatmaps, base_map):
-    """
-    Directly embed GeoJSON data in JavaScript to bypass HTTP/CORS issues.
-    This provides immediate loading of all heatmaps without WebSocket limitations.
-    
-    Args:
-        processed_heatmaps (list): List of processed heatmap dictionaries with GeoJSON data
-        base_map (folium.Map): Base Folium map object
-    
-    Returns:
-        folium.Map: Map with embedded heatmap data and loading JavaScript
-    """
-    if not processed_heatmaps:
-        return base_map
-    
-    # Prepare embedded data - extract GeoJSON from each heatmap
-    embedded_data = {}
-    for heatmap in processed_heatmaps:
-        name = heatmap.get('heatmap_name', 'unknown')
-        geojson_data = heatmap.get('geojson_data')
-        if geojson_data:
-            embedded_data[name] = geojson_data
-    
-    # Create JavaScript with embedded data - no HTTP requests needed
-    loading_script = f"""
-    <script>
-    // Embedded heatmap data - bypasses HTTP/CORS completely
-    window.embeddedHeatmaps = {json.dumps(embedded_data)};
-    window.loadedLayers = [];
-    
-    // Enhanced colormap function matching Python implementation
-    function getHeatmapColor(value) {{
-        // Ground water level colormap (blue scale)
-        if (value >= 40) return '#000033';      // Very deep - dark blue  
-        else if (value >= 25) return '#0000FF'; // Deep - blue
-        else if (value >= 15) return '#0066FF'; // Moderate-deep - light blue
-        else if (value >= 10) return '#00CCFF'; // Moderate - cyan
-        else if (value >= 5) return '#00FFCC';  // Shallow-moderate - light cyan
-        else if (value >= 2) return '#00FF66';  // Shallow - light green
-        else return '#00FF00';                  // Very shallow - green
-    }}
-    
-    function addHeatmapLayer(name, geojsonData) {{
-        console.log(`🔄 Adding embedded heatmap: ${{name}} with ${{geojsonData.features?.length || 0}} features`);
-        
-        try {{
-            // Create GeoJSON layer with proper styling
-            let layer = L.geoJSON(geojsonData, {{
-                style: function(feature) {{
-                    let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
-                    return {{
-                        fillColor: getHeatmapColor(value),
-                        fillOpacity: 0.7,
-                        color: 'none',
-                        weight: 0
-                    }};
-                }},
-                onEachFeature: function(feature, layer) {{
-                    let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
-                    layer.bindTooltip(`Value: ${{value.toFixed(2)}}`);
-                }}
-            }});
-            
-            // Find and add to the map
-            let mapObj = null;
-            if (typeof window.map_id !== 'undefined' && window[window.map_id]) {{
-                mapObj = window[window.map_id];
-            }} else if (typeof window.map !== 'undefined') {{
-                mapObj = window.map;
-            }} else {{
-                // Try to find Leaflet map in global scope
-                Object.keys(window).forEach(key => {{
-                    if (window[key] && window[key]._container && window[key].addLayer) {{
-                        mapObj = window[key];
-                    }}
-                }});
-            }}
-            
-            if (mapObj) {{
-                layer.addTo(mapObj);
-                window.loadedLayers.push({{name: name, layer: layer}});
-                console.log(`✅ Successfully added embedded heatmap: ${{name}}`);
-            }} else {{
-                console.error(`❌ Could not find map object for ${{name}}`);
-            }}
-            
-        }} catch (error) {{
-            console.error(`❌ Error adding heatmap ${{name}}:`, error);
-        }}
-    }}
-    
-    function loadAllEmbeddedHeatmaps() {{
-        console.log('🚀 Loading', Object.keys(window.embeddedHeatmaps).length, 'embedded heatmaps');
-        
-        let count = 0;
-        Object.entries(window.embeddedHeatmaps).forEach(([name, geojsonData], index) => {{
-            // Stagger additions to prevent browser freeze
-            setTimeout(() => {{
-                addHeatmapLayer(name, geojsonData);
-                count++;
-                if (count === Object.keys(window.embeddedHeatmaps).length) {{
-                    console.log(`✅ All ${{count}} heatmaps loaded successfully!`);
-                }}
-            }}, index * 50); // 50ms delay between layers
-        }});
-    }}
-    
-    // Multiple loading strategies for maximum compatibility
-    function tryLoadHeatmaps() {{
-        if (typeof L !== 'undefined' && Object.keys(window.embeddedHeatmaps).length > 0) {{
-            loadAllEmbeddedHeatmaps();
-            return true;
-        }}
-        return false;
-    }}
-    
-    // Immediate attempt
-    if (document.readyState === 'complete') {{
-        setTimeout(() => tryLoadHeatmaps(), 1000);
-    }}
-    
-    // DOMContentLoaded attempt
-    document.addEventListener('DOMContentLoaded', () => {{
-        setTimeout(() => {{
-            if (!tryLoadHeatmaps()) {{
-                console.log('🔄 Retrying heatmap loading...');
-                setTimeout(() => tryLoadHeatmaps(), 2000);
-            }}
-        }}, 1500);
-    }});
-    
-    // Window load attempt
-    window.addEventListener('load', () => {{
-        setTimeout(() => {{
-            if (window.loadedLayers.length === 0) {{
-                console.log('🔄 Final loading attempt...');
-                tryLoadHeatmaps();
-            }}
-        }}, 2000);
-    }});
-    
-    // Backup interval check
-    let attempts = 0;
-    const maxAttempts = 10;
-    const loadInterval = setInterval(() => {{
-        attempts++;
-        if (window.loadedLayers.length > 0 || attempts >= maxAttempts) {{
-            clearInterval(loadInterval);
-            if (window.loadedLayers.length === 0) {{
-                console.warn('⚠️ Failed to load heatmaps after', maxAttempts, 'attempts');
-            }}
-        }} else {{
-            console.log(`🔄 Attempt ${{attempts}}: Checking for map readiness...`);
-            tryLoadHeatmaps();
-        }}
-    }}, 1000);
-    </script>
-    """
-    
-    # Add the script to the map's HTML
-    base_map.get_root().html.add_child(folium.Element(loading_script))
-    
-    return base_map
-
-def optimize_geojson_structure(geojson_data):
-    """
-    Optimize GeoJSON structure for WebSocket transfer WITHOUT reducing accuracy.
-    Only removes JSON overhead, maintains full coordinate and value precision.
-    
-    Args:
-        geojson_data (dict): Original GeoJSON data
-    
-    Returns:
-        dict: Structurally optimized GeoJSON data with full precision maintained
-    """
-    if not geojson_data or 'features' not in geojson_data:
-        return geojson_data
-    
-    # Create optimized structure without deep copy overhead
-    optimized_data = {
-        "type": "FeatureCollection", 
-        "features": []
-    }
-    
-    # Process each feature with structural optimization only
-    for feature in geojson_data.get('features', []):
-        if 'geometry' not in feature or 'coordinates' not in feature['geometry']:
-            continue
-            
-        # Create minimal feature structure but keep full precision
-        optimized_feature = {
-            "type": "Feature",
-            "geometry": {
-                "type": feature['geometry']['type'],
-                "coordinates": feature['geometry']['coordinates']  # FULL PRECISION MAINTAINED
-            },
-            "properties": feature.get('properties', {})  # KEEP ALL PROPERTIES AT FULL PRECISION
-        }
-        
-        optimized_data['features'].append(optimized_feature)
-    
-    return optimized_data
-
-def estimate_geojson_size(geojson_data):
-    """
-    Estimate the size of GeoJSON data in MB for debugging.
-    
-    Args:
-        geojson_data (dict): GeoJSON data
-    
-    Returns:
-        float: Estimated size in MB
-    """
-    if not geojson_data:
-        return 0.0
-    
-    try:
-        json_str = json.dumps(geojson_data)
-        size_mb = len(json_str.encode('utf-8')) / (1024 * 1024)
-        return size_mb
-    except:
-        return 0.0
 
 def classify_well_viability(row):
     """
@@ -2660,11 +2388,9 @@ with main_col1:
                 print(f"❌ COMBINED RASTER FAILED: {e}")
                 return None
         
-        # Try to create combined raster overlay for better performance (only for Smooth Raster mode)
+        # Try to create combined raster overlay for better performance
         combined_raster = None
-        # NOTE: Combined raster should only be used for Smooth Raster mode, not Triangle Mesh mode
-        # Triangle Mesh mode should always show individual triangular polygons, not raster overlays
-        if len(visible_heatmaps) > 5 and heatmap_style == "Smooth Raster (Windy.com Style)":
+        if len(visible_heatmaps) > 5 and heatmap_style != "Smooth Raster (Windy.com Style)":
             combined_raster = create_combined_raster_overlay(visible_heatmaps, heatmap_style)
             
         if combined_raster:
@@ -2680,54 +2406,219 @@ with main_col1:
         
         # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
         elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # 🚀 HTTP-BASED ASYNC LOADING: Bypass WebSocket limitations entirely
-            # Export all heatmaps to static files and load asynchronously via HTTP
-            # This allows ALL heatmaps to display at FULL PRECISION without WebSocket crashes
+            # PERFORMANCE OPTIMIZATION 6: Limit individual processing to prevent browser overload
+            max_individual_layers = 10  # Limit to prevent DOM bloat
+            heatmaps_to_process = visible_heatmaps[:max_individual_layers]
             
-            print(f"🌐 HTTP ASYNC LOADING: Preparing {len(visible_heatmaps)} heatmaps for async loading (full precision maintained)")
+            if len(visible_heatmaps) > max_individual_layers:
+                print(f"⚠️  LIMITING INDIVIDUAL LAYERS: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent browser overload")
             
-            # Preprocess all visible heatmaps first
-            processed_heatmaps = []
-            for stored_heatmap in visible_heatmaps:
-                raw_geojson_data = stored_heatmap.get('geojson_data')
-                if raw_geojson_data:
-                    # Use preprocessed data with caching
-                    geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, stored_heatmap.get('interpolation_method', 'kriging'))
+            for i, stored_heatmap in enumerate(heatmaps_to_process):
+                try:
+                    # Don't skip the current fresh heatmap - let it display as a stored heatmap too
+                    # This ensures continuity when the page re-renders
+                    if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
+                        print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
+                    # All stored heatmaps should display
+
+                    # OPTIMIZATION: Use preprocessed data instead of reprocessing
+                    raw_geojson_data = stored_heatmap.get('geojson_data')
+                    heatmap_data = stored_heatmap.get('heatmap_data', [])
+                    method = stored_heatmap.get('interpolation_method', 'kriging')
                     
-                    # Ensure property compatibility
+                    if raw_geojson_data:
+                        # Use preprocessed data with caching
+                        geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, method)
+                        print(f"🚀 OPTIMIZED: Using preprocessed data for {stored_heatmap['heatmap_name']}")
+                    else:
+                        geojson_data = raw_geojson_data
+
+                    # DEBUG: Check what we actually have
+                    print(f"  🐛 DEBUG HEATMAP {stored_heatmap['heatmap_name']}:")
+                    print(f"     raw_geojson_data type: {type(raw_geojson_data)}")
+                    print(f"     raw_geojson_data is None: {raw_geojson_data is None}")
+                    if raw_geojson_data:
+                        print(f"     raw_geojson_data keys: {list(raw_geojson_data.keys()) if isinstance(raw_geojson_data, dict) else 'not a dict'}")
+                    print(f"     geojson_data type: {type(geojson_data)}")
+                    print(f"     geojson_data is None: {geojson_data is None}")
+                    if geojson_data:
+                        print(f"     geojson_data keys: {list(geojson_data.keys()) if isinstance(geojson_data, dict) else 'not a dict'}")
+                        if isinstance(geojson_data, dict) and 'features' in geojson_data:
+                            print(f"     features count: {len(geojson_data['features'])}")
+                            if geojson_data['features']:
+                                first_feature = geojson_data['features'][0]
+                                print(f"     first feature properties: {list(first_feature.get('properties', {}).keys())}")
+                    
                     if geojson_data and geojson_data.get('features'):
+                        print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
+
+                        # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
+                        # Handle multiple possible property names for ground water level heatmaps
                         value_keys_to_check = ['value', 'yield', 'ground_water_level', 'ground water level', 'z', 'prediction', 'gwl_value', 'depth', 'level']
                         
                         for feature in geojson_data['features']:
                             if 'properties' in feature:
-                                # Find the first available numeric value
+                                # Find the first available numeric value from possible property names
                                 found_value = None
+                                found_key = None
+                                
                                 for key in value_keys_to_check:
                                     if key in feature['properties']:
                                         val = feature['properties'][key]
-                                        if isinstance(val, (int, float)) and not isinstance(val, bool):
+                                        if isinstance(val, (int, float)) and not (isinstance(val, bool)):
                                             found_value = val
+                                            found_key = key
                                             break
                                 
-                                # Ensure both 'value' and 'yield' exist
+                                # If we found a value, ensure both 'value' and 'yield' exist
                                 if found_value is not None:
                                     feature['properties']['value'] = found_value
                                     feature['properties']['yield'] = found_value
+                                    if found_key not in ['value', 'yield']:
+                                        print(f"  PROPERTY NORMALIZATION: Found data in '{found_key}' property, normalized to 'value' and 'yield'")
+                                else:
+                                    # Log what properties are available for debugging
+                                    available_props = list(feature['properties'].keys())
+                                    print(f"  WARNING: No numeric value found in feature properties: {available_props}")
+                                    # Set default values to prevent errors
+                                    feature['properties']['value'] = 0
+                                    feature['properties']['yield'] = 0
+
+                        # Use the UPDATED global unified color function with method info
+                        method = stored_heatmap.get('interpolation_method', 'kriging')
                         
-                        # Add to processed list with updated data
-                        processed_heatmap = stored_heatmap.copy()
-                        processed_heatmap['geojson_data'] = geojson_data
-                        processed_heatmaps.append(processed_heatmap)
-            
-            # Export all heatmaps to static files for HTTP loading (backup)
-            heatmap_urls = export_heatmaps_to_static_files(processed_heatmaps)
-            
-            # Add direct embedding JavaScript to map (bypasses HTTP/CORS entirely)
-            m = create_direct_embedding_map(processed_heatmaps, m)
-            
-            stored_heatmap_count = len(processed_heatmaps)
-            print(f"🌐 HTTP ASYNC SETUP COMPLETE: {len(heatmap_urls)} heatmap files exported for client-side loading")
-            print(f"🌐 ALL {len(visible_heatmaps)} visible heatmaps will load asynchronously at FULL PRECISION")
+                        # Debug individual heatmap color mapping
+                        sample_values = []
+                        for feature in geojson_data['features'][:5]:  # Sample first 5 features
+                            value = feature['properties'].get('yield', 0)
+                            color = get_global_unified_color(value, method)
+                            sample_values.append(f"{value:.2f}→{color}")
+                        # Debug the actual value distribution in this heatmap
+                        all_values_in_heatmap = [feature['properties'].get('yield', 0) for feature in geojson_data['features']]
+                        if all_values_in_heatmap:
+                            heatmap_min = min(all_values_in_heatmap)
+                            heatmap_max = max(all_values_in_heatmap)
+                            heatmap_mean = sum(all_values_in_heatmap) / len(all_values_in_heatmap)
+                            print(f"  HEATMAP DATA RANGE for {stored_heatmap['heatmap_name']}: min={heatmap_min:.2f}, max={heatmap_max:.2f}, mean={heatmap_mean:.2f}, global_range=({global_min_value:.2f}-{global_max_value:.2f})")
+                        print(f"  COLORMAP SAMPLE for {stored_heatmap['heatmap_name']}: {', '.join(sample_values)}")
+
+                        # Choose visualization style based on user selection
+                        if heatmap_style == "Smooth Raster (Windy.com Style)":
+                            # Generate smooth raster overlay
+                            print(f"  Generating smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                            
+                            # Calculate bounds for the heatmap
+                            all_coords = []
+                            for feature in geojson_data['features']:
+                                if feature['geometry']['type'] == 'Polygon':
+                                    coords = feature['geometry']['coordinates'][0]
+                                    all_coords.extend(coords)
+                            
+                            if all_coords:
+                                lons = [coord[0] for coord in all_coords]
+                                lats = [coord[1] for coord in all_coords]
+                                bounds = {
+                                    'north': max(lats),
+                                    'south': min(lats),
+                                    'east': max(lons),
+                                    'west': min(lons)
+                                }
+                                
+                                # Generate smooth raster with global colormap function and configurable opacity
+                                raster_overlay = generate_smooth_raster_overlay(
+                                    geojson_data, 
+                                    bounds, 
+                                    raster_size=(512, 512), 
+                                    global_colormap_func=lambda value: get_global_unified_color(value, method),
+                                    opacity=st.session_state.get('heatmap_opacity', 0.7)
+                                )
+                                
+                                if raster_overlay:
+                                    # Add raster overlay to map
+                                    folium.raster_layers.ImageOverlay(
+                                        image=f"data:image/png;base64,{raster_overlay['image_base64']}",
+                                        bounds=raster_overlay['bounds'],
+                                        opacity=raster_overlay['opacity'],
+                                        name=f"Smooth: {stored_heatmap['heatmap_name']}"
+                                    ).add_to(m)
+                                    stored_heatmap_count += 1
+                                    print(f"  Added smooth raster overlay for {stored_heatmap['heatmap_name']}")
+                                else:
+                                    print(f"  Failed to generate smooth raster, falling back to triangle mesh")
+                                    # Fallback to triangle mesh
+                                    folium.GeoJson(
+                                        geojson_data,
+                                        name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                        style_function=lambda feature, method=method: {
+                                            'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                            'color': 'none',
+                                            'weight': 0,
+                                            'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                        },
+                                        tooltip=folium.GeoJsonTooltip(
+                                            fields=['yield'],
+                                            aliases=['Value:'],
+                                            localize=True
+                                        )
+                                    ).add_to(m)
+                                    stored_heatmap_count += 1
+                            else:
+                                print(f"  No valid coordinates found for smooth raster, using triangle mesh")
+                                # Fallback to triangle mesh
+                                folium.GeoJson(
+                                    geojson_data,
+                                    name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                    style_function=lambda feature, method=method: {
+                                        'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                        'color': 'none',
+                                        'weight': 0,
+                                        'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                    },
+                                    tooltip=folium.GeoJsonTooltip(
+                                        fields=['yield'],
+                                        aliases=['Value:'],
+                                        localize=True
+                                    )
+                                ).add_to(m)
+                                stored_heatmap_count += 1
+                        else:
+                            # Default: Triangle Mesh (Scientific) visualization
+                            folium.GeoJson(
+                                geojson_data,
+                                name=f"Stored: {stored_heatmap['heatmap_name']}",
+                                style_function=lambda feature, method=method: {
+                                    'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
+                                    'color': 'none',
+                                    'weight': 0,
+                                    'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
+                                },
+                                tooltip=folium.GeoJsonTooltip(
+                                    fields=['yield'],  # Use 'yield' since that's what's reliably in stored data
+                                    aliases=['Value:'],
+                                    localize=True
+                                )
+                            ).add_to(m)
+                            stored_heatmap_count += 1
+
+                    elif heatmap_data and len(heatmap_data) > 0:
+                        print(f"Adding stored point heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(heatmap_data)} data points")
+
+                        # Fallback to HeatMap if no GeoJSON
+                        HeatMap(heatmap_data, 
+                               radius=20, 
+                               blur=10, 
+                               name=f"Stored: {stored_heatmap['heatmap_name']}",
+                               overlay=True,
+                               control=True,
+                               max_zoom=1).add_to(m)
+                        stored_heatmap_count += 1
+                    else:
+                        print(f"Stored heatmap {stored_heatmap['heatmap_name']} has no data")
+
+                    # Removed centroid marker as per user request - no purple "i" icons needed
+
+                except Exception as e:
+                    print(f"Error displaying stored heatmap {stored_heatmap.get('heatmap_name', 'unknown')}: {e}")
 
         print(f"Successfully displayed {stored_heatmap_count} stored heatmaps with UPDATED unified colormap")
         

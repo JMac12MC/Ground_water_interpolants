@@ -80,65 +80,108 @@ def create_async_loading_map(heatmap_urls, base_map):
     if not heatmap_urls:
         return base_map
     
-    # Create JavaScript for async loading
+    # Create JavaScript for async loading - integrated properly with Folium
     loading_script = f"""
     <script>
-    // Async heatmap loading to bypass WebSocket size limits
-    let heatmapUrls = {json.dumps(heatmap_urls)};
-    let loadedLayers = [];
+    window.heatmapUrls = {json.dumps(heatmap_urls)};
+    window.loadedLayers = [];
+    
+    // Enhanced colormap function with data range handling
+    function getHeatmapColor(value) {{
+        // Handle different data ranges for ground water level
+        if (value >= 40) return '#000033';      // Very deep - dark blue  
+        else if (value >= 25) return '#0000FF'; // Deep - blue
+        else if (value >= 15) return '#0066FF'; // Moderate-deep - light blue
+        else if (value >= 10) return '#00CCFF'; // Moderate - cyan
+        else if (value >= 5) return '#00FFCC';  // Shallow-moderate - light cyan
+        else if (value >= 2) return '#00FF66';  // Shallow - light green
+        else return '#00FF00';                  // Very shallow - green
+    }}
     
     function loadHeatmapAsync(name, url, opacity) {{
+        console.log(`🔄 Loading heatmap: ${{name}} from ${{url}}`);
+        
         fetch(url)
-            .then(response => response.json())
+            .then(response => {{
+                console.log(`📡 Response for ${{name}}:`, response.status, response.statusText);
+                if (!response.ok) {{
+                    throw new Error(`HTTP ${{response.status}}: ${{response.statusText}}`);
+                }}
+                return response.json();
+            }})
             .then(geojsonData => {{
-                // Add GeoJSON layer with full precision data
+                console.log(`📊 Processing ${{name}}: ${{geojsonData.features?.length || 0}} features`);
+                
+                // Create GeoJSON layer with proper styling
                 let layer = L.geoJSON(geojsonData, {{
                     style: function(feature) {{
+                        let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
                         return {{
-                            fillColor: getHeatmapColor(feature.properties.yield || feature.properties.value || 0),
+                            fillColor: getHeatmapColor(value),
                             fillOpacity: opacity || 0.7,
                             color: 'none',
                             weight: 0
                         }};
                     }},
                     onEachFeature: function(feature, layer) {{
-                        let value = feature.properties.yield || feature.properties.value || 0;
-                        layer.bindTooltip(`Value: ${{value}}`);
+                        let value = feature.properties.yield || feature.properties.value || feature.properties.ground_water_level || 0;
+                        layer.bindTooltip(`Value: ${{value.toFixed(2)}}`);
                     }}
                 }});
                 
-                // Add to map and layer control
-                layer.addTo(map);
-                loadedLayers.push({{name: name, layer: layer}});
-                
-                console.log(`✅ Loaded heatmap: ${{name}} with ${{Object.keys(geojsonData.features || {{}}).length}} features`);
+                // Add to the Folium map (window.map should be available)
+                if (typeof window.map !== 'undefined' && window.map) {{
+                    layer.addTo(window.map);
+                    window.loadedLayers.push({{name: name, layer: layer}});
+                    console.log(`✅ Successfully loaded heatmap: ${{name}} with ${{geojsonData.features?.length || 0}} features`);
+                }} else {{
+                    console.warn(`⚠️ Map not available for ${{name}}, trying alternative approach`);
+                    // Try to find map in global scope
+                    if (typeof map !== 'undefined') {{
+                        layer.addTo(map);
+                        console.log(`✅ Loaded ${{name}} using global map reference`);
+                    }}
+                }}
             }})
             .catch(error => {{
                 console.error(`❌ Failed to load heatmap ${{name}}:`, error);
             }});
     }}
     
-    function getHeatmapColor(value) {{
-        // Use global color function - this will be replaced with actual colormap
-        if (value <= 0.4) return '#FF0000';      // Red
-        else if (value <= 0.6) return '#FF8000'; // Orange  
-        else if (value <= 0.7) return '#FFFF00'; // Yellow
-        else return '#00FF00';                    // Green
+    // Multiple loading strategies to ensure compatibility
+    function startAsyncLoading() {{
+        console.log('🚀 Starting async heatmap loading with', Object.keys(window.heatmapUrls).length, 'heatmaps');
+        
+        Object.entries(window.heatmapUrls).forEach(([name, url], index) => {{
+            // Stagger requests to avoid overwhelming the browser
+            setTimeout(() => {{
+                loadHeatmapAsync(name, url, 0.7);
+            }}, index * 100); // 100ms delay between requests
+        }});
     }}
     
-    // Load all heatmaps asynchronously after map is ready
-    document.addEventListener('DOMContentLoaded', function() {{
+    // Try multiple loading events to ensure execution
+    if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', () => {{
+            setTimeout(startAsyncLoading, 2000);
+        }});
+    }} else {{
+        setTimeout(startAsyncLoading, 2000);
+    }}
+    
+    // Backup loading after page fully loads
+    window.addEventListener('load', () => {{
         setTimeout(() => {{
-            console.log('🚀 Starting async heatmap loading...');
-            Object.entries(heatmapUrls).forEach(([name, url]) => {{
-                loadHeatmapAsync(name, url, 0.7);
-            }});
-        }}, 1000); // Small delay to ensure map is fully initialized
+            if (window.loadedLayers.length === 0) {{
+                console.log('🔄 Backup loading attempt...');
+                startAsyncLoading();
+            }}
+        }}, 3000);
     }});
     </script>
     """
     
-    # Add the script to the map
+    # Add the script to the map's HTML
     base_map.get_root().html.add_child(folium.Element(loading_script))
     
     return base_map

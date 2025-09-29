@@ -17,408 +17,6 @@ import base64
 from PIL import Image
 import matplotlib.colors as mcolors
 from scipy.interpolate import griddata
-import streamlit as st
-
-@st.cache_data
-def _load_exclusion_data():
-    """
-    Load red/orange exclusion polygons from GeoJSON file (cached for performance)
-    
-    Returns:
-    --------
-    geopandas.GeoDataFrame or None
-        GeoDataFrame containing exclusion polygon geometries
-    """
-    try:
-        import os
-        
-        # Check for the red/orange exclusion polygon file
-        exclusion_files = [
-            "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson",
-            "attached_assets/red_orange_zones_stored_2025-09-16_1758015813886.geojson",
-            "red_orange_zones_stored_2025-09-16.geojson",
-            "attached_assets/red_orange_zones_stored_2025-09-16.geojson"
-        ]
-        
-        for file_path in exclusion_files:
-            if os.path.exists(file_path):
-                # Load as raw JSON data for caching compatibility
-                import json
-                with open(file_path, 'r') as f:
-                    data = json.load(f)
-                if data and data.get('features'):
-                    print(f"✅ Loaded {len(data['features'])} exclusion polygons from {file_path}")
-                    return data
-                    
-        print("⚠️ No red/orange exclusion polygon file found")
-        return None
-        
-    except Exception as e:
-        print(f"❌ Error loading exclusion polygons: {e}")
-        return None
-
-def load_exclusion_polygons():
-    """
-    Get exclusion polygons as GeoDataFrame (with caching)
-    """
-    data = _load_exclusion_data()
-    if data:
-        return gpd.GeoDataFrame.from_features(data['features'])
-    return None
-
-@st.cache_resource
-def get_prepared_exclusion_union():
-    """
-    Get prepared exclusion union for fast intersection testing (cached per session)
-    
-    Returns:
-    --------
-    tuple or None
-        (union_geometry, prepared_geometry, union_bounds, exclusion_version) or None if no exclusions
-    """
-    try:
-        import hashlib
-        import os
-        from shapely.ops import unary_union
-        from shapely.prepared import prep
-        
-        # Load exclusion polygons
-        exclusion_polygons = load_exclusion_polygons()
-        if exclusion_polygons is None or len(exclusion_polygons) == 0:
-            return None
-            
-        # Create version hash for cache invalidation
-        exclusion_files = [
-            "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson",
-            "attached_assets/red_orange_zones_stored_2025-09-16_1758015813886.geojson",
-            "red_orange_zones_stored_2025-09-16.geojson",
-            "attached_assets/red_orange_zones_stored_2025-09-16.geojson"
-        ]
-        
-        version_parts = []
-        for file_path in exclusion_files:
-            if os.path.exists(file_path):
-                stat = os.stat(file_path)
-                version_parts.append(f"{file_path}:{stat.st_size}:{stat.st_mtime}")
-                break
-        
-        exclusion_version = hashlib.md5(":".join(version_parts).encode()).hexdigest()[:8]
-        
-        # Create unified exclusion geometry
-        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
-        if not valid_geometries:
-            return None
-            
-        union_geometry = unary_union(valid_geometries)
-        prepared_geometry = prep(union_geometry)
-        union_bounds = union_geometry.bounds  # (minx, miny, maxx, maxy)
-        
-        print(f"🚀 PERFORMANCE: Created prepared exclusion union from {len(valid_geometries)} zones (version: {exclusion_version})")
-        
-        return union_geometry, prepared_geometry, union_bounds, exclusion_version
-        
-    except Exception as e:
-        print(f"❌ Error creating prepared exclusion union: {e}")
-        return None
-
-def apply_exclusion_clipping(heatmap_data, exclusion_polygons):
-    """
-    Apply negative clipping to remove heatmap points within exclusion areas
-    
-    Parameters:
-    -----------
-    heatmap_data : list
-        List of heatmap data points in format [[lat, lng, value], ...]
-    exclusion_polygons : geopandas.GeoDataFrame
-        GeoDataFrame containing exclusion polygon geometries
-        
-    Returns:
-    --------
-    list
-        Filtered heatmap data with exclusion areas removed
-    """
-    if exclusion_polygons is None or len(exclusion_polygons) == 0:
-        return heatmap_data
-        
-    if not heatmap_data:
-        return heatmap_data
-        
-    try:
-        from shapely.geometry import Point
-        from shapely.ops import unary_union
-        
-        # Create unified exclusion geometry for faster point-in-polygon testing
-        valid_geometries = [geom for geom in exclusion_polygons.geometry if geom.is_valid]
-        if not valid_geometries:
-            return heatmap_data
-            
-        exclusion_geometry = unary_union(valid_geometries)
-        print(f"🚫 Applying exclusion clipping with {len(valid_geometries)} exclusion zones")
-        
-        # Filter out points that fall within exclusion areas
-        filtered_data = []
-        excluded_count = 0
-        
-        for data_point in heatmap_data:
-            lat, lng = data_point[0], data_point[1]
-            point = Point(lng, lat)  # Shapely uses (lon, lat) order
-            
-            # Exclude point if it's within any exclusion area
-            if not (exclusion_geometry.contains(point) or exclusion_geometry.intersects(point)):
-                filtered_data.append(data_point)
-            else:
-                excluded_count += 1
-                
-        print(f"🚫 Exclusion clipping: Removed {excluded_count} points, kept {len(filtered_data)} points")
-        return filtered_data
-        
-    except Exception as e:
-        print(f"❌ Error applying exclusion clipping: {e}")
-        return heatmap_data
-
-def apply_exclusion_clipping_to_stored_heatmap(stored_heatmap_geojson, auto_load_exclusions=True, method_name=None, heatmap_id=None):
-    """
-    Apply exclusion clipping to stored heatmap GeoJSON data for non-indicator methods only
-    
-    Parameters:
-    -----------
-    stored_heatmap_geojson : dict
-        GeoJSON data from stored heatmap
-    auto_load_exclusions : bool
-        Whether to auto-load exclusion polygons if not provided
-    method_name : str
-        Interpolation method name to determine if exclusion should be applied
-        
-    Returns:
-    --------
-    dict
-        GeoJSON with exclusion clipping applied for non-indicator methods
-    """
-    if not stored_heatmap_geojson or not stored_heatmap_geojson.get('features'):
-        return stored_heatmap_geojson
-    
-    # Define indicator methods that should NOT have red/orange exclusion clipping
-    indicator_methods = [
-        'indicator_kriging', 
-        'indicator_kriging_spherical', 
-        'indicator_kriging_spherical_continuous'
-    ]
-    
-    # Skip exclusion clipping for indicator methods
-    if method_name and method_name in indicator_methods:
-        print(f"🔄 INDICATOR METHOD: Skipping red/orange exclusion clipping for {method_name} (preserving full probability distribution)")
-        return stored_heatmap_geojson
-        
-    # Apply exclusion clipping for non-indicator methods
-    try:
-        # Load exclusion polygons
-        exclusion_polygons = load_exclusion_polygons() if auto_load_exclusions else None
-        
-        if exclusion_polygons is not None:
-            features_before = len(stored_heatmap_geojson['features'])
-            filtered_features = apply_exclusion_clipping_to_geojson(stored_heatmap_geojson['features'], exclusion_polygons, heatmap_id=heatmap_id)
-            
-            # Return updated GeoJSON
-            filtered_geojson = {
-                "type": stored_heatmap_geojson.get("type", "FeatureCollection"),
-                "features": filtered_features
-            }
-            
-            print(f"🚫 PRODUCTION: Applied red/orange exclusion clipping to {method_name or 'heatmap'}: {features_before} -> {len(filtered_features)} features")
-            return filtered_geojson
-        else:
-            print(f"⚠️ No red/orange exclusion polygons found for {method_name or 'heatmap'} - showing {len(stored_heatmap_geojson['features'])} features without clipping")
-            return stored_heatmap_geojson
-            
-    except Exception as e:
-        print(f"❌ PRODUCTION: Error applying exclusion clipping to {method_name or 'heatmap'}: {e}")
-        return stored_heatmap_geojson
-
-# Removed unused caching function - using session_state cache instead
-
-def bbox_intersects(bbox1, bbox2):
-    """
-    Fast bounding box intersection test
-    
-    Parameters:
-    -----------
-    bbox1, bbox2 : tuple
-        Bounding boxes as (minx, miny, maxx, maxy)
-        
-    Returns:
-    --------
-    bool
-        True if bounding boxes intersect
-    """
-    return not (bbox1[2] < bbox2[0] or bbox1[0] > bbox2[2] or 
-                bbox1[3] < bbox2[1] or bbox1[1] > bbox2[3])
-
-def get_features_bbox(features):
-    """
-    Calculate bounding box of all features
-    
-    Parameters:
-    -----------
-    features : list
-        List of GeoJSON feature objects
-        
-    Returns:
-    --------
-    tuple or None
-        Bounding box as (minx, miny, maxx, maxy) or None
-    """
-    if not features:
-        return None
-        
-    min_x = min_y = float('inf')
-    max_x = max_y = float('-inf')
-    
-    for feature in features:
-        try:
-            if feature['geometry']['type'] == 'Polygon':
-                coords = feature['geometry']['coordinates'][0]
-                for coord in coords:
-                    x, y = coord[0], coord[1]
-                    min_x = min(min_x, x)
-                    max_x = max(max_x, x)
-                    min_y = min(min_y, y)
-                    max_y = max(max_y, y)
-        except:
-            continue
-            
-    if min_x == float('inf'):
-        return None
-        
-    return (min_x, min_y, max_x, max_y)
-
-def apply_exclusion_clipping_to_geojson(features, exclusion_polygons, heatmap_id=None):
-    """
-    OPTIMIZED: Apply negative clipping to remove GeoJSON features within exclusion areas
-    Uses prepared geometry, bounding box prefilters, and per-heatmap caching
-    
-    Parameters:
-    -----------
-    features : list
-        List of GeoJSON feature objects
-    exclusion_polygons : geopandas.GeoDataFrame
-        GeoDataFrame containing exclusion polygon geometries (ignored, uses cached union)
-    heatmap_id : str, optional
-        Unique identifier for caching (e.g., "ground_water_level_kriging_gridpoint1")
-        
-    Returns:
-    --------
-    list
-        Filtered GeoJSON features with exclusion areas removed
-    """
-    if not features:
-        return features
-        
-    try:
-        # Get prepared exclusion union (cached)
-        exclusion_data = get_prepared_exclusion_union()
-        if exclusion_data is None:
-            return features
-            
-        union_geometry, prepared_geometry, union_bounds, exclusion_version = exclusion_data
-        
-        # Fast bounding box prefilter
-        features_bbox = get_features_bbox(features)
-        if features_bbox is None:
-            return features
-            
-        if not bbox_intersects(features_bbox, union_bounds):
-            print(f"🚀 FAST SKIP: Heatmap {heatmap_id or 'unknown'} bbox doesn't intersect exclusion zones")
-            return features
-        
-        # Check cache if heatmap_id provided
-        if heatmap_id:
-            import hashlib
-            features_str = str(len(features))  # Simplified hash based on count for performance
-            cache_key = f"clipped_result_{heatmap_id}_{features_str}_{exclusion_version}"
-            
-            if cache_key in st.session_state:
-                filtered_features, excluded_count = st.session_state[cache_key]
-                print(f"🚀 CACHE HIT: {heatmap_id} - {excluded_count} excluded, {len(filtered_features)} kept")
-                return filtered_features
-        
-        from shapely.geometry import Polygon as ShapelyPolygon
-        
-        print(f"🚫 Applying exclusion clipping to GeoJSON features with {len(exclusion_polygons) if exclusion_polygons is not None else 0} exclusion zones")
-        
-        # Filter out features that intersect with exclusion areas
-        filtered_features = []
-        excluded_count = 0
-        
-        for feature in features:
-            try:
-                # Get feature geometry
-                if feature['geometry']['type'] == 'Polygon':
-                    coords = feature['geometry']['coordinates'][0]
-                    if len(coords) >= 3:
-                        # Fast bbox check first
-                        feature_bbox = get_features_bbox([feature])
-                        if feature_bbox and not bbox_intersects(feature_bbox, union_bounds):
-                            filtered_features.append(feature)
-                            continue
-                        
-                        # Create Shapely polygon from coordinates
-                        shapely_coords = [(coord[0], coord[1]) for coord in coords[:-1]]  # Remove duplicate closing point
-                        feature_polygon = ShapelyPolygon(shapely_coords)
-                        
-                        # FIXED: Use geometric difference/intersection instead of just feature removal
-                        try:
-                            # Create allowed geometry: feature - exclusion_zones
-                            allowed_geometry = feature_polygon.difference(union_geometry)
-                            
-                            if not allowed_geometry.is_empty:
-                                # Handle MultiPolygon results
-                                if hasattr(allowed_geometry, 'geoms'):
-                                    # Split into separate features for each disconnected part
-                                    for geom_part in allowed_geometry.geoms:
-                                        if geom_part.area > 1e-10:  # Skip tiny slivers
-                                            # Convert back to GeoJSON coordinates
-                                            coords = list(geom_part.exterior.coords)
-                                            new_feature = feature.copy()
-                                            new_feature['geometry']['coordinates'] = [coords]
-                                            filtered_features.append(new_feature)
-                                else:
-                                    # Single polygon result
-                                    if allowed_geometry.area > 1e-10:  # Skip tiny slivers
-                                        coords = list(allowed_geometry.exterior.coords)
-                                        new_feature = feature.copy()
-                                        new_feature['geometry']['coordinates'] = [coords]
-                                        filtered_features.append(new_feature)
-                                        
-                            if allowed_geometry.is_empty or allowed_geometry.area < feature_polygon.area * 0.9:
-                                excluded_count += 1  # Count as clipped if significant area removed
-                        except Exception as geom_error:
-                            # Fallback to old intersection test if geometric operations fail
-                            if not (prepared_geometry.intersects(feature_polygon) or prepared_geometry.contains(feature_polygon)):
-                                filtered_features.append(feature)
-                            else:
-                                excluded_count += 1
-                    else:
-                        # Keep features with invalid geometry
-                        filtered_features.append(feature)
-                else:
-                    # Keep non-polygon features
-                    filtered_features.append(feature)
-                    
-            except Exception as e:
-                # If geometry processing fails, keep the feature
-                filtered_features.append(feature)
-        
-        # Cache the result if heatmap_id provided
-        if heatmap_id:
-            # Store the actual result in session state cache
-            st.session_state[cache_key] = (filtered_features, excluded_count)
-                
-        print(f"🚫 GeoJSON exclusion clipping: Removed {excluded_count} features, kept {len(filtered_features)} features")
-        return filtered_features
-        
-    except Exception as e:
-        print(f"❌ Error applying GeoJSON exclusion clipping: {e}")
-        return features
 
 def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
     """
@@ -620,7 +218,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None, exclusion_polygons=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -647,37 +245,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     dict
         GeoJSON data structure with interpolated yield values
     """
-    
-    # For continuous indicator method, expand well search area but keep final grid bounds the same
-    original_radius_km = radius_km
-    print(f"🔍 GENERATE_GEO_JSON_GRID CALLED: method={method}, radius={radius_km}km, wells_count={len(wells_df)}")
-    print(f"🔍 WELL SEARCH ANALYSIS: method={method}, radius={radius_km}km, wells_count={len(wells_df)}")
-    
-    if method == 'indicator_kriging_spherical_continuous':
-        # Double the radius for well selection - get wells from larger area
-        expanded_radius_km = radius_km * 2.0
-        print(f"🎯 CONTINUOUS INDICATOR KRIGING: Expanding well search from {radius_km}km to {expanded_radius_km}km")
-        print(f"📊 BEFORE EXPANSION: Using {len(wells_df)} wells from original {radius_km}km radius")
-        
-        # Get expanded well dataset from the larger search area
-        try:
-            from data_loader import load_nz_govt_data
-            expanded_wells_df = load_nz_govt_data(center_point, expanded_radius_km)
-            if expanded_wells_df is not None and len(expanded_wells_df) > len(wells_df):
-                original_well_count = len(wells_df)
-                wells_df = expanded_wells_df
-                print(f"✅ EXPANSION SUCCESS: Found {len(wells_df)} wells in {expanded_radius_km}km area (gained {len(wells_df) - original_well_count} additional wells)")
-            else:
-                print(f"⚠️ EXPANSION RESULT: No additional wells found in expanded area, using original {len(wells_df)} wells")
-        except Exception as e:
-            print(f"❌ EXPANSION ERROR: {e}, using original {len(wells_df)} wells")
-        
-        # Keep final grid bounds at original radius for consistent clipping
-        radius_km = original_radius_km
-        print(f"📐 FINAL GRID BOUNDS: Kept at original {radius_km}km for consistent clipping polygon")
-        print(f"🎯 CONTINUOUS INDICATOR SUMMARY: Using {len(wells_df)} wells from {expanded_radius_km}km, clipping to {radius_km}km")
-    else:
-        print(f"📍 STANDARD METHOD: Using {len(wells_df)} wells from {radius_km}km radius")
     
     # Debug indicator mask status and create polygon geometry for clipping
     print(f"GeoJSON {method}: indicator_mask is {'provided' if indicator_mask is not None else 'None'}")
@@ -739,7 +306,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     
     # Don't apply indicator clipping to indicator kriging methods themselves
     # Indicator methods should not be clipped by their own output
-    indicator_methods = ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous', 'indicator_variance']
+    indicator_methods = ['indicator_kriging', 'indicator_variance']
     clippable_methods = ['kriging', 'yield_kriging', 'specific_capacity_kriging', 'depth_kriging', 'depth_kriging_auto', 'swl_kriging', 'ground_water_level_kriging', 'idw', 'rf_kriging']
     
     if indicator_mask is not None and method in clippable_methods:
@@ -936,7 +503,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             print(f"Ground water level interpolation: converted {negative_count} negative values (artesian) to 0 (surface level)")
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
-    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
+    elif method == 'indicator_kriging':
         # For indicator kriging, we need wells with ACTUAL yield data (including 0.0)
         # But exclude wells that have missing yield data entirely
         wells_df_original = wells_df.copy()
@@ -1015,10 +582,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lons = wells_df['longitude'].values.astype(float)
 
         # Convert to BINARY indicator values for kriging input using COMBINED criteria
-        # A well is viable (indicator = 1) if ANY of these conditions are met:
+        # A well is viable (indicator = 1) if EITHER:
         # - yield_rate ≥ 0.1 L/s, OR  
-        # - ground water level data exists (any valid depth means water was found), OR
-        # - WELL_STATUS_DESC = "Active (exist, present)"
+        # - ground water level data exists (any valid depth means water was found)
         # Note: If ground water level is recorded, it means water was found at that depth = viable
         # Otherwise indicator = 0 (not viable)
         
@@ -1039,30 +605,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             gwl_values = np.full_like(raw_yields, np.nan)
             gwl_viable = np.zeros_like(raw_yields, dtype=bool)
         
-        # Check if well status data is available
-        has_status_data = 'status' in wells_df.columns
-        if has_status_data:
-            status_values = wells_df['status'].fillna('')  # Replace NaN with empty string
-            # Wells are viable if they are "Active (exist, present)"
-            status_viable = status_values == "Active (exist, present)"
-        else:
-            status_viable = np.zeros_like(raw_yields, dtype=bool)
-        
-        # Combined viability logic: viable if ANY condition is met
+        # Combined viability logic: viable if EITHER condition is met
         yield_viable = raw_yields >= yield_threshold
-        combined_viable = yield_viable | gwl_viable | status_viable
+        combined_viable = yield_viable | gwl_viable
         yields = combined_viable.astype(float)  # Binary: 1 or 0
 
         # Count wells in each category for detailed logging
         viable_count = np.sum(yields == 1)
         non_viable_count = np.sum(yields == 0)
-        yield_only_viable = np.sum(yield_viable & ~gwl_viable & ~status_viable)
-        gwl_only_viable = np.sum(gwl_viable & ~yield_viable & ~status_viable) if has_gwl_data else 0
-        status_only_viable = np.sum(status_viable & ~yield_viable & ~gwl_viable) if has_status_data else 0
-        yield_gwl_viable = np.sum(yield_viable & gwl_viable & ~status_viable) if has_gwl_data else 0
-        yield_status_viable = np.sum(yield_viable & status_viable & ~gwl_viable) if has_status_data else 0
-        gwl_status_viable = np.sum(gwl_viable & status_viable & ~yield_viable) if has_gwl_data and has_status_data else 0
-        all_three_viable = np.sum(yield_viable & gwl_viable & status_viable) if has_gwl_data and has_status_data else 0
+        yield_only_viable = np.sum(yield_viable & ~gwl_viable)
+        gwl_only_viable = np.sum(gwl_viable & ~yield_viable) if has_gwl_data else 0
+        both_viable = np.sum(yield_viable & gwl_viable) if has_gwl_data else 0
 
         print(f"GeoJSON indicator kriging: using {len(yields)} wells with COMBINED binary classification")
         print(f"COMBINED RESULTS:")
@@ -1071,30 +624,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         print(f"BREAKDOWN BY CRITERIA:")
         print(f"  Viable by yield only (≥{yield_threshold} L/s): {yield_only_viable} wells")
         if has_gwl_data:
-            print(f"  Viable by ground water level only: {gwl_only_viable} wells")
-        if has_status_data:
-            print(f"  Viable by active status only: {status_only_viable} wells")
-        if has_gwl_data:
-            print(f"  Viable by yield + ground water level: {yield_gwl_viable} wells")
-        if has_status_data:
-            print(f"  Viable by yield + active status: {yield_status_viable} wells")
-        if has_gwl_data and has_status_data:
-            print(f"  Viable by ground water level + active status: {gwl_status_viable} wells")
-            print(f"  Viable by all three criteria: {all_three_viable} wells")
-        
-        # Calculate valid counts for data summary
-        if has_gwl_data:
+            print(f"  Viable by ground water level only (has valid depth data): {gwl_only_viable} wells") 
+            print(f"  Viable by both criteria: {both_viable} wells")
             valid_gwl_count = np.sum(~np.isnan(gwl_values))
             print(f"  Wells with ground water level data: {valid_gwl_count}/{len(wells_df)}")
         else:
-            print(f"  No ground water level data available")
-            valid_gwl_count = 0
-            
-        if has_status_data:
-            active_status_count = np.sum(status_viable)
-            print(f"  Wells with active status: {active_status_count}/{len(wells_df)}")
-        else:
-            print(f"  No well status data available")
+            print(f"  No ground water level data available - using yield criteria only")
         print(f"RAW DATA RANGES:")
         print(f"  Yield range: {raw_yields.min():.3f} to {raw_yields.max():.3f} L/s")
         if has_gwl_data and valid_gwl_count > 0:
@@ -1110,16 +645,12 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                     test_gwl = test_well['ground water level'] if not pd.isna(test_well['ground water level']) else 'NaN'
                     test_yield_viable = test_yield >= yield_threshold
                     test_gwl_viable = not pd.isna(test_well['ground water level'])
-                    test_status_viable = test_well.get('status', '') == "Active (exist, present)" if has_status_data else False
-                    test_combined = test_yield_viable or test_gwl_viable or test_status_viable
+                    test_combined = test_yield_viable or test_gwl_viable
                     print(f"DEBUG WELL M35/4191:")
                     print(f"    Yield: {test_yield} L/s (viable: {test_yield_viable})")
                     print(f"    Ground water level: {test_gwl} (viable: {test_gwl_viable})")
-                    if has_status_data:
-                        test_status = test_well.get('status', 'N/A')
-                        print(f"    Well status: {test_status} (viable: {test_status_viable})")
                     print(f"    Combined viable: {test_combined}")
-                    print(f"    Criteria: yield>={yield_threshold}, gwl=has_valid_data, status=Active")
+                    print(f"    Criteria: yield>={yield_threshold}, gwl=has_valid_data")
                     
             # Sample of ground water level values showing range
             gwl_sample = valid_gwl[:10] if len(valid_gwl) > 0 else []
@@ -1202,7 +733,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Execute kriging to get both predictions and variance
             interpolated_z, kriging_variance = OK.execute('points', xi_lon, xi_lat)
 
-        elif (method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:
+        elif method == 'indicator_kriging' and len(wells_df) >= 5:
             # Perform indicator kriging for binary yield suitability
             print("Performing indicator kriging for yield suitability mapping...")
 
@@ -1235,27 +766,25 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
 
             # Apply distance-based decay to prevent high values far from good wells
-            # Skip decay for continuous version to preserve smooth kriging output
-            if method != 'indicator_kriging_spherical_continuous':
-                # Calculate distances from each grid point to nearest good well (yield >= 0.75)
-                good_wells_mask = yields >= 0.75  # Wells with good yield indicators
-                if np.any(good_wells_mask):
-                    good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
-                    grid_coords = grid_points
+            # Calculate distances from each grid point to nearest good well (yield >= 0.75)
+            good_wells_mask = yields >= 0.75  # Wells with good yield indicators
+            if np.any(good_wells_mask):
+                good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
+                grid_coords = grid_points
 
-                    # Calculate distance to nearest good well for each grid point
-                    from scipy.spatial.distance import cdist
-                    distances = cdist(grid_coords, good_coords)
-                    min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
+                # Calculate distance to nearest good well for each grid point
+                from scipy.spatial.distance import cdist
+                distances = cdist(grid_coords, good_coords)
+                min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
 
-                    # Apply exponential decay for distances > 3km
-                    decay_threshold_km = 3.0
-                    decay_factor = 0.3  # Gentle decay to preserve three-tier structure
+                # Apply exponential decay for distances > 3km
+                decay_threshold_km = 3.0
+                decay_factor = 0.3  # Gentle decay to preserve three-tier structure
 
-                    distance_mask = min_distances_km > decay_threshold_km
-                    excess_distance = min_distances_km[distance_mask] - decay_threshold_km
-                    decay_multiplier = np.exp(-decay_factor * excess_distance)
-                    interpolated_z[distance_mask] *= decay_multiplier
+                distance_mask = min_distances_km > decay_threshold_km
+                excess_distance = min_distances_km[distance_mask] - decay_threshold_km
+                decay_multiplier = np.exp(-decay_factor * excess_distance)
+                interpolated_z[distance_mask] *= decay_multiplier
 
             # Count points in each tier based on OUTPUT ranges (continuous 0-1 function)
             # Keep the continuous kriging output values intact - colors applied during visualization
@@ -1472,10 +1001,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         triangle_coords.append(triangle_coords[0])  # Close the polygon
                         triangle_polygon = ShapelyPolygon(triangle_coords)
                         
-                        # Include if triangle intersects or is mostly within soil drainage areas
-                        # Allow triangles that cross boundaries rather than requiring complete containment
-                        include_triangle = (merged_soil_geometry.intersects(triangle_polygon) or 
-                                          merged_soil_geometry.contains(triangle_polygon))
+                        # Only include if triangle is completely within soil drainage areas
+                        include_triangle = merged_soil_geometry.contains(triangle_polygon)
 
                     # Additional clipping by indicator kriging geometry (high-probability zones)
                     if include_triangle and indicator_mask is not None:
@@ -1654,31 +1181,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     features = final_clipped_features
     print(f"Final square clipping: {features_before_final_clip} -> {len(features)} features ({final_radius_km:.1f}km sides)")
 
-    # Apply exclusion clipping ONLY for non-indicator interpolation methods
-    # Indicator methods already show probability values, so user wants to see full distribution
-    indicator_methods = [
-        'indicator_kriging', 
-        'indicator_kriging_spherical', 
-        'indicator_kriging_spherical_continuous'
-    ]
-    
-    # Apply red/orange exclusion clipping for NON-INDICATOR methods only
-    if method not in indicator_methods:
-        # Apply exclusion clipping if exclusion polygons are provided
-        if exclusion_polygons is not None:
-            features_before_exclusion = len(features)
-            features = apply_exclusion_clipping_to_geojson(features, exclusion_polygons)
-            print(f"🚫 PRODUCTION: Applied exclusion clipping for {method}: {features_before_exclusion} -> {len(features)} features")
-        elif exclusion_polygons is None:
-            # Try to load exclusion polygons automatically
-            auto_exclusion_polygons = load_exclusion_polygons()
-            if auto_exclusion_polygons is not None:
-                features_before_exclusion = len(features)
-                features = apply_exclusion_clipping_to_geojson(features, auto_exclusion_polygons)
-                print(f"🚫 PRODUCTION: Applied auto-loaded exclusion clipping for {method}: {features_before_exclusion} -> {len(features)} features")
-    else:
-        print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for {method} (preserving full probability distribution)")
-
     # Create the full GeoJSON object
     geojson = {
         "type": "FeatureCollection",
@@ -1775,8 +1277,11 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             return []
 
         # Ensure all wells have valid ground water level data
-        # Allow all numeric values including 0 and negative values (consistent with other GWL function)
-        valid_gwl_mask = wells_df_filtered['ground water level'].notna()
+        valid_gwl_mask = (
+            wells_df_filtered['ground water level'].notna() & 
+            (wells_df_filtered['ground water level'] != 0) &
+            (wells_df_filtered['ground water level'].abs() > 0.1)  # Exclude very small values
+        )
 
         wells_df_filtered = wells_df_filtered[valid_gwl_mask].copy()
 
@@ -1789,10 +1294,9 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         yields = wells_df_filtered['ground water level'].values.astype(float)
 
         print(f"Heat map ground water level: using {len(yields)} wells with GWL values from {yields.min():.2f} to {yields.max():.2f}")
-    elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
+    elif method == 'indicator_kriging':
         # INDICATOR KRIGING FILTERING: Filter out monitoring wells with no useful data BEFORE calling get_wells_for_interpolation
-        method_name = "spherical" if method in ['indicator_kriging_spherical', 'indicator_kriging_spherical_continuous'] else "linear"
-        print(f"HEAT MAP INDICATOR KRIGING ({method_name}) FILTERING: Starting with {len(wells_df)} total wells")
+        print(f"HEAT MAP INDICATOR KRIGING FILTERING: Starting with {len(wells_df)} total wells")
         print(f"HEAT MAP COLUMNS AVAILABLE: {list(wells_df.columns)}")
         
         wells_df_for_filtering = wells_df.copy()
@@ -1944,7 +1448,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
         grid_points = xi_inside
 
         # Choose interpolation method based on parameter and dataset size
-        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous') and len(wells_df) >= 5:
+        if (method == 'yield_kriging' or method == 'specific_capacity_kriging' or method == 'ground_water_level_kriging' or method == 'indicator_kriging') and len(wells_df) >= 5:
             try:
                 if method == 'specific_capacity_kriging':
                     interpolation_name = "specific capacity kriging"
@@ -1952,16 +1456,12 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     interpolation_name = "ground water level kriging"
                 elif method == 'indicator_kriging':
                     interpolation_name = "indicator kriging (yield suitability)"
-                elif method == 'indicator_kriging_spherical':
-                    interpolation_name = "indicator kriging spherical (yield suitability)"
-                elif method == 'indicator_kriging_spherical_continuous':
-                    interpolation_name = "indicator kriging spherical continuous (yield suitability)"
                 else:
                     interpolation_name = "yield kriging"
                 print(f"Using {interpolation_name} interpolation for heat map")
 
                 # Filter to meaningful data for better kriging
-                if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
+                if method == 'indicator_kriging':
                     # For indicator kriging, use all data (including 0s and 1s)
                     meaningful_data_mask = np.ones(len(yields), dtype=bool)  # Use all data
                 else:
@@ -1982,12 +1482,6 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     if method == 'indicator_kriging':
                         # Use linear variogram for binary indicator data
                         variogram_model_to_use = 'linear'
-                    elif method == 'indicator_kriging_spherical':
-                        # Use spherical variogram for binary indicator data
-                        variogram_model_to_use = 'spherical'
-                    elif method == 'indicator_kriging_spherical_continuous':
-                        # Use spherical variogram for continuous indicator data
-                        variogram_model_to_use = 'spherical'
                     else:
                         variogram_model_to_use = 'spherical'
 
@@ -2005,7 +1499,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                     interpolated_z, _ = OK.execute('points', xi_lon, xi_lat)
 
                     # Process results based on interpolation method
-                    if method == 'indicator_kriging' or method == 'indicator_kriging_spherical':
+                    if method == 'indicator_kriging':
                         # Ensure probability values are in [0,1] range
                         interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
 
@@ -2013,12 +1507,7 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                         binary_threshold = 0.5
                         interpolated_z = (interpolated_z >= binary_threshold).astype(float)
 
-                        variogram_type = "spherical" if method == 'indicator_kriging_spherical' else "linear"
-                        print(f"Heat map indicator kriging ({variogram_type}): binary classification with {np.sum(interpolated_z)}/{len(interpolated_z)} areas classified as 'likely' for groundwater")
-                    elif method == 'indicator_kriging_spherical_continuous':
-                        # For continuous version: keep continuous probability values, no binary thresholding
-                        interpolated_z = np.clip(interpolated_z, 0.0, 1.0)  # Just ensure [0,1] range
-                        print(f"Heat map indicator kriging (spherical continuous): continuous probabilities from {interpolated_z.min():.3f} to {interpolated_z.max():.3f}")
+                        print(f"Heat map indicator kriging: binary classification with {np.sum(interpolated_z)}/{len(interpolated_z)} areas classified as 'likely' for groundwater")
                     else:
                         # Ensure non-negative yields for other methods
                         interpolated_z = np.maximum(0, interpolated_z)
@@ -3274,48 +2763,23 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         coords = np.array(coords)
         
         print(f"Extracted {len(values)} vertex points from triangulated heatmap data")
-        if coords.size == 0:
-            return None
         
-        # PERFORMANCE: Use dynamic grid resolution to prevent memory crashes
+        # Create regular grid at 100-meter spacing across all data bounds
         west, east = bounds['west'], bounds['east']
         south, north = bounds['south'], bounds['north']
         
-        # Calculate grid extent
-        lat_extent = north - south
-        lon_extent = east - west
+        # Convert sampling distance to degrees (approximate)
+        meters_per_degree_lat = 111000  # Approximately 111 km per degree latitude
+        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))  # Adjust for longitude
         
-        # OPTIMIZATION: Cap maximum grid size to prevent crashes
-        max_grid_points = 1_000_000  # Maximum 1M points instead of 10.5M
+        lat_step = sampling_distance_meters / meters_per_degree_lat
+        lon_step = sampling_distance_meters / meters_per_degree_lon
         
-        # Calculate appropriate resolution based on extent
-        meters_per_degree_lat = 111000
-        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))
-        
-        # Estimate grid points at 100m resolution
-        lat_step_100m = 100 / meters_per_degree_lat
-        lon_step_100m = 100 / meters_per_degree_lon
-        grid_points_100m = (lat_extent / lat_step_100m) * (lon_extent / lon_step_100m)
-        
-        # Use coarser resolution if needed (architect recommendation)
-        if grid_points_100m > max_grid_points:
-            # Scale up resolution to stay under limit
-            scale_factor = np.sqrt(grid_points_100m / max_grid_points)
-            effective_resolution = 100 * scale_factor
-            lat_step = effective_resolution / meters_per_degree_lat
-            lon_step = effective_resolution / meters_per_degree_lon
-            print(f"PERFORMANCE: Using {effective_resolution:.0f}m resolution (scaled from 100m) to prevent memory crash")
-        else:
-            lat_step = lat_step_100m
-            lon_step = lon_step_100m
-            effective_resolution = 100
-        
-        # Create regular sampling grid with lats ordered NORTH to SOUTH (row 0 = north)
-        # This eliminates the need for vertical flip and ensures proper pixel-to-coordinate mapping
-        lats = np.arange(north, south - lat_step, -lat_step)  # North to south ordering
+        # Create regular sampling grid
+        lats = np.arange(south, north + lat_step, lat_step)
         lons = np.arange(west, east + lon_step, lon_step)
         
-        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {effective_resolution:.0f}m spacing")
+        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {sampling_distance_meters}m spacing")
         
         # Create coordinate grids
         width = len(lons)
@@ -3351,11 +2815,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                     points_inside = 0
                     for i in range(height):
                         for j in range(width):
-                            # FIXED: Access coordinates correctly from meshgrid
-                            # xi[i, j] = longitude, yi[i, j] = latitude
-                            lon = xi[i, j]
-                            lat = yi[i, j]
-                            point = Point(lon, lat)
+                            point = Point(xi[i, j], yi[i, j])
                             is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
                             clipping_mask[i, j] = is_inside
                             points_checked += 1
@@ -3407,21 +2867,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             from scipy.ndimage import gaussian_filter
             zi = gaussian_filter(zi, sigma=1.5)
         
-        # 7) Z ARRAY STATISTICS and analysis
-        print(f"🔧 Z ARRAY ANALYSIS:")
-        print(f"🔧   Shape: {zi.shape} (height={zi.shape[0]}, width={zi.shape[1]})")
-        print(f"🔧   Values: min={np.nanmin(zi):.3f}, max={np.nanmax(zi):.3f}, mean={np.nanmean(zi):.3f}")
-        print(f"🔧   NaN count: {np.sum(np.isnan(zi))} of {zi.size} ({100*np.sum(np.isnan(zi))/zi.size:.1f}%)")
-        
-        # Corner probes to understand array orientation
-        print(f"🔧 CORNER PROBES:")
-        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi[0,0]:.6f}, {yi[0,0]:.6f}) = NW corner (west, north)")
-        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi[0,-1]:.6f}, {yi[0,-1]:.6f}) = NE corner (east, north)")
-        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi[-1,0]:.6f}, {yi[-1,0]:.6f}) = SW corner (west, south)")
-        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi[-1,-1]:.6f}, {yi[-1,-1]:.6f}) = SE corner (east, south)")
-        
-        print(f"🔧 Generated {width}x{height} raster with interpolation across all triangulated data")
-        print(f"🔧 Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
+        print(f"Generated {width}x{height} raster with interpolation across all triangulated data")
+        print(f"Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
         
         # Apply clipping mask to the interpolated data
         if clipping_mask is not None:
@@ -3474,77 +2921,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
                 rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
         
         # Convert to PIL Image and then to base64
-        # 8) IMAGE ORIENTATION - CRITICAL DEBUGGING
-        print(f"🔧 ===== IMAGE ORIENTATION ANALYSIS =====")
-        print(f"🔧 RGBA IMAGE: shape={rgba_image.shape}")
-        print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (north to south)")
-        print(f"🔧 GRID SETUP: lons go from {lons[0]:.6f} to {lons[-1]:.6f} (west to east)")
-        
-        # NO FLIP NEEDED: Row 0 already corresponds to north
-        print(f"🔧 IMAGE CORNERS (north-first ordering):")
-        print(f"🔧   rgba[0,0] (top-left) = {rgba_image[0,0,:3]} at geo ({lons[0]:.6f}, {lats[0]:.6f}) = NW")
-        print(f"🔧   rgba[0,-1] (top-right) = {rgba_image[0,-1,:3]} at geo ({lons[-1]:.6f}, {lats[0]:.6f}) = NE")
-        print(f"🔧   rgba[-1,0] (bottom-left) = {rgba_image[-1,0,:3]} at geo ({lons[0]:.6f}, {lats[-1]:.6f}) = SW") 
-        print(f"🔧   rgba[-1,-1] (bottom-right) = {rgba_image[-1,-1,:3]} at geo ({lons[-1]:.6f}, {lats[-1]:.6f}) = SE")
-        
-        # ARCHITECT FIX: Crop to visible pixels to eliminate transparent padding offset
-        print(f"🔧 CROPPING TO VISIBLE PIXELS (alpha > 0)...")
-        
-        # Find bounding box of non-transparent pixels
-        alpha_mask = rgba_image[:, :, 3] > 0
-        
-        if np.any(alpha_mask):
-            # Find rows and columns with visible pixels
-            visible_rows = np.any(alpha_mask, axis=1)
-            visible_cols = np.any(alpha_mask, axis=0)
-            
-            row_indices = np.where(visible_rows)[0]
-            col_indices = np.where(visible_cols)[0]
-            
-            if len(row_indices) > 0 and len(col_indices) > 0:
-                # Get tight bounding box
-                min_row, max_row = row_indices[0], row_indices[-1]
-                min_col, max_col = col_indices[0], col_indices[-1]
-                
-                # Crop the image to visible pixels only
-                rgba_image_cropped = rgba_image[min_row:max_row+1, min_col:max_col+1]
-                
-                # Calculate geographic bounds for the cropped image
-                # Row indices correspond to lat indices, col indices to lon indices
-                # FIXED: Correct pixel edge calculation - since lats go north to south
-                cropped_north = lats[min_row] + lat_step/2  # Edge of northernmost visible pixel (correct)
-                cropped_south = lats[max_row] - lat_step/2  # Edge of southernmost visible pixel (correct)
-                cropped_west = lons[min_col] - lon_step/2   # Edge of westernmost visible pixel
-                cropped_east = lons[max_col] + lon_step/2   # Edge of easternmost visible pixel
-                
-                print(f"🔧 CROPPED: {rgba_image.shape} -> {rgba_image_cropped.shape}")
-                print(f"🔧 VISIBLE BOUNDS: rows {min_row}-{max_row}, cols {min_col}-{max_col}")
-                print(f"🔧 GEOGRAPHIC BOUNDS: N={cropped_north:.6f}, S={cropped_south:.6f}, E={cropped_east:.6f}, W={cropped_west:.6f}")
-                
-                # Diagnostic: verify pixel resolution
-                actual_lat_per_pixel = (cropped_north - cropped_south) / rgba_image_cropped.shape[0]
-                actual_lon_per_pixel = (cropped_east - cropped_west) / rgba_image_cropped.shape[1]
-                lat_pixel_meters = actual_lat_per_pixel * meters_per_degree_lat
-                lon_pixel_meters = actual_lon_per_pixel * meters_per_degree_lon
-                print(f"🔧 PIXEL RESOLUTION: {lat_pixel_meters:.1f}m lat, {lon_pixel_meters:.1f}m lon")
-                
-                rgba_final = rgba_image_cropped
-                final_bounds = [[cropped_south, cropped_west], [cropped_north, cropped_east]]
-            else:
-                print(f"🔧 WARNING: No visible pixels found, using original image")
-                rgba_final = rgba_image
-                final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
-        else:
-            print(f"🔧 WARNING: Image is fully transparent, using original bounds")
-            rgba_final = rgba_image
-            final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
-        
-        # ASSERTION: Verify image row 0 corresponds to north
-        assert lats[0] > lats[-1], f"Latitude array should be descending (north to south): {lats[0]} to {lats[-1]}"
-        print(f"🔧 INVARIANT VERIFIED: Image row 0 corresponds to NORTH (lat={lats[0]:.6f})")
-        print(f"🔧 =========================================")
-        
-        pil_image = Image.fromarray(rgba_final, 'RGBA')
+        # Flip vertically because raster coordinates are different from image coordinates
+        rgba_image_flipped = np.flipud(rgba_image)
+        pil_image = Image.fromarray(rgba_image_flipped, 'RGBA')
         
         # Save to bytes buffer
         img_buffer = io.BytesIO()
@@ -3554,68 +2933,9 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Encode to base64
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
-        # FIXED: Use the exact same bounds calculation as individual GeoJSON layers
-        # This ensures perfect alignment with triangulated heatmaps
-        actual_south = south
-        actual_north = north
-        actual_west = west
-        actual_east = east
-        
-        # 9) BOUNDS CALCULATION - CENTER vs EDGE analysis
-        print(f"🔧 ===== BOUNDS CALCULATION DEBUG =====")
-        
-        # CENTER-based bounds (current approach)
-        center_south, center_north = south, north
-        center_west, center_east = west, east
-        
-        # EDGE-based bounds (for comparison - lats now go north to south)
-        edge_north = lats[0] + lat_step/2   # lats[0] is now northernmost
-        edge_south = lats[-1] - lat_step/2  # lats[-1] is now southernmost
-        edge_west = lons[0] - lon_step/2
-        edge_east = lons[-1] + lon_step/2
-        
-        print(f"🔧 CENTER-BASED: N={center_north:.6f}, S={center_south:.6f}, E={center_east:.6f}, W={center_west:.6f}")
-        print(f"🔧 EDGE-BASED:   N={edge_north:.6f}, S={edge_south:.6f}, E={edge_east:.6f}, W={edge_west:.6f}")
-        
-        # Calculate differences in meters
-        lat_diff_meters = (edge_north - center_north) * meters_per_degree_lat
-        lon_diff_meters = (edge_east - center_east) * meters_per_degree_lon
-        print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
-        
-        # Overlay center vs grid center
-        overlay_center_lat = (center_north + center_south) / 2
-        overlay_center_lon = (center_east + center_west) / 2
-        grid_center_lat = (lats[0] + lats[-1]) / 2
-        grid_center_lon = (lons[0] + lons[-1]) / 2
-        
-        center_diff_lat_m = (overlay_center_lat - grid_center_lat) * meters_per_degree_lat
-        center_diff_lon_m = (overlay_center_lon - grid_center_lon) * meters_per_degree_lon
-        print(f"🔧 CENTER DIFFERENCE: overlay vs grid = {center_diff_lat_m:.1f}m lat, {center_diff_lon_m:.1f}m lon")
-        
-        # Canterbury reference validation
-        christchurch_lat, christchurch_lon = -43.5321, 172.6362
-        print(f"🔧 REFERENCE: Christchurch at ({christchurch_lat:.6f}, {christchurch_lon:.6f})")
-        print(f"🔧 IN CENTER BOUNDS? lat: {center_south <= christchurch_lat <= center_north}, lon: {center_west <= christchurch_lon <= center_east}")
-        print(f"🔧 IN EDGE BOUNDS?   lat: {edge_south <= christchurch_lat <= edge_north}, lon: {edge_west <= christchurch_lon <= edge_east}")
-        
-        print(f"🔧 FOLIUM BOUNDS (cropped visible pixels): {final_bounds}")
-        print(f"🔧 =======================================")
-        
-        # 10) CROSS-CHECK: Log sample triangulated data for comparison
-        if coords.size > 0:
-            print(f"🔧 TRIANGULATED DATA CROSS-CHECK:")
-            sample_indices = np.linspace(0, len(coords)-1, min(5, len(coords)), dtype=int)
-            for i in sample_indices:
-                lon, lat = coords[i]
-                value = values[i]
-                print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
-        print(f"🔧 ========================================")
-        
-        # ARCHITECT FIX: Use bounds from cropped visible pixels only
-        # This eliminates transparent padding that was causing the 1.7km southward offset
         return {
             'image_base64': img_base64,
-            'bounds': final_bounds,
+            'bounds': [[south, west], [north, east]],
             'opacity': opacity
         }
         

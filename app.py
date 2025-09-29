@@ -16,39 +16,6 @@ from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
 # Regional heatmap removed per user request
 
-def classify_well_viability(row):
-    """
-    Classify a well as viable (1) or not viable (0) using the same 3-rule system as indicator kriging.
-    
-    A well is viable if ANY of these conditions are met:
-    - yield_rate ≥ 0.1 L/s
-    - ground water level data exists (any valid depth means water was found)
-    - status = "Active (exist, present)"
-    
-    Returns:
-    --------
-    int: 1 if viable, 0 if not viable
-    """
-    yield_threshold = 0.1
-    
-    # Rule 1: Check yield rate
-    yield_rate = row.get('yield_rate', np.nan)
-    if pd.notna(yield_rate) and yield_rate >= yield_threshold:
-        return 1
-    
-    # Rule 2: Check ground water level data (any valid data means water was found)
-    gwl_value = row.get('ground water level', np.nan)
-    if pd.notna(gwl_value):
-        return 1
-    
-    # Rule 3: Check active status
-    status = row.get('status', '')
-    if status == "Active (exist, present)":
-        return 1
-    
-    # Not viable if none of the conditions are met
-    return 0
-
 # Set page configuration with stability settings
 st.set_page_config(
     page_title="Groundwater Mapper",
@@ -312,9 +279,7 @@ with st.sidebar:
             "Depth to Groundwater (Standard Kriging)",
             "Depth to Groundwater (Auto-Fitted Spherical)",
             "Ground Water Level (Spherical Kriging)",
-            "Indicator Kriging (Yield Suitability)",
-            "Indicator Kriging (Spherical)",
-            "Indicator Kriging (Spherical Continuous)"
+            "Indicator Kriging (Yield Suitability)"
         ],
         index=5,  # Default to Ground Water Level (Spherical Kriging)
         help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
@@ -378,18 +343,6 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'linear'
-    elif visualization_method == "Indicator Kriging (Spherical)":
-        st.session_state.interpolation_method = 'indicator_kriging_spherical'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
-    elif visualization_method == "Indicator Kriging (Spherical Continuous)":
-        st.session_state.interpolation_method = 'indicator_kriging_spherical_continuous'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
-        # Log confirmation that enhanced functionality is active
-        print(f"🎯 ENHANCED CONTINUOUS INDICATOR: Selected method with 2x well search radius functionality")
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")
@@ -1236,25 +1189,7 @@ with main_col1:
         total_values = 0
         
         for stored_heatmap in st.session_state.stored_heatmaps:
-            raw_geojson_data = stored_heatmap.get('geojson_data')
-            
-            # Apply exclusion clipping ONLY to non-indicator methods for colormap calculation
-            method = stored_heatmap.get('interpolation_method', 'kriging')
-            indicator_methods = [
-                'indicator_kriging', 
-                'indicator_kriging_spherical', 
-                'indicator_kriging_spherical_continuous'
-            ]
-            
-            if raw_geojson_data:
-                if method not in indicator_methods:
-                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
-                else:
-                    geojson_data = raw_geojson_data
-            else:
-                geojson_data = raw_geojson_data
-                
+            geojson_data = stored_heatmap.get('geojson_data')
             if geojson_data and geojson_data.get('features'):
                 for feature in geojson_data['features']:
                     value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -1267,22 +1202,7 @@ with main_col1:
             # Calculate percentile-based range for better color distribution
             all_values = []
             for stored_heatmap in st.session_state.stored_heatmaps:
-                raw_geojson_data = stored_heatmap.get('geojson_data')
-                
-                # Apply exclusion clipping ONLY to non-indicator methods for percentile calculation
-                method = stored_heatmap.get('interpolation_method', 'kriging')
-                indicator_methods = [
-                    'indicator_kriging', 
-                    'indicator_kriging_spherical', 
-                    'indicator_kriging_spherical_continuous'
-                ]
-                
-                if raw_geojson_data:
-                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method)
-                else:
-                    geojson_data = raw_geojson_data
-                    
+                geojson_data = stored_heatmap.get('geojson_data')
                 if geojson_data and geojson_data.get('features'):
                     for feature in geojson_data['features']:
                         value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -1366,14 +1286,12 @@ with main_col1:
     # DEFINE GLOBAL UNIFIED COLOR FUNCTION 
     def get_global_unified_color(value, method='kriging'):
         """Global unified color function using stored global range for consistency"""
-        if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
-            # Four-tier classification: red (poor), orange (low-moderate), yellow (moderate), green (good)
+        if method == 'indicator_kriging':
+            # Three-tier classification: red (poor), orange (moderate), green (good)
             if value <= 0.4:
                 return '#FF0000'    # Red for poor
-            elif value <= 0.6:
-                return '#FF8000'    # Orange for low-moderate
             elif value <= 0.7:
-                return '#FFFF00'    # Yellow for moderate
+                return '#FF8000'    # Orange for moderate
             else:
                 return '#00FF00'    # Green for good
         else:
@@ -2018,15 +1936,7 @@ with main_col1:
                     # Include stored heatmap values
                     if st.session_state.stored_heatmaps:
                         for stored_heatmap in st.session_state.stored_heatmaps:
-                            raw_stored_geojson = stored_heatmap.get('geojson_data')
-                            stored_method = stored_heatmap.get('interpolation_method', 'kriging')
-                            # Apply exclusion clipping for global color range calculation
-                            if raw_stored_geojson:
-                                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                                stored_geojson = apply_exclusion_clipping_to_stored_heatmap(raw_stored_geojson, method_name=stored_method)
-                            else:
-                                stored_geojson = raw_stored_geojson
-                                
+                            stored_geojson = stored_heatmap.get('geojson_data')
                             if stored_geojson and 'features' in stored_geojson:
                                 for feature in stored_geojson['features']:
                                     value = feature['properties'].get('yield', feature['properties'].get('value', 0))
@@ -2070,22 +1980,7 @@ with main_col1:
                 if fresh_heatmap_name and stored_heatmap.get('heatmap_name') == fresh_heatmap_name:
                     continue
                     
-                raw_geojson_data = stored_heatmap.get('geojson_data')
-                
-                # Apply exclusion clipping ONLY to non-indicator methods for smooth raster
-                method = stored_heatmap.get('interpolation_method', 'kriging')
-                indicator_methods = [
-                    'indicator_kriging', 
-                    'indicator_kriging_spherical', 
-                    'indicator_kriging_spherical_continuous'
-                ]
-                
-                if raw_geojson_data:
-                    from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                    geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method)
-                else:
-                    geojson_data = raw_geojson_data
-                    
+                geojson_data = stored_heatmap.get('geojson_data')
                 if geojson_data and geojson_data.get('features'):
                     # Add features to combined dataset
                     for feature in geojson_data['features']:
@@ -2097,8 +1992,6 @@ with main_col1:
                         combined_geojson['features'].append(feature)
                     
                     # Update overall bounds to cover all heatmaps
-                    feature_count = 0
-                    coord_samples = []
                     for feature in geojson_data['features']:
                         if feature['geometry']['type'] == 'Polygon':
                             coords = feature['geometry']['coordinates'][0]
@@ -2108,17 +2001,6 @@ with main_col1:
                                 overall_bounds['east'] = max(overall_bounds['east'], lon)
                                 overall_bounds['south'] = min(overall_bounds['south'], lat)
                                 overall_bounds['north'] = max(overall_bounds['north'], lat)
-                                
-                                # Sample first few coordinates for debugging
-                                if len(coord_samples) < 5:
-                                    coord_samples.append((lat, lon))
-                            feature_count += 1
-                    
-                    # DEBUG: Log coordinate samples from this heatmap
-                    if coord_samples:
-                        heatmap_name = stored_heatmap.get('heatmap_name', 'Unknown')
-                        print(f"🔧 TRIANGULATED BOUNDS DEBUG: {heatmap_name}")
-                        print(f"🔧   Features: {feature_count}, Sample coords: {coord_samples[:3]}")
                     
                     valid_heatmaps_for_raster.append(stored_heatmap['heatmap_name'])
             
@@ -2131,46 +2013,6 @@ with main_col1:
                 # Use the stored heatmap's interpolation method for colormap consistency
                 method = st.session_state.stored_heatmaps[0].get('interpolation_method', 'kriging') if st.session_state.stored_heatmaps else 'kriging'
                 
-                # Create combined clipping polygon: include soil areas AND exclude red/orange zones
-                combined_clipping_polygon = st.session_state.new_clipping_polygon
-                
-                # For non-indicator methods, subtract red/orange exclusion zones from clipping polygon
-                if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
-                    try:
-                        # Load red/orange exclusion zones
-                        import geopandas as gpd
-                        exclusion_file_path = "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson"
-                        
-                        if os.path.exists(exclusion_file_path):
-                            exclusion_gdf = gpd.read_file(exclusion_file_path)
-                            print(f"🚫 SMOOTH RASTER: Loaded {len(exclusion_gdf)} red/orange exclusion polygons for clipping")
-                            
-                            # If we have a base clipping polygon, subtract exclusion zones from it
-                            if combined_clipping_polygon is not None and len(combined_clipping_polygon) > 0:
-                                # Get the unary union of the exclusion zones
-                                exclusion_union = exclusion_gdf.geometry.unary_union
-                                
-                                # Get the clipping polygon geometry  
-                                if hasattr(combined_clipping_polygon, 'geometry'):
-                                    base_clipping_geom = combined_clipping_polygon.geometry.unary_union
-                                else:
-                                    base_clipping_geom = combined_clipping_polygon
-                                
-                                # Subtract exclusion zones from clipping polygon using difference
-                                try:
-                                    combined_clipping_geom = base_clipping_geom.difference(exclusion_union)
-                                    # Convert back to GeoDataFrame for consistency
-                                    combined_clipping_polygon = gpd.GeoDataFrame([1], geometry=[combined_clipping_geom], crs='EPSG:4326')
-                                    print(f"🚫 SMOOTH RASTER: Successfully created combined clipping polygon (soil areas minus red/orange zones)")
-                                except Exception as e:
-                                    print(f"🚫 SMOOTH RASTER: Failed to subtract exclusion zones: {e}, using original clipping")
-                            else:
-                                print(f"🚫 SMOOTH RASTER: No base clipping polygon, red/orange exclusion not applied to smooth raster")
-                        else:
-                            print(f"🚫 SMOOTH RASTER: Red/orange exclusion file not found: {exclusion_file_path}")
-                    except Exception as e:
-                        print(f"🚫 SMOOTH RASTER: Error applying red/orange exclusion clipping: {e}")
-                
                 # Generate single unified smooth raster across ALL triangulated data
                 raster_overlay = generate_smooth_raster_overlay(
                     combined_geojson, 
@@ -2178,7 +2020,7 @@ with main_col1:
                     raster_size=(512, 512), 
                     global_colormap_func=lambda value: get_global_unified_color(value, method),
                     opacity=st.session_state.get('heatmap_opacity', 0.7),
-                    clipping_polygon=combined_clipping_polygon
+                    clipping_polygon=st.session_state.new_clipping_polygon
                 )
                 
                 if raster_overlay:
@@ -2201,219 +2043,9 @@ with main_col1:
             else:
                 print(f"🌬️  UNIFIED PROCESSING FAILED: Falling back to individual triangle mesh display")
         
-        # PERFORMANCE OPTIMIZATION 1: Viewport-based filtering
-        def get_heatmap_bounds(geojson_data):
-            """Extract bounding box from GeoJSON data"""
-            if not geojson_data or not geojson_data.get('features'):
-                return None
-            
-            all_coords = []
-            for feature in geojson_data['features']:
-                if feature['geometry']['type'] == 'Polygon':
-                    coords = feature['geometry']['coordinates'][0]
-                    all_coords.extend(coords)
-            
-            if not all_coords:
-                return None
-                
-            lons = [coord[0] for coord in all_coords]
-            lats = [coord[1] for coord in all_coords]
-            return {
-                'north': max(lats), 'south': min(lats),
-                'east': max(lons), 'west': min(lons)
-            }
-        
-        def bounds_intersect(bounds1, bounds2):
-            """Check if two bounding boxes intersect"""
-            if not bounds1 or not bounds2:
-                return True  # If we can't determine bounds, include it
-            return not (bounds1['east'] < bounds2['west'] or 
-                       bounds1['west'] > bounds2['east'] or
-                       bounds1['north'] < bounds2['south'] or 
-                       bounds1['south'] > bounds2['north'])
-        
-        # Get current viewport (use Canterbury region as default)
-        if 'map_bounds' not in st.session_state:
-            # Default to Canterbury region bounds
-            st.session_state.map_bounds = {
-                'north': -42.5, 'south': -45.0,
-                'east': 174.0, 'west': 169.0
-            }
-        
-        # PERFORMANCE OPTIMIZATION 2: Filter heatmaps by viewport intersection
-        visible_heatmaps = []
-        total_heatmaps = len(st.session_state.stored_heatmaps)
-        
-        for stored_heatmap in st.session_state.stored_heatmaps:
-            raw_geojson_data = stored_heatmap.get('geojson_data')
-            if raw_geojson_data:
-                heatmap_bounds = get_heatmap_bounds(raw_geojson_data)
-                if bounds_intersect(heatmap_bounds, st.session_state.map_bounds):
-                    visible_heatmaps.append(stored_heatmap)
-        
-        print(f"🔍 VIEWPORT FILTERING: {len(visible_heatmaps)}/{total_heatmaps} heatmaps visible in current viewport")
-        
-        # PERFORMANCE OPTIMIZATION 5: Progressive loading with user feedback
-        if len(visible_heatmaps) > 0:
-            with st.spinner(f"⚡ Loading {len(visible_heatmaps)} visible heatmaps (optimized)..."):
-                pass  # Visual feedback for user
-        
-        # PERFORMANCE OPTIMIZATION 3: Precomputed preprocessing cache
-        def get_preprocessed_heatmap(heatmap_id, raw_geojson_data, method):
-            """Get or create preprocessed heatmap data"""
-            cache_key = f"preprocessed_{heatmap_id}_{method}_v2"
-            
-            if cache_key in st.session_state:
-                return st.session_state[cache_key]
-            
-            # Apply exclusion clipping and preprocessing
-            if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
-                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                processed_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method, heatmap_id=heatmap_id)
-            else:
-                processed_data = raw_geojson_data
-            
-            # Cache the result
-            st.session_state[cache_key] = processed_data
-            return processed_data
-
-        def create_unified_clipping_geometry():
-            """Create unified clipping geometry combining red/orange exclusions and NEW clipping polygon"""
-            try:
-                from shapely.ops import unary_union
-                from shapely.geometry import Point
-                import geopandas as gpd
-                
-                clipping_parts = []
-                
-                # Get NEW clipping polygon (allowed areas) 
-                if 'new_clipping_polygon' in st.session_state and st.session_state.new_clipping_polygon is not None:
-                    new_polygon = st.session_state.new_clipping_polygon
-                    if hasattr(new_polygon, 'geometry') and len(new_polygon) > 0:
-                        # Union all NEW clipping polygon geometries
-                        allowed_geoms = [geom for geom in new_polygon.geometry if geom.is_valid]
-                        if allowed_geoms:
-                            allowed_union = unary_union(allowed_geoms)
-                            print(f"🎯 UNIFIED CLIPPING: NEW polygon with {len(allowed_geoms)} parts loaded")
-                            
-                            # Get red/orange exclusion polygons to subtract from allowed areas
-                            from interpolation import get_prepared_exclusion_union
-                            exclusion_data = get_prepared_exclusion_union()
-                            
-                            if exclusion_data is not None:
-                                exclusion_union, _, _, _ = exclusion_data
-                                # Create final allowed geometry: NEW_areas - red/orange_exclusions
-                                final_allowed = allowed_union.difference(exclusion_union)
-                                print(f"🎯 UNIFIED CLIPPING: Applied red/orange exclusions to NEW polygon")
-                                return final_allowed
-                            else:
-                                print(f"🎯 UNIFIED CLIPPING: Using NEW polygon only (no exclusions)")
-                                return allowed_union
-                
-                print(f"🎯 UNIFIED CLIPPING: No clipping geometry available")
-                return None
-                
-            except Exception as e:
-                print(f"❌ ERROR creating unified clipping geometry: {e}")
-                return None
-
-        # PERFORMANCE OPTIMIZATION 4: Single raster overlay for triangulated display
-        def create_combined_raster_overlay(visible_heatmaps, style):
-            """Combine multiple heatmaps into a single raster overlay"""
-            if not visible_heatmaps or style == "Smooth Raster (Windy.com Style)":
-                return None
-            
-            try:
-                print(f"🎨 CREATING COMBINED RASTER: Processing {len(visible_heatmaps)} visible heatmaps")
-                
-                # Combine all visible heatmap features
-                combined_features = []
-                for heatmap in visible_heatmaps:
-                    raw_geojson_data = heatmap.get('geojson_data')
-                    method = heatmap.get('interpolation_method', 'kriging')
-                    
-                    if raw_geojson_data:
-                        processed_data = get_preprocessed_heatmap(heatmap['heatmap_name'], raw_geojson_data, method)
-                        if processed_data and processed_data.get('features'):
-                            # Normalize feature properties
-                            for feature in processed_data['features']:
-                                if 'properties' in feature:
-                                    # Ensure value property exists
-                                    if 'value' not in feature['properties'] and 'yield' in feature['properties']:
-                                        feature['properties']['value'] = feature['properties']['yield']
-                                    elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
-                                        feature['properties']['yield'] = feature['properties']['value']
-                            combined_features.extend(processed_data['features'])
-                
-                if not combined_features:
-                    return None
-                
-                # Create combined GeoJSON
-                combined_geojson = {
-                    'type': 'FeatureCollection',
-                    'features': combined_features
-                }
-                
-                # Calculate overall bounds
-                all_coords = []
-                for feature in combined_features:
-                    if feature['geometry']['type'] == 'Polygon':
-                        coords = feature['geometry']['coordinates'][0]
-                        all_coords.extend(coords)
-                
-                if not all_coords:
-                    return None
-                
-                lons = [coord[0] for coord in all_coords]
-                lats = [coord[1] for coord in all_coords]
-                bounds = {
-                    'north': max(lats), 'south': min(lats),
-                    'east': max(lons), 'west': min(lons)
-                }
-                
-                # Generate single raster overlay
-                from interpolation import generate_smooth_raster_overlay
-                raster_overlay = generate_smooth_raster_overlay(
-                    combined_geojson, 
-                    bounds, 
-                    raster_size=(1024, 1024),  # Higher resolution for combined overlay
-                    global_colormap_func=lambda value: get_global_unified_color(value, 'combined'),
-                    opacity=st.session_state.get('heatmap_opacity', 0.7),
-                    clipping_polygon=create_unified_clipping_geometry()  # FIXED: Apply proper polygon clipping
-                )
-                
-                return raster_overlay
-                
-            except Exception as e:
-                print(f"❌ COMBINED RASTER FAILED: {e}")
-                return None
-        
-        # Try to create combined raster overlay for better performance
-        combined_raster = None
-        if len(visible_heatmaps) > 5 and heatmap_style != "Smooth Raster (Windy.com Style)":
-            combined_raster = create_combined_raster_overlay(visible_heatmaps, heatmap_style)
-            
-        if combined_raster:
-            # Add single combined raster overlay
-            folium.raster_layers.ImageOverlay(
-                image=f"data:image/png;base64,{combined_raster['image_base64']}",
-                bounds=combined_raster['bounds'],
-                opacity=combined_raster['opacity'],
-                name=f"Combined Heatmap Overlay ({len(visible_heatmaps)} tiles)"
-            ).add_to(m)
-            stored_heatmap_count = len(visible_heatmaps)
-            print(f"🎨 SUCCESS: Added combined raster overlay for {len(visible_heatmaps)} heatmaps")
-        
-        # Only run individual loop if not using unified smooth raster, combined raster failed, or few heatmaps
-        elif heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
-            # PERFORMANCE OPTIMIZATION 6: Limit individual processing to prevent browser overload
-            max_individual_layers = 10  # Limit to prevent DOM bloat
-            heatmaps_to_process = visible_heatmaps[:max_individual_layers]
-            
-            if len(visible_heatmaps) > max_individual_layers:
-                print(f"⚠️  LIMITING INDIVIDUAL LAYERS: Processing {max_individual_layers}/{len(visible_heatmaps)} visible heatmaps to prevent browser overload")
-            
-            for i, stored_heatmap in enumerate(heatmaps_to_process):
+        # Only run individual loop if not using unified smooth raster OR if unified failed
+        if heatmap_style != "Smooth Raster (Windy.com Style)" or stored_heatmap_count == 0:
+            for i, stored_heatmap in enumerate(st.session_state.stored_heatmaps):
                 try:
                     # Don't skip the current fresh heatmap - let it display as a stored heatmap too
                     # This ensures continuity when the page re-renders
@@ -2421,68 +2053,22 @@ with main_col1:
                         print(f"DISPLAYING stored version of fresh heatmap: {stored_heatmap['heatmap_name']}")
                     # All stored heatmaps should display
 
-                    # OPTIMIZATION: Use preprocessed data instead of reprocessing
-                    raw_geojson_data = stored_heatmap.get('geojson_data')
+                    # Prefer GeoJSON data for triangular mesh visualization
+                    geojson_data = stored_heatmap.get('geojson_data')
                     heatmap_data = stored_heatmap.get('heatmap_data', [])
-                    method = stored_heatmap.get('interpolation_method', 'kriging')
-                    
-                    if raw_geojson_data:
-                        # Use preprocessed data with caching
-                        geojson_data = get_preprocessed_heatmap(stored_heatmap['heatmap_name'], raw_geojson_data, method)
-                        print(f"🚀 OPTIMIZED: Using preprocessed data for {stored_heatmap['heatmap_name']}")
-                    else:
-                        geojson_data = raw_geojson_data
 
-                    # DEBUG: Check what we actually have
-                    print(f"  🐛 DEBUG HEATMAP {stored_heatmap['heatmap_name']}:")
-                    print(f"     raw_geojson_data type: {type(raw_geojson_data)}")
-                    print(f"     raw_geojson_data is None: {raw_geojson_data is None}")
-                    if raw_geojson_data:
-                        print(f"     raw_geojson_data keys: {list(raw_geojson_data.keys()) if isinstance(raw_geojson_data, dict) else 'not a dict'}")
-                    print(f"     geojson_data type: {type(geojson_data)}")
-                    print(f"     geojson_data is None: {geojson_data is None}")
-                    if geojson_data:
-                        print(f"     geojson_data keys: {list(geojson_data.keys()) if isinstance(geojson_data, dict) else 'not a dict'}")
-                        if isinstance(geojson_data, dict) and 'features' in geojson_data:
-                            print(f"     features count: {len(geojson_data['features'])}")
-                            if geojson_data['features']:
-                                first_feature = geojson_data['features'][0]
-                                print(f"     first feature properties: {list(first_feature.get('properties', {}).keys())}")
-                    
                     if geojson_data and geojson_data.get('features'):
                         print(f"Adding stored GeoJSON heatmap {i+1}: {stored_heatmap['heatmap_name']} with {len(geojson_data['features'])} triangular features")
 
                         # Fix compatibility: ensure stored data has both 'value' and 'yield' properties
-                        # Handle multiple possible property names for ground water level heatmaps
-                        value_keys_to_check = ['value', 'yield', 'ground_water_level', 'ground water level', 'z', 'prediction', 'gwl_value', 'depth', 'level']
-                        
                         for feature in geojson_data['features']:
                             if 'properties' in feature:
-                                # Find the first available numeric value from possible property names
-                                found_value = None
-                                found_key = None
-                                
-                                for key in value_keys_to_check:
-                                    if key in feature['properties']:
-                                        val = feature['properties'][key]
-                                        if isinstance(val, (int, float)) and not (isinstance(val, bool)):
-                                            found_value = val
-                                            found_key = key
-                                            break
-                                
-                                # If we found a value, ensure both 'value' and 'yield' exist
-                                if found_value is not None:
-                                    feature['properties']['value'] = found_value
-                                    feature['properties']['yield'] = found_value
-                                    if found_key not in ['value', 'yield']:
-                                        print(f"  PROPERTY NORMALIZATION: Found data in '{found_key}' property, normalized to 'value' and 'yield'")
-                                else:
-                                    # Log what properties are available for debugging
-                                    available_props = list(feature['properties'].keys())
-                                    print(f"  WARNING: No numeric value found in feature properties: {available_props}")
-                                    # Set default values to prevent errors
-                                    feature['properties']['value'] = 0
-                                    feature['properties']['yield'] = 0
+                                # If 'value' doesn't exist but 'yield' does, copy it
+                                if 'value' not in feature['properties'] and 'yield' in feature['properties']:
+                                    feature['properties']['value'] = feature['properties']['yield']
+                                # If 'yield' doesn't exist but 'value' does, copy it
+                                elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
+                                    feature['properties']['yield'] = feature['properties']['value']
 
                         # Use the UPDATED global unified color function with method info
                         method = stored_heatmap.get('interpolation_method', 'kriging')
@@ -2624,16 +2210,14 @@ with main_col1:
         
         # Add colormap legend AFTER all heatmaps are processed
         if stored_heatmap_count > 0:
-            if (st.session_state.interpolation_method == 'indicator_kriging' or 
-                st.session_state.interpolation_method == 'indicator_kriging_spherical' or 
-                st.session_state.interpolation_method == 'indicator_kriging_spherical_continuous'):
-                # Four-tier indicator kriging legend
-                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
+            if st.session_state.interpolation_method == 'indicator_kriging':
+                # Three-tier indicator kriging legend
+                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Moderate (0.4-0.7), Green = Good (0.7-1.0)'
                 colormap = folium.StepColormap(
-                    colors=['#FF0000', '#FF8000', '#FFFF00', '#00FF00'],  # Red, Orange, Yellow, Green
+                    colors=['#FF0000', '#FF8000', '#00FF00'],  # Red, Orange, Green
                     vmin=0,
                     vmax=1.0,
-                    index=[0, 0.4, 0.6, 0.7, 1.0],  # Four-tier thresholds
+                    index=[0, 0.4, 0.7, 1.0],  # Three-tier thresholds
                     caption=caption_text
                 )
             else:
@@ -2756,7 +2340,7 @@ with main_col1:
                         fill=True,
                         fill_color='darkblue',
                         fill_opacity=0.7,
-                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m - Indicator: {classify_well_viability(row)}"
+                        tooltip=f"Well {row.get('well_id', 'Unknown')} - {row.get('yield_rate', 'N/A')} L/s - Depth: {row.get('depth', 'N/A'):.1f}m"
                     ).add_to(wells_layer)
                 except Exception as e:
                     print(f"Error creating marker for well: {e}")
@@ -3133,23 +2717,6 @@ with main_col2:
                     file_name="nearby_wells_east.csv",
                     mime="text/csv"
                 )
-        
-        # Export red/orange polygon data if available
-        if st.session_state.polygon_db is not None:
-            if st.button("Download Red/Orange Polygons"):
-                from utils import get_red_orange_polygon_for_download
-                success, geojson_data, message = get_red_orange_polygon_for_download(st.session_state.polygon_db)
-                
-                if success:
-                    st.download_button(
-                        label="Download GeoJSON",
-                        data=geojson_data,
-                        file_name="red_orange_zones.geojson",
-                        mime="application/json"
-                    )
-                    st.success("✅ Red/orange polygon data ready for download")
-                else:
-                    st.error(f"❌ {message}")
     elif st.session_state.get('selected_point'):
         st.info("Location selected. View the dual interpolated heatmaps on the left.")
     else:

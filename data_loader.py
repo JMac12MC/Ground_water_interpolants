@@ -239,12 +239,11 @@ def get_wells_for_interpolation(wells_df, interpolation_type):
 
     elif interpolation_type == 'ground_water_level':
         # For ground water level interpolation: ONLY use wells with actual ground water level data
-        # Allow all numeric values including 0 and negative values (artesian conditions)
         # Check for the column that contains ground water level values
         if 'ground water level' in wells_df.columns:
             wells_with_gwl = wells_df[
-                wells_df['ground water level'].notna()
-                # Removed != 0 filter - zeros are valid (surface level or converted artesian)
+                wells_df['ground water level'].notna() & 
+                (wells_df['ground water level'] != 0)
             ].copy()
         else:
             # Fallback to empty DataFrame if column doesn't exist

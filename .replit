@@ -97,10 +97,6 @@ author = "agent"
 task = "workflow.run"
 args = "Stable Groundwater App"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Streamlit App"
-
 [[workflows.workflow]]
 name = "Stable Groundwater App"
 author = "agent"
@@ -108,15 +104,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "streamlit run app.py --server.port 5000 --server.address 0.0.0.0 --server.headless true"
-waitForPort = 5000
-
-[[workflows.workflow]]
-name = "Streamlit App"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "streamlit run app.py --server.port 5000"
 waitForPort = 5000
 
 [[ports]]
@@ -130,6 +117,10 @@ externalPort = 3001
 [[ports]]
 localPort = 38389
 externalPort = 3003
+
+[[ports]]
+localPort = 40959
+externalPort = 5173
 
 [[ports]]
 localPort = 42425

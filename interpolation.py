@@ -3663,19 +3663,21 @@ def generate_vector_grid_overlay(geojson_data, bounds, global_colormap_func=None
 
 def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
     """
-    Convert GeoJSON triangular mesh to smooth raster overlay for Windy.com-style visualization
+    Convert GeoJSON triangular mesh to smooth raster overlay with proper NZTM2000 -> EPSG:3857 reprojection.
     
-    Uses 100-meter sampling grid across triangulated data, generating NaN where no triangle data exists.
-    This preserves the original soil polygon and indicator kriging clipping.
+    This fixes the raster offset bug by:
+    1. Rasterizing in NZTM2000 meters (same grid as interpolation)
+    2. Reprojecting to EPSG:3857 (Web Mercator) using rasterio.warp
+    3. This preserves the non-linear NZTM->WGS84 transformation correctly
     
     Parameters:
     -----------
     geojson_data : dict
-        GeoJSON FeatureCollection containing triangular mesh data
+        GeoJSON FeatureCollection containing triangular mesh data (in WGS84)
     bounds : dict
-        Dictionary with 'north', 'south', 'east', 'west' bounds
+        Dictionary with 'north', 'south', 'east', 'west' bounds (in WGS84)
     sampling_distance_meters : int
-        Sampling distance in meters for the regular grid (default: 100m)
+        Pixel size in meters for the NZTM2000 raster (default: 100m)
     global_colormap_func : function
         Function to map values to colors consistently across all heatmaps
     opacity : float
@@ -3687,13 +3689,22 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         Dictionary containing base64 encoded image and bounds for Folium overlay
     """
     try:
+        import rasterio
+        from rasterio.transform import from_origin
+        from rasterio.warp import reproject, calculate_default_transform, Resampling
+        from rasterio.crs import CRS
+        import tempfile
+        import os
+        from scipy.interpolate import griddata
+        
         if not geojson_data or not geojson_data.get('features'):
             return None
             
-        # Extract values and coordinates from triangular mesh
-        # Use all triangle vertices (not just centroids) for better boundary coverage
+        print(f"🔧 ===== RASTER OFFSET FIX: NZTM2000 -> EPSG:3857 REPROJECTION =====")
+        
+        # 1. Extract values and coordinates from triangular mesh (WGS84)
         values = []
-        coords = []
+        coords_wgs84 = []
         vertex_values = {}  # Track values at each unique vertex
         
         for feature in geojson_data['features']:
@@ -3715,190 +3726,107 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         # Convert vertex dictionary to arrays
         for (lon, lat), val in vertex_values.items():
-            coords.append([lon, lat])
+            coords_wgs84.append([lon, lat])
             values.append(val)
         
-        if not values or not coords:
+        if not values or not coords_wgs84:
             return None
             
         values = np.array(values)
-        coords = np.array(coords)
+        coords_wgs84 = np.array(coords_wgs84)
         
-        print(f"Extracted {len(values)} vertex points from triangulated heatmap data")
-        if coords.size == 0:
+        print(f"✅ Extracted {len(values)} vertex points from triangulated heatmap data (WGS84)")
+        if coords_wgs84.size == 0:
             return None
         
-        # PERFORMANCE: Use dynamic grid resolution to prevent memory crashes
-        west, east = bounds['west'], bounds['east']
-        south, north = bounds['south'], bounds['north']
+        # 2. Transform WGS84 coordinates to NZTM2000 (meters)
+        lons_wgs84 = coords_wgs84[:, 0]
+        lats_wgs84 = coords_wgs84[:, 1]
+        xs_nztm, ys_nztm = to_nztm2000(lons_wgs84, lats_wgs84)
+        coords_nztm = np.column_stack([xs_nztm, ys_nztm])
         
-        # Calculate grid extent
-        lat_extent = north - south
-        lon_extent = east - west
+        print(f"✅ Transformed vertices to NZTM2000: X range [{np.min(xs_nztm):.0f}, {np.max(xs_nztm):.0f}]m, Y range [{np.min(ys_nztm):.0f}, {np.max(ys_nztm):.0f}]m")
         
-        # OPTIMIZATION: Cap maximum grid size to prevent crashes
-        max_grid_points = 1_000_000  # Maximum 1M points instead of 10.5M
+        # 3. Create NZTM2000 bounds and grid
+        x_min, x_max = np.min(xs_nztm), np.max(xs_nztm)
+        y_min, y_max = np.min(ys_nztm), np.max(ys_nztm)
         
-        # Calculate appropriate resolution based on extent
-        meters_per_degree_lat = 111000
-        meters_per_degree_lon = 111000 * np.cos(np.radians((south + north) / 2))
+        # Add padding to bounds to ensure complete coverage
+        padding_m = sampling_distance_meters
+        x_min -= padding_m
+        x_max += padding_m
+        y_min -= padding_m
+        y_max += padding_m
         
-        # Estimate grid points at 100m resolution
-        lat_step_100m = 100 / meters_per_degree_lat
-        lon_step_100m = 100 / meters_per_degree_lon
-        grid_points_100m = (lat_extent / lat_step_100m) * (lon_extent / lon_step_100m)
+        # Calculate grid dimensions in NZTM2000 meters
+        width_m = x_max - x_min
+        height_m = y_max - y_min
         
-        # Use coarser resolution if needed (architect recommendation)
-        if grid_points_100m > max_grid_points:
-            # Scale up resolution to stay under limit
-            scale_factor = np.sqrt(grid_points_100m / max_grid_points)
-            effective_resolution = 100 * scale_factor
-            lat_step = effective_resolution / meters_per_degree_lat
-            lon_step = effective_resolution / meters_per_degree_lon
-            print(f"PERFORMANCE: Using {effective_resolution:.0f}m resolution (scaled from 100m) to prevent memory crash")
+        # PERFORMANCE: Cap grid size to prevent memory crashes
+        max_grid_points = 1_000_000
+        estimated_points = (width_m / sampling_distance_meters) * (height_m / sampling_distance_meters)
+        
+        if estimated_points > max_grid_points:
+            scale_factor = np.sqrt(estimated_points / max_grid_points)
+            effective_resolution_m = sampling_distance_meters * scale_factor
+            print(f"⚠️ PERFORMANCE: Scaling resolution from {sampling_distance_meters}m to {effective_resolution_m:.0f}m (grid would be {estimated_points:.0f} points)")
         else:
-            lat_step = lat_step_100m
-            lon_step = lon_step_100m
-            effective_resolution = 100
+            effective_resolution_m = sampling_distance_meters
         
-        # Create regular sampling grid with lats ordered NORTH to SOUTH (row 0 = north)
-        # This eliminates the need for vertical flip and ensures proper pixel-to-coordinate mapping
-        lats = np.arange(north, south - lat_step, -lat_step)  # North to south ordering
-        lons = np.arange(west, east + lon_step, lon_step)
+        # Create regular grid in NZTM2000 meters (north to south for proper image orientation)
+        nx = int(width_m / effective_resolution_m)
+        ny = int(height_m / effective_resolution_m)
         
-        print(f"Created {len(lats)} x {len(lons)} = {len(lats) * len(lons)} sampling grid at {effective_resolution:.0f}m spacing")
+        x_coords_m = np.linspace(x_min, x_max, nx)
+        y_coords_m = np.linspace(y_max, y_min, ny)  # North to south
+        xi_m, yi_m = np.meshgrid(x_coords_m, y_coords_m)
         
-        # Create coordinate grids
-        width = len(lons)
-        height = len(lats)
-        xi, yi = np.meshgrid(lons, lats)
+        print(f"✅ Created NZTM2000 grid: {ny}x{nx} pixels at {effective_resolution_m:.0f}m resolution")
+        print(f"   Bounds: X=[{x_min:.0f}, {x_max:.0f}]m, Y=[{y_min:.0f}, {y_max:.0f}]m")
         
-        # Apply clipping polygon mask if provided
-        clipping_mask = None
-        if clipping_polygon is not None:
-            try:
-                from shapely.geometry import Point
-                import geopandas as gpd
-                
-                print(f"🗺️ Applying clipping polygon to {width}x{height} raster grid...")
-                
-                # Create mask for clipping
-                clipping_mask = np.zeros((height, width), dtype=bool)
-                
-                # Parse clipping polygon geometry
-                if hasattr(clipping_polygon, 'geometry') and len(clipping_polygon) > 0:
-                    # It's a GeoDataFrame
-                    merged_clipping_geom = clipping_polygon.geometry.unary_union
-                elif hasattr(clipping_polygon, '__geo_interface__'):
-                    # It's already a geometry
-                    merged_clipping_geom = clipping_polygon
-                else:
-                    print("Warning: Invalid clipping polygon format, skipping clipping")
-                    merged_clipping_geom = None
-                
-                if merged_clipping_geom is not None:
-                    # Check each grid point
-                    points_checked = 0
-                    points_inside = 0
-                    for i in range(height):
-                        for j in range(width):
-                            # FIXED: Access coordinates correctly from meshgrid
-                            # xi[i, j] = longitude, yi[i, j] = latitude
-                            lon = xi[i, j]
-                            lat = yi[i, j]
-                            point = Point(lon, lat)
-                            is_inside = merged_clipping_geom.contains(point) or merged_clipping_geom.intersects(point)
-                            clipping_mask[i, j] = is_inside
-                            points_checked += 1
-                            if is_inside:
-                                points_inside += 1
-                    
-                    print(f"🗺️ Clipping results: {points_inside}/{points_checked} grid points inside clipping polygon")
-                else:
-                    clipping_mask = None
-                    
-            except Exception as e:
-                print(f"Error applying clipping polygon: {e}")
-                clipping_mask = None
-        
-        # Interpolate values onto 100m-spaced grid using multiple methods for complete coverage
+        # 4. Interpolate values onto NZTM2000 grid
         try:
-            # Start with cubic interpolation for smooth results
-            zi = griddata(coords, values, (xi, yi), method='cubic', fill_value=np.nan)
+            # Cubic interpolation for smooth results
+            zi = griddata(coords_nztm, values, (xi_m, yi_m), method='cubic', fill_value=np.nan)
             
-            # Fill NaN values with linear interpolation
+            # Fill NaN with linear
             nan_mask = np.isnan(zi)
             if np.any(nan_mask):
-                zi_linear = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
+                zi_linear = griddata(coords_nztm, values, (xi_m, yi_m), method='linear', fill_value=np.nan)
                 zi[nan_mask] = zi_linear[nan_mask]
-                
-            # Final pass: fill remaining NaN with nearest neighbor only where triangle data exists
-            # This preserves NaN boundaries where soil/Banks Peninsula clipping occurred
+            
+            # Final fill with nearest neighbor
             nan_mask = np.isnan(zi)
             if np.any(nan_mask):
-                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
+                zi_nearest = griddata(coords_nztm, values, (xi_m, yi_m), method='nearest')
                 zi[nan_mask] = zi_nearest[nan_mask]
             
-            # Apply Gaussian smoothing to create seamless blending between tiles
-            from scipy.ndimage import gaussian_filter
-            zi = gaussian_filter(zi, sigma=1.5)  # Increased smoothing for better tile blending
-            
-        except Exception as e:
-            print(f"Cubic interpolation failed, using linear: {e}")
-            # Fallback to linear interpolation
-            zi = griddata(coords, values, (xi, yi), method='linear', fill_value=np.nan)
-            
-            # Fill NaN with nearest neighbor
-            nan_mask = np.isnan(zi)
-            if np.any(nan_mask):
-                zi_nearest = griddata(coords, values, (xi, yi), method='nearest')
-                zi[nan_mask] = zi_nearest[nan_mask]
-            
-            # Apply Gaussian smoothing to fallback too
+            # Apply Gaussian smoothing
             from scipy.ndimage import gaussian_filter
             zi = gaussian_filter(zi, sigma=1.5)
-        
-        # 7) Z ARRAY STATISTICS and analysis
-        print(f"🔧 Z ARRAY ANALYSIS:")
-        print(f"🔧   Shape: {zi.shape} (height={zi.shape[0]}, width={zi.shape[1]})")
-        print(f"🔧   Values: min={np.nanmin(zi):.3f}, max={np.nanmax(zi):.3f}, mean={np.nanmean(zi):.3f}")
-        print(f"🔧   NaN count: {np.sum(np.isnan(zi))} of {zi.size} ({100*np.sum(np.isnan(zi))/zi.size:.1f}%)")
-        
-        # Corner probes to understand array orientation
-        print(f"🔧 CORNER PROBES:")
-        print(f"🔧   Z[0,0]={zi[0,0]:.3f} at grid coords ({xi[0,0]:.6f}, {yi[0,0]:.6f}) = NW corner (west, north)")
-        print(f"🔧   Z[0,-1]={zi[0,-1]:.3f} at grid coords ({xi[0,-1]:.6f}, {yi[0,-1]:.6f}) = NE corner (east, north)")
-        print(f"🔧   Z[-1,0]={zi[-1,0]:.3f} at grid coords ({xi[-1,0]:.6f}, {yi[-1,0]:.6f}) = SW corner (west, south)")
-        print(f"🔧   Z[-1,-1]={zi[-1,-1]:.3f} at grid coords ({xi[-1,-1]:.6f}, {yi[-1,-1]:.6f}) = SE corner (east, south)")
-        
-        print(f"🔧 Generated {width}x{height} raster with interpolation across all triangulated data")
-        print(f"🔧 Preserves clipping boundaries where triangulated data was limited by soil/Banks Peninsula polygons")
-        
-        # Apply clipping mask to the interpolated data
-        if clipping_mask is not None:
-            # Set areas outside clipping polygon to NaN to make them transparent
-            zi[~clipping_mask] = np.nan
-            print(f"🗺️ Applied clipping mask: {np.sum(clipping_mask)} valid pixels out of {clipping_mask.size}")
-        
-        # Use the interpolated zi for display
-        zi_smooth = zi
-        
-        # Convert values to colors using global colormap function
-        if global_colormap_func:
-            # Create RGBA image
-            rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
             
-            for i in range(height):
-                for j in range(width):
-                    if not np.isnan(zi_smooth[i, j]):
-                        color_hex = global_colormap_func(zi_smooth[i, j])
+            print(f"✅ Interpolated values: min={np.nanmin(zi):.2f}, max={np.nanmax(zi):.2f}, mean={np.nanmean(zi):.2f}")
+            
+        except Exception as e:
+            print(f"❌ Interpolation error: {e}")
+            return None
+        
+        # 5. Convert zi values to RGBA using global colormap
+        if global_colormap_func:
+            # Create RGBA image from interpolated values
+            rgba_image = np.zeros((ny, nx, 4), dtype=np.uint8)
+            
+            for i in range(ny):
+                for j in range(nx):
+                    if not np.isnan(zi[i, j]):
+                        color_hex = global_colormap_func(zi[i, j])
                         # Convert hex to RGB
                         color_hex = color_hex.lstrip('#')
                         if len(color_hex) == 6:
                             r = int(color_hex[0:2], 16)
                             g = int(color_hex[2:4], 16)
                             b = int(color_hex[4:6], 16)
-                            rgba_image[i, j] = [r, g, b, int(opacity * 255)]  # Match triangle mesh opacity
+                            rgba_image[i, j] = [r, g, b, int(opacity * 255)]
                         else:
                             rgba_image[i, j] = [0, 0, 0, 0]  # Transparent for invalid colors
                     else:
@@ -3910,116 +3838,107 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             viridis = cm.viridis
             
             # Normalize values
-            valid_mask = ~np.isnan(zi_smooth)
+            valid_mask = ~np.isnan(zi)
             if np.any(valid_mask):
-                vmin, vmax = np.nanmin(zi_smooth), np.nanmax(zi_smooth)
+                vmin, vmax = np.nanmin(zi), np.nanmax(zi)
                 norm = Normalize(vmin=vmin, vmax=vmax)
                 
                 # Apply colormap
-                colored = viridis(norm(zi_smooth))
+                colored = viridis(norm(zi))
                 rgba_image = (colored * 255).astype(np.uint8)
                 
                 # Set transparency for NaN values
                 rgba_image[~valid_mask, 3] = 0
-                rgba_image[valid_mask, 3] = int(opacity * 255)  # Match triangle mesh opacity
+                rgba_image[valid_mask, 3] = int(opacity * 255)
             else:
-                rgba_image = np.zeros((height, width, 4), dtype=np.uint8)
+                rgba_image = np.zeros((ny, nx, 4), dtype=np.uint8)
         
-        # ARCHITECT SOLUTION: Create properly georeferenced raster with correct geotransform
-        print(f"🔧 ===== GEOREFERENCED RASTER PIPELINE =====")
-        print(f"🔧 RGBA IMAGE: shape={rgba_image.shape}")
-        print(f"🔧 GRID SETUP: lats go from {lats[0]:.6f} to {lats[-1]:.6f} (north to south)")
-        print(f"🔧 GRID SETUP: lons go from {lons[0]:.6f} to {lons[-1]:.6f} (west to east)")
+        print(f"✅ Created RGBA image: {rgba_image.shape}")
         
-        # Use rasterio to create proper geotransform from pixel edges (not centers)
-        import rasterio
-        from rasterio.transform import from_bounds
-        from rasterio.warp import calculate_default_transform, reproject, Resampling
-        from rasterio.crs import CRS
-        import tempfile
-        import os
+        # 6. Write temporary NZTM2000 GeoTIFF (EPSG:2193)
+        with tempfile.NamedTemporaryFile(suffix='_nztm.tif', delete=False) as tmp_nztm:
+            nztm_path = tmp_nztm.name
         
-        height, width = rgba_image.shape[:2]
+        # Create NZTM2000 transform (origin is top-left, pixel size is effective_resolution_m)
+        nztm_transform = rasterio.transform.from_origin(
+            x_min, y_max,  # Top-left corner (west, north in meters)
+            effective_resolution_m,  # Pixel width in meters
+            effective_resolution_m   # Pixel height in meters
+        )
         
-        # ===== COORDINATE ALIGNMENT FIX: Use centralized bounds calculation =====
-        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
-        raster_west = bounds['west']
-        raster_east = bounds['east'] 
-        raster_south = bounds['south']
-        raster_north = bounds['north']
+        # Write NZTM2000 raster
+        with rasterio.open(
+            nztm_path,
+            'w',
+            driver='GTiff',
+            height=ny,
+            width=nx,
+            count=4,  # RGBA
+            dtype=rasterio.uint8,
+            crs=CRS.from_epsg(2193),  # NZTM2000
+            transform=nztm_transform
+        ) as dst:
+            # Write each RGBA channel
+            for i in range(4):
+                dst.write(rgba_image[:, :, i], i+1)
         
-        print(f"🔧 PIXEL EDGE BOUNDS: N={raster_north:.8f}, S={raster_south:.8f}, E={raster_east:.8f}, W={raster_west:.8f}")
+        print(f"✅ Wrote NZTM2000 GeoTIFF: {nztm_path}")
+        print(f"   Transform: {nztm_transform}")
+        print(f"   Bounds (NZTM): X=[{x_min:.0f}, {x_max:.0f}]m, Y=[{y_min:.0f}, {y_max:.0f}]m")
         
-        # Create geotransform using rasterio's from_bounds (handles edge vs center correctly)
-        transform = from_bounds(raster_west, raster_south, raster_east, raster_north, width, height)
-        print(f"🔧 GEOTRANSFORM: {transform}")
+        # 7. Reproject to EPSG:3857 (Web Mercator) using rasterio.warp.reproject()
+        with tempfile.NamedTemporaryFile(suffix='_webmerc.tif', delete=False) as tmp_webmerc:
+            webmerc_path = tmp_webmerc.name
         
-        # Verify transform maps correctly
-        # Top-left pixel (0,0) should map to (raster_west, raster_north)
-        x0, y0 = transform * (0, 0)
-        # Bottom-right pixel (width-1, height-1) should map to (raster_east, raster_south)  
-        x1, y1 = transform * (width-1, height-1)
-        print(f"🔧 TRANSFORM CHECK: pixel(0,0) -> geo({x0:.8f}, {y0:.8f}) [should be W,N]")
-        print(f"🔧 TRANSFORM CHECK: pixel({width-1},{height-1}) -> geo({x1:.8f}, {y1:.8f}) [should be E,S]")
+        # Calculate transform and dimensions for Web Mercator
+        dst_crs = CRS.from_epsg(3857)
+        with rasterio.open(nztm_path) as src:
+            transform_webmerc, width_webmerc, height_webmerc = rasterio.warp.calculate_default_transform(
+                src.crs, dst_crs, src.width, src.height, *src.bounds
+            )
         
-        # ARCHITECT FIX: Crop to visible pixels to eliminate transparent padding offset
-        print(f"🔧 CROPPING TO VISIBLE PIXELS (alpha > 0)...")
-        
-        # Find bounding box of non-transparent pixels
-        alpha_mask = rgba_image[:, :, 3] > 0
-        
-        if np.any(alpha_mask):
-            # Find rows and columns with visible pixels
-            visible_rows = np.any(alpha_mask, axis=1)
-            visible_cols = np.any(alpha_mask, axis=0)
+        # Create Web Mercator raster
+        with rasterio.open(
+            webmerc_path,
+            'w',
+            driver='GTiff',
+            height=height_webmerc,
+            width=width_webmerc,
+            count=4,  # RGBA
+            dtype=rasterio.uint8,
+            crs=dst_crs,
+            transform=transform_webmerc
+        ) as dst:
             
-            row_indices = np.where(visible_rows)[0]
-            col_indices = np.where(visible_cols)[0]
+            with rasterio.open(nztm_path) as src:
+                # Reproject each RGBA channel
+                for i in range(1, 5):
+                    rasterio.warp.reproject(
+                        source=rasterio.band(src, i),
+                        destination=rasterio.band(dst, i),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=transform_webmerc,
+                        dst_crs=dst_crs,
+                        resampling=rasterio.warp.Resampling.cubic
+                    )
+        
+        print(f"✅ Reprojected to Web Mercator: {webmerc_path}")
+        print(f"   Dimensions: {height_webmerc}x{width_webmerc}")
+        
+        # 8. Read reprojected raster and convert to PNG base64
+        with rasterio.open(webmerc_path) as src:
+            # Read all 4 bands (RGBA)
+            rgba_webmerc = np.zeros((src.height, src.width, 4), dtype=np.uint8)
+            for i in range(4):
+                rgba_webmerc[:, :, i] = src.read(i+1)
             
-            if len(row_indices) > 0 and len(col_indices) > 0:
-                # Get tight bounding box
-                min_row, max_row = row_indices[0], row_indices[-1]
-                min_col, max_col = col_indices[0], col_indices[-1]
-                
-                # Crop the image to visible pixels only
-                rgba_image_cropped = rgba_image[min_row:max_row+1, min_col:max_col+1]
-                
-                # Calculate geographic bounds for the cropped image
-                # Row indices correspond to lat indices, col indices to lon indices
-                # FIXED: Correct pixel edge calculation - since lats go north to south
-                cropped_north = lats[min_row] + lat_step/2  # Edge of northernmost visible pixel (correct)
-                cropped_south = lats[max_row] - lat_step/2  # Edge of southernmost visible pixel (correct)
-                cropped_west = lons[min_col] - lon_step/2   # Edge of westernmost visible pixel
-                cropped_east = lons[max_col] + lon_step/2   # Edge of easternmost visible pixel
-                
-                print(f"🔧 CROPPED: {rgba_image.shape} -> {rgba_image_cropped.shape}")
-                print(f"🔧 VISIBLE BOUNDS: rows {min_row}-{max_row}, cols {min_col}-{max_col}")
-                print(f"🔧 GEOGRAPHIC BOUNDS: N={cropped_north:.6f}, S={cropped_south:.6f}, E={cropped_east:.6f}, W={cropped_west:.6f}")
-                
-                # Diagnostic: verify pixel resolution
-                actual_lat_per_pixel = (cropped_north - cropped_south) / rgba_image_cropped.shape[0]
-                actual_lon_per_pixel = (cropped_east - cropped_west) / rgba_image_cropped.shape[1]
-                lat_pixel_meters = actual_lat_per_pixel * meters_per_degree_lat
-                lon_pixel_meters = actual_lon_per_pixel * meters_per_degree_lon
-                print(f"🔧 PIXEL RESOLUTION: {lat_pixel_meters:.1f}m lat, {lon_pixel_meters:.1f}m lon")
-                
-                rgba_final = rgba_image_cropped
-                final_bounds = [[cropped_south, cropped_west], [cropped_north, cropped_east]]
-            else:
-                print(f"🔧 WARNING: No visible pixels found, using original image")
-                rgba_final = rgba_image
-                final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
-        else:
-            print(f"🔧 WARNING: Image is fully transparent, using original bounds")
-            rgba_final = rgba_image
-            final_bounds = [[lats[-1] - lat_step/2, lons[0] - lon_step/2], [lats[0] + lat_step/2, lons[-1] + lon_step/2]]
+            # Get Web Mercator bounds
+            webmerc_bounds = src.bounds  # (left, bottom, right, top)
+            webmerc_west, webmerc_south, webmerc_east, webmerc_north = webmerc_bounds
         
-        # ASSERTION: Verify image row 0 corresponds to north
-        assert lats[0] > lats[-1], f"Latitude array should be descending (north to south): {lats[0]} to {lats[-1]}"
-        print(f"🔧 INVARIANT VERIFIED: Image row 0 corresponds to NORTH (lat={lats[0]:.6f})")
-        print(f"🔧 =========================================")
-        
-        pil_image = Image.fromarray(rgba_final, 'RGBA')
+        # Convert to PIL Image
+        pil_image = Image.fromarray(rgba_webmerc, 'RGBA')
         
         # Save to bytes buffer
         img_buffer = io.BytesIO()
@@ -4029,131 +3948,40 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         # Encode to base64
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
         
-        # ===== COORDINATE ALIGNMENT FIX: Use centralized authoritative bounds =====
-        bounds = calculate_authoritative_bounds(lats, lons, lat_step, lon_step)
-        print(f"🔧 ALIGNMENT FIX: Using centralized bounds calculation (eliminates CENTER vs EDGE inconsistencies)")
-        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
-        # ================================================================
+        print(f"✅ Created PNG base64 image from Web Mercator raster")
         
-        # 9) BOUNDS CALCULATION - CENTER vs EDGE analysis
-        print(f"🔧 ===== BOUNDS CALCULATION DEBUG =====")
+        # 9. Calculate WGS84 bounds for Leaflet ImageOverlay
+        # Transform Web Mercator corners to WGS84
+        transformer_webmerc_to_wgs84 = pyproj.Transformer.from_crs(
+            "EPSG:3857", "EPSG:4326", always_xy=True
+        )
         
-        # Comparison with legacy center-based bounds (for debugging only)
-        legacy_center_south, legacy_center_north = south, north
-        legacy_center_west, legacy_center_east = west, east
+        # Transform all 4 corners to WGS84
+        sw_lon, sw_lat = transformer_webmerc_to_wgs84.transform(webmerc_west, webmerc_south)
+        ne_lon, ne_lat = transformer_webmerc_to_wgs84.transform(webmerc_east, webmerc_north)
         
-        print(f"🔧 LEGACY CENTER-BASED: N={legacy_center_north:.6f}, S={legacy_center_south:.6f}, E={legacy_center_east:.6f}, W={legacy_center_west:.6f}")
-        print(f"🔧 AUTHORITATIVE BOUNDS: N={bounds['north']:.6f}, S={bounds['south']:.6f}, E={bounds['east']:.6f}, W={bounds['west']:.6f}")
+        # Leaflet bounds format: [[south, west], [north, east]]
+        leaflet_bounds = [[sw_lat, sw_lon], [ne_lat, ne_lon]]
         
-        # Calculate the differences that were causing the offset (should now be consistent ~143m/244m)
-        lat_diff_meters = (bounds['north'] - legacy_center_north) * meters_per_degree_lat
-        lon_diff_meters = (bounds['east'] - legacy_center_east) * meters_per_degree_lon
-        print(f"🔧 DIFFERENCE: {lat_diff_meters:.1f}m north, {lon_diff_meters:.1f}m east")
+        print(f"✅ WGS84 bounds for Leaflet: {leaflet_bounds}")
+        print(f"   SW corner: ({sw_lat:.6f}, {sw_lon:.6f})")
+        print(f"   NE corner: ({ne_lat:.6f}, {ne_lon:.6f})")
         
-        # Overlay center vs grid center 
-        overlay_center_lat = (bounds['north'] + bounds['south']) / 2
-        overlay_center_lon = (bounds['east'] + bounds['west']) / 2
-        grid_center_lat = (lats[0] + lats[-1]) / 2
-        grid_center_lon = (lons[0] + lons[-1]) / 2
-        
-        center_diff_lat_m = (overlay_center_lat - grid_center_lat) * meters_per_degree_lat
-        center_diff_lon_m = (overlay_center_lon - grid_center_lon) * meters_per_degree_lon
-        print(f"🔧 CENTER DIFFERENCE: overlay vs grid = {center_diff_lat_m:.1f}m lat, {center_diff_lon_m:.1f}m lon")
-        
-        # Canterbury reference validation
-        christchurch_lat, christchurch_lon = -43.5321, 172.6362
-        print(f"🔧 REFERENCE: Christchurch at ({christchurch_lat:.6f}, {christchurch_lon:.6f})")
-        print(f"🔧 IN LEGACY CENTER BOUNDS? lat: {legacy_center_south <= christchurch_lat <= legacy_center_north}, lon: {legacy_center_west <= christchurch_lon <= legacy_center_east}")
-        print(f"🔧 IN AUTHORITATIVE BOUNDS? lat: {bounds['south'] <= christchurch_lat <= bounds['north']}, lon: {bounds['west'] <= christchurch_lon <= bounds['east']}")
-        
-        print(f"🔧 FOLIUM BOUNDS (cropped visible pixels): {final_bounds}")
-        print(f"🔧 =======================================")
-        
-        # 10) CROSS-CHECK: Log sample triangulated data for comparison
-        if coords.size > 0:
-            print(f"🔧 TRIANGULATED DATA CROSS-CHECK:")
-            sample_indices = np.linspace(0, len(coords)-1, min(5, len(coords)), dtype=int)
-            for i in sample_indices:
-                lon, lat = coords[i]
-                value = values[i]
-                print(f"🔧   Triangulated point: ({lon:.6f}, {lat:.6f}) -> {value:.3f}")
-        print(f"🔧 ========================================")
-        
-        # ARCHITECT SOLUTION: Use georeferenced bounds with proper pixel-to-coordinate mapping
+        # Clean up temporary files
         try:
-            # Create a temporary GeoTIFF to ensure proper georeferencing
-            with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp_file:
-                tmp_path = tmp_file.name
-            
-            # Write georeferenced raster using rasterio
-            with rasterio.open(
-                tmp_path, 'w',
-                driver='GTiff',
-                height=height, width=width,
-                count=4,  # RGBA
-                dtype=rgba_image.dtype,
-                crs=CRS.from_epsg(4326),  # WGS84
-                transform=transform,
-                compress='lzw'
-            ) as dst:
-                # Write RGBA bands
-                for i in range(4):
-                    dst.write(rgba_image[:, :, i], i + 1)
-            
-            # Read back the georeferenced bounds to ensure accuracy
-            with rasterio.open(tmp_path) as src:
-                bounds_obj = src.bounds
-                accurate_west = bounds_obj.left
-                accurate_south = bounds_obj.bottom  
-                accurate_east = bounds_obj.right
-                accurate_north = bounds_obj.top
-                
-                print(f"🔧 RASTERIO BOUNDS: N={accurate_north:.8f}, S={accurate_south:.8f}, E={accurate_east:.8f}, W={accurate_west:.8f}")
-                
-                # Verify no coordinate flips occurred
-                if accurate_north <= accurate_south:
-                    print(f"🚨 ERROR: North <= South, coordinate flip detected!")
-                if accurate_east <= accurate_west:
-                    print(f"🚨 ERROR: East <= West, coordinate flip detected!")
-            
-            # Clean up temporary file
-            os.unlink(tmp_path)
-            
-            # COORDINATE ALIGNMENT FIX: Use centralized bounds for consistency
-            # This ensures display bounds match interpolation bounds exactly
-            folium_bounds = bounds['folium_format']
-            
-            # USER-REQUESTED FIX: Shift raster north by 2 pixels to improve alignment
-            pixel_lat_degrees = 286 / 111000  # ~286m pixel size converted to degrees
-            north_shift = 2 * pixel_lat_degrees  # 2 pixels northward
-            folium_bounds[1][0] += north_shift  # folium_bounds format: [[south, west], [north, east]]
-            
-            print(f"🔧 FOLIUM BOUNDS (georeferenced): {folium_bounds}")
-            print(f"🔧 COORDINATE VALIDATION:")
-            print(f"🔧   North > South: {accurate_north > accurate_south} ({accurate_north:.6f} > {accurate_south:.6f})")
-            print(f"🔧   East > West: {accurate_east > accurate_west} ({accurate_east:.6f} > {accurate_west:.6f})")
-            
-        except Exception as e:
-            print(f"🚨 RASTERIO ERROR: {e}")
-            # Fallback to centralized bounds calculation for consistency
-            folium_bounds = bounds['folium_format']
-            print(f"🔧 FALLBACK BOUNDS (centralized): {folium_bounds}")
+            import os
+            os.unlink(nztm_path)
+            os.unlink(webmerc_path)
+        except:
+            pass
         
-        pil_image = Image.fromarray(rgba_image, 'RGBA')
-        
-        # Save to bytes buffer
-        img_buffer = io.BytesIO()
-        pil_image.save(img_buffer, format='PNG', optimize=True)
-        img_buffer.seek(0)
-        
-        # Encode to base64
-        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        print(f"🔧 ===== RASTER REPROJECTION COMPLETE =====")
         
         return {
             'image_base64': img_base64,
-            'bounds': folium_bounds,
+            'bounds': leaflet_bounds,
             'opacity': opacity,
-            'positioning_method': 'georeferenced_rasterio'
+            'positioning_method': 'nztm_to_webmercator_reprojection'
         }
         
     except Exception as e:

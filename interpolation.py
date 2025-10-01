@@ -3855,16 +3855,70 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         print(f"✅ Created RGBA image: {rgba_image.shape}")
         
-        # 6. Write temporary NZTM2000 GeoTIFF (EPSG:2193)
-        with tempfile.NamedTemporaryFile(suffix='_nztm.tif', delete=False) as tmp_nztm:
-            nztm_path = tmp_nztm.name
-        
-        # Create NZTM2000 transform (origin is top-left, pixel size is effective_resolution_m)
+        # Create NZTM2000 transform (needed for clipping mask)
         nztm_transform = rasterio.transform.from_origin(
             x_min, y_max,  # Top-left corner (west, north in meters)
             effective_resolution_m,  # Pixel width in meters
             effective_resolution_m   # Pixel height in meters
         )
+        
+        # 5.5. Apply clipping mask (VALID areas polygon - soil minus red/orange zones)
+        # NOTE: clipping_polygon represents VALID areas (not exclusion zones)
+        # We need to create an INCLUSION mask and set alpha=0 for pixels OUTSIDE valid areas
+        if clipping_polygon is not None:
+            try:
+                import geopandas as gpd
+                from shapely.ops import unary_union
+                from rasterio.features import rasterize
+                
+                print(f"🗺️ Applying clipping mask to raster...")
+                
+                # Parse clipping polygon geometry (represents VALID areas)
+                if hasattr(clipping_polygon, 'geometry') and len(clipping_polygon) > 0:
+                    # It's a GeoDataFrame
+                    valid_geom_wgs84 = clipping_polygon.geometry.union_all() if hasattr(clipping_polygon.geometry, 'union_all') else clipping_polygon.geometry.unary_union
+                elif hasattr(clipping_polygon, '__geo_interface__'):
+                    # It's already a geometry
+                    valid_geom_wgs84 = clipping_polygon
+                else:
+                    print("⚠️ Invalid clipping polygon format, skipping clipping")
+                    valid_geom_wgs84 = None
+                
+                if valid_geom_wgs84 is not None:
+                    # Transform to NZTM2000 (EPSG:2193)
+                    valid_gdf_wgs84 = gpd.GeoDataFrame(geometry=[valid_geom_wgs84], crs="EPSG:4326")
+                    valid_gdf_nztm = valid_gdf_wgs84.to_crs("EPSG:2193")
+                    valid_geom_nztm = valid_gdf_nztm.geometry.iloc[0]
+                    
+                    # Rasterize VALID areas (1 = keep, 0 = exclude)
+                    valid_mask = rasterize(
+                        shapes=[(valid_geom_nztm, 1)],
+                        out_shape=(ny, nx),
+                        transform=nztm_transform,
+                        fill=0,
+                        default_value=1,
+                        dtype=np.uint8
+                    )
+                    
+                    # Apply mask: set alpha=0 where OUTSIDE valid areas, and RGB=0 where alpha=0
+                    excluded_pixels = np.sum(valid_mask == 0)
+                    rgba_image[valid_mask == 0, 3] = 0  # Set alpha to 0 (transparent) outside valid areas
+                    rgba_image[rgba_image[:, :, 3] == 0, :3] = 0  # Set RGB to 0 where alpha is 0
+                    
+                    print(f"✅ Applied clipping mask: {excluded_pixels}/{ny*nx} pixels ({100*excluded_pixels/(ny*nx):.1f}%) set to transparent (outside valid areas)")
+                else:
+                    print(f"⚠️ Could not parse clipping polygon, skipping clipping")
+                    
+            except Exception as e:
+                print(f"⚠️ Clipping error (continuing without clipping): {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"⚠️ No clipping polygon provided, skipping clipping")
+        
+        # 6. Write temporary NZTM2000 GeoTIFF (EPSG:2193)
+        with tempfile.NamedTemporaryFile(suffix='_nztm.tif', delete=False) as tmp_nztm:
+            nztm_path = tmp_nztm.name
         
         # Write NZTM2000 raster
         with rasterio.open(

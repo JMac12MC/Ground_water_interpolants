@@ -1,0 +1,134 @@
+Option 1 (Best): Rasterize in NZTM, then reproject
+import rasterio
+from rasterio.warp import reproject, Resampling
+
+# Raster created in NZTM
+src = rasterio.open("interp_nztm.tif")
+
+# Destination raster in WGS84
+dst, transform = rasterio.warp.calculate_default_transform(
+    src.crs, "EPSG:4326", src.width, src.height, *src.bounds
+)
+
+reproject(
+    source=rasterio.band(src, 1),
+    destination=rasterio.band(dst, 1),
+    src_transform=src.transform,
+    src_crs=src.crs,
+    dst_transform=transform,
+    dst_crs="EPSG:4326",
+    resampling=Resampling.nearest,
+)
+
+
+This way, raster alignment is mathematically exact.
+
+Option 2: Reuse triangle grid
+
+Instead of making a new degree grid, reuse the lat/lon arrays that came from transforming the NZTM grid:
+
+lats, lons = transformer.transform(x_m, y_m)
+
+
+That ensures every raster cell lines up with the original triangulation.
+
+📌 Summary
+
+Mesh works because it transforms each point individually (no linear assumption).
+
+Raster drifts because it assumes a regular degree grid, ignoring the non-linear NZTM→WGS84 transformation.
+
+Fix by rasterizing in projected meters and reprojecting the raster with proper GIS tools, or reuse the transformed NZTM grid directly.
+
+👉 Do you want me to show you exactly how to rewrite your raster generation function (generate_smooth_raster_overlay) to use Option 1 (raster in NZTM then reproject), so the fix is baked into your pipeline?
+
+You said:
+yes
+ChatGPT said:
+
+Perfect 👍 Let’s bake the fix (Option 1) directly into your workflow.
+Here’s a full rewrite of your raster generation function that creates the raster in NZTM2000 (meters) and then reprojects it to WGS84 (EPSG:4326) so Leaflet displays it with no offset.
+
+🔧 Fixed generate_smooth_raster_overlay
+import numpy as np
+import rasterio
+from rasterio.transform import from_origin
+from rasterio.warp import reproject, calculate_default_transform, Resampling
+from pyproj import Transformer
+
+def generate_smooth_raster_overlay(points, values, bounds, res=250):
+    """
+    Generate raster overlay with correct projection handling.
+    
+    Args:
+        points: list of (lon, lat) in WGS84
+        values: interpolated values at those points
+        bounds: (west, south, east, north) in WGS84
+        res: pixel size in meters (e.g. 250m)
+    """
+
+    # 1. Setup projections
+    to_nztm = Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+    to_wgs84 = Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
+
+    # 2. Project bounds into NZTM
+    west, south, east, north = bounds
+    x_min, y_min = to_nztm.transform(west, south)
+    x_max, y_max = to_nztm.transform(east, north)
+
+    width = int((x_max - x_min) / res)
+    height = int((y_max - y_min) / res)
+
+    # 3. Build NZTM grid
+    x_coords = np.linspace(x_min, x_max, width)
+    y_coords = np.linspace(y_max, y_min, height)  # north→south
+    xi, yi = np.meshgrid(x_coords, y_coords)
+
+    # 4. Interpolate in NZTM
+    from scipy.interpolate import griddata
+    px, py = to_nztm.transform(*zip(*points))
+    zi = griddata((px, py), values, (xi, yi), method="cubic")
+
+    # 5. Save initial raster in NZTM
+    transform = from_origin(x_min, y_max, res, res)
+    profile = {
+        "driver": "GTiff",
+        "height": height,
+        "width": width,
+        "count": 1,
+        "dtype": "float32",
+        "crs": "EPSG:2193",  # NZTM
+        "transform": transform,
+    }
+
+    tmpfile = "/tmp/raster_nztm.tif"
+    with rasterio.open(tmpfile, "w", **profile) as dst:
+        dst.write(zi.astype("float32"), 1)
+
+    # 6. Reproject raster to WGS84
+    dstfile = "/tmp/raster_wgs84.tif"
+    with rasterio.open(tmpfile) as src:
+        transform, width, height = calculate_default_transform(
+            src.crs, "EPSG:4326", src.width, src.height, *src.bounds
+        )
+
+        profile = src.profile
+        profile.update({
+            "crs": "EPSG:4326",
+            "transform": transform,
+            "width": width,
+            "height": height,
+        })
+
+        with rasterio.open(dstfile, "w", **profile) as dst:
+            reproject(
+                source=rasterio.band(src, 1),
+                destination=rasterio.band(dst, 1),
+                src_transform=src.transform,
+                src_crs=src.crs,
+                dst_transform=transform,
+                dst_crs="EPSG:4326",
+                resampling=Resampling.cubic,
+            )
+
+    return dstfile

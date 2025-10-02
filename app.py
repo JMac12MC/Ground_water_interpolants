@@ -409,7 +409,6 @@ with st.sidebar:
         st.info("🌊 **Smooth Raster Mode**: Heatmaps will display with smooth gradients like Windy.com weather maps")
     else:
         st.session_state.heatmap_visualization_mode = 'triangular_mesh'
-        st.info("🔺 **Triangular Mesh Mode**: Heatmaps display current triangular interpolation boundaries")
     
     # Colormap Selection
     st.subheader("Colormap Selection")

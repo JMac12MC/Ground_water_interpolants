@@ -57,18 +57,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Clean title header without image
-def add_banner():
-    st.markdown(
-        """
-        <div style="text-align: center; margin-bottom: 30px; padding: 40px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white;">
-            <h1 style="font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Groundwater Finder</h1>
-            <p style="font-size: 1.2rem; margin-bottom: 0; opacity: 0.9;">Clean interface for local groundwater analysis</p>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-
 # Initialize ALL session state variables first - order matters for Streamlit stability
 session_defaults = {
     'selected_point': None,
@@ -183,11 +171,6 @@ st.session_state.new_clipping_polygon = None  # Clear session state
 # Now reload fresh comprehensive polygon data
 print("📥 LOADING FRESH COMPREHENSIVE POLYGON DATA...")
 st.session_state.new_clipping_polygon = load_new_clipping_polygon()
-
-
-
-# Add banner
-add_banner()
 
 # Sidebar - for options and filters
 with st.sidebar:
@@ -3041,8 +3024,6 @@ with main_col1:
             # Removed rerun to prevent restart loops - page will refresh automatically
 
 with main_col2:
-    st.subheader("Analysis Results")
-
     if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None and len(st.session_state.filtered_wells) > 0:
         # Show information about 6-heatmap generation
         st.subheader("Heatmap Grid Analysis (2x3 Grid)")
@@ -3135,17 +3116,6 @@ with main_col2:
         st.info("Click on the map to generate dual heatmaps: one at your location and one seamlessly connected to the east")
 
     # Heatmaps are automatically saved - no manual action needed
-
-    # Add information about water well drilling - always display
-    st.subheader("Finding Groundwater")
-    st.write("""
-    Traditional methods like water divining lack scientific basis. Our tool uses actual well data 
-    to help you make informed decisions about where to drill based on:
-
-    * Proximity to existing successful wells
-    * Aquifer yield patterns in your area
-    * Depth trends for accessing groundwater
-    """)
 
 # Add footer
 st.markdown("""

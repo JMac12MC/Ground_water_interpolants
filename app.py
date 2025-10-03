@@ -303,15 +303,6 @@ with st.sidebar:
         help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
         key="visualization_method_selector"
     )
-    
-    # Heatmap visualization style selection
-    heatmap_style = st.selectbox(
-        "Heatmap Display Style",
-        options=["Triangle Mesh (Scientific)", "Smooth Raster (Windy.com Style)"],
-        index=0,  # Default to Triangle Mesh
-        help="Choose how interpolated data is visualized: Triangle Mesh shows precise triangular interpolation, Smooth Raster provides a weather-map style visualization",
-        key="heatmap_style_selector"
-    )
 
     # Map visualization selection to internal parameters
     if 'interpolation_method' not in st.session_state:
@@ -403,12 +394,14 @@ with st.sidebar:
         help="Triangular Mesh: Current triangular interpolation with sharp boundaries. Smooth Raster: Windy.com-style smooth gradient visualization without triangle artifacts."
     )
     
-    # Update session state based on selection
+    # Update session state and create heatmap_style variable based on selection
     if "Smooth Raster" in heatmap_mode:
         st.session_state.heatmap_visualization_mode = 'smooth_raster'
+        heatmap_style = "Smooth Raster (Windy.com Style)"
         st.info("🌊 **Smooth Raster Mode**: Heatmaps will display with smooth gradients like Windy.com weather maps")
     else:
         st.session_state.heatmap_visualization_mode = 'triangular_mesh'
+        heatmap_style = "Triangle Mesh (Scientific)"
     
     # Colormap Selection
     st.subheader("Colormap Selection")

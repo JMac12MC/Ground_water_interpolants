@@ -1128,13 +1128,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
 
-        # Convert to BINARY indicator values for kriging input using COMBINED criteria
-        # A well is viable (indicator = 1) if ANY of these conditions are met:
-        # - yield_rate ≥ 0.1 L/s, OR  
-        # - ground water level data exists (any valid depth means water was found), OR
-        # - WELL_STATUS_DESC = "Active (exist, present)"
-        # Note: If ground water level is recorded, it means water was found at that depth = viable
-        # Otherwise indicator = 0 (not viable)
+        # Convert to BINARY indicator values for kriging input
+        # FIXED CLASSIFICATION LOGIC to prevent dry wells from being marked as viable:
+        # - If well has yield data: Use ONLY yield (≥ 0.1 L/s = viable)
+        # - If well has NO yield data: Use groundwater level or status as fallback
+        # This ensures wells with 0.0 L/s are NEVER marked viable, even if they have GWL data
         
         yield_threshold = 0.1
         
@@ -1162,9 +1160,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         else:
             status_viable = np.zeros_like(raw_yields, dtype=bool)
         
-        # Combined viability logic: viable if ANY condition is met
+        # FIXED: Prioritize yield data, use others only as fallback when yield is missing
         yield_viable = raw_yields >= yield_threshold
-        combined_viable = yield_viable | gwl_viable | status_viable
+        has_yield_data = ~np.isnan(raw_yields)
+        
+        # If well has yield data, use ONLY yield for classification
+        # If well has NO yield data, use groundwater level or status as fallback
+        combined_viable = np.where(
+            has_yield_data,
+            yield_viable,  # Has yield data: use yield threshold only
+            gwl_viable | status_viable  # No yield data: use GWL or status as fallback
+        )
         yields = combined_viable.astype(float)  # Binary: 1 or 0
 
         # Count wells in each category for detailed logging

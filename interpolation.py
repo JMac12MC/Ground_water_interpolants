@@ -1370,28 +1370,27 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
 
             # Apply distance-based decay to prevent high values far from good wells
-            # Skip decay for continuous version to preserve smooth kriging output
-            if method != 'indicator_kriging_spherical_continuous':
-                # Calculate distances from each grid point to nearest good well (yield >= 0.75)
-                good_wells_mask = yields >= 0.75  # Wells with good yield indicators
-                print(f"🔧 Found {np.sum(good_wells_mask)} good wells for distance decay calculation")
-                if np.any(good_wells_mask) and interpolated_z is not None:
-                    good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
-                    grid_coords = grid_points
+            # Now applied to ALL indicator methods to prevent unrealistic green zones
+            # Calculate distances from each grid point to nearest good well (yield >= 0.75)
+            good_wells_mask = yields >= 0.75  # Wells with good yield indicators
+            print(f"🔧 Found {np.sum(good_wells_mask)} good wells for distance decay calculation")
+            if np.any(good_wells_mask) and interpolated_z is not None:
+                good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
+                grid_coords = grid_points
 
-                    # Calculate distance to nearest good well for each grid point
-                    from scipy.spatial.distance import cdist
-                    distances = cdist(grid_coords, good_coords)
-                    min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
+                # Calculate distance to nearest good well for each grid point
+                from scipy.spatial.distance import cdist
+                distances = cdist(grid_coords, good_coords)
+                min_distances_km = np.min(distances, axis=1) / 1000.0  # Convert to km
 
-                    # Apply exponential decay for distances > 3km
-                    decay_threshold_km = 3.0
-                    decay_factor = 0.3  # Gentle decay to preserve three-tier structure
+                # Apply exponential decay for distances > 3km
+                decay_threshold_km = 3.0
+                decay_factor = 0.3  # Gentle decay to preserve three-tier structure
 
-                    distance_mask = min_distances_km > decay_threshold_km
-                    excess_distance = min_distances_km[distance_mask] - decay_threshold_km
-                    decay_multiplier = np.exp(-decay_factor * excess_distance)
-                    interpolated_z[distance_mask] *= decay_multiplier
+                distance_mask = min_distances_km > decay_threshold_km
+                excess_distance = min_distances_km[distance_mask] - decay_threshold_km
+                decay_multiplier = np.exp(-decay_factor * excess_distance)
+                interpolated_z[distance_mask] *= decay_multiplier
 
             # Count points in each tier based on OUTPUT ranges (continuous 0-1 function)
             # Keep the continuous kriging output values intact - colors applied during visualization

@@ -1244,6 +1244,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         print(f"  Wells with exactly 0.0 yield: {np.sum(raw_yields == 0.0)}")
         print(f"  Wells with NaN yield (excluded): {wells_df_original['yield_rate'].isna().sum()}")
         print(f"  Total wells excluded for quality: {len(wells_df_original) - len(wells_df)}")
+        
+        # ===== TRANSFORM INDICATOR KRIGING WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 INDICATOR KRIGING WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        # =================================================================
     else:
         # Get wells appropriate for yield interpolation
         wells_df = get_wells_for_interpolation(wells_df, 'yield')
@@ -1253,6 +1260,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         lats = wells_df['latitude'].values.astype(float)
         lons = wells_df['longitude'].values.astype(float)
         yields = wells_df['yield_rate'].values.astype(float)
+        
+        # ===== TRANSFORM YIELD KRIGING WELLS TO NZTM2000 =====
+        # Transform wells AFTER filtering to ensure coordinate arrays match data arrays
+        wells_x_m, wells_y_m = prepare_wells_xy(wells_df)
+        print(f"🔧 YIELD KRIGING WELLS TRANSFORMED: {len(wells_df)} wells from WGS84 to NZTM2000")
+        print(f"🔧 WELLS RANGE NZTM2000: X [{wells_x_m.min():.1f}, {wells_x_m.max():.1f}]m, Y [{wells_y_m.min():.1f}, {wells_y_m.max():.1f}]m")
+        # ===============================================================
 
     # ===== ARCHITECT SOLUTION: USE NZTM2000 COORDINATES FOR INTERPOLATION =====
     print(f"🔧 Using NZTM2000 coordinates for accurate interpolation")

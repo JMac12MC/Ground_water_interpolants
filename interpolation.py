@@ -1355,15 +1355,15 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # ===== INDICATOR KRIGING WITH NZTM2000 COORDINATES =====
             print(f"🔧 Performing indicator kriging in NZTM2000 coordinates")
             
-            # Cap variogram range to 3km (3000m) to limit well influence
-            # This prevents distant wells from overriding local dry well signals
+            # Cap variogram range to 1.5km (1500m) to give dry wells more local impact
+            # Higher nugget reduces over-smoothing and respects local well conditions
             # For binary indicator data (0/1), sill ≈ 0.25 (variance of binary data)
             variogram_params = {
-                'range': 3000.0,  # 3km in meters (NZTM2000)
+                'range': 1500.0,  # 1.5km in meters (NZTM2000) - wells influence within 1.5km
                 'sill': 0.25,     # Variance of binary 0/1 data
-                'nugget': 0.01    # Small nugget for measurement uncertainty
+                'nugget': 0.1     # Higher nugget to reduce smoothing, respect local dry wells
             }
-            print(f"🔧 INDICATOR KRIGING: Capping variogram range to 3km (sill=0.25, nugget=0.01)")
+            print(f"🔧 INDICATOR KRIGING: range=1.5km, sill=0.25, nugget=0.1 (reduced smoothing)")
             
             # Use centralized kriging helper with spherical model for indicator data
             Z_grid, SS_grid, OK = krige_on_grid(

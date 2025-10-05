@@ -387,45 +387,54 @@ with st.sidebar:
         
         # Auto-fit checkbox
         st.session_state.indicator_auto_fit = st.checkbox(
-            "Auto-fit variogram",
+            "Auto-fit variogram (experimental)",
             value=st.session_state.indicator_auto_fit,
-            help="Let PyKrige automatically fit the variogram from the data. Uncheck to manually set range, sill, and nugget.",
+            help="⚠️ Auto-fit often fails with sparse data, producing flat green areas. Manual parameters (below) usually work better for indicator kriging.",
             key="indicator_auto_fit_checkbox"
         )
         
-        # Manual parameters (only show if auto-fit is disabled)
+        if st.session_state.indicator_auto_fit:
+            st.warning("⚠️ Auto-fit may produce flat results (all green) if wells are sparse. If you see solid green areas, uncheck this and use manual parameters instead.")
+        
+        # Manual parameters - always show for reference
+        param_label = "Manual Override Parameters" if st.session_state.indicator_auto_fit else "Manual Variogram Parameters"
+        st.markdown(f"**{param_label}**")
+        
+        st.session_state.indicator_range = st.number_input(
+            "Range (meters)",
+            min_value=100.0,
+            max_value=50000.0,
+            value=st.session_state.indicator_range,
+            step=100.0,
+            help="Spatial influence distance. Wells beyond this range have minimal impact. Typical: 1500m (1.5km)" + (" (used as fallback if auto-fit fails)" if st.session_state.indicator_auto_fit else ""),
+            key="indicator_range_input",
+            disabled=st.session_state.indicator_auto_fit
+        )
+        
+        st.session_state.indicator_sill = st.number_input(
+            "Sill",
+            min_value=0.01,
+            max_value=1.0,
+            value=st.session_state.indicator_sill,
+            step=0.01,
+            help="Maximum variance for binary (0/1) indicator data. Theoretical value for binary data is 0.25" + (" (used as fallback if auto-fit fails)" if st.session_state.indicator_auto_fit else ""),
+            key="indicator_sill_input",
+            disabled=st.session_state.indicator_auto_fit
+        )
+        
+        st.session_state.indicator_nugget = st.number_input(
+            "Nugget",
+            min_value=0.0,
+            max_value=1.0,
+            value=st.session_state.indicator_nugget,
+            step=0.01,
+            help="Measurement error and micro-scale variability. Higher values reduce smoothing. Typical: 0.01-0.1" + (" (used as fallback if auto-fit fails)" if st.session_state.indicator_auto_fit else ""),
+            key="indicator_nugget_input",
+            disabled=st.session_state.indicator_auto_fit
+        )
+        
         if not st.session_state.indicator_auto_fit:
-            st.session_state.indicator_range = st.number_input(
-                "Range (meters)",
-                min_value=100.0,
-                max_value=50000.0,
-                value=st.session_state.indicator_range,
-                step=100.0,
-                help="Spatial influence distance. Wells beyond this range have minimal impact. Typical: 1500m (1.5km)",
-                key="indicator_range_input"
-            )
-            
-            st.session_state.indicator_sill = st.number_input(
-                "Sill",
-                min_value=0.01,
-                max_value=1.0,
-                value=st.session_state.indicator_sill,
-                step=0.01,
-                help="Maximum variance for binary (0/1) indicator data. Theoretical value for binary data is 0.25",
-                key="indicator_sill_input"
-            )
-            
-            st.session_state.indicator_nugget = st.number_input(
-                "Nugget",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.indicator_nugget,
-                step=0.01,
-                help="Measurement error and micro-scale variability. Higher values reduce smoothing. Typical: 0.01-0.1",
-                key="indicator_nugget_input"
-            )
-            
-            st.info(f"📐 Manual Settings: Range={st.session_state.indicator_range}m, Sill={st.session_state.indicator_sill}, Nugget={st.session_state.indicator_nugget}")
+            st.info(f"📐 Using Manual Settings: Range={st.session_state.indicator_range}m, Sill={st.session_state.indicator_sill}, Nugget={st.session_state.indicator_nugget}")
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")

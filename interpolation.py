@@ -1391,54 +1391,11 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # Ensure values are in [0,1] range (probabilities)
             interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
 
-            # Apply distance-based decay to prevent high values far from good wells
-            # AND reduce values near dry wells
-            from scipy.spatial.distance import cdist
+            # ===== DISTANCE DECAY POST-PROCESSING REMOVED =====
+            # User requested to see pure kriging results without penalties
+            # The variogram parameters (range=1.5km, nugget=0.1) now control the behavior
+            print(f"🔧 NO POST-PROCESSING: Using pure kriging results (no distance decay penalties)")
             
-            # 1. Reduce values FAR from good wells (existing logic)
-            good_wells_mask = yields >= 0.75  # Wells with good yield indicators
-            print(f"🔧 Found {np.sum(good_wells_mask)} good wells for distance decay calculation")
-            if np.any(good_wells_mask) and interpolated_z is not None:
-                good_coords = np.column_stack([x_coords[good_wells_mask], y_coords[good_wells_mask]])
-                grid_coords = grid_points
-
-                # Calculate distance to nearest good well for each grid point
-                distances_to_good = cdist(grid_coords, good_coords)
-                min_dist_to_good_km = np.min(distances_to_good, axis=1) / 1000.0  # Convert to km
-
-                # Apply exponential decay for distances > 3km from good wells
-                decay_threshold_km = 3.0
-                decay_factor = 0.3  # Gentle decay to preserve three-tier structure
-
-                distance_mask = min_dist_to_good_km > decay_threshold_km
-                excess_distance = min_dist_to_good_km[distance_mask] - decay_threshold_km
-                decay_multiplier = np.exp(-decay_factor * excess_distance)
-                interpolated_z[distance_mask] *= decay_multiplier
-            
-            # 2. NEW: Reduce values NEAR dry wells (negative influence zone)
-            dry_wells_mask = yields <= 0.1  # Wells with low/no yield (dry wells)
-            print(f"🔧 Found {np.sum(dry_wells_mask)} dry wells for negative influence calculation")
-            if np.any(dry_wells_mask) and interpolated_z is not None:
-                dry_coords = np.column_stack([x_coords[dry_wells_mask], y_coords[dry_wells_mask]])
-                grid_coords = grid_points
-
-                # Calculate distance to nearest dry well for each grid point
-                distances_to_dry = cdist(grid_coords, dry_coords)
-                min_dist_to_dry_km = np.min(distances_to_dry, axis=1) / 1000.0  # Convert to km
-
-                # Apply penalty within 2km of dry wells (reduce probability)
-                dry_influence_radius_km = 2.0
-                dry_penalty_factor = 0.6  # Reduce to 60% of kriging value near dry wells
-                
-                near_dry_mask = min_dist_to_dry_km < dry_influence_radius_km
-                # Linear reduction: full penalty at dry well, fades to no penalty at 2km
-                penalty_strength = 1.0 - (min_dist_to_dry_km[near_dry_mask] / dry_influence_radius_km)
-                penalty_multiplier = 1.0 - (penalty_strength * (1.0 - dry_penalty_factor))
-                interpolated_z[near_dry_mask] *= penalty_multiplier
-                
-                affected_points = np.sum(near_dry_mask)
-                print(f"🔧 Applied dry well penalty to {affected_points} grid points within {dry_influence_radius_km}km of dry wells")
-
             # Count points in each tier based on OUTPUT ranges (continuous 0-1 function)
             # Keep the continuous kriging output values intact - colors applied during visualization
             red_count = np.sum((interpolated_z >= 0.0) & (interpolated_z < 0.4))     # Red: 0.0-0.4

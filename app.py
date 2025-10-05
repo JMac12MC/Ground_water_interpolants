@@ -1871,7 +1871,7 @@ if st.session_state.wells_data is not None:
                     yield_value = feature['properties']['yield']
                     return {
                         'fillColor': get_color(yield_value),
-                        'color': 'none',
+                        'color': '',
                         'weight': 0,
                         'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                     }
@@ -1933,7 +1933,7 @@ if st.session_state.wells_data is not None:
                                 name=new_heatmap_name,
                                 style_function=lambda feature: {
                                     'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
-                                    'color': 'none',
+                                    'color': '',
                                     'weight': 0,
                                     'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                 },
@@ -1953,7 +1953,7 @@ if st.session_state.wells_data is not None:
                             name=new_heatmap_name,
                             style_function=lambda feature: {
                                 'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
-                                'color': 'none',
+                                'color': '',
                                 'weight': 0,
                                 'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                             },
@@ -1972,7 +1972,7 @@ if st.session_state.wells_data is not None:
                         name=new_heatmap_name,
                         style_function=lambda feature: {
                             'fillColor': get_global_unified_color(feature['properties'][display_field], st.session_state.interpolation_method),
-                            'color': 'none',
+                            'color': '',
                             'weight': 0,
                             'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                         },
@@ -2554,7 +2554,7 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                                     name=f"Stored: {stored_heatmap['heatmap_name']}",
                                     style_function=lambda feature, method=method: {
                                         'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                        'color': 'none',
+                                        'color': '',
                                         'weight': 0,
                                         'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                     },
@@ -2573,7 +2573,7 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                                 name=f"Stored: {stored_heatmap['heatmap_name']}",
                                 style_function=lambda feature, method=method: {
                                     'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                    'color': 'none',
+                                    'color': '',
                                     'weight': 0,
                                     'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                                 },
@@ -2591,7 +2591,7 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                             name=f"Stored: {stored_heatmap['heatmap_name']}",
                             style_function=lambda feature, method=method: {
                                 'fillColor': get_global_unified_color(feature['properties'].get('yield', 0), method),
-                                'color': 'none',
+                                'color': '',
                                 'weight': 0,
                                 'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
                             },

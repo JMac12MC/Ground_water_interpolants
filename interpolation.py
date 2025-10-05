@@ -1354,7 +1354,6 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
             # ===== INDICATOR KRIGING WITH NZTM2000 COORDINATES =====
             print(f"🔧 Performing indicator kriging in NZTM2000 coordinates")
-            print(f"🔍 INTERPOLATION.PY RECEIVED: auto_fit={indicator_auto_fit}, range={indicator_range}, sill={indicator_sill}, nugget={indicator_nugget}")
             
             # Use user-specified variogram parameters or auto-fit
             if indicator_auto_fit:
@@ -1386,6 +1385,20 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 
                 # Ensure values are in [0,1] range (probabilities)
                 interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+                
+                # Check if auto-fit produced poor results (pixelated output)
+                if indicator_auto_fit and OK is not None:
+                    try:
+                        fitted_range = OK.variogram_model_parameters[0]
+                        fitted_sill = OK.variogram_model_parameters[1] 
+                        fitted_nugget = OK.variogram_model_parameters[2]
+                        print(f"⚠️ AUTO-FIT RESULTS: range={fitted_range:.1f}m, sill={fitted_sill:.3f}, nugget={fitted_nugget:.3f}")
+                        
+                        # Detect poor auto-fit (very small range or high nugget/sill ratio indicates pixelation)
+                        if fitted_range < 500 or fitted_nugget/fitted_sill > 0.8:
+                            print(f"⚠️ AUTO-FIT WARNING: Parameters suggest pixelated output. Consider using manual parameters (range=1500, sill=0.25, nugget=0.1)")
+                    except:
+                        pass
                 
                 print(f"🔧 Indicator kriging completed: {len(interpolated_z)} probability points")
             else:

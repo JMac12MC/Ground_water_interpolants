@@ -45,6 +45,18 @@ Preferred communication style: Simple, everyday language.
 4. **Visualization**: Conversion of interpolated data to GeoJSON for map rendering.
 5. **Performance Path**: Utilization of pre-computed heatmaps from the database for large datasets.
 
+### Indicator Kriging Variogram Configuration
+**Known Issue - Auto-Fit Limitations:**
+- Auto-fit variogram often produces **pixelated results** (scattered red/orange/green) with sparse well data
+- PyKrige's auto-fit can find poor parameters (very small range or high nugget/sill ratio) causing nearest-neighbor effects instead of smooth spatial interpolation
+- **Recommendation**: Use manual parameters for reliable results
+
+**Optimal Manual Parameters for Indicator Kriging:**
+- Range: 1500m (1.5km spatial influence)
+- Sill: 0.25 (theoretical variance for binary indicator data)
+- Nugget: 0.1 (moderate smoothing)
+- These values provide smooth, realistic probability gradients
+
 ## External Dependencies
 
 ### Core Libraries

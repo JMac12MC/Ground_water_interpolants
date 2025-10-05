@@ -1791,12 +1791,10 @@ if st.session_state.wells_data is not None:
                     from sequential_heatmap import generate_quad_heatmaps_sequential
                     
                     # Generate heatmaps sequentially with comprehensive clipping polygon
-                    # DEBUG: Log indicator kriging parameters
                     indicator_auto_fit = st.session_state.get('indicator_auto_fit', False)
                     indicator_range = st.session_state.get('indicator_range', 1500.0)
                     indicator_sill = st.session_state.get('indicator_sill', 0.25)
                     indicator_nugget = st.session_state.get('indicator_nugget', 0.1)
-                    print(f"🔍 APP.PY PASSING TO SEQUENTIAL: auto_fit={indicator_auto_fit}, range={indicator_range}, sill={indicator_sill}, nugget={indicator_nugget}")
                     
                     success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
                         wells_data=st.session_state.wells_data,

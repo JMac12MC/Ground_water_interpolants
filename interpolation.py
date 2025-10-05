@@ -749,7 +749,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None, exclusion_polygons=None):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None, exclusion_polygons=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -1355,15 +1355,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # ===== INDICATOR KRIGING WITH NZTM2000 COORDINATES =====
             print(f"🔧 Performing indicator kriging in NZTM2000 coordinates")
             
-            # Cap variogram range to 1.5km (1500m) to give dry wells more local impact
-            # Higher nugget reduces over-smoothing and respects local well conditions
-            # For binary indicator data (0/1), sill ≈ 0.25 (variance of binary data)
-            variogram_params = {
-                'range': 1500.0,  # 1.5km in meters (NZTM2000) - wells influence within 1.5km
-                'sill': 0.25,     # Variance of binary 0/1 data
-                'nugget': 0.1     # Higher nugget to reduce smoothing, respect local dry wells
-            }
-            print(f"🔧 INDICATOR KRIGING: range=1.5km, sill=0.25, nugget=0.1 (reduced smoothing)")
+            # Use user-specified variogram parameters or auto-fit
+            if indicator_auto_fit:
+                # Auto-fit variogram from data
+                variogram_params = None
+                print(f"🔧 INDICATOR KRIGING: Auto-fitting variogram from data")
+            else:
+                # Manual variogram parameters
+                variogram_params = {
+                    'range': indicator_range,
+                    'sill': indicator_sill,
+                    'nugget': indicator_nugget
+                }
+                print(f"🔧 INDICATOR KRIGING: Manual parameters - range={indicator_range}m, sill={indicator_sill}, nugget={indicator_nugget}")
             
             # Use centralized kriging helper with spherical model for indicator data
             Z_grid, SS_grid, OK = krige_on_grid(

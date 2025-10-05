@@ -558,7 +558,11 @@ with st.sidebar:
                         soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                         new_clipping_polygon=st.session_state.new_clipping_polygon,
                         search_radius_km=st.session_state.search_radius,
-                        max_tiles=max_tiles_full
+                        max_tiles=max_tiles_full,
+                        indicator_auto_fit=st.session_state.get('indicator_auto_fit', False),
+                        indicator_range=st.session_state.get('indicator_range', 1500.0),
+                        indicator_sill=st.session_state.get('indicator_sill', 0.25),
+                        indicator_nugget=st.session_state.get('indicator_nugget', 0.1)
                     )
                     
                     if success_count > 0:
@@ -1786,7 +1790,11 @@ if st.session_state.wells_data is not None:
                         polygon_db=st.session_state.polygon_db,
                         soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
                         new_clipping_polygon=st.session_state.new_clipping_polygon,
-                        grid_size=st.session_state.get('grid_size', (2, 3))
+                        grid_size=st.session_state.get('grid_size', (2, 3)),
+                        indicator_auto_fit=st.session_state.get('indicator_auto_fit', False),
+                        indicator_range=st.session_state.get('indicator_range', 1500.0),
+                        indicator_sill=st.session_state.get('indicator_sill', 0.25),
+                        indicator_nugget=st.session_state.get('indicator_nugget', 0.1)
                     )
                     
                     print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")

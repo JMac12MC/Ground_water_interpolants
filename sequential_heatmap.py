@@ -1,7 +1,7 @@
 # Sequential Heatmap Generation System
 # Generates, stores, and displays heatmaps one at a time to prevent crashes
 
-def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):
+def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1):
     """
     Generate heatmaps using pre-calculated grid points from the 19.82km grid visualization.
     
@@ -157,7 +157,11 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                     method=interpolation_method,
                     indicator_mask=indicator_mask,
                     soil_polygons=soil_polygons,
-                    new_clipping_polygon=new_clipping_polygon
+                    new_clipping_polygon=new_clipping_polygon,
+                    indicator_auto_fit=indicator_auto_fit,
+                    indicator_range=indicator_range,
+                    indicator_sill=indicator_sill,
+                    indicator_nugget=indicator_nugget
                 )
                 
                 if geo_json_result and isinstance(geo_json_result, dict) and 'features' in geo_json_result:
@@ -214,7 +218,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
     
     return success_count, stored_heatmap_ids, error_messages
 
-def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, grid_size=None):
+def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, grid_size=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1):
     """
     Generate heatmaps sequentially in a grid pattern to avoid memory issues.
     
@@ -618,8 +622,11 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 variogram_model='spherical',
                 soil_polygons=soil_polygons,
                 indicator_mask=indicator_mask,
-
-                new_clipping_polygon=new_clipping_polygon
+                new_clipping_polygon=new_clipping_polygon,
+                indicator_auto_fit=indicator_auto_fit,
+                indicator_range=indicator_range,
+                indicator_sill=indicator_sill,
+                indicator_nugget=indicator_nugget
             )
             
             if geojson_data and len(geojson_data.get('features', [])) > 0:

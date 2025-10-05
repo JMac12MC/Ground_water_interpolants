@@ -152,14 +152,20 @@ def prepare_wells_xy(wells_df):
     wells_x_m, wells_y_m = to_nztm2000(lons, lats)
     return wells_x_m, wells_y_m
 
-def krige_on_grid(wells_x_m, wells_y_m, values, x_vals_m, y_vals_m, variogram_model='spherical', verbose=False):
+def krige_on_grid(wells_x_m, wells_y_m, values, x_vals_m, y_vals_m, variogram_model='spherical', verbose=False, variogram_parameters=None):
     """
     Perform Kriging interpolation using NZTM2000 meter coordinates.
+    
+    Parameters:
+    -----------
+    variogram_parameters : dict, optional
+        Dictionary with 'range', 'sill', 'nugget' to override auto-fitted values
     """
     try:
         OK = OrdinaryKriging(
             wells_x_m, wells_y_m, values,
             variogram_model=variogram_model,
+            variogram_parameters=variogram_parameters,
             verbose=verbose,
             enable_plotting=False,
             coordinates_type='euclidean'
@@ -1349,12 +1355,18 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             # ===== INDICATOR KRIGING WITH NZTM2000 COORDINATES =====
             print(f"🔧 Performing indicator kriging in NZTM2000 coordinates")
             
+            # Cap variogram range to 3km (3000m) to limit well influence
+            # This prevents distant wells from overriding local dry well signals
+            variogram_params = {'range': 3000.0}  # 3km in meters (NZTM2000)
+            print(f"🔧 INDICATOR KRIGING: Capping variogram range to 3km to respect local well conditions")
+            
             # Use centralized kriging helper with spherical model for indicator data
             Z_grid, SS_grid, OK = krige_on_grid(
                 wells_x_m, wells_y_m, yields,
                 x_vals_m, y_vals_m,
                 variogram_model='spherical',
-                verbose=False
+                verbose=False,
+                variogram_parameters=variogram_params
             )
             
             if Z_grid is not None:

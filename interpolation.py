@@ -1354,6 +1354,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
             # ===== INDICATOR KRIGING WITH NZTM2000 COORDINATES =====
             print(f"🔧 Performing indicator kriging in NZTM2000 coordinates")
+            print(f"🔍 INTERPOLATION.PY RECEIVED: auto_fit={indicator_auto_fit}, range={indicator_range}, sill={indicator_sill}, nugget={indicator_nugget}")
             
             # Use user-specified variogram parameters or auto-fit
             if indicator_auto_fit:

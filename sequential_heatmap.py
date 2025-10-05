@@ -241,6 +241,9 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     import numpy as np
     import math
     
+    # DEBUG: Log received indicator kriging parameters
+    print(f"🔍 SEQUENTIAL_HEATMAP.PY RECEIVED: auto_fit={indicator_auto_fit}, range={indicator_range}, sill={indicator_sill}, nugget={indicator_nugget}")
+    
     # Calculate positions for all heatmaps using dynamic spacing based on search area
     # Each heatmap uses search_radius, but centers are (search_radius - 0.180km) apart
     # This creates overlapping coverage for seamless visual joining

@@ -5,6 +5,10 @@ import time
 import gc
 from sqlalchemy import create_engine
 
+class SkipTileException(Exception):
+    """Exception for tiles that should be skipped without retry (deterministic failures)"""
+    pass
+
 def retry_with_backoff(func, max_attempts=3, initial_delay=1.0):
     """
     Retry a function with exponential backoff on failure.
@@ -15,8 +19,15 @@ def retry_with_backoff(func, max_attempts=3, initial_delay=1.0):
         initial_delay: Initial delay in seconds (doubles with each retry)
         
     Returns:
-        tuple: (success: bool, result: any, error: str or None)
+        tuple: (success: bool, result: any, error: str or None, skip: bool)
     """
+    from sqlalchemy.exc import OperationalError, IntegrityError, DatabaseError as SQLAlchemyDatabaseError
+    try:
+        import psycopg2
+        psycopg2_errors = (psycopg2.InterfaceError, psycopg2.OperationalError)
+    except ImportError:
+        psycopg2_errors = ()
+    
     attempt = 0
     delay = initial_delay
     last_error = None
@@ -24,19 +35,28 @@ def retry_with_backoff(func, max_attempts=3, initial_delay=1.0):
     while attempt < max_attempts:
         try:
             result = func()
-            return (True, result, None)
+            return (True, result, None, False)
+        except SkipTileException as e:
+            # Deterministic failure - don't retry
+            return (False, None, f"SKIP: {str(e)}", True)
         except MemoryError as e:
             last_error = f"MemoryError: {str(e)}"
             print(f"  ⚠️  Memory error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
-            # Force garbage collection before retry
             gc.collect()
+        except (OperationalError, IntegrityError, SQLAlchemyDatabaseError) as e:
+            last_error = f"DatabaseError ({type(e).__name__}): {str(e)}"
+            print(f"  ⚠️  Database error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
+        except psycopg2_errors as e:
+            last_error = f"DatabaseError ({type(e).__name__}): {str(e)}"
+            print(f"  ⚠️  Database connection error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
         except Exception as e:
-            # Categorize the error
             error_type = type(e).__name__
-            if 'database' in str(e).lower() or 'connection' in str(e).lower():
+            error_str = str(e).lower()
+            # Detect database connection errors by content
+            if 'connection' in error_str or 'database' in error_str:
                 last_error = f"DatabaseError ({error_type}): {str(e)}"
-                print(f"  ⚠️  Database error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
-            elif 'singular' in str(e).lower() or 'kriging' in str(e).lower():
+                print(f"  ⚠️  Database-related error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
+            elif 'singular' in error_str or 'kriging' in error_str or 'convergence' in error_str:
                 last_error = f"KrigingError ({error_type}): {str(e)}"
                 print(f"  ⚠️  Kriging error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
             else:
@@ -47,9 +67,9 @@ def retry_with_backoff(func, max_attempts=3, initial_delay=1.0):
         if attempt < max_attempts:
             print(f"  🔄 Retrying in {delay:.1f}s...")
             time.sleep(delay)
-            delay *= 2  # Exponential backoff
+            delay *= 2
     
-    return (False, None, last_error)
+    return (False, None, last_error, False)
 
 def refresh_database_connection(polygon_db):
     """
@@ -197,7 +217,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             filtered_wells = wells_df[wells_df['within_square']]
             
             if len(filtered_wells) == 0:
-                raise ValueError(f"No wells found for grid point {i+1}")
+                raise SkipTileException(f"No wells found for grid point {i+1}")
                 
             print(f"  GRID POINT {i+1}: {len(filtered_wells)} wells found")
             
@@ -258,7 +278,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             return (heatmap_id, geo_json_result)
         
         # Execute with retry logic
-        success, result, error = retry_with_backoff(generate_single_heatmap, max_attempts=3, initial_delay=1.0)
+        success, result, error, skip = retry_with_backoff(generate_single_heatmap, max_attempts=3, initial_delay=1.0)
         
         if success:
             heatmap_id, geo_json_result = result
@@ -271,17 +291,21 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             print(f"✅ Grid point {i+1} heatmap generated and stored: {heatmap_id}")
             db_error_count = 0  # Reset DB error counter on success
         else:
-            # Categorize failure and handle accordingly
-            error_messages.append(f"Grid point {i+1} failed after 3 attempts: {error}")
-            print(f"❌ FAILED: Grid point {i+1} - {error}")
-            
-            # If it's a database error, refresh connection
-            if 'DatabaseError' in error:
-                db_error_count += 1
-                if db_error_count >= 3:
-                    print(f"  ⚠️  Multiple database errors detected ({db_error_count}), refreshing connection...")
-                    if refresh_database_connection(polygon_db):
-                        db_error_count = 0  # Reset counter after successful refresh
+            if skip:
+                # Deterministic skip - log and continue without counting as error
+                print(f"⏭️  SKIPPED: Grid point {i+1} - {error}")
+            else:
+                # Real failure after retries
+                error_messages.append(f"Grid point {i+1} failed after 3 attempts: {error}")
+                print(f"❌ FAILED: Grid point {i+1} - {error}")
+                
+                # If it's a database error, refresh connection
+                if 'DatabaseError' in error:
+                    db_error_count += 1
+                    if db_error_count >= 3:
+                        print(f"  ⚠️  Multiple database errors detected ({db_error_count}), refreshing connection...")
+                        if refresh_database_connection(polygon_db):
+                            db_error_count = 0  # Reset counter after successful refresh
         
         # Cleanup memory after each tile
         cleanup_memory()

@@ -247,9 +247,22 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     # Get bounds for grid generation
     min_x, min_y, max_x, max_y = hull_polygon.bounds
     
-    # Generate grid points at dynamic spacing based on search area size
-    grid_spacing_km = search_radius_km - 0.180
+    # Calculate optimal grid spacing to reach max_tiles target
+    # Estimate: grid_points ≈ (area / spacing²)
+    # Solve for spacing: spacing = sqrt(area / target_points)
+    target_spacing_km = np.sqrt(hull_area_km2 / max_tiles)
+    
+    # Use smaller of: calculated target spacing OR default spacing (search_radius - 0.18)
+    default_spacing_km = search_radius_km - 0.180
+    grid_spacing_km = min(target_spacing_km, default_spacing_km)
+    
+    # Ensure minimum spacing of 5km for reasonable coverage
+    grid_spacing_km = max(5.0, grid_spacing_km)
+    
     grid_spacing = int(grid_spacing_km * 1000)  # Convert km to meters (NZTM units)
+    
+    print(f"📐 Grid spacing: {grid_spacing_km:.2f}km (to fit ~{max_tiles} tiles in {hull_area_km2:.0f}km² area)")
+    print(f"📐 Default spacing would be: {default_spacing_km:.2f}km")
     
     # Calculate grid bounds with padding
     start_x = int(min_x // grid_spacing) * grid_spacing

@@ -1386,19 +1386,67 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 # Ensure values are in [0,1] range (probabilities)
                 interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
                 
-                # Check if auto-fit produced poor results (pixelated output)
+                # VALIDATE AUTO-FIT PARAMETERS AND FALLBACK IF NEEDED
                 if indicator_auto_fit and OK is not None:
                     try:
                         fitted_range = OK.variogram_model_parameters[0]
                         fitted_sill = OK.variogram_model_parameters[1] 
                         fitted_nugget = OK.variogram_model_parameters[2]
-                        print(f"⚠️ AUTO-FIT RESULTS: range={fitted_range:.1f}m, sill={fitted_sill:.3f}, nugget={fitted_nugget:.3f}")
+                        nugget_sill_ratio = fitted_nugget / fitted_sill if fitted_sill > 0 else 999
                         
-                        # Detect poor auto-fit (very small range or high nugget/sill ratio indicates pixelation)
-                        if fitted_range < 500 or fitted_nugget/fitted_sill > 0.8:
-                            print(f"⚠️ AUTO-FIT WARNING: Parameters suggest pixelated output. Consider using manual parameters (range=1500, sill=0.25, nugget=0.1)")
-                    except:
-                        pass
+                        print(f"📊 AUTO-FIT RESULTS: range={fitted_range:.1f}m, sill={fitted_sill:.3f}, nugget={fitted_nugget:.3f}, nugget/sill={nugget_sill_ratio:.2f}")
+                        
+                        # VALIDATION CRITERIA FOR INDICATOR KRIGING
+                        # Range: Must be ≥500m (prevents pixelation/nearest-neighbor effect)
+                        # Nugget/Sill: Must be <0.8 (ensures spatial correlation, not just noise)
+                        # Sill: Should be 0.1-0.5 for indicator data (reasonable variance for binary/probability data)
+                        
+                        needs_fallback = False
+                        fallback_reason = []
+                        
+                        if fitted_range < 500:
+                            needs_fallback = True
+                            fallback_reason.append(f"range too small ({fitted_range:.1f}m < 500m minimum)")
+                        
+                        if nugget_sill_ratio > 0.8:
+                            needs_fallback = True
+                            fallback_reason.append(f"nugget/sill ratio too high ({nugget_sill_ratio:.2f} > 0.8 maximum)")
+                        
+                        if fitted_sill < 0.1 or fitted_sill > 0.5:
+                            needs_fallback = True
+                            fallback_reason.append(f"sill out of range ({fitted_sill:.3f}, expected 0.1-0.5)")
+                        
+                        if needs_fallback:
+                            print(f"⚠️ AUTO-FIT VALIDATION FAILED: {'; '.join(fallback_reason)}")
+                            print(f"🔄 FALLBACK: Re-running kriging with safe manual defaults (range=1500m, sill=0.25, nugget=0.1)")
+                            
+                            # Re-run kriging with validated manual defaults
+                            manual_params = {
+                                'range': 1500.0,
+                                'sill': 0.25,
+                                'nugget': 0.1
+                            }
+                            
+                            Z_grid_fallback, SS_grid_fallback, OK_fallback = krige_on_grid(
+                                wells_x_m, wells_y_m, yields,
+                                x_vals_m, y_vals_m,
+                                variogram_model='spherical',
+                                verbose=False,
+                                variogram_parameters=manual_params
+                            )
+                            
+                            if Z_grid_fallback is not None:
+                                # Use fallback results
+                                Z_flat = Z_grid_fallback.flatten()
+                                interpolated_z = Z_flat[mask]
+                                interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
+                                print(f"✅ FALLBACK SUCCESS: Using manual parameters, {len(interpolated_z)} probability points")
+                            else:
+                                print(f"❌ FALLBACK FAILED: Manual kriging also failed, using original auto-fit results")
+                        else:
+                            print(f"✅ AUTO-FIT VALIDATION PASSED: Parameters are acceptable")
+                    except Exception as e:
+                        print(f"⚠️ Parameter validation error: {e}, using original results")
                 
                 print(f"🔧 Indicator kriging completed: {len(interpolated_z)} probability points")
             else:

@@ -1,6 +1,80 @@
 # Sequential Heatmap Generation System
 # Generates, stores, and displays heatmaps one at a time to prevent crashes
 
+import time
+import gc
+from sqlalchemy import create_engine
+
+def retry_with_backoff(func, max_attempts=3, initial_delay=1.0):
+    """
+    Retry a function with exponential backoff on failure.
+    
+    Args:
+        func: Function to retry (should be a callable that takes no arguments)
+        max_attempts: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds (doubles with each retry)
+        
+    Returns:
+        tuple: (success: bool, result: any, error: str or None)
+    """
+    attempt = 0
+    delay = initial_delay
+    last_error = None
+    
+    while attempt < max_attempts:
+        try:
+            result = func()
+            return (True, result, None)
+        except MemoryError as e:
+            last_error = f"MemoryError: {str(e)}"
+            print(f"  ⚠️  Memory error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
+            # Force garbage collection before retry
+            gc.collect()
+        except Exception as e:
+            # Categorize the error
+            error_type = type(e).__name__
+            if 'database' in str(e).lower() or 'connection' in str(e).lower():
+                last_error = f"DatabaseError ({error_type}): {str(e)}"
+                print(f"  ⚠️  Database error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
+            elif 'singular' in str(e).lower() or 'kriging' in str(e).lower():
+                last_error = f"KrigingError ({error_type}): {str(e)}"
+                print(f"  ⚠️  Kriging error on attempt {attempt + 1}/{max_attempts}: {str(e)}")
+            else:
+                last_error = f"{error_type}: {str(e)}"
+                print(f"  ⚠️  Error on attempt {attempt + 1}/{max_attempts}: {error_type} - {str(e)}")
+        
+        attempt += 1
+        if attempt < max_attempts:
+            print(f"  🔄 Retrying in {delay:.1f}s...")
+            time.sleep(delay)
+            delay *= 2  # Exponential backoff
+    
+    return (False, None, last_error)
+
+def refresh_database_connection(polygon_db):
+    """
+    Refresh the database connection to recover from connection errors.
+    
+    Args:
+        polygon_db: PolygonDatabase instance
+    """
+    try:
+        print("  🔄 Refreshing database connection...")
+        if hasattr(polygon_db, 'engine'):
+            polygon_db.engine.dispose()
+            polygon_db.engine = create_engine(polygon_db.database_url)
+        print("  ✅ Database connection refreshed")
+        return True
+    except Exception as e:
+        print(f"  ❌ Failed to refresh database connection: {e}")
+        return False
+
+def cleanup_memory():
+    """
+    Explicitly cleanup memory after processing a heatmap.
+    """
+    gc.collect()
+
 def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1):
     """
     Generate heatmaps using pre-calculated grid points from the 19.82km grid visualization.
@@ -100,11 +174,13 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         'total_values': len(global_values) if global_values else 0
     }
     
-    # Process each grid point
+    # Process each grid point with retry logic
+    db_error_count = 0
     for i, grid_point in enumerate(grid_points):
-        try:
-            st.write(f"🔄 Building heatmap {i+1}/{len(grid_points)}: Grid Point {i+1} ({grid_point[0]:.6f}, {grid_point[1]:.6f})")
-            
+        st.write(f"🔄 Building heatmap {i+1}/{len(grid_points)}: Grid Point {i+1} ({grid_point[0]:.6f}, {grid_point[1]:.6f})")
+        
+        # Define the work function for this grid point
+        def generate_single_heatmap():
             # Filter wells for this grid point
             wells_df = wells_data.copy()
             wells_df['within_square'] = wells_df.apply(
@@ -121,8 +197,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             filtered_wells = wells_df[wells_df['within_square']]
             
             if len(filtered_wells) == 0:
-                error_messages.append(f"No wells found for grid point {i+1}")
-                continue
+                raise ValueError(f"No wells found for grid point {i+1}")
                 
             print(f"  GRID POINT {i+1}: {len(filtered_wells)} wells found")
             
@@ -134,80 +209,82 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             ]
             
             if interpolation_method in methods_requiring_mask:
-                try:
-                    indicator_mask = generate_indicator_kriging_mask(
-                        filtered_wells.copy(),
-                        center_point=(grid_point[0], grid_point[1]),
-                        radius_km=search_radius,
-                        resolution=100,  # Fixed resolution
-                        soil_polygons=soil_polygons
-                    )
-                except Exception as e:
-                    print(f"❌ Error generating indicator mask for grid point {i+1}: {str(e)}")
-                    error_messages.append(f"Indicator mask error for grid point {i+1}: {str(e)}")
-                    continue
-            
-            # Generate the heatmap
-            try:
-                geo_json_result = generate_geo_json_grid(
+                indicator_mask = generate_indicator_kriging_mask(
                     filtered_wells.copy(),
                     center_point=(grid_point[0], grid_point[1]),
                     radius_km=search_radius,
-                    resolution=100,  # Fixed resolution
-                    method=interpolation_method,
-                    indicator_mask=indicator_mask,
-                    soil_polygons=soil_polygons,
-                    new_clipping_polygon=new_clipping_polygon,
-                    indicator_auto_fit=indicator_auto_fit,
-                    indicator_range=indicator_range,
-                    indicator_sill=indicator_sill,
-                    indicator_nugget=indicator_nugget
+                    resolution=100,
+                    soil_polygons=soil_polygons
                 )
-                
-                if geo_json_result and isinstance(geo_json_result, dict) and 'features' in geo_json_result:
-                    # Create unique heatmap identifier based on grid point
-                    heatmap_id = f"{interpolation_method}_gridpoint{i+1}_{grid_point[0]:.3f}_{grid_point[1]:.3f}"
-                    
-                    # Store in database using the PolygonDatabase method
-                    success_id = polygon_db.store_heatmap(
-                        heatmap_name=heatmap_id,
-                        center_lat=grid_point[0],
-                        center_lon=grid_point[1],
-                        radius_km=search_radius,
-                        interpolation_method=interpolation_method,
-                        heatmap_data=[],  # Not using point data for GeoJSON heatmaps
-                        geojson_data=geo_json_result,
-                        well_count=len(filtered_wells),
-                        colormap_metadata=colormap_metadata
-                    )
-                    success = success_id is not None
-                    
-                    if success:
-                        stored_heatmap_ids.append(heatmap_id)
-                        generated_heatmaps.append({
-                            'id': heatmap_id,
-                            'center': grid_point,
-                            'geojson': geo_json_result
-                        })
-                        print(f"✅ Grid point {i+1} heatmap generated and stored: {heatmap_id}")
-                    else:
-                        error_messages.append(f"Failed to store heatmap for grid point {i+1}")
-                        print(f"❌ Failed to store heatmap for grid point {i+1}")
-                else:
-                    error_messages.append(f"Invalid GeoJSON result for grid point {i+1}")
-                    print(f"❌ Invalid GeoJSON result for grid point {i+1}")
-                    
-            except Exception as e:
-                error_msg = f"Heatmap generation error for grid point {i+1}: {str(e)}"
-                error_messages.append(error_msg)
-                print(f"❌ {error_msg}")
-                continue
-                
-        except Exception as e:
-            error_msg = f"Unexpected error processing grid point {i+1}: {str(e)}"
-            error_messages.append(error_msg)
-            print(f"❌ {error_msg}")
-            continue
+            
+            # Generate the heatmap
+            geo_json_result = generate_geo_json_grid(
+                filtered_wells.copy(),
+                center_point=(grid_point[0], grid_point[1]),
+                radius_km=search_radius,
+                resolution=100,
+                method=interpolation_method,
+                indicator_mask=indicator_mask,
+                soil_polygons=soil_polygons,
+                new_clipping_polygon=new_clipping_polygon,
+                indicator_auto_fit=indicator_auto_fit,
+                indicator_range=indicator_range,
+                indicator_sill=indicator_sill,
+                indicator_nugget=indicator_nugget
+            )
+            
+            if not geo_json_result or not isinstance(geo_json_result, dict) or 'features' not in geo_json_result:
+                raise ValueError("Invalid GeoJSON result")
+            
+            # Create unique heatmap identifier
+            heatmap_id = f"{interpolation_method}_gridpoint{i+1}_{grid_point[0]:.3f}_{grid_point[1]:.3f}"
+            
+            # Store in database
+            success_id = polygon_db.store_heatmap(
+                heatmap_name=heatmap_id,
+                center_lat=grid_point[0],
+                center_lon=grid_point[1],
+                radius_km=search_radius,
+                interpolation_method=interpolation_method,
+                heatmap_data=[],
+                geojson_data=geo_json_result,
+                well_count=len(filtered_wells),
+                colormap_metadata=colormap_metadata
+            )
+            
+            if success_id is None:
+                raise Exception("Database storage failed")
+            
+            return (heatmap_id, geo_json_result)
+        
+        # Execute with retry logic
+        success, result, error = retry_with_backoff(generate_single_heatmap, max_attempts=3, initial_delay=1.0)
+        
+        if success:
+            heatmap_id, geo_json_result = result
+            stored_heatmap_ids.append(heatmap_id)
+            generated_heatmaps.append({
+                'id': heatmap_id,
+                'center': grid_point,
+                'geojson': geo_json_result
+            })
+            print(f"✅ Grid point {i+1} heatmap generated and stored: {heatmap_id}")
+            db_error_count = 0  # Reset DB error counter on success
+        else:
+            # Categorize failure and handle accordingly
+            error_messages.append(f"Grid point {i+1} failed after 3 attempts: {error}")
+            print(f"❌ FAILED: Grid point {i+1} - {error}")
+            
+            # If it's a database error, refresh connection
+            if 'DatabaseError' in error:
+                db_error_count += 1
+                if db_error_count >= 3:
+                    print(f"  ⚠️  Multiple database errors detected ({db_error_count}), refreshing connection...")
+                    if refresh_database_connection(polygon_db):
+                        db_error_count = 0  # Reset counter after successful refresh
+        
+        # Cleanup memory after each tile
+        cleanup_memory()
     
     success_count = len(stored_heatmap_ids)
     print(f"📋 GRID-BASED GENERATION COMPLETE:")

@@ -308,7 +308,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 print(f"❌ FAILED: Grid point {i+1} - {error}")
                 
                 # If it's a database error, refresh connection
-                if 'DatabaseError' in error:
+                if error and 'DatabaseError' in str(error):
                     db_error_count += 1
                     if db_error_count >= 3:
                         print(f"  ⚠️  Multiple database errors detected ({db_error_count}), refreshing connection...")

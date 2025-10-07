@@ -290,39 +290,33 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         actual_total = total_grid_points
         print(f"📐 Using all {total_grid_points} grid points")
     
-    try:
-        from sequential_heatmap import generate_grid_heatmaps_from_points
-        result = generate_grid_heatmaps_from_points(
-            wells_data, 
-            grid_points_latlon, 
-            search_radius_km,  # use the parameter value
-            interpolation_method, 
-            polygon_db, 
-            soil_polygons, 
-            new_clipping_polygon,
-            indicator_auto_fit=indicator_auto_fit,
-            indicator_range=indicator_range,
-            indicator_sill=indicator_sill,
-            indicator_nugget=indicator_nugget
-        )
+    from sequential_heatmap import generate_grid_heatmaps_from_points
+    result = generate_grid_heatmaps_from_points(
+        wells_data, 
+        grid_points_latlon, 
+        search_radius_km,  # use the parameter value
+        interpolation_method, 
+        polygon_db, 
+        soil_polygons, 
+        new_clipping_polygon,
+        indicator_auto_fit=indicator_auto_fit,
+        indicator_range=indicator_range,
+        indicator_sill=indicator_sill,
+        indicator_nugget=indicator_nugget
+    )
+    
+    if isinstance(result, tuple) and len(result) >= 3:
+        success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
         
-        if isinstance(result, tuple) and len(result) >= 3:
-            success_count, stored_heatmap_ids, error_messages = result[0], result[1], result[2]
-            
-            print(f"📋 FULL GENERATION RESULTS:")
-            print(f"   Grid points processed: {actual_total}")
-            print(f"   Successful heatmaps: {success_count}")
-            print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
-            print(f"   Errors: {len(error_messages)}")
-            
-            return success_count, stored_heatmap_ids, error_messages
-        else:
-            error_msg = "Unexpected result format from sequential generation"
-            print(f"❌ {error_msg}")
-            return 0, [], [error_msg]
-            
-    except Exception as e:
-        error_msg = f"Error in full automated generation: {str(e)}"
+        print(f"📋 FULL GENERATION RESULTS:")
+        print(f"   Grid points processed: {actual_total}")
+        print(f"   Successful heatmaps: {success_count}")
+        print(f"   Stored heatmap IDs: {len(stored_heatmap_ids)}")
+        print(f"   Errors: {len(error_messages)}")
+        
+        return success_count, stored_heatmap_ids, error_messages
+    else:
+        error_msg = "Unexpected result format from sequential generation"
         print(f"❌ {error_msg}")
         return 0, [], [error_msg]
 

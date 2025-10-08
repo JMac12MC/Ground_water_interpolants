@@ -580,39 +580,43 @@ with st.sidebar:
     # Execute generation when flag is True (survives reruns)
     if st.session_state.auto_generation_in_progress:
         params = st.session_state.generation_params
-        with st.spinner(f"Generating up to {params['max_tiles']} automated heatmaps..."):
-            try:
-                from automated_heatmap_generator import generate_automated_heatmaps
+        st.info(f"⏳ Auto-generation in progress for up to {params['max_tiles']} heatmaps... Check console for progress.")
+        
+        try:
+            from automated_heatmap_generator import generate_automated_heatmaps
+            
+            success_count, stored_ids, errors = generate_automated_heatmaps(
+                wells_data=st.session_state.wells_data,
+                interpolation_method=params['interpolation_method'],
+                polygon_db=st.session_state.polygon_db,
+                soil_polygons=st.session_state.soil_polygons if params['show_soil_polygons'] else None,
+                new_clipping_polygon=st.session_state.new_clipping_polygon,
+                search_radius_km=params['search_radius_km'],
+                max_tiles=params['max_tiles'],
+                indicator_auto_fit=params['indicator_auto_fit'],
+                indicator_range=params['indicator_range'],
+                indicator_sill=params['indicator_sill'],
+                indicator_nugget=params['indicator_nugget']
+            )
+            
+            # Clear flag after successful completion
+            st.session_state.auto_generation_in_progress = False
+            
+            if success_count > 0:
+                st.success(f"✅ Generated {success_count} heatmaps successfully!")
+                if errors:
+                    st.warning(f"⚠️ {len(errors)} tiles had errors")
+                # Don't reload stored_heatmaps here - it triggers rerun before flag clear takes effect
+                # Map will auto-load them when it renders
+            else:
+                st.error("❌ No heatmaps generated. Check console for details.")
                 
-                success_count, stored_ids, errors = generate_automated_heatmaps(
-                    wells_data=st.session_state.wells_data,
-                    interpolation_method=params['interpolation_method'],
-                    polygon_db=st.session_state.polygon_db,
-                    soil_polygons=st.session_state.soil_polygons if params['show_soil_polygons'] else None,
-                    new_clipping_polygon=st.session_state.new_clipping_polygon,
-                    search_radius_km=params['search_radius_km'],
-                    max_tiles=params['max_tiles'],
-                    indicator_auto_fit=params['indicator_auto_fit'],
-                    indicator_range=params['indicator_range'],
-                    indicator_sill=params['indicator_sill'],
-                    indicator_nugget=params['indicator_nugget']
-                )
-                
-                # Clear flag after successful completion
-                st.session_state.auto_generation_in_progress = False
-                
-                if success_count > 0:
-                    st.success(f"✅ Generated {success_count} heatmaps successfully!")
-                    if errors:
-                        st.warning(f"⚠️ {len(errors)} tiles had errors")
-                    # Don't reload stored_heatmaps here - it triggers rerun before flag clear takes effect
-                    # Map will auto-load them when it renders
-                else:
-                    st.error("❌ No heatmaps generated. Check console for details.")
-                    
-            except Exception as e:
-                st.session_state.auto_generation_in_progress = False
-                st.error(f"Generation error: {e}")
+        except Exception as e:
+            st.session_state.auto_generation_in_progress = False
+            st.error(f"Generation error: {e}")
+        
+        # CRITICAL: Stop script execution to prevent map rendering during generation
+        st.stop()
     
     # Stored Heatmaps Management Section
     st.markdown("---")

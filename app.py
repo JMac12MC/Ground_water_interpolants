@@ -580,7 +580,19 @@ with st.sidebar:
     # Execute generation when flag is True (survives reruns)
     if st.session_state.auto_generation_in_progress:
         params = st.session_state.generation_params
-        st.info(f"⏳ Auto-generation in progress for up to {params['max_tiles']} heatmaps... Check console for progress.")
+        
+        # CRITICAL FIX: Check if generation already completed to prevent infinite loops
+        existing_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+        existing_count = len(existing_heatmaps)
+        
+        if existing_count >= params['max_tiles']:
+            # Generation already complete - clear flag and show success
+            st.session_state.auto_generation_in_progress = False
+            st.success(f"✅ Auto-generation complete! {existing_count} heatmaps already exist.")
+            st.info("Refresh the page to view all heatmaps.")
+            st.stop()
+        
+        st.info(f"⏳ Auto-generation in progress ({existing_count}/{params['max_tiles']} heatmaps)... Check console for progress.")
         
         try:
             from automated_heatmap_generator import generate_automated_heatmaps

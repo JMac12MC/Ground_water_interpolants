@@ -194,17 +194,11 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         'total_values': len(global_values) if global_values else 0
     }
     
-    # Create a single progress placeholder that updates in-place (avoids widget limit)
-    progress_placeholder = st.empty()
-    
     # Process each grid point with retry logic
+    # NO Streamlit UI updates during generation - they cause page re-renders that interrupt the loop!
     db_error_count = 0
     for i, grid_point in enumerate(grid_points):
-        # Update progress every 5 heatmaps to avoid Streamlit widget/timeout limits
-        if i % 5 == 0 or i == len(grid_points) - 1:
-            progress_placeholder.info(f"🔄 Building heatmap {i+1}/{len(grid_points)} (Grid Point {i+1})")
-        
-        # Always log to console for debugging
+        # Log to console only - NO st.write() or st.empty() updates to avoid triggering Streamlit re-renders
         print(f"🔄 Building heatmap {i+1}/{len(grid_points)}: Grid Point {i+1} ({grid_point[0]:.6f}, {grid_point[1]:.6f})")
         
         # Define the work function for this grid point

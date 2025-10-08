@@ -194,10 +194,40 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         'total_values': len(global_values) if global_values else 0
     }
     
-    # Process each grid point with retry logic
+    # RESUME SUPPORT: Find the highest grid point already completed
+    try:
+        existing_heatmaps = polygon_db.get_all_stored_heatmaps()
+        max_grid_point = 0
+        for heatmap in existing_heatmaps:
+            name = heatmap.get('heatmap_name', '')
+            # Extract grid point number from name like "indicator_kriging_spherical_continuous_gridpoint116_..."
+            if 'gridpoint' in name:
+                try:
+                    parts = name.split('gridpoint')[1].split('_')
+                    grid_num = int(parts[0])
+                    if grid_num > max_grid_point:
+                        max_grid_point = grid_num
+                except:
+                    pass
+        
+        start_index = max_grid_point  # Resume from next point
+        if start_index > 0:
+            print(f"📍 RESUME: Found {len(existing_heatmaps)} existing heatmaps, highest grid point is {max_grid_point}")
+            print(f"📍 Starting from grid point {start_index + 1} (skipping first {start_index} points)")
+        else:
+            print(f"📍 FRESH START: No existing grid points found, starting from point 1")
+    except Exception as e:
+        print(f"⚠️ Could not determine resume point: {e}")
+        start_index = 0
+    
+    # Process each grid point with retry logic, starting from resume point
     # NO Streamlit UI updates during generation - they cause page re-renders that interrupt the loop!
     db_error_count = 0
     for i, grid_point in enumerate(grid_points):
+        # Skip already completed grid points
+        if i < start_index:
+            continue
+            
         # Log to console only - NO st.write() or st.empty() updates to avoid triggering Streamlit re-renders
         print(f"🔄 Building heatmap {i+1}/{len(grid_points)}: Grid Point {i+1} ({grid_point[0]:.6f}, {grid_point[1]:.6f})")
         
@@ -277,20 +307,27 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             if success_id is None:
                 raise Exception("Database storage failed")
             
-            return (heatmap_id, geo_json_result)
+            # Check if this was a duplicate (negative ID)
+            is_duplicate = success_id < 0
+            actual_id = abs(success_id) if is_duplicate else success_id
+            
+            return (heatmap_id, geo_json_result, is_duplicate, actual_id)
         
         # Execute with retry logic
         success, result, error, skip = retry_with_backoff(generate_single_heatmap, max_attempts=3, initial_delay=1.0)
         
         if success:
-            heatmap_id, geo_json_result = result
+            heatmap_id, geo_json_result, is_duplicate, actual_id = result
             stored_heatmap_ids.append(heatmap_id)
             generated_heatmaps.append({
                 'id': heatmap_id,
                 'center': grid_point,
                 'geojson': geo_json_result
             })
-            print(f"✅ Grid point {i+1} heatmap generated and stored: {heatmap_id}")
+            if is_duplicate:
+                print(f"♻️  Grid point {i+1} DUPLICATE SKIPPED (already exists with ID {actual_id}): {heatmap_id}")
+            else:
+                print(f"✅ Grid point {i+1} NEW heatmap generated and stored (ID {actual_id}): {heatmap_id}")
             db_error_count = 0  # Reset DB error counter on success
         else:
             if skip:

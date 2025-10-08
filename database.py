@@ -469,8 +469,8 @@ class PolygonDatabase:
                     existing_row = existing_check.fetchone()
                     if existing_row:
                         existing_id = existing_row[0]
-                        print(f"Heatmap '{heatmap_name}' already exists with ID {existing_id} at same location, skipping duplicate")
-                        return existing_id
+                        print(f"⚠️ DUPLICATE DETECTED: '{heatmap_name}' already exists with ID {existing_id}, returning existing ID")
+                        return -existing_id  # Return negative ID to signal duplicate
                     
                     # Insert new heatmap if no duplicate found - include colormap metadata for consistency
                     colormap_json = json.dumps(colormap_metadata) if colormap_metadata else None

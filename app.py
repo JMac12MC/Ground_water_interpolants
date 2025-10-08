@@ -554,40 +554,66 @@ with st.sidebar:
     max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=1000, value=100, step=10,
                                     help="Automated generation continues until reaching actual well data bounds (up to this limit)")
     
+    # Initialize persistent generation flag
+    if 'auto_generation_in_progress' not in st.session_state:
+        st.session_state.auto_generation_in_progress = False
+    
+    # Button sets persistent flag instead of directly running generation
     if st.button("🚀 Full Auto Generation", help="Generate heatmaps for all well data (limited by max tiles)"):
         if st.session_state.wells_data is not None and st.session_state.polygon_db is not None:
-            with st.spinner(f"Generating up to {max_tiles_full} automated heatmaps..."):
-                try:
-                    from automated_heatmap_generator import generate_automated_heatmaps
-                    
-                    success_count, stored_ids, errors = generate_automated_heatmaps(
-                        wells_data=st.session_state.wells_data,
-                        interpolation_method=st.session_state.interpolation_method,
-                        polygon_db=st.session_state.polygon_db,
-                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                        new_clipping_polygon=st.session_state.new_clipping_polygon,
-                        search_radius_km=st.session_state.search_radius,
-                        max_tiles=max_tiles_full,
-                        indicator_auto_fit=st.session_state.get('indicator_auto_fit', False),
-                        indicator_range=st.session_state.get('indicator_range', 1500.0),
-                        indicator_sill=st.session_state.get('indicator_sill', 0.25),
-                        indicator_nugget=st.session_state.get('indicator_nugget', 0.1)
-                    )
-                    
-                    if success_count > 0:
-                        st.success(f"✅ Generated {success_count} heatmaps successfully!")
-                        if errors:
-                            st.warning(f"⚠️ {len(errors)} tiles had errors")
-                        
-                        # Reload stored heatmaps
-                        st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                    else:
-                        st.error("❌ No heatmaps generated. Check console for details.")
-                        
-                except Exception as e:
-                    st.error(f"Generation error: {e}")
+            # Set flag and store parameters
+            st.session_state.auto_generation_in_progress = True
+            st.session_state.generation_params = {
+                'max_tiles': max_tiles_full,
+                'interpolation_method': st.session_state.interpolation_method,
+                'search_radius_km': st.session_state.search_radius,
+                'show_soil_polygons': st.session_state.show_soil_polygons,
+                'indicator_auto_fit': st.session_state.get('indicator_auto_fit', False),
+                'indicator_range': st.session_state.get('indicator_range', 1500.0),
+                'indicator_sill': st.session_state.get('indicator_sill', 0.25),
+                'indicator_nugget': st.session_state.get('indicator_nugget', 0.1)
+            }
+            st.rerun()
         else:
             st.error("Wells data or database not available")
+    
+    # Execute generation when flag is True (survives reruns)
+    if st.session_state.auto_generation_in_progress:
+        params = st.session_state.generation_params
+        with st.spinner(f"Generating up to {params['max_tiles']} automated heatmaps..."):
+            try:
+                from automated_heatmap_generator import generate_automated_heatmaps
+                
+                success_count, stored_ids, errors = generate_automated_heatmaps(
+                    wells_data=st.session_state.wells_data,
+                    interpolation_method=params['interpolation_method'],
+                    polygon_db=st.session_state.polygon_db,
+                    soil_polygons=st.session_state.soil_polygons if params['show_soil_polygons'] else None,
+                    new_clipping_polygon=st.session_state.new_clipping_polygon,
+                    search_radius_km=params['search_radius_km'],
+                    max_tiles=params['max_tiles'],
+                    indicator_auto_fit=params['indicator_auto_fit'],
+                    indicator_range=params['indicator_range'],
+                    indicator_sill=params['indicator_sill'],
+                    indicator_nugget=params['indicator_nugget']
+                )
+                
+                # Clear flag after successful completion
+                st.session_state.auto_generation_in_progress = False
+                
+                if success_count > 0:
+                    st.success(f"✅ Generated {success_count} heatmaps successfully!")
+                    if errors:
+                        st.warning(f"⚠️ {len(errors)} tiles had errors")
+                    
+                    # Reload stored heatmaps
+                    st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                else:
+                    st.error("❌ No heatmaps generated. Check console for details.")
+                    
+            except Exception as e:
+                st.session_state.auto_generation_in_progress = False
+                st.error(f"Generation error: {e}")
     
     # Stored Heatmaps Management Section
     st.markdown("---")
@@ -857,6 +883,11 @@ with st.sidebar:
 
 # Main content area
 # Map now takes full width
+# CRITICAL: Skip map rendering during auto-generation to prevent re-entrant display logic
+if st.session_state.auto_generation_in_progress:
+    st.info("⏳ Auto-generation in progress... Map display temporarily disabled to prevent interruption.")
+    st.stop()  # Stop script execution here during generation
+
 # Default location (New Zealand as example)
 default_location = [-43.5320, 172.6306]  # Christchurch, New Zealand
 

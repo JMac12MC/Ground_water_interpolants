@@ -2192,8 +2192,15 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 
                 valid_heatmaps_for_raster.append(stored_heatmap['heatmap_name'])
         
-        # Generate single unified smooth raster if we have combined data
-        if combined_geojson['features']:
+        # Generate single unified smooth raster ONLY when auto-generation is complete
+        # Skip raster during active generation to avoid showing incomplete coverage
+        generate_raster = not st.session_state.get('auto_generation_in_progress', False)
+        
+        if not generate_raster:
+            print(f"⏸️  RASTER GENERATION SKIPPED: Auto-generation in progress ({len(valid_heatmaps_for_raster)} heatmaps), waiting for completion")
+        
+        # Generate single unified smooth raster if we have combined data AND generation is complete
+        if combined_geojson['features'] and generate_raster:
             print(f"🌬️  UNIFIED SMOOTH RASTER: Combining {len(combined_geojson['features'])} triangles from {len(valid_heatmaps_for_raster)} heatmaps")
             print(f"🌬️  Heatmaps included: {', '.join(valid_heatmaps_for_raster)}")
             print(f"🌬️  Overall bounds: N={overall_bounds['north']:.3f}, S={overall_bounds['south']:.3f}, E={overall_bounds['east']:.3f}, W={overall_bounds['west']:.3f}")

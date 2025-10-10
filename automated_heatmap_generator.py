@@ -278,17 +278,43 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     total_grid_points = len(grid_points_latlon)
     
     print(f"📐 Generated {total_grid_points} precise {grid_spacing_km:.2f}km grid points within convex hull")
-    print(f"📍 Using pre-calculated grid points for efficient coverage")
     
-    # Limit to max_tiles if necessary
-    if total_grid_points > max_tiles:
-        # Use first max_tiles points (could be improved with better selection)
+    # ALWAYS use max_tiles, expanding beyond convex hull if needed
+    if total_grid_points < max_tiles:
+        # Expand grid beyond convex hull to reach max_tiles
+        print(f"⚠️ Convex hull only covers {total_grid_points} points, expanding to {max_tiles} for full coverage")
+        
+        # Calculate additional points in a regular grid pattern
+        needed = max_tiles - total_grid_points
+        
+        # Expand the search area by increasing bounds
+        expanded_min_x = min_x - (grid_spacing * 2)
+        expanded_max_x = max_x + (grid_spacing * 2)
+        expanded_min_y = min_y - (grid_spacing * 2)
+        expanded_max_y = max_y + (grid_spacing * 2)
+        
+        # Generate expanded grid
+        y = expanded_min_y
+        while y <= expanded_max_y and len(grid_points_latlon) < max_tiles:
+            x = expanded_min_x
+            while x <= expanded_max_x and len(grid_points_latlon) < max_tiles:
+                point_nztm = Point(x, y)
+                # Check if not already in list
+                if (x, y) not in grid_points_nztm:
+                    grid_points_nztm.append((x, y))
+                    lon, lat = transformer_to_latlon.transform(x, y)
+                    grid_points_latlon.append([lat, lon])
+                x += grid_spacing
+            y += grid_spacing
+        
+        print(f"✅ Expanded grid to {len(grid_points_latlon)} points (target: {max_tiles})")
+    
+    # Now limit to exactly max_tiles
+    if len(grid_points_latlon) > max_tiles:
         grid_points_latlon = grid_points_latlon[:max_tiles]
-        actual_total = max_tiles
-        print(f"📐 Limited to first {max_tiles} grid points (max {max_tiles})")
-    else:
-        actual_total = total_grid_points
-        print(f"📐 Using all {total_grid_points} grid points")
+    
+    actual_total = len(grid_points_latlon)
+    print(f"📍 Using {actual_total} grid points for generation (target: {max_tiles})")
     
     from sequential_heatmap import generate_grid_heatmaps_from_points
     result = generate_grid_heatmaps_from_points(

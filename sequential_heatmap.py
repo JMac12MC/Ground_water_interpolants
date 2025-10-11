@@ -301,7 +301,11 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 heatmap_data=[],
                 geojson_data=geo_json_result,
                 well_count=len(filtered_wells),
-                colormap_metadata=colormap_metadata
+                colormap_metadata=colormap_metadata,
+                indicator_range=indicator_range,
+                indicator_sill=indicator_sill,
+                indicator_nugget=indicator_nugget,
+                indicator_auto_fit=indicator_auto_fit
             )
             
             if success_id is None:
@@ -810,7 +814,11 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         heatmap_data=heatmap_data,
                         geojson_data=geojson_data,
                         well_count=len(filtered_wells),
-                        colormap_metadata=colormap_metadata
+                        colormap_metadata=colormap_metadata,
+                        indicator_range=indicator_range,
+                        indicator_sill=indicator_sill,
+                        indicator_nugget=indicator_nugget,
+                        indicator_auto_fit=indicator_auto_fit
                     )
                     
                     if stored_heatmap_id:

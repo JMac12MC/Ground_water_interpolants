@@ -288,10 +288,19 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             if not geo_json_result or not isinstance(geo_json_result, dict) or 'features' not in geo_json_result:
                 raise ValueError("Invalid GeoJSON result")
             
+            # Extract ACTUAL variogram parameters from the GeoJSON result (fitted if auto-fit was used)
+            variogram_params = geo_json_result.get('variogram_params', {})
+            actual_range = variogram_params.get('indicator_range', indicator_range)
+            actual_sill = variogram_params.get('indicator_sill', indicator_sill)
+            actual_nugget = variogram_params.get('indicator_nugget', indicator_nugget)
+            actual_auto_fit = variogram_params.get('indicator_auto_fit', indicator_auto_fit)
+            
+            print(f"  💾 STORING PARAMETERS: range={actual_range:.1f}, sill={actual_sill:.3f}, nugget={actual_nugget:.3f}, auto_fit={actual_auto_fit}")
+            
             # Create unique heatmap identifier
             heatmap_id = f"{interpolation_method}_gridpoint{i+1}_{grid_point[0]:.3f}_{grid_point[1]:.3f}"
             
-            # Store in database
+            # Store in database with ACTUAL fitted/manual parameters
             success_id = polygon_db.store_heatmap(
                 heatmap_name=heatmap_id,
                 center_lat=grid_point[0],
@@ -302,10 +311,10 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 geojson_data=geo_json_result,
                 well_count=len(filtered_wells),
                 colormap_metadata=colormap_metadata,
-                indicator_range=indicator_range,
-                indicator_sill=indicator_sill,
-                indicator_nugget=indicator_nugget,
-                indicator_auto_fit=indicator_auto_fit
+                indicator_range=actual_range,
+                indicator_sill=actual_sill,
+                indicator_nugget=actual_nugget,
+                indicator_auto_fit=actual_auto_fit
             )
             
             if success_id is None:
@@ -804,7 +813,16 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                                     value = feature['properties'].get('yield', 0)
                                     heatmap_data.append([lat, lon, value])
                     
-                    # Store in database WITH CONSISTENT COLORMAP METADATA
+                    # Extract ACTUAL variogram parameters from the GeoJSON result (fitted if auto-fit was used)
+                    variogram_params = geojson_data.get('variogram_params', {})
+                    actual_range = variogram_params.get('indicator_range', indicator_range)
+                    actual_sill = variogram_params.get('indicator_sill', indicator_sill)
+                    actual_nugget = variogram_params.get('indicator_nugget', indicator_nugget)
+                    actual_auto_fit = variogram_params.get('indicator_auto_fit', indicator_auto_fit)
+                    
+                    print(f"  💾 {location_name.upper()} PARAMETERS: range={actual_range:.1f}, sill={actual_sill:.3f}, nugget={actual_nugget:.3f}, auto_fit={actual_auto_fit}")
+                    
+                    # Store in database WITH CONSISTENT COLORMAP METADATA AND ACTUAL FITTED PARAMETERS
                     stored_heatmap_id = polygon_db.store_heatmap(
                         heatmap_name=heatmap_name,
                         center_lat=center_lat,
@@ -815,10 +833,10 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         geojson_data=geojson_data,
                         well_count=len(filtered_wells),
                         colormap_metadata=colormap_metadata,
-                        indicator_range=indicator_range,
-                        indicator_sill=indicator_sill,
-                        indicator_nugget=indicator_nugget,
-                        indicator_auto_fit=indicator_auto_fit
+                        indicator_range=actual_range,
+                        indicator_sill=actual_sill,
+                        indicator_nugget=actual_nugget,
+                        indicator_auto_fit=actual_auto_fit
                     )
                     
                     if stored_heatmap_id:

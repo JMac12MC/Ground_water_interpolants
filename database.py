@@ -400,7 +400,7 @@ class PolygonDatabase:
                 'overall_avg_yield': 0
             }
 
-    def store_heatmap(self, heatmap_name, center_lat, center_lon, radius_km, interpolation_method, heatmap_data, geojson_data=None, well_count=0, colormap_metadata=None):
+    def store_heatmap(self, heatmap_name, center_lat, center_lon, radius_km, interpolation_method, heatmap_data, geojson_data=None, well_count=0, colormap_metadata=None, indicator_range=None, indicator_sill=None, indicator_nugget=None, indicator_auto_fit=False):
         """
         Store a heatmap in the database for persistent display
 
@@ -424,6 +424,14 @@ class PolygonDatabase:
             Number of wells used in the interpolation
         colormap_metadata : dict, optional
             Metadata for consistent colormap application including global min/max values
+        indicator_range : float, optional
+            Variogram range parameter used for indicator kriging
+        indicator_sill : float, optional
+            Variogram sill parameter used for indicator kriging
+        indicator_nugget : float, optional
+            Variogram nugget parameter used for indicator kriging
+        indicator_auto_fit : bool, optional
+            Whether auto-fit variogram was used (default: False)
 
         Returns:
         --------
@@ -475,14 +483,17 @@ class PolygonDatabase:
                     # Insert new heatmap if no duplicate found - include colormap metadata for consistency
                     colormap_json = json.dumps(colormap_metadata) if colormap_metadata else None
                     print(f"💾 STORING COLORMAP METADATA: {colormap_metadata}")
+                    print(f"💾 STORING VARIOGRAM PARAMS: Range={indicator_range}, Sill={indicator_sill}, Nugget={indicator_nugget}, Auto-fit={indicator_auto_fit}")
                     
                     result = conn.execute(text("""
                         INSERT INTO stored_heatmaps (
                             heatmap_name, center_lat, center_lon, radius_km, 
-                            interpolation_method, heatmap_data, geojson_data, well_count, colormap_metadata
+                            interpolation_method, heatmap_data, geojson_data, well_count, colormap_metadata,
+                            indicator_range, indicator_sill, indicator_nugget, indicator_auto_fit
                         ) VALUES (
                             :heatmap_name, :center_lat, :center_lon, :radius_km,
-                            :interpolation_method, :heatmap_data, :geojson_data, :well_count, :colormap_metadata
+                            :interpolation_method, :heatmap_data, :geojson_data, :well_count, :colormap_metadata,
+                            :indicator_range, :indicator_sill, :indicator_nugget, :indicator_auto_fit
                         ) RETURNING id
                     """), {
                         'heatmap_name': heatmap_name,
@@ -493,7 +504,11 @@ class PolygonDatabase:
                         'heatmap_data': json.dumps(heatmap_data),
                         'geojson_data': json.dumps(geojson_data) if geojson_data else None,
                         'well_count': int(well_count),
-                        'colormap_metadata': colormap_json
+                        'colormap_metadata': colormap_json,
+                        'indicator_range': float(indicator_range) if indicator_range is not None else None,
+                        'indicator_sill': float(indicator_sill) if indicator_sill is not None else None,
+                        'indicator_nugget': float(indicator_nugget) if indicator_nugget is not None else None,
+                        'indicator_auto_fit': bool(indicator_auto_fit)
                     })
                     conn.commit()
                     row = result.fetchone()
@@ -538,7 +553,8 @@ class PolygonDatabase:
                 print("🔍 QUERYING DATABASE: Executing SELECT query for all heatmaps")
                 result = conn.execute(text("""
                     SELECT id, heatmap_name, center_lat, center_lon, radius_km,
-                           interpolation_method, heatmap_data, geojson_data, well_count, created_at, colormap_metadata
+                           interpolation_method, heatmap_data, geojson_data, well_count, created_at, colormap_metadata,
+                           indicator_range, indicator_sill, indicator_nugget, indicator_auto_fit
                     FROM stored_heatmaps
                     ORDER BY created_at DESC
                 """))
@@ -597,6 +613,12 @@ class PolygonDatabase:
                     except (json.JSONDecodeError, IndexError) as e:
                         print(f"  ⚠️ WARNING: Could not parse colormap_metadata for {row[1]}: {e}")
                     
+                    # Extract variogram parameters (indices 11, 12, 13, 14)
+                    indicator_range = row[11] if len(row) > 11 else None
+                    indicator_sill = row[12] if len(row) > 12 else None
+                    indicator_nugget = row[13] if len(row) > 13 else None
+                    indicator_auto_fit = row[14] if len(row) > 14 else False
+                    
                     heatmap = {
                         'id': row[0],
                         'heatmap_name': row[1],
@@ -608,7 +630,11 @@ class PolygonDatabase:
                         'geojson_data': geojson_data,
                         'well_count': row[8],
                         'created_at': row[9],
-                        'colormap_metadata': colormap_metadata
+                        'colormap_metadata': colormap_metadata,
+                        'indicator_range': indicator_range,
+                        'indicator_sill': indicator_sill,
+                        'indicator_nugget': indicator_nugget,
+                        'indicator_auto_fit': indicator_auto_fit
                     }
                     heatmaps.append(heatmap)
                     print(f"✅ PROCESSED: Heatmap ID {row[0]} added to result list")

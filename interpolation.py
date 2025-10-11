@@ -777,6 +777,14 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         GeoJSON data structure with interpolated yield values
     """
     
+    # Initialize variogram parameters tracking (will be updated if auto-fit is used)
+    actual_variogram_params = {
+        'indicator_range': indicator_range,
+        'indicator_sill': indicator_sill,
+        'indicator_nugget': indicator_nugget,
+        'indicator_auto_fit': indicator_auto_fit
+    }
+    
     # For continuous indicator method, expand well search area but keep final grid bounds the same
     original_radius_km = radius_km
     print(f"🔍 GENERATE_GEO_JSON_GRID CALLED: method={method}, radius={radius_km}km, wells_count={len(wells_df)}")
@@ -1386,7 +1394,7 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 # Ensure values are in [0,1] range (probabilities)
                 interpolated_z = np.clip(interpolated_z, 0.0, 1.0)
                 
-                # Check if auto-fit produced poor results (pixelated output)
+                # Check if auto-fit produced poor results (pixelated output) AND CAPTURE FITTED PARAMETERS
                 if indicator_auto_fit and OK is not None:
                     try:
                         fitted_range = OK.variogram_model_parameters[0]
@@ -1394,11 +1402,17 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         fitted_nugget = OK.variogram_model_parameters[2]
                         print(f"⚠️ AUTO-FIT RESULTS: range={fitted_range:.1f}m, sill={fitted_sill:.3f}, nugget={fitted_nugget:.3f}")
                         
+                        # UPDATE TRACKING DICTIONARY WITH ACTUAL FITTED VALUES
+                        actual_variogram_params['indicator_range'] = fitted_range
+                        actual_variogram_params['indicator_sill'] = fitted_sill
+                        actual_variogram_params['indicator_nugget'] = fitted_nugget
+                        print(f"💾 CAPTURED FITTED PARAMETERS: Will be stored with heatmap")
+                        
                         # Detect poor auto-fit (very small range or high nugget/sill ratio indicates pixelation)
                         if fitted_range < 500 or fitted_nugget/fitted_sill > 0.8:
                             print(f"⚠️ AUTO-FIT WARNING: Parameters suggest pixelated output. Consider using manual parameters (range=1500, sill=0.25, nugget=0.1)")
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Could not extract fitted parameters: {e}")
                 
                 print(f"🔧 Indicator kriging completed: {len(interpolated_z)} probability points")
             else:
@@ -1869,7 +1883,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     # Create the full GeoJSON object
     geojson = {
         "type": "FeatureCollection",
-        "features": features
+        "features": features,
+        "variogram_params": actual_variogram_params  # Include actual fitted/manual parameters
     }
 
     return geojson

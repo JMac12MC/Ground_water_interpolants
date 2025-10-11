@@ -644,6 +644,44 @@ with st.sidebar:
 
     if st.session_state.stored_heatmaps:
         st.write(f"**{len(st.session_state.stored_heatmaps)} stored heatmaps available**")
+        
+        # Variogram Parameters Table
+        with st.expander("📊 View Variogram Parameters", expanded=False):
+            st.write("**Indicator Kriging Parameters for Each Heatmap**")
+            
+            # Create table data
+            table_data = []
+            for heatmap in st.session_state.stored_heatmaps:
+                # Extract gridpoint number from heatmap name if available
+                heatmap_name = heatmap.get('heatmap_name', '')
+                gridpoint = 'N/A'
+                if 'gridpoint' in heatmap_name:
+                    import re
+                    match = re.search(r'gridpoint(\d+)', heatmap_name)
+                    if match:
+                        gridpoint = match.group(1)
+                
+                # Get variogram parameters
+                range_val = heatmap.get('indicator_range', 'N/A')
+                sill_val = heatmap.get('indicator_sill', 'N/A')
+                nugget_val = heatmap.get('indicator_nugget', 'N/A')
+                auto_fit = heatmap.get('indicator_auto_fit', False)
+                
+                table_data.append({
+                    'Gridpoint': gridpoint,
+                    'Heatmap ID': heatmap.get('id', 'N/A'),
+                    'Range (m)': f"{range_val:.1f}" if isinstance(range_val, (int, float)) else range_val,
+                    'Sill': f"{sill_val:.3f}" if isinstance(sill_val, (int, float)) else sill_val,
+                    'Nugget': f"{nugget_val:.3f}" if isinstance(nugget_val, (int, float)) else nugget_val,
+                    'Auto-fit': '✓' if auto_fit else '✗'
+                })
+            
+            if table_data:
+                import pandas as pd
+                df = pd.DataFrame(table_data)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No variogram parameters available for stored heatmaps")
 
         # Refresh and Clear buttons
         col1, col2 = st.columns(2)

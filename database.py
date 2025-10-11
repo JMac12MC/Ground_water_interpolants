@@ -140,7 +140,12 @@ class PolygonDatabase:
                             heatmap_data JSON NOT NULL,
                             geojson_data JSON,
                             well_count INTEGER DEFAULT 0,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            colormap_metadata TEXT,
+                            indicator_range FLOAT,
+                            indicator_sill FLOAT,
+                            indicator_nugget FLOAT,
+                            indicator_auto_fit BOOLEAN DEFAULT false
                         )
                     """))
                     print("Created stored_heatmaps table")

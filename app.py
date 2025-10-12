@@ -532,6 +532,11 @@ with st.sidebar:
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
     st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary calculated from ALL wells (62% more efficient than rectangular bounds)")
     st.session_state.show_grid_points = st.checkbox("Show 19.82km Grid Points", value=getattr(st.session_state, 'show_grid_points', False), help="Show grid of potential heatmap centers at 19.82km spacing within the convex hull boundary")
+    
+    # Show actual grid point numbers from generated heatmaps
+    if 'show_generated_grid_points' not in st.session_state:
+        st.session_state.show_generated_grid_points = False
+    st.session_state.show_generated_grid_points = st.checkbox("Show Generated Grid Point Numbers", value=st.session_state.show_generated_grid_points, help="Display numbered markers showing actual grid points where heatmaps were generated and their coordinates")
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     

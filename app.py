@@ -1261,6 +1261,75 @@ if st.session_state.get('show_generated_grid_points', False) and st.session_stat
     except Exception as e:
         print(f"Error displaying generated grid points: {e}")
 
+# Add numbered markers for 2x3 manually created heatmaps
+if st.session_state.get('selected_point') is not None:
+    try:
+        # Get the click point coordinates
+        clicked_lat, clicked_lng = st.session_state.selected_point
+        
+        # Define the 2x3 grid positions and their labels matching the kriging table
+        grid_positions = []
+        
+        # Position 1: Original (top-left)
+        if 'selected_point' in st.session_state and st.session_state.selected_point:
+            lat, lon = st.session_state.selected_point
+            grid_positions.append((1, "Original", lat, lon))
+        
+        # Position 2: East (top-middle)
+        if 'selected_point_east' in st.session_state and st.session_state.selected_point_east:
+            lat, lon = st.session_state.selected_point_east
+            grid_positions.append((2, "East", lat, lon))
+        
+        # Position 3: Northeast (top-right)
+        if 'selected_point_northeast' in st.session_state and st.session_state.selected_point_northeast:
+            lat, lon = st.session_state.selected_point_northeast
+            grid_positions.append((3, "Northeast", lat, lon))
+        
+        # Position 4: South (bottom-left)
+        if 'selected_point_south' in st.session_state and st.session_state.selected_point_south:
+            lat, lon = st.session_state.selected_point_south
+            grid_positions.append((4, "South", lat, lon))
+        
+        # Position 5: Southeast (bottom-middle)
+        if 'selected_point_southeast' in st.session_state and st.session_state.selected_point_southeast:
+            lat, lon = st.session_state.selected_point_southeast
+            grid_positions.append((5, "Southeast", lat, lon))
+        
+        # Position 6: Far Southeast (bottom-right)
+        if 'selected_point_far_southeast' in st.session_state and st.session_state.selected_point_far_southeast:
+            lat, lon = st.session_state.selected_point_far_southeast
+            grid_positions.append((6, "Far Southeast", lat, lon))
+        
+        # Add markers for each position
+        for pos_num, pos_name, lat, lon in grid_positions:
+            folium.Marker(
+                [lat, lon],
+                popup=f"<b>2x3 Grid Position #{pos_num}</b><br>{pos_name}<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}<br>Check Variogram table for parameters",
+                icon=folium.DivIcon(html=f'''
+                    <div style="
+                        font-size: 14px; 
+                        font-weight: bold; 
+                        color: white; 
+                        background-color: #4A90E2; 
+                        border: 2px solid #2E5C8A;
+                        border-radius: 50%; 
+                        width: 32px; 
+                        height: 32px; 
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center;
+                        box-shadow: 0 3px 6px rgba(0,0,0,0.4);
+                    ">{pos_num}</div>
+                '''),
+                tooltip=f"Grid #{pos_num}: {pos_name}"
+            ).add_to(m)
+        
+        if grid_positions:
+            print(f"2x3 GRID MARKERS: Added {len(grid_positions)} numbered blue markers for manual heatmap grid")
+            
+    except Exception as e:
+        print(f"Error adding 2x3 grid markers: {e}")
+
 # Add comprehensive clipping polygon if available and enabled
 if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:
     try:

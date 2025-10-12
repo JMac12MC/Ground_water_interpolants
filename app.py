@@ -1216,6 +1216,51 @@ if st.session_state.show_grid_points and st.session_state.wells_data is not None
     except Exception as e:
         print(f"Error displaying grid points: {e}")
 
+# Show actual generated grid point numbers from stored heatmaps
+if st.session_state.get('show_generated_grid_points', False) and st.session_state.polygon_db is not None:
+    try:
+        grid_points = st.session_state.polygon_db.get_grid_point_locations()
+        
+        if grid_points:
+            print(f"GENERATED GRID POINTS: Displaying {len(grid_points)} stored grid point locations on map")
+            
+            # Add markers for each grid point with numbers
+            for point in grid_points:
+                grid_num = point['grid_point_num']
+                lat = point['lat']
+                lon = point['lon']
+                heatmap_name = point['heatmap_name']
+                
+                # Create numbered marker with distinctive styling
+                folium.Marker(
+                    [lat, lon],
+                    popup=f"<b>Grid Point #{grid_num}</b><br>Lat: {lat:.6f}<br>Lon: {lon:.6f}<br>Heatmap: {heatmap_name}",
+                    icon=folium.DivIcon(html=f'''
+                        <div style="
+                            font-size: 12px; 
+                            font-weight: bold; 
+                            color: white; 
+                            background-color: #FF6B6B; 
+                            border: 2px solid #C92A2A;
+                            border-radius: 50%; 
+                            width: 28px; 
+                            height: 28px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                        ">{grid_num}</div>
+                    '''),
+                    tooltip=f"Grid Point #{grid_num}"
+                ).add_to(m)
+            
+            print(f"GRID POINT VISUALIZATION: Added {len(grid_points)} numbered markers showing generated heatmap locations")
+        else:
+            print("GENERATED GRID POINTS: No grid point heatmaps found in database")
+            
+    except Exception as e:
+        print(f"Error displaying generated grid points: {e}")
+
 # Add comprehensive clipping polygon if available and enabled
 if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:
     try:

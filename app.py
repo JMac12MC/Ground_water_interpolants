@@ -1261,50 +1261,49 @@ if st.session_state.get('show_generated_grid_points', False) and st.session_stat
     except Exception as e:
         print(f"Error displaying generated grid points: {e}")
 
-# Add numbered markers for 2x3 manually created heatmaps
-if st.session_state.get('selected_point') is not None:
-    try:
-        # Get the click point coordinates
-        clicked_lat, clicked_lng = st.session_state.selected_point
+# Add numbered markers for 2x3 manually created heatmaps (from database)
+try:
+    # Query database for 2x3 heatmaps (those with position names in their heatmap_name)
+    all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+    
+    # Position keywords and their display info
+    position_info = {
+        '_-': (1, "Original"),  # Original has format: method_-lat_lon (no position keyword)
+        '_east_': (2, "East"),
+        '_northeast_': (3, "Northeast"),
+        '_south_': (4, "South"),
+        '_southeast_': (5, "Southeast"),
+        '_far_southeast_': (6, "Far Southeast")
+    }
+    
+    grid_2x3_heatmaps = []
+    
+    for heatmap in all_heatmaps:
+        heatmap_name = heatmap.get('heatmap_name', '')
         
-        # Define the 2x3 grid positions and their labels matching the kriging table
-        grid_positions = []
-        
-        # Position 1: Original (top-left)
-        if 'selected_point' in st.session_state and st.session_state.selected_point:
-            lat, lon = st.session_state.selected_point
-            grid_positions.append((1, "Original", lat, lon))
-        
-        # Position 2: East (top-middle)
-        if 'selected_point_east' in st.session_state and st.session_state.selected_point_east:
-            lat, lon = st.session_state.selected_point_east
-            grid_positions.append((2, "East", lat, lon))
-        
-        # Position 3: Northeast (top-right)
-        if 'selected_point_northeast' in st.session_state and st.session_state.selected_point_northeast:
-            lat, lon = st.session_state.selected_point_northeast
-            grid_positions.append((3, "Northeast", lat, lon))
-        
-        # Position 4: South (bottom-left)
-        if 'selected_point_south' in st.session_state and st.session_state.selected_point_south:
-            lat, lon = st.session_state.selected_point_south
-            grid_positions.append((4, "South", lat, lon))
-        
-        # Position 5: Southeast (bottom-middle)
-        if 'selected_point_southeast' in st.session_state and st.session_state.selected_point_southeast:
-            lat, lon = st.session_state.selected_point_southeast
-            grid_positions.append((5, "Southeast", lat, lon))
-        
-        # Position 6: Far Southeast (bottom-right)
-        if 'selected_point_far_southeast' in st.session_state and st.session_state.selected_point_far_southeast:
-            lat, lon = st.session_state.selected_point_far_southeast
-            grid_positions.append((6, "Far Southeast", lat, lon))
-        
-        # Add markers for each position
-        for pos_num, pos_name, lat, lon in grid_positions:
+        # Check if this is a 2x3 positioned heatmap
+        for keyword, (pos_num, pos_name) in position_info.items():
+            if keyword in heatmap_name:
+                # For original position, verify it doesn't have other position keywords
+                if keyword == '_-' and any(k in heatmap_name for k in ['_east_', '_northeast_', '_south_', '_southeast_', '_far_southeast_']):
+                    continue
+                    
+                grid_2x3_heatmaps.append({
+                    'id': heatmap.get('id'),
+                    'name': heatmap_name,
+                    'lat': heatmap.get('center_lat'),
+                    'lon': heatmap.get('center_lon'),
+                    'pos_num': pos_num,
+                    'pos_name': pos_name
+                })
+                break
+    
+    # Add markers for each 2x3 heatmap
+    if grid_2x3_heatmaps:
+        for heatmap_info in grid_2x3_heatmaps:
             folium.Marker(
-                [lat, lon],
-                popup=f"<b>2x3 Grid Position #{pos_num}</b><br>{pos_name}<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}<br>Check Variogram table for parameters",
+                [heatmap_info['lat'], heatmap_info['lon']],
+                popup=f"<b>ID: {heatmap_info['id']}</b><br>Position #{heatmap_info['pos_num']}: {heatmap_info['pos_name']}<br>Lat: {heatmap_info['lat']:.6f}<br>Lon: {heatmap_info['lon']:.6f}",
                 icon=folium.DivIcon(html=f'''
                     <div style="
                         font-size: 14px; 
@@ -1319,16 +1318,17 @@ if st.session_state.get('selected_point') is not None:
                         align-items: center; 
                         justify-content: center;
                         box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-                    ">{pos_num}</div>
+                    ">{heatmap_info['id']}</div>
                 '''),
-                tooltip=f"Grid #{pos_num}: {pos_name}"
+                tooltip=f"Heatmap ID: {heatmap_info['id']} ({heatmap_info['pos_name']})"
             ).add_to(m)
         
-        if grid_positions:
-            print(f"2x3 GRID MARKERS: Added {len(grid_positions)} numbered blue markers for manual heatmap grid")
-            
-    except Exception as e:
-        print(f"Error adding 2x3 grid markers: {e}")
+        print(f"2x3 GRID MARKERS: Added {len(grid_2x3_heatmaps)} numbered blue markers for 2x3 heatmaps (IDs: {[h['id'] for h in grid_2x3_heatmaps]})")
+    else:
+        print("2x3 GRID MARKERS: No 2x3 positioned heatmaps found in database")
+        
+except Exception as e:
+    print(f"Error adding 2x3 grid markers: {e}")
 
 # Add comprehensive clipping polygon if available and enabled
 if st.session_state.show_new_clipping_polygon and st.session_state.new_clipping_polygon is not None:

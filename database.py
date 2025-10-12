@@ -537,6 +537,48 @@ class PolygonDatabase:
                     print(f"Failed to store heatmap after {max_retries} attempts")
                     return None
 
+    def get_grid_point_locations(self):
+        """
+        Extract grid point numbers and their coordinates from stored heatmaps
+        
+        Returns:
+        --------
+        list
+            List of dicts with 'grid_point_num', 'lat', 'lon', 'heatmap_id', 'heatmap_name'
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT id, heatmap_name, center_lat, center_lon
+                    FROM stored_heatmaps
+                    WHERE heatmap_name LIKE '%gridpoint%'
+                    ORDER BY id
+                """))
+                
+                grid_points = []
+                for row in result:
+                    heatmap_id, name, lat, lon = row
+                    # Extract grid point number from name like "indicator_kriging_spherical_continuous_gridpoint116_..."
+                    if 'gridpoint' in name:
+                        try:
+                            parts = name.split('gridpoint')[1].split('_')
+                            grid_num = int(parts[0])
+                            grid_points.append({
+                                'grid_point_num': grid_num,
+                                'lat': lat,
+                                'lon': lon,
+                                'heatmap_id': heatmap_id,
+                                'heatmap_name': name
+                            })
+                        except:
+                            pass
+                
+                return grid_points
+                
+        except Exception as e:
+            print(f"Error getting grid point locations: {e}")
+            return []
+
     def get_all_stored_heatmaps(self):
         """
         Retrieve all stored heatmaps from the database

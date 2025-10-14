@@ -2299,19 +2299,13 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 
             raw_geojson_data = stored_heatmap.get('geojson_data')
             
-            # Apply exclusion clipping ONLY to non-indicator methods for smooth raster
-            method = stored_heatmap.get('interpolation_method', 'kriging')
-            indicator_methods = [
-                'indicator_kriging', 
-                'indicator_kriging_spherical', 
-                'indicator_kriging_spherical_continuous'
-            ]
+            # PERFORMANCE: Skip individual heatmap clipping for unified raster mode
+            # The unified raster system applies clipping mask efficiently to the combined raster
+            # Applying individual clipping here is redundant and causes major slowdown with many heatmaps
+            geojson_data = raw_geojson_data
             
-            if raw_geojson_data:
-                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method)
-            else:
-                geojson_data = raw_geojson_data
+            # Note: Unified raster clipping is applied later at lines 2364-2394 (combined clipping polygon)
+            # and in generate_smooth_raster_overlay() via the clipping_polygon parameter
                 
             if geojson_data and geojson_data.get('features'):
                 # Add features to combined dataset

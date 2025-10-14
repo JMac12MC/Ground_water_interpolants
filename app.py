@@ -1464,14 +1464,9 @@ if st.session_state.stored_heatmaps:
             'indicator_kriging_spherical_continuous'
         ]
         
-        if raw_geojson_data:
-            if method not in indicator_methods:
-                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data)
-            else:
-                geojson_data = raw_geojson_data
-        else:
-            geojson_data = raw_geojson_data
+        # PERFORMANCE: Skip clipping for colormap calculation - not needed for min/max range
+        # Visual clipping is handled by the unified raster mask
+        geojson_data = raw_geojson_data
             
         if geojson_data and geojson_data.get('features'):
             for feature in geojson_data['features']:
@@ -1495,11 +1490,9 @@ if st.session_state.stored_heatmaps:
                 'indicator_kriging_spherical_continuous'
             ]
             
-            if raw_geojson_data:
-                from interpolation import apply_exclusion_clipping_to_stored_heatmap
-                geojson_data = apply_exclusion_clipping_to_stored_heatmap(raw_geojson_data, method_name=method)
-            else:
-                geojson_data = raw_geojson_data
+            # PERFORMANCE: Skip clipping for percentile calculation - not needed for value distribution
+            # Visual clipping is handled by the unified raster mask
+            geojson_data = raw_geojson_data
                 
             if geojson_data and geojson_data.get('features'):
                 for feature in geojson_data['features']:

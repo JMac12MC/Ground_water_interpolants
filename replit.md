@@ -37,13 +37,15 @@ Preferred communication style: Simple, everyday language.
 - **interpolation.py**: Core spatial analysis engine for Kriging, generating GeoJSON grids, and handling uncertainty mapping and soil polygon clipping.
 - **database.py**: Persistence layer managing database connections and optimized data queries.
 - **precompute_heatmaps.py**: System for performance optimization, enabling zone-based processing and pre-computation of heatmaps.
+- **hydrogeological_basement_reader.py**: TIFF reader extracting hydrogeological basement depth zones, providing exclusion polygons for areas without groundwater.
 
 ### Data Flow
 1. **Data Ingestion**: Wells data from various sources (CSV, API, sample data).
 2. **Preprocessing**: Validation, coordinate transformation, outlier filtering.
 3. **Spatial Analysis**: Radius-based filtering, interpolation (Kriging/Random Forest), and clipping results to soil polygons.
-4. **Visualization**: Conversion of interpolated data to GeoJSON for map rendering.
-5. **Performance Path**: Utilization of pre-computed heatmaps from the database for large datasets.
+4. **Exclusion Zone Processing**: Red/orange zones + hydrogeological basement zones (1-3) combined for non-indicator methods.
+5. **Visualization**: Conversion of interpolated data to GeoJSON for map rendering.
+6. **Performance Path**: Utilization of pre-computed heatmaps from the database for large datasets.
 
 ### Indicator Kriging Variogram Configuration
 **Known Issue - Auto-Fit Limitations:**

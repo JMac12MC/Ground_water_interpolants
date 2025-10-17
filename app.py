@@ -2369,7 +2369,9 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                     from hydrogeological_basement_reader import load_hydrogeological_exclusions
                     hydro_exclusions = load_hydrogeological_exclusions()
                     if hydro_exclusions is not None and len(hydro_exclusions) > 0:
-                        all_exclusions.append(hydro_exclusions.geometry.iloc[0])
+                        # Extract geometry from GeoDataFrame
+                        hydro_geom = hydro_exclusions.geometry.iloc[0]
+                        all_exclusions.append(hydro_geom)
                         print(f"🚫 SMOOTH RASTER: Loaded hydrogeological basement exclusions (zones 1-3)")
                     
                     # If we have any exclusions, apply them
@@ -2508,7 +2510,7 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
         return processed_data
 
     def create_unified_clipping_geometry():
-        """Create unified clipping geometry combining red/orange exclusions and NEW clipping polygon"""
+        """Create unified clipping geometry combining red/orange exclusions, hydrogeological basement zones, and NEW clipping polygon"""
         try:
             from shapely.ops import unary_union
             from shapely.geometry import Point
@@ -2530,11 +2532,29 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                         from interpolation import get_prepared_exclusion_union
                         exclusion_data = get_prepared_exclusion_union()
                         
+                        # Get hydrogeological basement exclusions (zones 1-3)
+                        from hydrogeological_basement_reader import load_hydrogeological_exclusions
+                        hydro_exclusions = load_hydrogeological_exclusions()
+                        
+                        # Combine all exclusion sources
+                        combined_exclusions = []
                         if exclusion_data is not None:
                             exclusion_union, _, _, _ = exclusion_data
-                            # Create final allowed geometry: NEW_areas - red/orange_exclusions
-                            final_allowed = allowed_union.difference(exclusion_union)
-                            print(f"🎯 UNIFIED CLIPPING: Applied red/orange exclusions to NEW polygon")
+                            combined_exclusions.append(exclusion_union)
+                            print(f"🎯 UNIFIED CLIPPING: Added red/orange exclusions")
+                        
+                        if hydro_exclusions is not None and len(hydro_exclusions) > 0:
+                            # Extract geometry from GeoDataFrame
+                            hydro_geom = hydro_exclusions.geometry.iloc[0]
+                            combined_exclusions.append(hydro_geom)
+                            print(f"🎯 UNIFIED CLIPPING: Added hydrogeological basement exclusions (zones 1-3)")
+                        
+                        if combined_exclusions:
+                            # Merge all exclusions into one
+                            total_exclusions = unary_union(combined_exclusions)
+                            # Create final allowed geometry: NEW_areas - all_exclusions
+                            final_allowed = allowed_union.difference(total_exclusions)
+                            print(f"🎯 UNIFIED CLIPPING: Applied combined exclusions to NEW polygon")
                             return final_allowed
                         else:
                             print(f"🎯 UNIFIED CLIPPING: Using NEW polygon only (no exclusions)")

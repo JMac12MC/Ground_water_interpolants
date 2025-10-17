@@ -2348,42 +2348,58 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
             # Create combined clipping polygon: include soil areas AND exclude red/orange zones
             combined_clipping_polygon = st.session_state.new_clipping_polygon
             
-            # For non-indicator methods, subtract red/orange exclusion zones from clipping polygon
+            # For non-indicator methods, subtract red/orange exclusion zones AND hydrogeological basement exclusions from clipping polygon
             if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
                 try:
-                    # Load red/orange exclusion zones
                     import geopandas as gpd
-                    exclusion_file_path = "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson"
+                    from shapely.ops import unary_union
                     
+                    all_exclusions = []
+                    
+                    # Load red/orange exclusion zones
+                    exclusion_file_path = "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson"
                     if os.path.exists(exclusion_file_path):
                         exclusion_gdf = gpd.read_file(exclusion_file_path)
-                        print(f"🚫 SMOOTH RASTER: Loaded {len(exclusion_gdf)} red/orange exclusion polygons for clipping")
+                        all_exclusions.append(exclusion_gdf.geometry.unary_union)
+                        print(f"🚫 SMOOTH RASTER: Loaded {len(exclusion_gdf)} red/orange exclusion polygons")
+                    else:
+                        print(f"🚫 SMOOTH RASTER: Red/orange exclusion file not found: {exclusion_file_path}")
+                    
+                    # Load hydrogeological basement exclusions (zones 1-3)
+                    from hydrogeological_basement_reader import load_hydrogeological_exclusions
+                    hydro_exclusions = load_hydrogeological_exclusions()
+                    if hydro_exclusions is not None and len(hydro_exclusions) > 0:
+                        all_exclusions.append(hydro_exclusions.geometry.iloc[0])
+                        print(f"🚫 SMOOTH RASTER: Loaded hydrogeological basement exclusions (zones 1-3)")
+                    
+                    # If we have any exclusions, apply them
+                    if all_exclusions:
+                        # Combine all exclusion geometries
+                        combined_exclusion_union = unary_union(all_exclusions)
+                        print(f"🚫 SMOOTH RASTER: Combined {len(all_exclusions)} exclusion layer(s)")
                         
                         # If we have a base clipping polygon, subtract exclusion zones from it
                         if combined_clipping_polygon is not None and len(combined_clipping_polygon) > 0:
-                            # Get the unary union of the exclusion zones
-                            exclusion_union = exclusion_gdf.geometry.unary_union
-                            
                             # Get the clipping polygon geometry  
                             if hasattr(combined_clipping_polygon, 'geometry'):
                                 base_clipping_geom = combined_clipping_polygon.geometry.unary_union
                             else:
                                 base_clipping_geom = combined_clipping_polygon
                             
-                            # Subtract exclusion zones from clipping polygon using difference
+                            # Subtract all exclusion zones from clipping polygon using difference
                             try:
-                                combined_clipping_geom = base_clipping_geom.difference(exclusion_union)
+                                combined_clipping_geom = base_clipping_geom.difference(combined_exclusion_union)
                                 # Convert back to GeoDataFrame for consistency
                                 combined_clipping_polygon = gpd.GeoDataFrame([1], geometry=[combined_clipping_geom], crs='EPSG:4326')
-                                print(f"🚫 SMOOTH RASTER: Successfully created combined clipping polygon (soil areas minus red/orange zones)")
+                                print(f"🚫 SMOOTH RASTER: Successfully created combined clipping polygon (soil areas minus all exclusions)")
                             except Exception as e:
                                 print(f"🚫 SMOOTH RASTER: Failed to subtract exclusion zones: {e}, using original clipping")
                         else:
-                            print(f"🚫 SMOOTH RASTER: No base clipping polygon, red/orange exclusion not applied to smooth raster")
+                            print(f"🚫 SMOOTH RASTER: No base clipping polygon, exclusions not applied to smooth raster")
                     else:
-                        print(f"🚫 SMOOTH RASTER: Red/orange exclusion file not found: {exclusion_file_path}")
+                        print(f"🚫 SMOOTH RASTER: No exclusion zones loaded")
                 except Exception as e:
-                    print(f"🚫 SMOOTH RASTER: Error applying red/orange exclusion clipping: {e}")
+                    print(f"🚫 SMOOTH RASTER: Error applying exclusion clipping: {e}")
             
             # Generate single unified smooth raster across ALL triangulated data
             raster_overlay = generate_smooth_raster_overlay(

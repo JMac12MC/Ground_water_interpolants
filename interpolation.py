@@ -1397,8 +1397,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 # Check if auto-fit produced poor results (pixelated output) AND CAPTURE FITTED PARAMETERS
                 if indicator_auto_fit and OK is not None:
                     try:
-                        fitted_range = OK.variogram_model_parameters[0]
-                        fitted_sill = OK.variogram_model_parameters[1] 
+                        # PyKrige returns variogram_model_parameters as [sill, range, nugget]
+                        fitted_sill = OK.variogram_model_parameters[0]
+                        fitted_range = OK.variogram_model_parameters[1] 
                         fitted_nugget = OK.variogram_model_parameters[2]
                         print(f"⚠️ AUTO-FIT RESULTS: range={fitted_range:.1f}m, sill={fitted_sill:.3f}, nugget={fitted_nugget:.3f}")
                         
@@ -1469,8 +1470,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 # CAPTURE FITTED VARIOGRAM PARAMETERS
                 if OK is not None:
                     try:
-                        fitted_range = OK.variogram_model_parameters[0]
-                        fitted_sill = OK.variogram_model_parameters[1]
+                        # PyKrige returns variogram_model_parameters as [sill, range, nugget]
+                        fitted_sill = OK.variogram_model_parameters[0]
+                        fitted_range = OK.variogram_model_parameters[1]
                         fitted_nugget = OK.variogram_model_parameters[2]
                         print(f"⚠️ AUTO-FIT RESULTS ({method}): range={fitted_range:.1f}m, sill={fitted_sill:.3f}, nugget={fitted_nugget:.3f}")
                         

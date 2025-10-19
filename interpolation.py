@@ -1406,7 +1406,8 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                         actual_variogram_params['indicator_range'] = fitted_range
                         actual_variogram_params['indicator_sill'] = fitted_sill
                         actual_variogram_params['indicator_nugget'] = fitted_nugget
-                        print(f"💾 CAPTURED FITTED PARAMETERS: Will be stored with heatmap")
+                        actual_variogram_params['indicator_auto_fit'] = True  # Mark that auto-fitting was actually used
+                        print(f"💾 CAPTURED FITTED PARAMETERS: Will be stored with heatmap (auto-fit=True)")
                         
                         # Detect poor auto-fit (very small range or high nugget/sill ratio indicates pixelation)
                         if fitted_range < 500 or fitted_nugget/fitted_sill > 0.8:
@@ -1464,6 +1465,23 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
                 interpolated_z = Z_flat[mask]
                 
                 print(f"🔧 Auto-fitted kriging completed: {len(interpolated_z)} interpolated points")
+                
+                # CAPTURE FITTED VARIOGRAM PARAMETERS
+                if OK is not None:
+                    try:
+                        fitted_range = OK.variogram_model_parameters[0]
+                        fitted_sill = OK.variogram_model_parameters[1]
+                        fitted_nugget = OK.variogram_model_parameters[2]
+                        print(f"⚠️ AUTO-FIT RESULTS ({method}): range={fitted_range:.1f}m, sill={fitted_sill:.3f}, nugget={fitted_nugget:.3f}")
+                        
+                        # UPDATE TRACKING DICTIONARY WITH ACTUAL FITTED VALUES
+                        actual_variogram_params['indicator_range'] = fitted_range
+                        actual_variogram_params['indicator_sill'] = fitted_sill
+                        actual_variogram_params['indicator_nugget'] = fitted_nugget
+                        actual_variogram_params['indicator_auto_fit'] = True  # Mark that auto-fitting was actually used
+                        print(f"💾 CAPTURED FITTED PARAMETERS: Will be stored with heatmap (auto-fit=True)")
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Could not extract fitted parameters: {e}")
             else:
                 print("❌ Auto-fitted kriging failed, falling back to griddata")
                 interpolated_z = None

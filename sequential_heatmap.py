@@ -265,7 +265,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                     filtered_wells.copy(),
                     center_point=(grid_point[0], grid_point[1]),
                     radius_km=search_radius,
-                    resolution=100,
+                    resolution=200,
                     soil_polygons=soil_polygons
                 )
             
@@ -274,7 +274,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 filtered_wells.copy(),
                 center_point=(grid_point[0], grid_point[1]),
                 radius_km=search_radius,
-                resolution=100,
+                resolution=200,
                 method=interpolation_method,
                 indicator_mask=indicator_mask,
                 soil_polygons=soil_polygons,
@@ -746,7 +746,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         filtered_wells.copy(),
                         center_point,
                         search_radius,
-                        resolution=100,
+                        resolution=200,
                         soil_polygons=soil_polygons,
                         threshold=0.7
                     )
@@ -768,7 +768,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                 filtered_wells.copy(),
                 center_point,
                 search_radius,
-                resolution=100,
+                resolution=200,
                 method=interpolation_method,
                 show_variance=False,
                 auto_fit_variogram=True,

@@ -1900,19 +1900,39 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     else:
         print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for {method} (preserving full probability distribution)")
 
+    # ===== FIX: Filter raw grid to only include points within final clipping square =====
+    # The raw_grid should match the actual displayed area, not the full interpolation grid
+    from shapely.geometry import Point as ShapelyPoint
+    
+    # Create mask for points within final clipping geometry
+    clipped_mask = []
+    for i in range(len(grid_lons)):
+        point = ShapelyPoint(grid_lons[i], grid_lats[i])
+        clipped_mask.append(final_clip_geometry.contains(point))
+    
+    clipped_mask = np.array(clipped_mask)
+    
+    # Filter grid points to only those within clipping area
+    clipped_grid_lons = grid_lons[clipped_mask]
+    clipped_grid_lats = grid_lats[clipped_mask]
+    clipped_interpolated_z = interpolated_z[clipped_mask]
+    
+    print(f"🔧 RAW GRID CLIPPING: {len(grid_lons)} original points -> {len(clipped_grid_lons)} clipped points (within {final_radius_km}km square)")
+    # ===================================================================================
+
     # Create the full GeoJSON object with raw grid data for smooth raster optimization
     geojson = {
         "type": "FeatureCollection",
         "features": features,
         "variogram_params": actual_variogram_params,  # Include actual fitted/manual parameters
         "raw_grid": {
-            "lons": grid_lons.tolist() if hasattr(grid_lons, 'tolist') else list(grid_lons),
-            "lats": grid_lats.tolist() if hasattr(grid_lats, 'tolist') else list(grid_lats),
-            "values": interpolated_z.tolist() if hasattr(interpolated_z, 'tolist') else list(interpolated_z)
-        }  # Raw kriging grid for direct smooth raster generation (skips triangle averaging)
+            "lons": clipped_grid_lons.tolist() if hasattr(clipped_grid_lons, 'tolist') else list(clipped_grid_lons),
+            "lats": clipped_grid_lats.tolist() if hasattr(clipped_grid_lats, 'tolist') else list(clipped_grid_lats),
+            "values": clipped_interpolated_z.tolist() if hasattr(clipped_interpolated_z, 'tolist') else list(clipped_interpolated_z)
+        }  # Raw kriging grid for direct smooth raster generation (skips triangle averaging) - CLIPPED to match final display area
     }
     
-    print(f"✅ OPTIMIZATION: Included raw kriging grid ({len(grid_lons)} points) for smooth raster generation")
+    print(f"✅ OPTIMIZATION: Included raw kriging grid ({len(clipped_grid_lons)} clipped points) for smooth raster generation")
 
     return geojson
 

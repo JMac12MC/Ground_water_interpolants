@@ -2109,7 +2109,8 @@ if st.session_state.wells_data is not None:
                             bounds, 
                             raster_size=(512, 512), 
                             global_colormap_func=lambda value: get_global_unified_color(value, st.session_state.interpolation_method),
-                            opacity=st.session_state.get('heatmap_opacity', 0.7)
+                            opacity=st.session_state.get('heatmap_opacity', 0.7),
+                            raw_grid=geojson_data.get('raw_grid')  # OPTIMIZATION: Use raw kriging grid to preserve all interpolation detail
                         )
                         
                         if raster_overlay:
@@ -2404,13 +2405,15 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                     print(f"🚫 SMOOTH RASTER: Error applying exclusion clipping: {e}")
             
             # Generate single unified smooth raster across ALL triangulated data
+            # Note: Combined GeoJSON doesn't have raw_grid, so it will use legacy triangle extraction
             raster_overlay = generate_smooth_raster_overlay(
                 combined_geojson, 
                 overall_bounds, 
                 raster_size=(512, 512), 
                 global_colormap_func=lambda value: get_global_unified_color(value, method),
                 opacity=st.session_state.get('heatmap_opacity', 0.7),
-                clipping_polygon=combined_clipping_polygon
+                clipping_polygon=combined_clipping_polygon,
+                raw_grid=None  # Combined heatmaps use legacy path (future: aggregate raw grids)
             )
             
             if raster_overlay:
@@ -2623,13 +2626,15 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
             
             # Generate single raster overlay
             from interpolation import generate_smooth_raster_overlay
+            # Note: Combined GeoJSON doesn't have raw_grid, so it will use legacy triangle extraction
             raster_overlay = generate_smooth_raster_overlay(
                 combined_geojson, 
                 bounds, 
                 raster_size=(1024, 1024),  # Higher resolution for combined overlay
                 global_colormap_func=lambda value: get_global_unified_color(value, 'combined'),
                 opacity=st.session_state.get('heatmap_opacity', 0.7),
-                clipping_polygon=create_unified_clipping_geometry()  # FIXED: Apply proper polygon clipping
+                clipping_polygon=create_unified_clipping_geometry(),  # FIXED: Apply proper polygon clipping
+                raw_grid=None  # Combined heatmaps use legacy path (future: aggregate raw grids)
             )
             
             return raster_overlay
@@ -2759,7 +2764,8 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                                 bounds, 
                                 raster_size=(512, 512), 
                                 global_colormap_func=lambda value: get_global_unified_color(value, method),
-                                opacity=st.session_state.get('heatmap_opacity', 0.7)
+                                opacity=st.session_state.get('heatmap_opacity', 0.7),
+                                raw_grid=geojson_data.get('raw_grid')  # OPTIMIZATION: Use raw kriging grid if available
                             )
                             
                             if raster_overlay:

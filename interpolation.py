@@ -1900,12 +1900,19 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
     else:
         print(f"🔄 INDICATOR METHOD: Skipping exclusion clipping for {method} (preserving full probability distribution)")
 
-    # Create the full GeoJSON object
+    # Create the full GeoJSON object with raw grid data for smooth raster optimization
     geojson = {
         "type": "FeatureCollection",
         "features": features,
-        "variogram_params": actual_variogram_params  # Include actual fitted/manual parameters
+        "variogram_params": actual_variogram_params,  # Include actual fitted/manual parameters
+        "raw_grid": {
+            "lons": grid_lons.tolist() if hasattr(grid_lons, 'tolist') else list(grid_lons),
+            "lats": grid_lats.tolist() if hasattr(grid_lats, 'tolist') else list(grid_lats),
+            "values": interpolated_z.tolist() if hasattr(interpolated_z, 'tolist') else list(interpolated_z)
+        }  # Raw kriging grid for direct smooth raster generation (skips triangle averaging)
     }
+    
+    print(f"✅ OPTIMIZATION: Included raw kriging grid ({len(grid_lons)} points) for smooth raster generation")
 
     return geojson
 
@@ -3731,9 +3738,12 @@ def generate_vector_grid_overlay(geojson_data, bounds, global_colormap_func=None
         print(f"Error generating vector grid overlay: {e}")
         return None
 
-def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None):
+def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512), global_colormap_func=None, opacity=0.7, sampling_distance_meters=100, clipping_polygon=None, raw_grid=None):
     """
-    Convert GeoJSON triangular mesh to smooth raster overlay with proper NZTM2000 -> EPSG:3857 reprojection.
+    Convert GeoJSON triangular mesh OR raw kriging grid to smooth raster overlay with proper NZTM2000 -> EPSG:3857 reprojection.
+    
+    OPTIMIZATION: If raw_grid is provided, uses it directly (preserves full kriging detail).
+    Otherwise, extracts vertices from triangular mesh (legacy path with detail loss from averaging).
     
     This fixes the raster offset bug by:
     1. Rasterizing in NZTM2000 meters (same grid as interpolation)
@@ -3743,7 +3753,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
     Parameters:
     -----------
     geojson_data : dict
-        GeoJSON FeatureCollection containing triangular mesh data (in WGS84)
+        GeoJSON FeatureCollection containing triangular mesh data (in WGS84) - used if raw_grid not provided
     bounds : dict
         Dictionary with 'north', 'south', 'east', 'west' bounds (in WGS84)
     sampling_distance_meters : int
@@ -3752,6 +3762,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         Function to map values to colors consistently across all heatmaps
     opacity : float
         Transparency level (0.0 to 1.0) matching triangle mesh fillOpacity
+    raw_grid : dict, optional
+        Raw kriging grid data with keys 'lons', 'lats', 'values' (preserves full detail)
         
     Returns:
     --------
@@ -3767,45 +3779,57 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         import os
         from scipy.interpolate import griddata
         
-        if not geojson_data or not geojson_data.get('features'):
-            return None
-            
         print(f"🔧 ===== RASTER OFFSET FIX: NZTM2000 -> EPSG:3857 REPROJECTION =====")
         
-        # 1. Extract values and coordinates from triangular mesh (WGS84)
-        values = []
-        coords_wgs84 = []
-        vertex_values = {}  # Track values at each unique vertex
-        
-        for feature in geojson_data['features']:
-            if feature.get('properties', {}).get('value') is not None:
-                value = feature['properties']['value']
-                
-                if feature['geometry']['type'] == 'Polygon':
-                    triangle_coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
-                    
-                    # Add all triangle vertices with their interpolated values
-                    for coord in triangle_coords:
-                        coord_key = (round(coord[0], 6), round(coord[1], 6))  # Round to avoid floating point issues
-                        
-                        if coord_key in vertex_values:
-                            # Average values if vertex appears in multiple triangles
-                            vertex_values[coord_key] = (vertex_values[coord_key] + value) / 2
-                        else:
-                            vertex_values[coord_key] = value
-        
-        # Convert vertex dictionary to arrays
-        for (lon, lat), val in vertex_values.items():
-            coords_wgs84.append([lon, lat])
-            values.append(val)
-        
-        if not values or not coords_wgs84:
-            return None
+        # 1. Get values and coordinates - OPTIMIZED PATH if raw_grid provided
+        if raw_grid and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
+            # OPTIMIZED: Use raw kriging grid directly (preserves full detail)
+            lons_wgs84 = np.array(raw_grid['lons'])
+            lats_wgs84 = np.array(raw_grid['lats'])
+            values = np.array(raw_grid['values'])
+            coords_wgs84 = np.column_stack([lons_wgs84, lats_wgs84])
             
-        values = np.array(values)
-        coords_wgs84 = np.array(coords_wgs84)
-        
-        print(f"✅ Extracted {len(values)} vertex points from triangulated heatmap data (WGS84)")
+            print(f"✅ OPTIMIZATION: Using raw kriging grid ({len(values)} points) - skipping triangle extraction")
+            print(f"   This preserves all interpolation detail without triangle averaging!")
+            
+        else:
+            # LEGACY PATH: Extract from triangular mesh (detail loss from averaging)
+            if not geojson_data or not geojson_data.get('features'):
+                return None
+            
+            values = []
+            coords_wgs84 = []
+            vertex_values = {}  # Track values at each unique vertex
+            
+            for feature in geojson_data['features']:
+                if feature.get('properties', {}).get('value') is not None:
+                    value = feature['properties']['value']
+                    
+                    if feature['geometry']['type'] == 'Polygon':
+                        triangle_coords = feature['geometry']['coordinates'][0][:-1]  # Remove duplicate last point
+                        
+                        # Add all triangle vertices with their interpolated values
+                        for coord in triangle_coords:
+                            coord_key = (round(coord[0], 6), round(coord[1], 6))  # Round to avoid floating point issues
+                            
+                            if coord_key in vertex_values:
+                                # Average values if vertex appears in multiple triangles
+                                vertex_values[coord_key] = (vertex_values[coord_key] + value) / 2
+                            else:
+                                vertex_values[coord_key] = value
+            
+            # Convert vertex dictionary to arrays
+            for (lon, lat), val in vertex_values.items():
+                coords_wgs84.append([lon, lat])
+                values.append(val)
+            
+            if not values or not coords_wgs84:
+                return None
+                
+            values = np.array(values)
+            coords_wgs84 = np.array(coords_wgs84)
+            
+            print(f"⚠️ LEGACY: Extracted {len(values)} vertex points from triangulated heatmap data (some detail lost from triangle averaging)")
         if coords_wgs84.size == 0:
             return None
         

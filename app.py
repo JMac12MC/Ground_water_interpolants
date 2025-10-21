@@ -2404,8 +2404,41 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 except Exception as e:
                     print(f"🚫 SMOOTH RASTER: Error applying exclusion clipping: {e}")
             
-            # Generate single unified smooth raster across ALL triangulated data
-            # Note: Combined GeoJSON doesn't have raw_grid, so it will use legacy triangle extraction
+            # Generate single unified smooth raster across ALL interpolation data
+            # OPTIMIZATION: Aggregate raw_grid data from all heatmaps to preserve full kriging detail
+            
+            # Aggregate raw_grid data from all stored heatmaps
+            aggregated_raw_grid = None
+            try:
+                all_lons = []
+                all_lats = []
+                all_values = []
+                
+                for stored_heatmap in st.session_state.stored_heatmaps:
+                    if stored_heatmap in st.session_state.get('hidden_heatmaps', set()):
+                        continue
+                    
+                    geojson_data = stored_heatmap.get('geojson_data')
+                    if geojson_data and isinstance(geojson_data, dict):
+                        raw_grid = geojson_data.get('raw_grid')
+                        if raw_grid and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
+                            all_lons.extend(raw_grid['lons'])
+                            all_lats.extend(raw_grid['lats'])
+                            all_values.extend(raw_grid['values'])
+                
+                if all_lons and all_lats and all_values:
+                    aggregated_raw_grid = {
+                        'lons': all_lons,
+                        'lats': all_lats,
+                        'values': all_values
+                    }
+                    print(f"✅ RAW GRID AGGREGATION: Combined {len(all_lons):,} grid points from {len(valid_heatmaps_for_raster)} heatmaps")
+                    print(f"   This preserves FULL kriging detail at 100m resolution (no triangle averaging!)")
+                else:
+                    print(f"⚠️ RAW GRID AGGREGATION: No raw_grid data found in stored heatmaps, falling back to triangle extraction")
+            except Exception as e:
+                print(f"⚠️ RAW GRID AGGREGATION: Failed to aggregate raw grids ({e}), falling back to triangle extraction")
+                aggregated_raw_grid = None
             
             # ADAPTIVE RASTER RESOLUTION: Use higher resolution for large multi-heatmap displays
             num_heatmaps = len(valid_heatmaps_for_raster)
@@ -2426,7 +2459,7 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 global_colormap_func=lambda value: get_global_unified_color(value, method),
                 opacity=st.session_state.get('heatmap_opacity', 0.7),
                 clipping_polygon=combined_clipping_polygon,
-                raw_grid=None  # Combined heatmaps use legacy path (future: aggregate raw grids)
+                raw_grid=aggregated_raw_grid  # OPTIMIZED: Use aggregated raw grids for maximum detail preservation
             )
             
             if raster_overlay:

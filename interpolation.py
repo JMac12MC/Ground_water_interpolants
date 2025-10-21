@@ -3877,7 +3877,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         height_m = y_max - y_min
         
         # PERFORMANCE: Cap grid size to prevent memory crashes
-        max_grid_points = 1_000_000
+        # INCREASED from 1M to 15M for large regional coverage (e.g., 202 Canterbury heatmaps)
+        max_grid_points = 15_000_000
         estimated_points = (width_m / sampling_distance_meters) * (height_m / sampling_distance_meters)
         
         if estimated_points > max_grid_points:
@@ -3886,6 +3887,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
             print(f"⚠️ PERFORMANCE: Scaling resolution from {sampling_distance_meters}m to {effective_resolution_m:.0f}m (grid would be {estimated_points:.0f} points)")
         else:
             effective_resolution_m = sampling_distance_meters
+            print(f"✅ PERFORMANCE: Using full {sampling_distance_meters}m resolution ({estimated_points:.0f} grid points, under {max_grid_points:,} cap)")
         
         # Create regular grid in NZTM2000 meters (north to south for proper image orientation)
         nx = int(width_m / effective_resolution_m)

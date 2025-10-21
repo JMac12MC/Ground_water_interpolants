@@ -2406,10 +2406,23 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
             
             # Generate single unified smooth raster across ALL triangulated data
             # Note: Combined GeoJSON doesn't have raw_grid, so it will use legacy triangle extraction
+            
+            # ADAPTIVE RASTER RESOLUTION: Use higher resolution for large multi-heatmap displays
+            num_heatmaps = len(valid_heatmaps_for_raster)
+            if num_heatmaps >= 50:
+                adaptive_raster_size = (2048, 2048)  # High detail for 50+ tiles (e.g., 202 Canterbury-wide)
+                print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 2048x2048 raster for fine detail")
+            elif num_heatmaps >= 10:
+                adaptive_raster_size = (1024, 1024)  # Medium detail for 10-49 tiles
+                print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 1024x1024 raster")
+            else:
+                adaptive_raster_size = (512, 512)  # Standard detail for <10 tiles
+                print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 512x512 raster")
+            
             raster_overlay = generate_smooth_raster_overlay(
                 combined_geojson, 
                 overall_bounds, 
-                raster_size=(512, 512), 
+                raster_size=adaptive_raster_size, 
                 global_colormap_func=lambda value: get_global_unified_color(value, method),
                 opacity=st.session_state.get('heatmap_opacity', 0.7),
                 clipping_polygon=combined_clipping_polygon,

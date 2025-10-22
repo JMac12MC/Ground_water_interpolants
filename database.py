@@ -150,13 +150,13 @@ class PolygonDatabase:
                     """))
                     print("Created stored_heatmaps table")
                 
-                # Create saved_rasters table for storing generated raster visualizations
+                # Create saved_rasters table for storing generated raster visualizations (file-based storage)
                 if 'saved_rasters' not in table_names:
                     conn.execute(text("""
                         CREATE TABLE saved_rasters (
                             id SERIAL PRIMARY KEY,
                             name VARCHAR(255) NOT NULL UNIQUE,
-                            raster_image_base64 TEXT NOT NULL,
+                            file_path VARCHAR(512) NOT NULL,
                             bounds_json TEXT NOT NULL,
                             opacity FLOAT DEFAULT 0.7,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -957,7 +957,7 @@ class PolygonDatabase:
     
     def save_raster(self, name, raster_image_base64, bounds, opacity=0.7):
         """
-        Save a generated raster visualization to the database
+        Save a generated raster visualization to disk and database
         
         Parameters:
         -----------
@@ -977,35 +977,37 @@ class PolygonDatabase:
         """
         try:
             import base64
-            from PIL import Image
-            from io import BytesIO
+            import os
+            from datetime import datetime
             
             # Decode the base64 image
             img_data = base64.b64decode(raster_image_base64)
-            original_size = len(img_data)
             
-            # Open with PIL and re-compress with maximum settings (keeps full resolution)
-            img = Image.open(BytesIO(img_data))
-            print(f"📦 Saving raster at full resolution: {img.width}x{img.height}")
+            # Create saved_rasters directory if it doesn't exist
+            os.makedirs('saved_rasters', exist_ok=True)
             
-            # Save with maximum PNG compression while preserving full resolution
-            output = BytesIO()
-            img.save(output, format='PNG', optimize=True, compress_level=9)
-            compressed_data = output.getvalue()
-            compressed_base64 = base64.b64encode(compressed_data).decode('utf-8')
+            # Generate unique filename using timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            safe_name = "".join(c for c in name if c.isalnum() or c in (' ', '_', '-')).strip()
+            filename = f"{safe_name}_{timestamp}.png"
+            file_path = os.path.join('saved_rasters', filename)
             
-            compressed_size = len(compressed_data)
-            compression_ratio = (1 - compressed_size / original_size) * 100
-            print(f"📦 Compressed raster: {original_size:,} bytes → {compressed_size:,} bytes ({compression_ratio:.1f}% reduction)")
+            # Save to disk
+            with open(file_path, 'wb') as f:
+                f.write(img_data)
             
+            file_size_mb = len(img_data) / (1024 * 1024)
+            print(f"💾 Saved raster to disk: {file_path} ({file_size_mb:.2f} MB)")
+            
+            # Save metadata to database
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
-                    INSERT INTO saved_rasters (name, raster_image_base64, bounds_json, opacity)
-                    VALUES (:name, :raster_image_base64, :bounds_json, :opacity)
+                    INSERT INTO saved_rasters (name, file_path, bounds_json, opacity)
+                    VALUES (:name, :file_path, :bounds_json, :opacity)
                     RETURNING id
                 """), {
                     'name': name,
-                    'raster_image_base64': compressed_base64,
+                    'file_path': file_path,
                     'bounds_json': json.dumps(bounds),
                     'opacity': opacity
                 })
@@ -1054,7 +1056,7 @@ class PolygonDatabase:
     
     def load_raster(self, raster_id):
         """
-        Load a saved raster by ID
+        Load a saved raster from disk by ID
         
         Parameters:
         -----------
@@ -1067,30 +1069,50 @@ class PolygonDatabase:
             Dictionary with raster_image_base64, bounds, opacity, name
         """
         try:
+            import base64
+            import os
+            
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
-                    SELECT name, raster_image_base64, bounds_json, opacity
+                    SELECT name, file_path, bounds_json, opacity
                     FROM saved_rasters
                     WHERE id = :raster_id
                 """), {'raster_id': raster_id})
                 
                 row = result.fetchone()
                 if row:
-                    return {
-                        'name': row[0],
-                        'raster_image_base64': row[1],
-                        'bounds': json.loads(row[2]),
-                        'opacity': row[3]
-                    }
+                    name = row[0]
+                    file_path = row[1]
+                    bounds = json.loads(row[2])
+                    opacity = row[3]
+                    
+                    # Load image from disk
+                    if os.path.exists(file_path):
+                        with open(file_path, 'rb') as f:
+                            img_data = f.read()
+                        raster_image_base64 = base64.b64encode(img_data).decode('utf-8')
+                        
+                        print(f"📂 Loaded raster from disk: {file_path}")
+                        return {
+                            'name': name,
+                            'raster_image_base64': raster_image_base64,
+                            'bounds': bounds,
+                            'opacity': opacity
+                        }
+                    else:
+                        print(f"❌ Raster file not found: {file_path}")
+                        return None
                 return None
                 
         except Exception as e:
             print(f"Error loading raster: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def delete_raster(self, raster_id):
         """
-        Delete a saved raster by ID
+        Delete a saved raster file and database entry by ID
         
         Parameters:
         -----------
@@ -1103,16 +1125,37 @@ class PolygonDatabase:
             True if deleted successfully, False otherwise
         """
         try:
+            import os
+            
+            # Get file path before deleting from database
             with self.engine.connect() as conn:
-                conn.execute(text("""
-                    DELETE FROM saved_rasters
-                    WHERE id = :raster_id
+                result = conn.execute(text("""
+                    SELECT file_path FROM saved_rasters WHERE id = :raster_id
                 """), {'raster_id': raster_id})
+                row = result.fetchone()
                 
-                conn.commit()
-                print(f"✅ Deleted raster ID {raster_id}")
-                return True
+                if row:
+                    file_path = row[0]
+                    
+                    # Delete from database first
+                    conn.execute(text("""
+                        DELETE FROM saved_rasters WHERE id = :raster_id
+                    """), {'raster_id': raster_id})
+                    conn.commit()
+                    
+                    # Delete file from disk
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        print(f"🗑️ Deleted raster file: {file_path}")
+                    
+                    print(f"✅ Deleted raster ID {raster_id}")
+                    return True
+                else:
+                    print(f"Raster ID {raster_id} not found")
+                    return False
                 
         except Exception as e:
             print(f"Error deleting raster: {e}")
+            import traceback
+            traceback.print_exc()
             return False

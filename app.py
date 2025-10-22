@@ -528,6 +528,14 @@ with st.sidebar:
     st.session_state.heatmap_opacity = opacity
     
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
+    
+    # Clear Map Button
+    if st.button("🗑️ Clear Map", help="Remove all displayed rasters from the map"):
+        if 'current_displayed_raster' in st.session_state:
+            del st.session_state.current_displayed_raster
+            st.success("Map cleared!")
+            st.rerun()
+    
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
     st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary calculated from ALL wells (62% more efficient than rectangular bounds)")
@@ -547,6 +555,58 @@ with st.sidebar:
             value=st.session_state.show_new_clipping_polygon, 
             help="Display the comprehensive clipping polygon for Canterbury Plains drainage areas"
         )
+    
+    # Saved Rasters Section
+    st.markdown("---")
+    st.subheader("💾 Saved Rasters")
+    
+    # Save Current Raster
+    with st.expander("Save Current Raster", expanded=False):
+        raster_name = st.text_input("Raster Name", placeholder="e.g., Canterbury Full Coverage")
+        if st.button("💾 Save Raster"):
+            if not raster_name:
+                st.error("Please enter a name for the raster")
+            elif 'last_generated_raster' not in st.session_state:
+                st.error("No raster currently displayed to save")
+            else:
+                try:
+                    raster_data = st.session_state.last_generated_raster
+                    raster_id = st.session_state.polygon_db.save_raster(
+                        name=raster_name,
+                        raster_image_base64=raster_data['image_base64'],
+                        bounds=raster_data['bounds'],
+                        opacity=raster_data['opacity']
+                    )
+                    if raster_id:
+                        st.success(f"✅ Raster '{raster_name}' saved successfully!")
+                    else:
+                        st.error("Failed to save raster (name may already exist)")
+                except Exception as e:
+                    st.error(f"Error saving raster: {e}")
+    
+    # Load Saved Rasters
+    saved_rasters = st.session_state.polygon_db.get_all_saved_rasters()
+    if saved_rasters:
+        st.write(f"**{len(saved_rasters)} saved raster(s)**")
+        for raster in saved_rasters:
+            col1, col2, col3 = st.columns([3, 1, 1])
+            with col1:
+                st.write(f"**{raster['name']}**")
+                st.caption(f"Saved: {raster['created_at'].strftime('%Y-%m-%d %H:%M')}" if hasattr(raster['created_at'], 'strftime') else f"Saved: {raster['created_at']}")
+            with col2:
+                if st.button("Load", key=f"load_{raster['id']}"):
+                    loaded_raster = st.session_state.polygon_db.load_raster(raster['id'])
+                    if loaded_raster:
+                        st.session_state.current_displayed_raster = loaded_raster
+                        st.success(f"Loaded '{raster['name']}'")
+                        st.rerun()
+            with col3:
+                if st.button("🗑️", key=f"delete_{raster['id']}"):
+                    if st.session_state.polygon_db.delete_raster(raster['id']):
+                        st.success(f"Deleted '{raster['name']}'")
+                        st.rerun()
+    else:
+        st.info("No saved rasters yet")
     
 
 
@@ -2463,6 +2523,13 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
             )
             
             if raster_overlay:
+                # Save raster to session state for later saving
+                st.session_state.last_generated_raster = {
+                    'image_base64': raster_overlay['image_base64'],
+                    'bounds': raster_overlay['bounds'],
+                    'opacity': raster_overlay['opacity']
+                }
+                
                 # Add single unified raster overlay to map
                 folium.raster_layers.ImageOverlay(
                     image=f"data:image/png;base64,{raster_overlay['image_base64']}",
@@ -3043,6 +3110,17 @@ if st.session_state.well_markers_visibility:
                 print(f"Error creating marker for well: {e}")
     else:
         print("No wells found in heatmap areas")
+
+# Display loaded saved raster if user selected one
+if 'current_displayed_raster' in st.session_state:
+    raster_data = st.session_state.current_displayed_raster
+    folium.raster_layers.ImageOverlay(
+        image=f"data:image/png;base64,{raster_data['raster_image_base64']}",
+        bounds=raster_data['bounds'],
+        opacity=raster_data['opacity'],
+        name=f"Saved Raster: {raster_data['name']}"
+    ).add_to(m)
+    print(f"📂 Displaying saved raster: {raster_data['name']}")
 
 # Add click event to capture coordinates (only need this once)
 folium.LatLngPopup().add_to(m)

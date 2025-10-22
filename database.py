@@ -150,19 +150,19 @@ class PolygonDatabase:
                     """))
                     print("Created stored_heatmaps table")
                 
-                # Create saved_rasters table for storing generated raster visualizations (file-based storage)
+                # Create saved_rasters table for storing generated raster visualizations (BYTEA binary storage)
                 if 'saved_rasters' not in table_names:
                     conn.execute(text("""
                         CREATE TABLE saved_rasters (
                             id SERIAL PRIMARY KEY,
                             name VARCHAR(255) NOT NULL UNIQUE,
-                            file_path VARCHAR(512) NOT NULL,
+                            raster_data BYTEA NOT NULL,
                             bounds_json TEXT NOT NULL,
                             opacity FLOAT DEFAULT 0.7,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     """))
-                    print("Created saved_rasters table")
+                    print("Created saved_rasters table with BYTEA storage")
                 
                 conn.commit()
         except Exception as e:
@@ -957,7 +957,7 @@ class PolygonDatabase:
     
     def save_raster(self, name, raster_image_base64, bounds, opacity=0.7):
         """
-        Save a generated raster visualization to disk and database
+        Save a generated raster visualization to database using BYTEA binary storage
         
         Parameters:
         -----------
@@ -977,44 +977,29 @@ class PolygonDatabase:
         """
         try:
             import base64
-            import os
-            from datetime import datetime
             
-            # Decode the base64 image
+            # Decode base64 to raw binary PNG data
             img_data = base64.b64decode(raster_image_base64)
-            
-            # Create saved_rasters directory if it doesn't exist
-            os.makedirs('saved_rasters', exist_ok=True)
-            
-            # Generate unique filename using timestamp
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            safe_name = "".join(c for c in name if c.isalnum() or c in (' ', '_', '-')).strip()
-            filename = f"{safe_name}_{timestamp}.png"
-            file_path = os.path.join('saved_rasters', filename)
-            
-            # Save to disk
-            with open(file_path, 'wb') as f:
-                f.write(img_data)
-            
             file_size_mb = len(img_data) / (1024 * 1024)
-            print(f"💾 Saved raster to disk: {file_path} ({file_size_mb:.2f} MB)")
             
-            # Save metadata to database
+            print(f"💾 Saving raster to database (BYTEA): {file_size_mb:.2f} MB")
+            
+            # Store raw binary data directly in PostgreSQL BYTEA column
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
-                    INSERT INTO saved_rasters (name, file_path, bounds_json, opacity)
-                    VALUES (:name, :file_path, :bounds_json, :opacity)
+                    INSERT INTO saved_rasters (name, raster_data, bounds_json, opacity)
+                    VALUES (:name, :raster_data, :bounds_json, :opacity)
                     RETURNING id
                 """), {
                     'name': name,
-                    'file_path': file_path,
+                    'raster_data': img_data,  # Raw binary data, no base64 encoding
                     'bounds_json': json.dumps(bounds),
                     'opacity': opacity
                 })
                 
                 conn.commit()
                 raster_id = result.fetchone()[0]
-                print(f"✅ Saved raster '{name}' with ID {raster_id}")
+                print(f"✅ Saved raster '{name}' to database with ID {raster_id} ({file_size_mb:.2f} MB)")
                 return raster_id
                 
         except Exception as e:
@@ -1056,7 +1041,7 @@ class PolygonDatabase:
     
     def load_raster(self, raster_id):
         """
-        Load a saved raster from disk by ID
+        Load a saved raster from database (BYTEA binary storage) by ID
         
         Parameters:
         -----------
@@ -1070,11 +1055,10 @@ class PolygonDatabase:
         """
         try:
             import base64
-            import os
             
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
-                    SELECT name, file_path, bounds_json, opacity
+                    SELECT name, raster_data, bounds_json, opacity
                     FROM saved_rasters
                     WHERE id = :raster_id
                 """), {'raster_id': raster_id})
@@ -1082,26 +1066,21 @@ class PolygonDatabase:
                 row = result.fetchone()
                 if row:
                     name = row[0]
-                    file_path = row[1]
+                    raster_data = row[1]  # BYTEA raw binary data
                     bounds = json.loads(row[2])
                     opacity = row[3]
                     
-                    # Load image from disk
-                    if os.path.exists(file_path):
-                        with open(file_path, 'rb') as f:
-                            img_data = f.read()
-                        raster_image_base64 = base64.b64encode(img_data).decode('utf-8')
-                        
-                        print(f"📂 Loaded raster from disk: {file_path}")
-                        return {
-                            'name': name,
-                            'raster_image_base64': raster_image_base64,
-                            'bounds': bounds,
-                            'opacity': opacity
-                        }
-                    else:
-                        print(f"❌ Raster file not found: {file_path}")
-                        return None
+                    # Convert binary data to base64 for display
+                    raster_image_base64 = base64.b64encode(raster_data).decode('utf-8')
+                    file_size_mb = len(raster_data) / (1024 * 1024)
+                    
+                    print(f"📂 Loaded raster from database: '{name}' ({file_size_mb:.2f} MB)")
+                    return {
+                        'name': name,
+                        'raster_image_base64': raster_image_base64,
+                        'bounds': bounds,
+                        'opacity': opacity
+                    }
                 return None
                 
         except Exception as e:
@@ -1112,7 +1091,7 @@ class PolygonDatabase:
     
     def delete_raster(self, raster_id):
         """
-        Delete a saved raster file and database entry by ID
+        Delete a saved raster from database by ID
         
         Parameters:
         -----------
@@ -1125,30 +1104,19 @@ class PolygonDatabase:
             True if deleted successfully, False otherwise
         """
         try:
-            import os
-            
-            # Get file path before deleting from database
             with self.engine.connect() as conn:
+                # Delete from database (BYTEA data removed automatically)
                 result = conn.execute(text("""
-                    SELECT file_path FROM saved_rasters WHERE id = :raster_id
+                    DELETE FROM saved_rasters 
+                    WHERE id = :raster_id
+                    RETURNING name
                 """), {'raster_id': raster_id})
-                row = result.fetchone()
                 
-                if row:
-                    file_path = row[0]
-                    
-                    # Delete from database first
-                    conn.execute(text("""
-                        DELETE FROM saved_rasters WHERE id = :raster_id
-                    """), {'raster_id': raster_id})
-                    conn.commit()
-                    
-                    # Delete file from disk
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                        print(f"🗑️ Deleted raster file: {file_path}")
-                    
-                    print(f"✅ Deleted raster ID {raster_id}")
+                deleted_row = result.fetchone()
+                conn.commit()
+                
+                if deleted_row:
+                    print(f"✅ Deleted raster '{deleted_row[0]}' (ID {raster_id})")
                     return True
                 else:
                     print(f"Raster ID {raster_id} not found")

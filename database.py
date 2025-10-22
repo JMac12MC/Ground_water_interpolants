@@ -976,6 +976,33 @@ class PolygonDatabase:
             The ID of the saved raster, or None if failed
         """
         try:
+            import base64
+            from PIL import Image
+            from io import BytesIO
+            
+            # Decode the base64 image
+            img_data = base64.b64decode(raster_image_base64)
+            original_size = len(img_data)
+            
+            # Open with PIL and compress aggressively for storage
+            img = Image.open(BytesIO(img_data))
+            
+            # Resize to 1024x1024 for storage (saves space while preserving visual quality)
+            max_size = 1024
+            if img.width > max_size or img.height > max_size:
+                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                print(f"📦 Resized raster from original to {img.width}x{img.height} for storage")
+            
+            # Save with aggressive compression
+            output = BytesIO()
+            img.save(output, format='PNG', optimize=True, compress_level=9)
+            compressed_data = output.getvalue()
+            compressed_base64 = base64.b64encode(compressed_data).decode('utf-8')
+            
+            compressed_size = len(compressed_data)
+            compression_ratio = (1 - compressed_size / original_size) * 100
+            print(f"📦 Compressed raster: {original_size:,} bytes → {compressed_size:,} bytes ({compression_ratio:.1f}% reduction)")
+            
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     INSERT INTO saved_rasters (name, raster_image_base64, bounds_json, opacity)
@@ -983,7 +1010,7 @@ class PolygonDatabase:
                     RETURNING id
                 """), {
                     'name': name,
-                    'raster_image_base64': raster_image_base64,
+                    'raster_image_base64': compressed_base64,
                     'bounds_json': json.dumps(bounds),
                     'opacity': opacity
                 })
@@ -995,6 +1022,8 @@ class PolygonDatabase:
                 
         except Exception as e:
             print(f"❌ Error saving raster: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def get_all_saved_rasters(self):

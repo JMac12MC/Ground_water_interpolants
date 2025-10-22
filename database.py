@@ -150,6 +150,20 @@ class PolygonDatabase:
                     """))
                     print("Created stored_heatmaps table")
                 
+                # Create saved_rasters table for storing generated raster visualizations
+                if 'saved_rasters' not in table_names:
+                    conn.execute(text("""
+                        CREATE TABLE saved_rasters (
+                            id SERIAL PRIMARY KEY,
+                            name VARCHAR(255) NOT NULL UNIQUE,
+                            raster_image_base64 TEXT NOT NULL,
+                            bounds_json TEXT NOT NULL,
+                            opacity FLOAT DEFAULT 0.7,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    print("Created saved_rasters table")
+                
                 conn.commit()
         except Exception as e:
             print(f"Error creating tables: {e}")
@@ -940,3 +954,141 @@ class PolygonDatabase:
         except Exception as e:
             print(f"Error storing polygon: {e}")
             return None
+    
+    def save_raster(self, name, raster_image_base64, bounds, opacity=0.7):
+        """
+        Save a generated raster visualization to the database
+        
+        Parameters:
+        -----------
+        name : str
+            Unique name for the saved raster
+        raster_image_base64 : str
+            Base64-encoded PNG image of the raster
+        bounds : list
+            Bounds [[south, west], [north, east]] for the raster overlay
+        opacity : float
+            Opacity level (0.0 to 1.0)
+        
+        Returns:
+        --------
+        int or None
+            The ID of the saved raster, or None if failed
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    INSERT INTO saved_rasters (name, raster_image_base64, bounds_json, opacity)
+                    VALUES (:name, :raster_image_base64, :bounds_json, :opacity)
+                    RETURNING id
+                """), {
+                    'name': name,
+                    'raster_image_base64': raster_image_base64,
+                    'bounds_json': json.dumps(bounds),
+                    'opacity': opacity
+                })
+                
+                conn.commit()
+                raster_id = result.fetchone()[0]
+                print(f"✅ Saved raster '{name}' with ID {raster_id}")
+                return raster_id
+                
+        except Exception as e:
+            print(f"❌ Error saving raster: {e}")
+            return None
+    
+    def get_all_saved_rasters(self):
+        """
+        Retrieve all saved rasters sorted by creation date (newest first)
+        
+        Returns:
+        --------
+        list of dict
+            List of saved rasters with id, name, and created_at
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT id, name, created_at
+                    FROM saved_rasters
+                    ORDER BY created_at DESC
+                """))
+                
+                rasters = []
+                for row in result:
+                    rasters.append({
+                        'id': row[0],
+                        'name': row[1],
+                        'created_at': row[2]
+                    })
+                
+                return rasters
+                
+        except Exception as e:
+            print(f"Error retrieving saved rasters: {e}")
+            return []
+    
+    def load_raster(self, raster_id):
+        """
+        Load a saved raster by ID
+        
+        Parameters:
+        -----------
+        raster_id : int
+            ID of the raster to load
+        
+        Returns:
+        --------
+        dict or None
+            Dictionary with raster_image_base64, bounds, opacity, name
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT name, raster_image_base64, bounds_json, opacity
+                    FROM saved_rasters
+                    WHERE id = :raster_id
+                """), {'raster_id': raster_id})
+                
+                row = result.fetchone()
+                if row:
+                    return {
+                        'name': row[0],
+                        'raster_image_base64': row[1],
+                        'bounds': json.loads(row[2]),
+                        'opacity': row[3]
+                    }
+                return None
+                
+        except Exception as e:
+            print(f"Error loading raster: {e}")
+            return None
+    
+    def delete_raster(self, raster_id):
+        """
+        Delete a saved raster by ID
+        
+        Parameters:
+        -----------
+        raster_id : int
+            ID of the raster to delete
+        
+        Returns:
+        --------
+        bool
+            True if deleted successfully, False otherwise
+        """
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("""
+                    DELETE FROM saved_rasters
+                    WHERE id = :raster_id
+                """), {'raster_id': raster_id})
+                
+                conn.commit()
+                print(f"✅ Deleted raster ID {raster_id}")
+                return True
+                
+        except Exception as e:
+            print(f"Error deleting raster: {e}")
+            return False

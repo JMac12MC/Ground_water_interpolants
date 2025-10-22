@@ -984,16 +984,11 @@ class PolygonDatabase:
             img_data = base64.b64decode(raster_image_base64)
             original_size = len(img_data)
             
-            # Open with PIL and compress aggressively for storage
+            # Open with PIL and re-compress with maximum settings (keeps full resolution)
             img = Image.open(BytesIO(img_data))
+            print(f"📦 Saving raster at full resolution: {img.width}x{img.height}")
             
-            # Resize to 1024x1024 for storage (saves space while preserving visual quality)
-            max_size = 1024
-            if img.width > max_size or img.height > max_size:
-                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                print(f"📦 Resized raster from original to {img.width}x{img.height} for storage")
-            
-            # Save with aggressive compression
+            # Save with maximum PNG compression while preserving full resolution
             output = BytesIO()
             img.save(output, format='PNG', optimize=True, compress_level=9)
             compressed_data = output.getvalue()

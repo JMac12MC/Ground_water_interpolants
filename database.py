@@ -4,12 +4,58 @@ import pandas as pd
 import sqlalchemy
 from sqlalchemy import create_engine, text, Table, Column, Integer, String, Float, DateTime, MetaData, inspect
 from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.exc import OperationalError, DBAPIError
 import geopandas as gpd
 from shapely import wkt
 import json
 from datetime import datetime
+import time
 
 class PolygonDatabase:
+    def _execute_with_retry(self, func, max_retries=3, backoff_factor=1):
+        """
+        Execute a database function with retry logic for transient errors
+        
+        Parameters:
+        -----------
+        func : callable
+            Function to execute (should return a result)
+        max_retries : int
+            Maximum number of retry attempts
+        backoff_factor : float
+            Exponential backoff multiplier
+        
+        Returns:
+        --------
+        The result of func()
+        """
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except (OperationalError, DBAPIError) as e:
+                last_exception = e
+                error_msg = str(e).lower()
+                
+                # Retry on SSL connection errors and timeouts
+                if 'ssl' in error_msg or 'closed' in error_msg or 'timeout' in error_msg:
+                    wait_time = backoff_factor * (2 ** attempt)
+                    print(f"🔄 Database connection error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    
+                    # Dispose and recreate connection pool on SSL errors
+                    try:
+                        self.engine.dispose()
+                    except:
+                        pass
+                else:
+                    # Don't retry other types of errors
+                    raise
+        
+        # All retries exhausted
+        print(f"❌ Database operation failed after {max_retries} attempts")
+        raise last_exception
+    
     def __init__(self):
         """Initialize database connection using environment variables"""
         self.database_url = os.environ.get('DATABASE_URL')
@@ -18,7 +64,21 @@ class PolygonDatabase:
             self.database_url = 'sqlite:///groundwater.db'
 
         try:
-            self.engine = create_engine(self.database_url)
+            # Configure connection pool for better connection management
+            pool_config = {
+                'pool_size': 5,              # Maintain 5 connections
+                'max_overflow': 10,          # Allow 10 additional connections when busy
+                'pool_timeout': 30,          # Wait 30 seconds for available connection
+                'pool_recycle': 1800,        # Recycle connections after 30 minutes
+                'pool_pre_ping': True,       # Test connections before using them
+            }
+            
+            # Only apply pool config for PostgreSQL (not SQLite)
+            if 'postgresql' in self.database_url or 'postgres' in self.database_url:
+                self.engine = create_engine(self.database_url, **pool_config)
+            else:
+                self.engine = create_engine(self.database_url)
+                
             self.metadata = MetaData()
             self._create_tables()
             print(f"Database initialized successfully: {self.database_url}")
@@ -31,7 +91,7 @@ class PolygonDatabase:
         try:
             heatmap_db_url = os.environ.get('HEATMAP_DATABASE_URL')
             if heatmap_db_url:
-                self.pg_engine = create_engine(heatmap_db_url)
+                self.pg_engine = create_engine(heatmap_db_url, **pool_config)
         except Exception as e:
             print(f"PostgreSQL connection not available: {e}")
 
@@ -975,7 +1035,7 @@ class PolygonDatabase:
         int or None
             The ID of the saved raster, or None if failed
         """
-        try:
+        def _save():
             import base64
             
             # Decode base64 to raw binary PNG data
@@ -1001,7 +1061,9 @@ class PolygonDatabase:
                 raster_id = result.fetchone()[0]
                 print(f"✅ Saved raster '{name}' to database with ID {raster_id} ({file_size_mb:.2f} MB)")
                 return raster_id
-                
+        
+        try:
+            return self._execute_with_retry(_save)
         except Exception as e:
             print(f"❌ Error saving raster: {e}")
             import traceback
@@ -1017,7 +1079,7 @@ class PolygonDatabase:
         list of dict
             List of saved rasters with id, name, and created_at
         """
-        try:
+        def _query():
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     SELECT id, name, created_at
@@ -1034,9 +1096,13 @@ class PolygonDatabase:
                     })
                 
                 return rasters
-                
+        
+        try:
+            return self._execute_with_retry(_query)
         except Exception as e:
             print(f"Error retrieving saved rasters: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def load_raster(self, raster_id):
@@ -1053,7 +1119,7 @@ class PolygonDatabase:
         dict or None
             Dictionary with raster_image_base64, bounds, opacity, name
         """
-        try:
+        def _query():
             import base64
             
             with self.engine.connect() as conn:
@@ -1082,7 +1148,9 @@ class PolygonDatabase:
                         'opacity': opacity
                     }
                 return None
-                
+        
+        try:
+            return self._execute_with_retry(_query)
         except Exception as e:
             print(f"Error loading raster: {e}")
             import traceback
@@ -1103,7 +1171,7 @@ class PolygonDatabase:
         bool
             True if deleted successfully, False otherwise
         """
-        try:
+        def _delete():
             with self.engine.connect() as conn:
                 # Delete from database (BYTEA data removed automatically)
                 result = conn.execute(text("""
@@ -1121,7 +1189,9 @@ class PolygonDatabase:
                 else:
                     print(f"Raster ID {raster_id} not found")
                     return False
-                
+        
+        try:
+            return self._execute_with_retry(_delete)
         except Exception as e:
             print(f"Error deleting raster: {e}")
             import traceback

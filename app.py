@@ -65,7 +65,7 @@ session_defaults = {
     'wells_data': None,
     'filtered_wells': None,
     'filtered_wells_east': None,
-    'heat_map_visibility': True,
+    'display_heatmap': True,
     'well_markers_visibility': True,
     'search_radius': 20,
     'soil_polygons': None,
@@ -527,14 +527,13 @@ with st.sidebar:
     )
     st.session_state.heatmap_opacity = opacity
     
-    st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
-    
-    # Clear Map Button
+    # Clear Map Button - instantly clears without regeneration
     if st.button("🗑️ Clear Map", help="Remove all displayed rasters from the map"):
+        st.session_state.display_heatmap = False
         if 'current_displayed_raster' in st.session_state:
             del st.session_state.current_displayed_raster
-            st.success("Map cleared!")
-            st.rerun()
+        st.success("✅ Map cleared!")
+        st.rerun()
     
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
@@ -598,6 +597,7 @@ with st.sidebar:
                     loaded_raster = st.session_state.polygon_db.load_raster(raster['id'])
                     if loaded_raster:
                         st.session_state.current_displayed_raster = loaded_raster
+                        st.session_state.display_heatmap = True
                         st.success(f"Loaded '{raster['name']}'")
                         st.rerun()
             with col3:
@@ -1977,7 +1977,7 @@ if st.session_state.wells_data is not None:
     # Initialize geojson_data to prevent NameError
     geojson_data = {"type": "FeatureCollection", "features": []}
     
-    if st.session_state.heat_map_visibility:
+    if st.session_state.display_heatmap:
         if heatmap_data:
             # Display pre-computed heatmap
             st.success("⚡ Displaying pre-computed heatmap - instant loading!")
@@ -2529,6 +2529,7 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                     'bounds': raster_overlay['bounds'],
                     'opacity': raster_overlay['opacity']
                 }
+                st.session_state.display_heatmap = True
                 
                 # Add single unified raster overlay to map
                 folium.raster_layers.ImageOverlay(

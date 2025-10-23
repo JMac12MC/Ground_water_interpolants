@@ -2334,7 +2334,8 @@ if st.session_state.selected_point:
     center_lat, center_lon = st.session_state.selected_point
     fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
-if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
+# Skip expensive heatmap generation/display if user cleared the map
+if st.session_state.display_heatmap and st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
     print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
     print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
     

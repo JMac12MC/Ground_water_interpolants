@@ -379,6 +379,9 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     [Original] [East] [Northeast]
     [South] [Southeast] [Far_Southeast]
     
+    Extended 10x10 Layout (when grid_size=(10,10)):
+    100 heatmaps arranged in a 10x10 grid extending south and east from the original click point
+    
     Args:
         grid_size: tuple (rows, cols) for grid dimensions. Default None uses 2x3 layout.
     

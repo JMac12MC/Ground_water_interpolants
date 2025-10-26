@@ -65,6 +65,7 @@ session_defaults = {
     'wells_data': None,
     'filtered_wells': None,
     'filtered_wells_east': None,
+    'heat_map_visibility': True,
     'well_markers_visibility': True,
     'search_radius': 20,
     'soil_polygons': None,
@@ -75,6 +76,8 @@ session_defaults = {
     'auto_fit_variogram': False,
     'variogram_model': 'spherical',
     'geojson_data': None,
+    'fresh_heatmap_displayed': False,
+    'new_heatmap_added': False,
     'colormap_updated': False,
 
     'new_clipping_polygon': None,
@@ -432,40 +435,23 @@ with st.sidebar:
         
         if not st.session_state.indicator_auto_fit:
             st.info(f"📐 Using Manual Settings: Range={st.session_state.indicator_range}m, Sill={st.session_state.indicator_sill}, Nugget={st.session_state.indicator_nugget}")
-        
-        # Colormap mode selection for indicator kriging
-        st.markdown("**Colormap Mode**")
-        if 'indicator_colormap_mode' not in st.session_state:
-            st.session_state.indicator_colormap_mode = 'discrete'
-        
-        colormap_mode = st.radio(
-            "Choose colormap style:",
-            options=["Discrete (4-tier zones)", "Continuous (smooth gradient)"],
-            index=0 if st.session_state.indicator_colormap_mode == 'discrete' else 1,
-            help="Discrete shows clear Red/Orange/Yellow/Green zones. Continuous shows smooth probability gradients like depth to groundwater maps.",
-            key="indicator_colormap_mode_radio"
-        )
-        
-        # Update session state based on selection
-        if "Continuous" in colormap_mode:
-            st.session_state.indicator_colormap_mode = 'continuous'
-            st.info("🌊 Continuous mode: Smooth color gradient from red (0.0) → orange → yellow → green (1.0)")
-        else:
-            st.session_state.indicator_colormap_mode = 'discrete'
-            st.info("📊 Discrete mode: Red (≤0.4), Orange (0.4-0.6), Yellow (0.6-0.7), Green (≥0.7)")
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")
     grid_option = st.selectbox(
         "Heatmap Grid Size",
-        options=["2×3 Grid (6 heatmaps)"],
-        index=0,
-        help="Grid size for sequential heatmap generation in 2×3 layout."
+        options=["2×3 Grid (6 heatmaps)", "10×10 Grid (100 heatmaps)"],
+        index=0,  # Default to 2x3
+        help="Choose the grid size for automatic heatmap generation. 10×10 creates comprehensive regional coverage but takes longer to generate."
     )
     
-    # Set grid_size in session state
-    st.session_state.grid_size = (2, 3)
-    st.info("📊 **Standard Mode**: Will generate 6 heatmaps in compact 2×3 layout")
+    # Convert selection to grid_size tuple and store in session state
+    if "10×10" in grid_option:
+        st.session_state.grid_size = (10, 10)
+        st.info("📊 **Extended Mode**: Will generate 100 heatmaps covering 178km south × 178km east area")
+    else:
+        st.session_state.grid_size = (2, 3)
+        st.info("📊 **Standard Mode**: Will generate 6 heatmaps in compact 2×3 layout")
 
     # Display options
     st.header("Display Options")
@@ -541,13 +527,7 @@ with st.sidebar:
     )
     st.session_state.heatmap_opacity = opacity
     
-    # Clear Map Button - simply removes displayed raster
-    if st.button("🗑️ Clear Map", help="Remove all displayed rasters from the map"):
-        if 'current_displayed_raster' in st.session_state:
-            del st.session_state.current_displayed_raster
-        st.success("✅ Map cleared!")
-        st.rerun()
-    
+    st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
     st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary calculated from ALL wells (62% more efficient than rectangular bounds)")
@@ -567,58 +547,6 @@ with st.sidebar:
             value=st.session_state.show_new_clipping_polygon, 
             help="Display the comprehensive clipping polygon for Canterbury Plains drainage areas"
         )
-    
-    # Saved Rasters Section
-    st.markdown("---")
-    st.subheader("💾 Saved Rasters")
-    
-    # Save Current Raster
-    with st.expander("Save Current Raster", expanded=False):
-        raster_name = st.text_input("Raster Name", placeholder="e.g., Canterbury Full Coverage")
-        if st.button("💾 Save Raster"):
-            if not raster_name:
-                st.error("Please enter a name for the raster")
-            elif 'last_generated_raster' not in st.session_state:
-                st.error("No raster currently displayed to save")
-            else:
-                try:
-                    raster_data = st.session_state.last_generated_raster
-                    raster_id = st.session_state.polygon_db.save_raster(
-                        name=raster_name,
-                        raster_image_base64=raster_data['image_base64'],
-                        bounds=raster_data['bounds'],
-                        opacity=raster_data['opacity']
-                    )
-                    if raster_id:
-                        st.success(f"✅ Raster '{raster_name}' saved successfully!")
-                    else:
-                        st.error("Failed to save raster (name may already exist)")
-                except Exception as e:
-                    st.error(f"Error saving raster: {e}")
-    
-    # Load Saved Rasters
-    saved_rasters = st.session_state.polygon_db.get_all_saved_rasters()
-    if saved_rasters:
-        st.write(f"**{len(saved_rasters)} saved raster(s)**")
-        for raster in saved_rasters:
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                st.write(f"**{raster['name']}**")
-                st.caption(f"Saved: {raster['created_at'].strftime('%Y-%m-%d %H:%M')}" if hasattr(raster['created_at'], 'strftime') else f"Saved: {raster['created_at']}")
-            with col2:
-                if st.button("Load", key=f"load_{raster['id']}"):
-                    loaded_raster = st.session_state.polygon_db.load_raster(raster['id'])
-                    if loaded_raster:
-                        st.session_state.current_displayed_raster = loaded_raster
-                        st.success(f"Loaded '{raster['name']}'")
-                        st.rerun()
-            with col3:
-                if st.button("🗑️", key=f"delete_{raster['id']}"):
-                    if st.session_state.polygon_db.delete_raster(raster['id']):
-                        st.success(f"Deleted '{raster['name']}'")
-                        st.rerun()
-    else:
-        st.info("No saved rasters yet")
     
 
 
@@ -659,7 +587,6 @@ with st.sidebar:
         params = st.session_state.generation_params
         
         # CRITICAL FIX: Check if generation already completed to prevent infinite loops
-        # NOTE: Must query fresh data here (not cached) to track real-time progress
         existing_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
         existing_count = len(existing_heatmaps)
         
@@ -693,9 +620,11 @@ with st.sidebar:
             st.session_state.auto_generation_in_progress = False
             
             if success_count > 0:
-                st.success(f"✅ Generated {success_count} heatmaps successfully! Check sidebar to load them.")
+                st.success(f"✅ Generated {success_count} heatmaps successfully!")
                 if errors:
                     st.warning(f"⚠️ {len(errors)} tiles had errors")
+                # Don't reload stored_heatmaps here - it triggers rerun before flag clear takes effect
+                # Map will auto-load them when it renders
             else:
                 st.error("❌ No heatmaps generated. Check console for details.")
                 
@@ -710,11 +639,10 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
 
-    # Always reload stored heatmaps to ensure fresh data from database
-    if st.session_state.polygon_db:
+    # Load stored heatmaps only if not already loaded
+    if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
         try:
             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-            print(f"📋 SIDEBAR: Loaded {len(st.session_state.stored_heatmaps)} heatmaps from database")
         except Exception as e:
             print(f"Failed to load stored heatmaps for sidebar: {e}")
             st.session_state.stored_heatmaps = []
@@ -1335,8 +1263,8 @@ if st.session_state.get('show_generated_grid_points', False) and st.session_stat
 
 # Add numbered markers for 2x3 manually created heatmaps (from database)
 try:
-    # Use cached stored heatmaps instead of redundant database query
-    all_heatmaps = st.session_state.stored_heatmaps if st.session_state.stored_heatmaps else []
+    # Query database for 2x3 heatmaps (those with position names in their heatmap_name)
+    all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
     
     # Position keywords and their display info
     position_info = {
@@ -1650,45 +1578,15 @@ print(f"🎨 COLORMAP READY: Range {global_min_value:.2f} to {global_max_value:.
 def get_global_unified_color(value, method='kriging'):
     """Global unified color function using stored global range for consistency"""
     if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
-        # Check if continuous mode is enabled
-        colormap_mode = getattr(st.session_state, 'indicator_colormap_mode', 'discrete')
-        
-        if colormap_mode == 'continuous':
-            # Continuous gradient: smooth interpolation from red → orange → yellow → green
-            # Value range is 0.0 to 1.0
-            value = max(0.0, min(1.0, value))  # Clamp to valid range
-            
-            if value <= 0.33:
-                # Red to Orange transition (0.0 to 0.33)
-                t = value / 0.33
-                r = 255
-                g = int(128 * t)  # 0 → 128
-                b = 0
-            elif value <= 0.67:
-                # Orange to Yellow transition (0.33 to 0.67)
-                t = (value - 0.33) / 0.34
-                r = 255
-                g = int(128 + 127 * t)  # 128 → 255
-                b = 0
-            else:
-                # Yellow to Green transition (0.67 to 1.0)
-                t = (value - 0.67) / 0.33
-                r = int(255 * (1 - t))  # 255 → 0
-                g = 255
-                b = 0
-            
-            return f'#{r:02x}{g:02x}{b:02x}'
+        # Four-tier classification: red (poor), orange (low-moderate), yellow (moderate), green (good)
+        if value <= 0.4:
+            return '#FF0000'    # Red for poor
+        elif value <= 0.6:
+            return '#FF8000'    # Orange for low-moderate
+        elif value <= 0.7:
+            return '#FFFF00'    # Yellow for moderate
         else:
-            # Discrete mode: Four-tier classification
-            # Red (poor), orange (low-moderate), yellow (moderate), green (good)
-            if value <= 0.4:
-                return '#FF0000'    # Red for poor
-            elif value <= 0.6:
-                return '#FF8000'    # Orange for low-moderate
-            elif value <= 0.7:
-                return '#FFFF00'    # Yellow for moderate
-            else:
-                return '#00FF00'    # Green for good
+            return '#00FF00'    # Green for good
     else:
         # Apply selected color distribution method
         color_dist_method = getattr(st.session_state, 'color_distribution_method', 'linear_distribution')
@@ -2015,12 +1913,11 @@ if st.session_state.wells_data is not None:
                 popup=f"East Search Area ({st.session_state.search_radius:.0f}km East - Seamless)"
             ).add_to(m)
 
-    # Generate heatmaps on click but don't auto-display
+    # Display heatmap - use pre-computed if available, otherwise generate on-demand
     # Initialize geojson_data to prevent NameError
     geojson_data = {"type": "FeatureCollection", "features": []}
     
-    # Check if user clicked the map to generate a heatmap (saves to database, no auto-display)
-    if st.session_state.selected_point:
+    if st.session_state.heat_map_visibility:
         if heatmap_data:
             # Display pre-computed heatmap
             st.success("⚡ Displaying pre-computed heatmap - instant loading!")
@@ -2113,99 +2010,10 @@ if st.session_state.wells_data is not None:
                     print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
                     
                     if success_count > 0:
-                        # Reload stored heatmaps sidebar list
+                        # Reload stored heatmaps to display the new ones
                         st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                        
-                        # AUTO-SAVE COMPOSITE RASTER: Create and save final raster from generated tiles
-                        try:
-                            print("🎨 AUTO-SAVE: Creating composite raster from generated heatmaps...")
-                            
-                            # Get the newly generated heatmaps only
-                            generated_heatmaps = [h for h in st.session_state.stored_heatmaps if h['id'] in stored_heatmap_ids]
-                            
-                            if generated_heatmaps:
-                                # Combine all GeoJSON data
-                                combined_geojson = {"type": "FeatureCollection", "features": []}
-                                overall_bounds = {'west': 180, 'east': -180, 'south': 90, 'north': -90}
-                                
-                                for heatmap in generated_heatmaps:
-                                    geojson_data = heatmap.get('geojson_data')
-                                    if geojson_data and geojson_data.get('features'):
-                                        for feature in geojson_data['features']:
-                                            # Ensure compatibility
-                                            if 'value' not in feature['properties'] and 'yield' in feature['properties']:
-                                                feature['properties']['value'] = feature['properties']['yield']
-                                            elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
-                                                feature['properties']['yield'] = feature['properties']['value']
-                                            combined_geojson['features'].append(feature)
-                                            
-                                            # Update bounds
-                                            if feature['geometry']['type'] == 'Polygon':
-                                                coords = feature['geometry']['coordinates'][0]
-                                                for coord in coords:
-                                                    lon, lat = coord[0], coord[1]
-                                                    overall_bounds['west'] = min(overall_bounds['west'], lon)
-                                                    overall_bounds['east'] = max(overall_bounds['east'], lon)
-                                                    overall_bounds['south'] = min(overall_bounds['south'], lat)
-                                                    overall_bounds['north'] = max(overall_bounds['north'], lat)
-                                
-                                # Generate composite raster using smooth raster overlay
-                                if combined_geojson['features']:
-                                    from interpolation import generate_smooth_raster_overlay
-                                    
-                                    # Get colormap function
-                                    def get_color_func(value):
-                                        return get_global_unified_color(value, st.session_state.interpolation_method)
-                                    
-                                    raster_result = generate_smooth_raster_overlay(
-                                        geojson_data=combined_geojson,
-                                        bounds=overall_bounds,
-                                        sampling_distance_meters=100,
-                                        global_colormap_func=get_color_func,
-                                        opacity=st.session_state.get('heatmap_opacity', 0.7)
-                                    )
-                                    
-                                    if raster_result and 'image_base64' in raster_result:
-                                        # Create descriptive name with location and timestamp
-                                        import datetime
-                                        click_lat, click_lon = st.session_state.get('selected_point', (0, 0)) if st.session_state.get('selected_point') else (0, 0)
-                                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-                                        raster_name = f"2x3 Grid {st.session_state.interpolation_method.replace('_', ' ').title()} ({click_lat:.3f}, {click_lon:.3f}) - {timestamp}"
-                                        
-                                        # Convert bounds to format expected by save_raster
-                                        leaflet_bounds = raster_result['bounds']
-                                        
-                                        # Save raster to database
-                                        raster_id = st.session_state.polygon_db.save_raster(
-                                            name=raster_name,
-                                            raster_image_base64=raster_result['image_base64'],
-                                            bounds=leaflet_bounds,
-                                            opacity=raster_result['opacity']
-                                        )
-                                        
-                                        if raster_id:
-                                            print(f"✅ AUTO-SAVED: Composite raster saved as '{raster_name}' with ID {raster_id}")
-                                            st.success(f"✅ Generated {success_count} heatmaps and auto-saved composite raster! Check 'Saved Rasters' to load it.")
-                                        else:
-                                            print("⚠️ AUTO-SAVE WARNING: Failed to save composite raster")
-                                            st.success(f"✅ Generated {success_count} heatmaps! (Raster auto-save failed)")
-                                    else:
-                                        print("⚠️ AUTO-SAVE WARNING: Failed to generate composite raster image")
-                                        st.success(f"✅ Generated {success_count} heatmaps!")
-                                else:
-                                    st.success(f"✅ Generated {success_count} heatmaps!")
-                            else:
-                                st.success(f"✅ Generated {success_count} heatmaps!")
-                                
-                        except Exception as e:
-                            print(f"⚠️ AUTO-SAVE ERROR: Failed to create composite raster: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            st.success(f"✅ Generated {success_count} heatmaps! (Raster auto-save failed)")
-                        
-                        # Clear selected point to prevent re-generation on next rerun
-                        st.session_state.selected_point = None
-                        st.rerun()
+                        st.session_state.new_heatmap_added = True
+                        st.session_state.fresh_heatmap_displayed = False
                         
                         # For display purposes, get the first generated heatmap
                         if stored_heatmap_ids:
@@ -2374,7 +2182,9 @@ if st.session_state.wells_data is not None:
                     )
                     fresh_geojson.add_to(m)
 
-                # Fresh heatmap tracking removed - user loads manually from sidebar
+                # Mark that we have a fresh heatmap displayed
+                st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
+                st.session_state.new_heatmap_added = True
                 
                 print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
@@ -2445,14 +2255,15 @@ if st.session_state.wells_data is not None:
                                     updated_global_min = min(updated_global_min, value)
                                     updated_global_max = max(updated_global_max, value)
 
-                # Update global variables for consistent coloring
-                if updated_global_min != float('inf'):
+                # Update global variables for consistent coloring ONLY if a new heatmap was added
+                if updated_global_min != float('inf') and st.session_state.get('new_heatmap_added', False):
                     global_min_value = updated_global_min
                     global_max_value = updated_global_max
-                    print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f}")
+                    print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f} (including fresh heatmap)")
 
                     # Mark that colormap has been updated for this session
                     st.session_state.colormap_updated = True
+                    st.session_state.new_heatmap_added = False  # Reset the flag
                     print("Colormap range updated - will apply to all displayed heatmaps")
 
 # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
@@ -2463,8 +2274,7 @@ if st.session_state.selected_point:
     center_lat, center_lon = st.session_state.selected_point
     fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
-# Only display stored heatmaps if user manually loaded a raster
-if st.session_state.get('current_displayed_raster') and st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
+if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
     print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
     print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
     
@@ -2653,13 +2463,6 @@ if st.session_state.get('current_displayed_raster') and st.session_state.stored_
             )
             
             if raster_overlay:
-                # Save raster to session state for later saving
-                st.session_state.last_generated_raster = {
-                    'image_base64': raster_overlay['image_base64'],
-                    'bounds': raster_overlay['bounds'],
-                    'opacity': raster_overlay['opacity']
-                }
-                
                 # Add single unified raster overlay to map
                 folium.raster_layers.ImageOverlay(
                     image=f"data:image/png;base64,{raster_overlay['image_base64']}",
@@ -3105,28 +2908,15 @@ if st.session_state.get('current_displayed_raster') and st.session_state.stored_
         if (st.session_state.interpolation_method == 'indicator_kriging' or 
             st.session_state.interpolation_method == 'indicator_kriging_spherical' or 
             st.session_state.interpolation_method == 'indicator_kriging_spherical_continuous'):
-            # Check colormap mode (discrete vs continuous)
-            colormap_mode = getattr(st.session_state, 'indicator_colormap_mode', 'discrete')
-            
-            if colormap_mode == 'continuous':
-                # Continuous gradient legend
-                caption_text = 'Well Yield Probability: Continuous gradient from Red (0.0 poor) → Orange → Yellow → Green (1.0 good)'
-                colormap = folium.LinearColormap(
-                    colors=['#FF0000', '#FF4000', '#FF8000', '#FFC000', '#FFFF00', '#C0FF00', '#80FF00', '#40FF00', '#00FF00'],
-                    vmin=0,
-                    vmax=1.0,
-                    caption=caption_text
-                )
-            else:
-                # Discrete four-tier indicator kriging legend
-                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
-                colormap = folium.StepColormap(
-                    colors=['#FF0000', '#FF8000', '#FFFF00', '#00FF00'],  # Red, Orange, Yellow, Green
-                    vmin=0,
-                    vmax=1.0,
-                    index=[0, 0.4, 0.6, 0.7, 1.0],  # Four-tier thresholds
-                    caption=caption_text
-                )
+            # Four-tier indicator kriging legend
+            caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
+            colormap = folium.StepColormap(
+                colors=['#FF0000', '#FF8000', '#FFFF00', '#00FF00'],  # Red, Orange, Yellow, Green
+                vmin=0,
+                vmax=1.0,
+                index=[0, 0.4, 0.6, 0.7, 1.0],  # Four-tier thresholds
+                caption=caption_text
+            )
         else:
             # Determine appropriate caption based on method
             if st.session_state.interpolation_method == 'ground_water_level_kriging':
@@ -3253,17 +3043,6 @@ if st.session_state.well_markers_visibility:
                 print(f"Error creating marker for well: {e}")
     else:
         print("No wells found in heatmap areas")
-
-# Display loaded saved raster if user selected one
-if 'current_displayed_raster' in st.session_state:
-    raster_data = st.session_state.current_displayed_raster
-    folium.raster_layers.ImageOverlay(
-        image=f"data:image/png;base64,{raster_data['raster_image_base64']}",
-        bounds=raster_data['bounds'],
-        opacity=raster_data['opacity'],
-        name=f"Saved Raster: {raster_data['name']}"
-    ).add_to(m)
-    print(f"📂 Displaying saved raster: {raster_data['name']}")
 
 # Add click event to capture coordinates (only need this once)
 folium.LatLngPopup().add_to(m)
@@ -3539,7 +3318,8 @@ with col1:
         keys_to_clear = [
             'selected_point', 'selected_point_east', 'selected_point_northeast', 'selected_point_south', 'selected_point_southeast', 'selected_point_far_southeast',
             'filtered_wells', 'filtered_wells_east', 'filtered_wells_northeast', 'filtered_wells_south', 'filtered_wells_southeast', 'filtered_wells_far_southeast',
-            'stored_heatmaps', 'geojson_data'
+            'stored_heatmaps', 'geojson_data',
+            'fresh_heatmap_displayed', 'new_heatmap_added'
         ]
         
         for key in keys_to_clear:

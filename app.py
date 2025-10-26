@@ -85,7 +85,8 @@ session_defaults = {
     'show_well_bounds': False,
     'show_convex_hull': False,
     'show_grid_points': False,
-    'heatmap_visualization_mode': 'smooth_raster'  # 'triangular_mesh' or 'smooth_raster'
+    'heatmap_visualization_mode': 'smooth_raster',  # 'triangular_mesh' or 'smooth_raster'
+    'indicator_display_mode': 'discrete'  # 'discrete' or 'continuous' for indicator kriging display
 }
 
 # Initialize all session state variables
@@ -3099,10 +3100,6 @@ except Exception as e:
 # Display mode toggle for indicator kriging (only show when indicator rasters are displayed)
 if stored_heatmap_count > 0 and st.session_state.interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
     st.subheader("🎨 Indicator Kriging Display Mode")
-    
-    # Initialize display mode if not set
-    if 'indicator_display_mode' not in st.session_state:
-        st.session_state.indicator_display_mode = 'discrete'
     
     # Radio button to toggle between discrete and continuous
     display_mode_option = st.radio(

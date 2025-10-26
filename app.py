@@ -2026,141 +2026,89 @@ if st.session_state.wells_data is not None:
     # Initialize geojson_data to prevent NameError
     geojson_data = {"type": "FeatureCollection", "features": []}
     
-    if st.session_state.display_heatmap:
-        if heatmap_data:
-            # Display pre-computed heatmap
-            st.success("⚡ Displaying pre-computed heatmap - instant loading!")
+    # GENERATION LOGIC: Always check if we need to generate new heatmaps (regardless of display flag)
+    # This ensures clicking on map generates heatmaps even if display is currently off
+    if not heatmap_data:
+        # Fallback to on-demand generation if no pre-computed data
+        has_selected_point = st.session_state.selected_point is not None
+        has_filtered_wells = 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None
+        wells_count = len(st.session_state.filtered_wells) if has_filtered_wells else 0
+        
+        print(f"HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
+        
+        if has_selected_point and has_filtered_wells and wells_count > 0:
+            try:
+                print(f"AUTOMATIC SEQUENTIAL GENERATION: Triggering quad heatmap generation on click")
+                
+                # Use the dedicated sequential processing module for automatic generation
+                from sequential_heatmap import generate_quad_heatmaps_sequential
+                
+                # Generate heatmaps sequentially with comprehensive clipping polygon
+                indicator_auto_fit = st.session_state.get('indicator_auto_fit', False)
+                indicator_range = st.session_state.get('indicator_range', 1500.0)
+                indicator_sill = st.session_state.get('indicator_sill', 0.25)
+                indicator_nugget = st.session_state.get('indicator_nugget', 0.1)
+                
+                success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
+                    wells_data=st.session_state.wells_data,
+                    click_point=st.session_state.selected_point,
+                    search_radius=st.session_state.search_radius,
+                    interpolation_method=st.session_state.interpolation_method,
+                    polygon_db=st.session_state.polygon_db,
+                    soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
+                    new_clipping_polygon=st.session_state.new_clipping_polygon,
+                    grid_size=st.session_state.get('grid_size', (2, 3)),
+                    indicator_auto_fit=indicator_auto_fit,
+                    indicator_range=indicator_range,
+                    indicator_sill=indicator_sill,
+                    indicator_nugget=indicator_nugget
+                )
+                
+                print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
+                
+                if success_count > 0:
+                    # Reload stored heatmaps to display the new ones
+                    st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                    st.session_state.new_heatmap_added = True
+                    st.session_state.fresh_heatmap_displayed = False
+                    st.session_state.display_heatmap = True  # Enable display for newly generated heatmaps
+                    
+                    # For display purposes, get the first generated heatmap
+                    if stored_heatmap_ids:
+                        primary_heatmap = st.session_state.stored_heatmaps[0] if st.session_state.stored_heatmaps else None
+                        if primary_heatmap and primary_heatmap.get('geojson_data'):
+                            geojson_data = primary_heatmap['geojson_data']
+                            print(f"AUTOMATIC GENERATION: Using stored heatmap for display")
+                    else:
+                        # Ensure geojson_data is still defined if no stored heatmaps
+                        geojson_data = {"type": "FeatureCollection", "features": []}
+                
+                # Sequential processing and storage handled by the dedicated module
+            except Exception as e:
+                print(f"CRITICAL ERROR in heatmap generation: {e}")
+                st.error(f"Error generating heatmaps: {e}")
+                geojson_data = {"type": "FeatureCollection", "features": []}
+                geojson_data_east = None
+    
+    # DISPLAY LOGIC: Only show fresh heatmap if display flag is True
+    print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
+    if geojson_data:
+        print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")
+    
+    if st.session_state.display_heatmap and geojson_data and len(geojson_data['features']) > 0:
+        # Calculate max value for setting the color scale
+        max_value = 0
+        value_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
 
-            # Convert pre-computed data to GeoJSON for display
-            # geojson_data already initialized above
+        for feature in geojson_data['features']:
+            if value_field in feature['properties']:
+                max_value = max(max_value, feature['properties'][value_field])
 
-            # Determine the value field based on heatmap type
-            if visualization_method in ["Standard Kriging (Yield)", "Yield Kriging (Spherical)"]:
-                value_field = 'yield_value'
-                display_name = 'yield'
-            elif visualization_method == "Specific Capacity Kriging (Spherical)":
-                value_field = 'specific_capacity_value'
-                display_name = 'yield'  # Keep for compatibility
-            else:
-                value_field = 'depth_value'
-                display_name = 'yield'  # Keep for compatibility
-
-            # Create triangulated surface from pre-computed points
-            if len(heatmap_data) > 3:
-                from scipy.spatial import Delaunay
-                import numpy as np
-
-                # Extract coordinates and values
-                points_2d = np.array([[point['longitude'], point['latitude']] for point in heatmap_data])
-                values = np.array([point[value_field] for point in heatmap_data])
-
-                # Create Delaunay triangulation
-                tri = Delaunay(points_2d)
-
-                # Create triangular polygons
-                for simplex in tri.simplices:
-                    vertices = points_2d[simplex]
-                    vertex_values = values[simplex]
-                    avg_value = float(np.mean(vertex_values))
-
-                    if avg_value > 0.01:  # Only show meaningful values
-                        poly = {
-                            "type": "Feature",
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [[
-                                    [float(vertices[0,0]), float(vertices[0,1])],
-                                    [float(vertices[1,0]), float(vertices[1,1])],
-                                    [float(vertices[2,0]), float(vertices[2,1])],
-                                    [float(vertices[0,0]), float(vertices[0,1])]
-                                ]]
-                            },
-                            "properties": {
-                                display_name: avg_value
-                            }
-                        }
-                        geojson_data["features"].append(poly)
+        # Ensure reasonable minimum for visualization
+        if st.session_state.interpolation_method == 'kriging_variance':
+            max_value = max(max_value, 1.0)  # Minimum variance value
         else:
-            # Fallback to on-demand generation if no pre-computed data
-            has_selected_point = st.session_state.selected_point is not None
-            has_filtered_wells = 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None
-            wells_count = len(st.session_state.filtered_wells) if has_filtered_wells else 0
-            
-            print(f"HEATMAP GENERATION CHECK: selected_point={has_selected_point}, filtered_wells={has_filtered_wells}, wells_count={wells_count}")
-            
-            if has_selected_point and has_filtered_wells and wells_count > 0:
-                try:
-                    print(f"AUTOMATIC SEQUENTIAL GENERATION: Triggering quad heatmap generation on click")
-                    
-                    # Use the dedicated sequential processing module for automatic generation
-                    from sequential_heatmap import generate_quad_heatmaps_sequential
-                    
-                    # Generate heatmaps sequentially with comprehensive clipping polygon
-                    indicator_auto_fit = st.session_state.get('indicator_auto_fit', False)
-                    indicator_range = st.session_state.get('indicator_range', 1500.0)
-                    indicator_sill = st.session_state.get('indicator_sill', 0.25)
-                    indicator_nugget = st.session_state.get('indicator_nugget', 0.1)
-                    
-                    success_count, stored_heatmap_ids, error_messages = generate_quad_heatmaps_sequential(
-                        wells_data=st.session_state.wells_data,
-                        click_point=st.session_state.selected_point,
-                        search_radius=st.session_state.search_radius,
-                        interpolation_method=st.session_state.interpolation_method,
-                        polygon_db=st.session_state.polygon_db,
-                        soil_polygons=st.session_state.soil_polygons if st.session_state.show_soil_polygons else None,
-                        new_clipping_polygon=st.session_state.new_clipping_polygon,
-                        grid_size=st.session_state.get('grid_size', (2, 3)),
-                        indicator_auto_fit=indicator_auto_fit,
-                        indicator_range=indicator_range,
-                        indicator_sill=indicator_sill,
-                        indicator_nugget=indicator_nugget
-                    )
-                    
-                    print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
-                    
-                    if success_count > 0:
-                        # Reload stored heatmaps to display the new ones
-                        st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                        st.session_state.new_heatmap_added = True
-                        st.session_state.fresh_heatmap_displayed = False
-                        st.session_state.display_heatmap = True  # Enable display for newly generated heatmaps
-                        
-                        # For display purposes, get the first generated heatmap
-                        if stored_heatmap_ids:
-                            primary_heatmap = st.session_state.stored_heatmaps[0] if st.session_state.stored_heatmaps else None
-                            if primary_heatmap and primary_heatmap.get('geojson_data'):
-                                geojson_data = primary_heatmap['geojson_data']
-                                print(f"AUTOMATIC GENERATION: Using stored heatmap for display")
-                        else:
-                            # Ensure geojson_data is still defined if no stored heatmaps
-                            geojson_data = {"type": "FeatureCollection", "features": []}
-                    
-                    # Sequential processing and storage handled by the dedicated module
-                except Exception as e:
-                    print(f"CRITICAL ERROR in heatmap generation: {e}")
-                    st.error(f"Error generating heatmaps: {e}")
-                    geojson_data = {"type": "FeatureCollection", "features": []}
-                    geojson_data_east = None
-            # else clause removed as geojson_data is already initialized
-
-            print(f"DEBUG: geojson_data exists: {bool(geojson_data)}")
-            if geojson_data:
-                print(f"DEBUG: geojson_data features count: {len(geojson_data.get('features', []))}")
-
-            if geojson_data and len(geojson_data['features']) > 0:
-                # Calculate max value for setting the color scale
-                max_value = 0
-                value_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
-
-                for feature in geojson_data['features']:
-                    if value_field in feature['properties']:
-                        max_value = max(max_value, feature['properties'][value_field])
-
-                # Ensure reasonable minimum for visualization
-                if st.session_state.interpolation_method == 'kriging_variance':
-                    max_value = max(max_value, 1.0)  # Minimum variance value
-                else:
-                    max_value = max(max_value, 20.0)  # Minimum yield value
+            max_value = max(max_value, 20.0)  # Minimum yield value
 
                 # Add the new heatmap to the map (in addition to stored heatmaps)
                 # This ensures both stored and newly generated heatmaps display together

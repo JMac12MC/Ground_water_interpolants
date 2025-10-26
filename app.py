@@ -435,6 +435,23 @@ with st.sidebar:
         
         if not st.session_state.indicator_auto_fit:
             st.info(f"📐 Using Manual Settings: Range={st.session_state.indicator_range}m, Sill={st.session_state.indicator_sill}, Nugget={st.session_state.indicator_nugget}")
+        
+        # Continuous colormap option for indicator kriging
+        st.markdown("**Color Display Mode**")
+        if 'indicator_continuous_colormap' not in st.session_state:
+            st.session_state.indicator_continuous_colormap = False
+        
+        st.session_state.indicator_continuous_colormap = st.checkbox(
+            "Use Continuous Colormap",
+            value=st.session_state.indicator_continuous_colormap,
+            help="Toggle between discrete probability bands (0-40%, 40-60%, etc.) and smooth continuous gradient. Continuous mode uses the same colormap as other interpolation methods.",
+            key="indicator_continuous_colormap_checkbox"
+        )
+        
+        if st.session_state.indicator_continuous_colormap:
+            st.info("🌈 Using continuous gradient (smooth transitions)")
+        else:
+            st.info("📊 Using discrete probability bands: Red (0-40%), Orange (40-60%), Yellow (60-70%), Green (70-100%)")
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")

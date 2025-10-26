@@ -697,6 +697,7 @@ with st.sidebar:
             st.session_state.auto_generation_in_progress = False
             
             if success_count > 0:
+                st.session_state.display_heatmap = True  # Enable display for newly generated heatmaps
                 st.success(f"✅ Generated {success_count} heatmaps successfully!")
                 if errors:
                     st.warning(f"⚠️ {len(errors)} tiles had errors")
@@ -2121,6 +2122,7 @@ if st.session_state.wells_data is not None:
                         st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
                         st.session_state.new_heatmap_added = True
                         st.session_state.fresh_heatmap_displayed = False
+                        st.session_state.display_heatmap = True  # Enable display for newly generated heatmaps
                         
                         # For display purposes, get the first generated heatmap
                         if stored_heatmap_ids:

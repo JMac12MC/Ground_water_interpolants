@@ -65,7 +65,6 @@ session_defaults = {
     'wells_data': None,
     'filtered_wells': None,
     'filtered_wells_east': None,
-    'display_heatmap': True,
     'well_markers_visibility': True,
     'search_radius': 20,
     'soil_polygons': None,
@@ -76,8 +75,6 @@ session_defaults = {
     'auto_fit_variogram': False,
     'variogram_model': 'spherical',
     'geojson_data': None,
-    'fresh_heatmap_displayed': False,
-    'new_heatmap_added': False,
     'colormap_updated': False,
 
     'new_clipping_polygon': None,
@@ -544,9 +541,8 @@ with st.sidebar:
     )
     st.session_state.heatmap_opacity = opacity
     
-    # Clear Map Button - instantly clears without regeneration
+    # Clear Map Button - simply removes displayed raster
     if st.button("🗑️ Clear Map", help="Remove all displayed rasters from the map"):
-        st.session_state.display_heatmap = False
         if 'current_displayed_raster' in st.session_state:
             del st.session_state.current_displayed_raster
         st.success("✅ Map cleared!")
@@ -614,7 +610,6 @@ with st.sidebar:
                     loaded_raster = st.session_state.polygon_db.load_raster(raster['id'])
                     if loaded_raster:
                         st.session_state.current_displayed_raster = loaded_raster
-                        st.session_state.display_heatmap = True
                         st.success(f"Loaded '{raster['name']}'")
                         st.rerun()
             with col3:
@@ -698,12 +693,9 @@ with st.sidebar:
             st.session_state.auto_generation_in_progress = False
             
             if success_count > 0:
-                st.session_state.display_heatmap = True  # Enable display for newly generated heatmaps
-                st.success(f"✅ Generated {success_count} heatmaps successfully!")
+                st.success(f"✅ Generated {success_count} heatmaps successfully! Check sidebar to load them.")
                 if errors:
                     st.warning(f"⚠️ {len(errors)} tiles had errors")
-                # Don't reload stored_heatmaps here - it triggers rerun before flag clear takes effect
-                # Map will auto-load them when it renders
             else:
                 st.error("❌ No heatmaps generated. Check console for details.")
                 
@@ -2022,11 +2014,13 @@ if st.session_state.wells_data is not None:
                 popup=f"East Search Area ({st.session_state.search_radius:.0f}km East - Seamless)"
             ).add_to(m)
 
-    # Display heatmap - use pre-computed if available, otherwise generate on-demand
+    # Display heatmap - REMOVED auto-display logic
+    # Only display manually loaded rasters or on-click generated heatmaps
     # Initialize geojson_data to prevent NameError
     geojson_data = {"type": "FeatureCollection", "features": []}
     
-    if st.session_state.display_heatmap:
+    # Check if user clicked the map to generate a heatmap (on-demand generation)
+    if st.session_state.selected_point and False:  # DISABLED: no auto-display after generation
         if heatmap_data:
             # Display pre-computed heatmap
             st.success("⚡ Displaying pre-computed heatmap - instant loading!")
@@ -2119,11 +2113,10 @@ if st.session_state.wells_data is not None:
                     print(f"AUTOMATIC GENERATION COMPLETE: {success_count} heatmaps successful")
                     
                     if success_count > 0:
-                        # Reload stored heatmaps to display the new ones
+                        # Reload stored heatmaps sidebar list
                         st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                        st.session_state.new_heatmap_added = True
-                        st.session_state.fresh_heatmap_displayed = False
-                        st.session_state.display_heatmap = True  # Enable display for newly generated heatmaps
+                        st.success(f"✅ Generated {success_count} heatmaps! Check sidebar to load them.")
+                        st.rerun()
                         
                         # For display purposes, get the first generated heatmap
                         if stored_heatmap_ids:
@@ -2292,9 +2285,7 @@ if st.session_state.wells_data is not None:
                     )
                     fresh_geojson.add_to(m)
 
-                # Mark that we have a fresh heatmap displayed
-                st.session_state.fresh_heatmap_displayed = False  # Will be handled by stored heatmaps
-                st.session_state.new_heatmap_added = True
+                # Fresh heatmap tracking removed - user loads manually from sidebar
                 
                 print(f"FRESH HEATMAP ADDED TO MAP: {new_heatmap_name} with {len(geojson_data.get('features', []))} features")
 
@@ -2365,15 +2356,14 @@ if st.session_state.wells_data is not None:
                                     updated_global_min = min(updated_global_min, value)
                                     updated_global_max = max(updated_global_max, value)
 
-                # Update global variables for consistent coloring ONLY if a new heatmap was added
-                if updated_global_min != float('inf') and st.session_state.get('new_heatmap_added', False):
+                # Update global variables for consistent coloring
+                if updated_global_min != float('inf'):
                     global_min_value = updated_global_min
                     global_max_value = updated_global_max
-                    print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f} (including fresh heatmap)")
+                    print(f"UPDATED UNIFIED COLORMAP: Global range {global_min_value:.2f} to {global_max_value:.2f}")
 
                     # Mark that colormap has been updated for this session
                     st.session_state.colormap_updated = True
-                    st.session_state.new_heatmap_added = False  # Reset the flag
                     print("Colormap range updated - will apply to all displayed heatmaps")
 
 # NOW DISPLAY ALL STORED HEATMAPS with the UPDATED unified colormap
@@ -2384,8 +2374,8 @@ if st.session_state.selected_point:
     center_lat, center_lon = st.session_state.selected_point
     fresh_heatmap_name = f"{st.session_state.interpolation_method}_{center_lat:.3f}_{center_lon:.3f}"
 
-# Skip expensive heatmap generation/display if user cleared the map
-if st.session_state.display_heatmap and st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
+# Only display stored heatmaps if user manually loaded a raster
+if st.session_state.get('current_displayed_raster') and st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 0:
     print(f"Attempting to display {len(st.session_state.stored_heatmaps)} stored heatmaps with UPDATED unified colormap")
     print(f"Fresh heatmap name to skip: {fresh_heatmap_name}")
     
@@ -2580,7 +2570,6 @@ if st.session_state.display_heatmap and st.session_state.stored_heatmaps and len
                     'bounds': raster_overlay['bounds'],
                     'opacity': raster_overlay['opacity']
                 }
-                st.session_state.display_heatmap = True
                 
                 # Add single unified raster overlay to map
                 folium.raster_layers.ImageOverlay(
@@ -3461,8 +3450,7 @@ with col1:
         keys_to_clear = [
             'selected_point', 'selected_point_east', 'selected_point_northeast', 'selected_point_south', 'selected_point_southeast', 'selected_point_far_southeast',
             'filtered_wells', 'filtered_wells_east', 'filtered_wells_northeast', 'filtered_wells_south', 'filtered_wells_southeast', 'filtered_wells_far_southeast',
-            'stored_heatmaps', 'geojson_data',
-            'fresh_heatmap_displayed', 'new_heatmap_added'
+            'stored_heatmaps', 'geojson_data'
         ]
         
         for key in keys_to_clear:

@@ -3094,6 +3094,35 @@ except Exception as e:
     print(f"Map rendering error: {e}")
     map_data = None
 
+# Display mode toggle for indicator kriging (only show when indicator rasters are displayed)
+if stored_heatmap_count > 0 and st.session_state.interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
+    st.subheader("🎨 Indicator Kriging Display Mode")
+    
+    # Initialize display mode if not set
+    if 'indicator_display_mode' not in st.session_state:
+        st.session_state.indicator_display_mode = 'discrete'
+    
+    # Radio button to toggle between discrete and continuous
+    display_mode_option = st.radio(
+        "Choose how to display probability values:",
+        options=["Discrete Bands (Red/Orange/Yellow/Green)", "Continuous Gradient"],
+        index=0 if st.session_state.indicator_display_mode == 'discrete' else 1,
+        help="Discrete Bands show probability ranges as distinct color zones. Continuous Gradient shows smooth color transitions using the selected colormap.",
+        key="indicator_display_mode_radio"
+    )
+    
+    # Update session state based on selection
+    if "Continuous Gradient" in display_mode_option:
+        st.session_state.indicator_display_mode = 'continuous'
+    else:
+        st.session_state.indicator_display_mode = 'discrete'
+    
+    # Show current mode info
+    if st.session_state.indicator_display_mode == 'discrete':
+        st.info("📊 Showing discrete probability bands: Red (0-40%), Orange (40-60%), Yellow (60-70%), Green (70-100%)")
+    else:
+        st.info("🌈 Showing continuous gradient with smooth color transitions")
+
 # Process clicks from the map with better stability and error handling
 try:
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:

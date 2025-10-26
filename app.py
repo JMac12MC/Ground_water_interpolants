@@ -3024,15 +3024,28 @@ if st.session_state.display_heatmap and st.session_state.stored_heatmaps and len
         if (st.session_state.interpolation_method == 'indicator_kriging' or 
             st.session_state.interpolation_method == 'indicator_kriging_spherical' or 
             st.session_state.interpolation_method == 'indicator_kriging_spherical_continuous'):
-            # Four-tier indicator kriging legend
-            caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
-            colormap = folium.StepColormap(
-                colors=['#FF0000', '#FF8000', '#FFFF00', '#00FF00'],  # Red, Orange, Yellow, Green
-                vmin=0,
-                vmax=1.0,
-                index=[0, 0.4, 0.6, 0.7, 1.0],  # Four-tier thresholds
-                caption=caption_text
-            )
+            # Check colormap mode (discrete vs continuous)
+            colormap_mode = getattr(st.session_state, 'indicator_colormap_mode', 'discrete')
+            
+            if colormap_mode == 'continuous':
+                # Continuous gradient legend
+                caption_text = 'Well Yield Probability: Continuous gradient from Red (0.0 poor) → Orange → Yellow → Green (1.0 good)'
+                colormap = folium.LinearColormap(
+                    colors=['#FF0000', '#FF4000', '#FF8000', '#FFC000', '#FFFF00', '#C0FF00', '#80FF00', '#40FF00', '#00FF00'],
+                    vmin=0,
+                    vmax=1.0,
+                    caption=caption_text
+                )
+            else:
+                # Discrete four-tier indicator kriging legend
+                caption_text = 'Well Yield Quality: Red = Poor (0-0.4), Orange = Low-Moderate (0.4-0.6), Yellow = Moderate (0.6-0.7), Green = Good (0.7-1.0)'
+                colormap = folium.StepColormap(
+                    colors=['#FF0000', '#FF8000', '#FFFF00', '#00FF00'],  # Red, Orange, Yellow, Green
+                    vmin=0,
+                    vmax=1.0,
+                    index=[0, 0.4, 0.6, 0.7, 1.0],  # Four-tier thresholds
+                    caption=caption_text
+                )
         else:
             # Determine appropriate caption based on method
             if st.session_state.interpolation_method == 'ground_water_level_kriging':

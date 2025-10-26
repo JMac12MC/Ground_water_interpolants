@@ -435,6 +435,27 @@ with st.sidebar:
         
         if not st.session_state.indicator_auto_fit:
             st.info(f"📐 Using Manual Settings: Range={st.session_state.indicator_range}m, Sill={st.session_state.indicator_sill}, Nugget={st.session_state.indicator_nugget}")
+        
+        # Colormap mode selection for indicator kriging
+        st.markdown("**Colormap Mode**")
+        if 'indicator_colormap_mode' not in st.session_state:
+            st.session_state.indicator_colormap_mode = 'discrete'
+        
+        colormap_mode = st.radio(
+            "Choose colormap style:",
+            options=["Discrete (4-tier zones)", "Continuous (smooth gradient)"],
+            index=0 if st.session_state.indicator_colormap_mode == 'discrete' else 1,
+            help="Discrete shows clear Red/Orange/Yellow/Green zones. Continuous shows smooth probability gradients like depth to groundwater maps.",
+            key="indicator_colormap_mode_radio"
+        )
+        
+        # Update session state based on selection
+        if "Continuous" in colormap_mode:
+            st.session_state.indicator_colormap_mode = 'continuous'
+            st.info("🌊 Continuous mode: Smooth color gradient from red (0.0) → orange → yellow → green (1.0)")
+        else:
+            st.session_state.indicator_colormap_mode = 'discrete'
+            st.info("📊 Discrete mode: Red (≤0.4), Orange (0.4-0.6), Yellow (0.6-0.7), Green (≥0.7)")
 
     # Grid size selection for heatmap generation
     st.subheader("Heatmap Grid Options")

@@ -710,10 +710,11 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🗺️ Stored Heatmaps")
 
-    # Load stored heatmaps only if not already loaded
-    if st.session_state.polygon_db and not st.session_state.stored_heatmaps:
+    # Always reload stored heatmaps to ensure fresh data from database
+    if st.session_state.polygon_db:
         try:
             st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+            print(f"📋 SIDEBAR: Loaded {len(st.session_state.stored_heatmaps)} heatmaps from database")
         except Exception as e:
             print(f"Failed to load stored heatmaps for sidebar: {e}")
             st.session_state.stored_heatmaps = []

@@ -664,6 +664,7 @@ with st.sidebar:
         params = st.session_state.generation_params
         
         # CRITICAL FIX: Check if generation already completed to prevent infinite loops
+        # NOTE: Must query fresh data here (not cached) to track real-time progress
         existing_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
         existing_count = len(existing_heatmaps)
         

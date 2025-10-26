@@ -85,8 +85,7 @@ session_defaults = {
     'show_well_bounds': False,
     'show_convex_hull': False,
     'show_grid_points': False,
-    'heatmap_visualization_mode': 'smooth_raster',  # 'triangular_mesh' or 'smooth_raster'
-    'indicator_display_mode': 'discrete'  # 'discrete' or 'continuous' for indicator kriging display
+    'heatmap_visualization_mode': 'smooth_raster'  # 'triangular_mesh' or 'smooth_raster'
 }
 
 # Initialize all session state variables
@@ -1578,29 +1577,17 @@ print(f"🎨 COLORMAP READY: Range {global_min_value:.2f} to {global_max_value:.
 # DEFINE GLOBAL UNIFIED COLOR FUNCTION 
 def get_global_unified_color(value, method='kriging'):
     """Global unified color function using stored global range for consistency"""
-    # Check if this is an indicator method
-    is_indicator_method = method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']
-    
-    # For indicator methods, check if continuous display mode is enabled
-    use_continuous = False
-    if is_indicator_method:
-        # Check the indicator_display_mode session state (defaults to 'discrete')
-        display_mode = getattr(st.session_state, 'indicator_display_mode', 'discrete')
-        use_continuous = (display_mode == 'continuous')
-    
-    # Apply discrete bands for indicator methods UNLESS continuous mode is enabled
-    if is_indicator_method and not use_continuous:
+    if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
         # Four-tier classification: red (poor), orange (low-moderate), yellow (moderate), green (good)
         if value <= 0.4:
-            return '#FF0000'    # Red for poor (0-40%)
+            return '#FF0000'    # Red for poor
         elif value <= 0.6:
-            return '#FF8000'    # Orange for low-moderate (40-60%)
+            return '#FF8000'    # Orange for low-moderate
         elif value <= 0.7:
-            return '#FFFF00'    # Yellow for moderate (60-70%)
+            return '#FFFF00'    # Yellow for moderate
         else:
-            return '#00FF00'    # Green for good (70-100%)
+            return '#00FF00'    # Green for good
     else:
-        # Use continuous gradient (for non-indicator methods OR indicator methods in continuous mode)
         # Apply selected color distribution method
         color_dist_method = getattr(st.session_state, 'color_distribution_method', 'linear_distribution')
         
@@ -2428,16 +2415,13 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 all_values = []
                 
                 for stored_heatmap in st.session_state.stored_heatmaps:
-                    # Check if heatmap is in hidden set - need to check by ID since stored_heatmap is a dict
-                    hidden_heatmaps = st.session_state.get('hidden_heatmaps', set())
-                    heatmap_id = stored_heatmap.get('id')
-                    if heatmap_id and heatmap_id in hidden_heatmaps:
+                    if stored_heatmap in st.session_state.get('hidden_heatmaps', set()):
                         continue
                     
                     geojson_data = stored_heatmap.get('geojson_data')
                     if geojson_data and isinstance(geojson_data, dict):
                         raw_grid = geojson_data.get('raw_grid')
-                        if raw_grid and isinstance(raw_grid, dict) and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
+                        if raw_grid and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
                             all_lons.extend(raw_grid['lons'])
                             all_lats.extend(raw_grid['lats'])
                             all_values.extend(raw_grid['values'])
@@ -3099,47 +3083,6 @@ try:
 except Exception as e:
     print(f"Map rendering error: {e}")
     map_data = None
-
-# Display mode toggle for indicator kriging (only show when indicator rasters are displayed)
-# Check if ANY of the displayed heatmaps use an indicator method
-has_indicator_heatmaps = False
-if stored_heatmap_count > 0 and st.session_state.stored_heatmaps:
-    for heatmap in st.session_state.stored_heatmaps:
-        method = heatmap.get('interpolation_method', '')
-        if method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
-            has_indicator_heatmaps = True
-            break
-
-if has_indicator_heatmaps:
-    st.subheader("🎨 Indicator Kriging Display Mode")
-    
-    # Store the previous mode to detect changes
-    previous_mode = st.session_state.indicator_display_mode
-    
-    # Radio button to toggle between discrete and continuous
-    display_mode_option = st.radio(
-        "Choose how to display probability values:",
-        options=["Discrete Bands (Red/Orange/Yellow/Green)", "Continuous Gradient"],
-        index=0 if st.session_state.indicator_display_mode == 'discrete' else 1,
-        help="Discrete Bands show probability ranges as distinct color zones. Continuous Gradient shows smooth color transitions using the selected colormap.",
-        key="indicator_display_mode_radio"
-    )
-    
-    # Update session state based on selection
-    new_mode = 'continuous' if "Continuous Gradient" in display_mode_option else 'discrete'
-    
-    # If mode changed, update and trigger rerun to regenerate map
-    if new_mode != previous_mode:
-        st.session_state.indicator_display_mode = new_mode
-        st.rerun()
-    
-    st.session_state.indicator_display_mode = new_mode
-    
-    # Show current mode info
-    if st.session_state.indicator_display_mode == 'discrete':
-        st.info("📊 Showing discrete probability bands: Red (0-40%), Orange (40-60%), Yellow (60-70%), Green (70-100%)")
-    else:
-        st.info("🌈 Showing continuous gradient with smooth color transitions")
 
 # Process clicks from the map with better stability and error handling
 try:

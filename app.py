@@ -1580,10 +1580,12 @@ def get_global_unified_color(value, method='kriging'):
     # Check if this is an indicator method
     is_indicator_method = method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']
     
-    # For indicator methods, check if continuous colormap mode is enabled
+    # For indicator methods, check if continuous display mode is enabled
     use_continuous = False
     if is_indicator_method:
-        use_continuous = getattr(st.session_state, 'indicator_continuous_colormap', False)
+        # Check the indicator_display_mode session state (defaults to 'discrete')
+        display_mode = getattr(st.session_state, 'indicator_display_mode', 'discrete')
+        use_continuous = (display_mode == 'continuous')
     
     # Apply discrete bands for indicator methods UNLESS continuous mode is enabled
     if is_indicator_method and not use_continuous:

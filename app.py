@@ -1341,8 +1341,8 @@ if st.session_state.get('show_generated_grid_points', False) and st.session_stat
 
 # Add numbered markers for 2x3 manually created heatmaps (from database)
 try:
-    # Query database for 2x3 heatmaps (those with position names in their heatmap_name)
-    all_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+    # Use cached stored heatmaps instead of redundant database query
+    all_heatmaps = st.session_state.stored_heatmaps if st.session_state.stored_heatmaps else []
     
     # Position keywords and their display info
     position_info = {

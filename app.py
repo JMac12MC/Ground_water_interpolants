@@ -2115,9 +2115,96 @@ if st.session_state.wells_data is not None:
                     if success_count > 0:
                         # Reload stored heatmaps sidebar list
                         st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        
+                        # AUTO-SAVE COMPOSITE RASTER: Create and save final raster from generated tiles
+                        try:
+                            print("🎨 AUTO-SAVE: Creating composite raster from generated heatmaps...")
+                            
+                            # Get the newly generated heatmaps only
+                            generated_heatmaps = [h for h in st.session_state.stored_heatmaps if h['id'] in stored_heatmap_ids]
+                            
+                            if generated_heatmaps:
+                                # Combine all GeoJSON data
+                                combined_geojson = {"type": "FeatureCollection", "features": []}
+                                overall_bounds = {'west': 180, 'east': -180, 'south': 90, 'north': -90}
+                                
+                                for heatmap in generated_heatmaps:
+                                    geojson_data = heatmap.get('geojson_data')
+                                    if geojson_data and geojson_data.get('features'):
+                                        for feature in geojson_data['features']:
+                                            # Ensure compatibility
+                                            if 'value' not in feature['properties'] and 'yield' in feature['properties']:
+                                                feature['properties']['value'] = feature['properties']['yield']
+                                            elif 'yield' not in feature['properties'] and 'value' in feature['properties']:
+                                                feature['properties']['yield'] = feature['properties']['value']
+                                            combined_geojson['features'].append(feature)
+                                            
+                                            # Update bounds
+                                            if feature['geometry']['type'] == 'Polygon':
+                                                coords = feature['geometry']['coordinates'][0]
+                                                for coord in coords:
+                                                    lon, lat = coord[0], coord[1]
+                                                    overall_bounds['west'] = min(overall_bounds['west'], lon)
+                                                    overall_bounds['east'] = max(overall_bounds['east'], lon)
+                                                    overall_bounds['south'] = min(overall_bounds['south'], lat)
+                                                    overall_bounds['north'] = max(overall_bounds['north'], lat)
+                                
+                                # Generate composite raster using smooth raster overlay
+                                if combined_geojson['features']:
+                                    from interpolation import generate_smooth_raster_overlay
+                                    
+                                    # Get colormap function
+                                    def get_color_func(value):
+                                        return get_global_unified_color(value, st.session_state.interpolation_method)
+                                    
+                                    raster_result = generate_smooth_raster_overlay(
+                                        geojson_data=combined_geojson,
+                                        bounds=overall_bounds,
+                                        sampling_distance_meters=100,
+                                        global_colormap_func=get_color_func,
+                                        opacity=st.session_state.get('heatmap_opacity', 0.7)
+                                    )
+                                    
+                                    if raster_result and 'image_base64' in raster_result:
+                                        # Create descriptive name with location and timestamp
+                                        import datetime
+                                        click_lat, click_lon = st.session_state.get('selected_point', (0, 0)) if st.session_state.get('selected_point') else (0, 0)
+                                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                                        raster_name = f"2x3 Grid {st.session_state.interpolation_method.replace('_', ' ').title()} ({click_lat:.3f}, {click_lon:.3f}) - {timestamp}"
+                                        
+                                        # Convert bounds to format expected by save_raster
+                                        leaflet_bounds = raster_result['bounds']
+                                        
+                                        # Save raster to database
+                                        raster_id = st.session_state.polygon_db.save_raster(
+                                            name=raster_name,
+                                            raster_image_base64=raster_result['image_base64'],
+                                            bounds=leaflet_bounds,
+                                            opacity=raster_result['opacity']
+                                        )
+                                        
+                                        if raster_id:
+                                            print(f"✅ AUTO-SAVED: Composite raster saved as '{raster_name}' with ID {raster_id}")
+                                            st.success(f"✅ Generated {success_count} heatmaps and auto-saved composite raster! Check 'Saved Rasters' to load it.")
+                                        else:
+                                            print("⚠️ AUTO-SAVE WARNING: Failed to save composite raster")
+                                            st.success(f"✅ Generated {success_count} heatmaps! (Raster auto-save failed)")
+                                    else:
+                                        print("⚠️ AUTO-SAVE WARNING: Failed to generate composite raster image")
+                                        st.success(f"✅ Generated {success_count} heatmaps!")
+                                else:
+                                    st.success(f"✅ Generated {success_count} heatmaps!")
+                            else:
+                                st.success(f"✅ Generated {success_count} heatmaps!")
+                                
+                        except Exception as e:
+                            print(f"⚠️ AUTO-SAVE ERROR: Failed to create composite raster: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            st.success(f"✅ Generated {success_count} heatmaps! (Raster auto-save failed)")
+                        
                         # Clear selected point to prevent re-generation on next rerun
                         st.session_state.selected_point = None
-                        st.success(f"✅ Generated {success_count} heatmaps! Check sidebar to load them.")
                         st.rerun()
                         
                         # For display purposes, get the first generated heatmap

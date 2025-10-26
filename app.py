@@ -1587,6 +1587,7 @@ def get_global_unified_color(value, method='kriging'):
         # Check the indicator_display_mode session state (defaults to 'discrete')
         display_mode = getattr(st.session_state, 'indicator_display_mode', 'discrete')
         use_continuous = (display_mode == 'continuous')
+        print(f"🎨 COLOR DEBUG: method={method}, display_mode={display_mode}, use_continuous={use_continuous}")
     
     # Apply discrete bands for indicator methods UNLESS continuous mode is enabled
     if is_indicator_method and not use_continuous:
@@ -3122,6 +3123,9 @@ if has_indicator_heatmaps:
     print(f"🎨 INDICATOR TOGGLE DEBUG: Showing indicator display mode toggle!")
     st.subheader("🎨 Indicator Kriging Display Mode")
     
+    # Store the previous mode to detect changes
+    previous_mode = st.session_state.indicator_display_mode
+    
     # Radio button to toggle between discrete and continuous
     display_mode_option = st.radio(
         "Choose how to display probability values:",
@@ -3132,10 +3136,15 @@ if has_indicator_heatmaps:
     )
     
     # Update session state based on selection
-    if "Continuous Gradient" in display_mode_option:
-        st.session_state.indicator_display_mode = 'continuous'
-    else:
-        st.session_state.indicator_display_mode = 'discrete'
+    new_mode = 'continuous' if "Continuous Gradient" in display_mode_option else 'discrete'
+    
+    # If mode changed, update and trigger rerun to regenerate map
+    if new_mode != previous_mode:
+        print(f"🎨 DISPLAY MODE CHANGED: {previous_mode} → {new_mode}, triggering rerun!")
+        st.session_state.indicator_display_mode = new_mode
+        st.rerun()
+    
+    st.session_state.indicator_display_mode = new_mode
     
     # Show current mode info
     if st.session_state.indicator_display_mode == 'discrete':

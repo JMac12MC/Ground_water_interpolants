@@ -1587,7 +1587,6 @@ def get_global_unified_color(value, method='kriging'):
         # Check the indicator_display_mode session state (defaults to 'discrete')
         display_mode = getattr(st.session_state, 'indicator_display_mode', 'discrete')
         use_continuous = (display_mode == 'continuous')
-        print(f"🎨 COLOR DEBUG: method={method}, display_mode={display_mode}, use_continuous={use_continuous}")
     
     # Apply discrete bands for indicator methods UNLESS continuous mode is enabled
     if is_indicator_method and not use_continuous:
@@ -2429,13 +2428,16 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 all_values = []
                 
                 for stored_heatmap in st.session_state.stored_heatmaps:
-                    if stored_heatmap in st.session_state.get('hidden_heatmaps', set()):
+                    # Check if heatmap is in hidden set - need to check by ID since stored_heatmap is a dict
+                    hidden_heatmaps = st.session_state.get('hidden_heatmaps', set())
+                    heatmap_id = stored_heatmap.get('id')
+                    if heatmap_id and heatmap_id in hidden_heatmaps:
                         continue
                     
                     geojson_data = stored_heatmap.get('geojson_data')
                     if geojson_data and isinstance(geojson_data, dict):
                         raw_grid = geojson_data.get('raw_grid')
-                        if raw_grid and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
+                        if raw_grid and isinstance(raw_grid, dict) and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
                             all_lons.extend(raw_grid['lons'])
                             all_lats.extend(raw_grid['lats'])
                             all_values.extend(raw_grid['values'])
@@ -3101,26 +3103,14 @@ except Exception as e:
 # Display mode toggle for indicator kriging (only show when indicator rasters are displayed)
 # Check if ANY of the displayed heatmaps use an indicator method
 has_indicator_heatmaps = False
-print(f"🎨 INDICATOR TOGGLE DEBUG: stored_heatmap_count={stored_heatmap_count}")
-print(f"🎨 INDICATOR TOGGLE DEBUG: st.session_state.stored_heatmaps exists={bool(st.session_state.stored_heatmaps)}")
-if st.session_state.stored_heatmaps:
-    print(f"🎨 INDICATOR TOGGLE DEBUG: Number of stored heatmaps={len(st.session_state.stored_heatmaps)}")
-    for i, heatmap in enumerate(st.session_state.stored_heatmaps):
-        method = heatmap.get('interpolation_method', '')
-        print(f"🎨 INDICATOR TOGGLE DEBUG: Heatmap {i+1} method='{method}'")
-        
 if stored_heatmap_count > 0 and st.session_state.stored_heatmaps:
     for heatmap in st.session_state.stored_heatmaps:
         method = heatmap.get('interpolation_method', '')
         if method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
             has_indicator_heatmaps = True
-            print(f"🎨 INDICATOR TOGGLE DEBUG: Found indicator method '{method}', setting has_indicator_heatmaps=True")
             break
 
-print(f"🎨 INDICATOR TOGGLE DEBUG: Final has_indicator_heatmaps={has_indicator_heatmaps}")
-
 if has_indicator_heatmaps:
-    print(f"🎨 INDICATOR TOGGLE DEBUG: Showing indicator display mode toggle!")
     st.subheader("🎨 Indicator Kriging Display Mode")
     
     # Store the previous mode to detect changes
@@ -3140,7 +3130,6 @@ if has_indicator_heatmaps:
     
     # If mode changed, update and trigger rerun to regenerate map
     if new_mode != previous_mode:
-        print(f"🎨 DISPLAY MODE CHANGED: {previous_mode} → {new_mode}, triggering rerun!")
         st.session_state.indicator_display_mode = new_mode
         st.rerun()
     

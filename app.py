@@ -3100,14 +3100,26 @@ except Exception as e:
 # Display mode toggle for indicator kriging (only show when indicator rasters are displayed)
 # Check if ANY of the displayed heatmaps use an indicator method
 has_indicator_heatmaps = False
+print(f"🎨 INDICATOR TOGGLE DEBUG: stored_heatmap_count={stored_heatmap_count}")
+print(f"🎨 INDICATOR TOGGLE DEBUG: st.session_state.stored_heatmaps exists={bool(st.session_state.stored_heatmaps)}")
+if st.session_state.stored_heatmaps:
+    print(f"🎨 INDICATOR TOGGLE DEBUG: Number of stored heatmaps={len(st.session_state.stored_heatmaps)}")
+    for i, heatmap in enumerate(st.session_state.stored_heatmaps):
+        method = heatmap.get('interpolation_method', '')
+        print(f"🎨 INDICATOR TOGGLE DEBUG: Heatmap {i+1} method='{method}'")
+        
 if stored_heatmap_count > 0 and st.session_state.stored_heatmaps:
     for heatmap in st.session_state.stored_heatmaps:
         method = heatmap.get('interpolation_method', '')
         if method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
             has_indicator_heatmaps = True
+            print(f"🎨 INDICATOR TOGGLE DEBUG: Found indicator method '{method}', setting has_indicator_heatmaps=True")
             break
 
+print(f"🎨 INDICATOR TOGGLE DEBUG: Final has_indicator_heatmaps={has_indicator_heatmaps}")
+
 if has_indicator_heatmaps:
+    print(f"🎨 INDICATOR TOGGLE DEBUG: Showing indicator display mode toggle!")
     st.subheader("🎨 Indicator Kriging Display Mode")
     
     # Radio button to toggle between discrete and continuous

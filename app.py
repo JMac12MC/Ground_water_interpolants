@@ -2014,13 +2014,12 @@ if st.session_state.wells_data is not None:
                 popup=f"East Search Area ({st.session_state.search_radius:.0f}km East - Seamless)"
             ).add_to(m)
 
-    # Display heatmap - REMOVED auto-display logic
-    # Only display manually loaded rasters or on-click generated heatmaps
+    # Generate heatmaps on click but don't auto-display
     # Initialize geojson_data to prevent NameError
     geojson_data = {"type": "FeatureCollection", "features": []}
     
-    # Check if user clicked the map to generate a heatmap (on-demand generation)
-    if st.session_state.selected_point and False:  # DISABLED: no auto-display after generation
+    # Check if user clicked the map to generate a heatmap (saves to database, no auto-display)
+    if st.session_state.selected_point:
         if heatmap_data:
             # Display pre-computed heatmap
             st.success("⚡ Displaying pre-computed heatmap - instant loading!")
@@ -2115,6 +2114,8 @@ if st.session_state.wells_data is not None:
                     if success_count > 0:
                         # Reload stored heatmaps sidebar list
                         st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                        # Clear selected point to prevent re-generation on next rerun
+                        st.session_state.selected_point = None
                         st.success(f"✅ Generated {success_count} heatmaps! Check sidebar to load them.")
                         st.rerun()
                         

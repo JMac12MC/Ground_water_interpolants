@@ -1594,17 +1594,27 @@ print(f"🎨 COLORMAP READY: Range {global_min_value:.2f} to {global_max_value:.
 # DEFINE GLOBAL UNIFIED COLOR FUNCTION 
 def get_global_unified_color(value, method='kriging'):
     """Global unified color function using stored global range for consistency"""
-    if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
+    # Check if this is an indicator method
+    is_indicator_method = method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']
+    
+    # For indicator methods, check if continuous colormap mode is enabled
+    use_continuous = False
+    if is_indicator_method:
+        use_continuous = getattr(st.session_state, 'indicator_continuous_colormap', False)
+    
+    # Apply discrete bands for indicator methods UNLESS continuous mode is enabled
+    if is_indicator_method and not use_continuous:
         # Four-tier classification: red (poor), orange (low-moderate), yellow (moderate), green (good)
         if value <= 0.4:
-            return '#FF0000'    # Red for poor
+            return '#FF0000'    # Red for poor (0-40%)
         elif value <= 0.6:
-            return '#FF8000'    # Orange for low-moderate
+            return '#FF8000'    # Orange for low-moderate (40-60%)
         elif value <= 0.7:
-            return '#FFFF00'    # Yellow for moderate
+            return '#FFFF00'    # Yellow for moderate (60-70%)
         else:
-            return '#00FF00'    # Green for good
+            return '#00FF00'    # Green for good (70-100%)
     else:
+        # Use continuous gradient (for non-indicator methods OR indicator methods in continuous mode)
         # Apply selected color distribution method
         color_dist_method = getattr(st.session_state, 'color_distribution_method', 'linear_distribution')
         

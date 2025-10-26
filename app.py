@@ -3098,7 +3098,16 @@ except Exception as e:
     map_data = None
 
 # Display mode toggle for indicator kriging (only show when indicator rasters are displayed)
-if stored_heatmap_count > 0 and st.session_state.interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
+# Check if ANY of the displayed heatmaps use an indicator method
+has_indicator_heatmaps = False
+if stored_heatmap_count > 0 and st.session_state.stored_heatmaps:
+    for heatmap in st.session_state.stored_heatmaps:
+        method = heatmap.get('interpolation_method', '')
+        if method in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
+            has_indicator_heatmaps = True
+            break
+
+if has_indicator_heatmaps:
     st.subheader("🎨 Indicator Kriging Display Mode")
     
     # Radio button to toggle between discrete and continuous

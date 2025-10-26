@@ -1655,15 +1655,45 @@ print(f"🎨 COLORMAP READY: Range {global_min_value:.2f} to {global_max_value:.
 def get_global_unified_color(value, method='kriging'):
     """Global unified color function using stored global range for consistency"""
     if method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
-        # Four-tier classification: red (poor), orange (low-moderate), yellow (moderate), green (good)
-        if value <= 0.4:
-            return '#FF0000'    # Red for poor
-        elif value <= 0.6:
-            return '#FF8000'    # Orange for low-moderate
-        elif value <= 0.7:
-            return '#FFFF00'    # Yellow for moderate
+        # Check if continuous mode is enabled
+        colormap_mode = getattr(st.session_state, 'indicator_colormap_mode', 'discrete')
+        
+        if colormap_mode == 'continuous':
+            # Continuous gradient: smooth interpolation from red → orange → yellow → green
+            # Value range is 0.0 to 1.0
+            value = max(0.0, min(1.0, value))  # Clamp to valid range
+            
+            if value <= 0.33:
+                # Red to Orange transition (0.0 to 0.33)
+                t = value / 0.33
+                r = 255
+                g = int(128 * t)  # 0 → 128
+                b = 0
+            elif value <= 0.67:
+                # Orange to Yellow transition (0.33 to 0.67)
+                t = (value - 0.33) / 0.34
+                r = 255
+                g = int(128 + 127 * t)  # 128 → 255
+                b = 0
+            else:
+                # Yellow to Green transition (0.67 to 1.0)
+                t = (value - 0.67) / 0.33
+                r = int(255 * (1 - t))  # 255 → 0
+                g = 255
+                b = 0
+            
+            return f'#{r:02x}{g:02x}{b:02x}'
         else:
-            return '#00FF00'    # Green for good
+            # Discrete mode: Four-tier classification
+            # Red (poor), orange (low-moderate), yellow (moderate), green (good)
+            if value <= 0.4:
+                return '#FF0000'    # Red for poor
+            elif value <= 0.6:
+                return '#FF8000'    # Orange for low-moderate
+            elif value <= 0.7:
+                return '#FFFF00'    # Yellow for moderate
+            else:
+                return '#00FF00'    # Green for good
     else:
         # Apply selected color distribution method
         color_dist_method = getattr(st.session_state, 'color_distribution_method', 'linear_distribution')

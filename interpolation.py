@@ -3902,8 +3902,8 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         
         # 4. Interpolate values onto NZTM2000 grid
         try:
-            # Cubic interpolation for smooth results
-            zi = griddata(coords_nztm, values, (xi_m, yi_m), method='cubic', fill_value=np.nan)
+            # Linear interpolation for performance (Gaussian smoothing provides smoothness)
+            zi = griddata(coords_nztm, values, (xi_m, yi_m), method='linear', fill_value=np.nan)
             
             # Fill NaN with linear
             nan_mask = np.isnan(zi)

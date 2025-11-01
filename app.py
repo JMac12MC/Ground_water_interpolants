@@ -85,7 +85,12 @@ session_defaults = {
     'show_well_bounds': False,
     'show_convex_hull': False,
     'show_grid_points': False,
-    'heatmap_visualization_mode': 'smooth_raster'  # 'triangular_mesh' or 'smooth_raster'
+    'heatmap_visualization_mode': 'smooth_raster',  # 'triangular_mesh' or 'smooth_raster'
+    
+    # Regional ML models (trained once, reused for all tiles)
+    'regional_rk_model': None,
+    'regional_qrf_model': None,
+    'regional_models_trained': False
 }
 
 # Initialize all session state variables
@@ -496,6 +501,50 @@ with st.sidebar:
         st.session_state.interpolation_method = 'quantile_rf'
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = False
+
+    # Regional ML Model Training (for RK and QRF)
+    is_ml_method = st.session_state.interpolation_method in ['regression_kriging', 'quantile_rf']
+    
+    if is_ml_method:
+        # Check if we have the required covariates
+        has_covariates = (st.session_state.get('river_centerlines') is not None and 
+                         st.session_state.get('soil_rock_polygons') is not None)
+        has_wells = st.session_state.get('wells_data') is not None
+        
+        if has_covariates and has_wells:
+            # Train regional models if not already trained
+            if st.session_state.interpolation_method == 'regression_kriging' and st.session_state.regional_rk_model is None:
+                with st.spinner("🌍 Training REGIONAL Regression Kriging model on all Canterbury wells..."):
+                    from interpolation import train_regional_rk_model
+                    all_wells = st.session_state.wells_data
+                    regional_model = train_regional_rk_model(
+                        all_wells,
+                        river_centerlines=st.session_state.river_centerlines,
+                        soil_rock_polygons=st.session_state.soil_rock_polygons
+                    )
+                    if regional_model.get('success'):
+                        st.session_state.regional_rk_model = regional_model
+                        st.success(f"✅ Regional RK model trained! Variogram range: {regional_model['vario_params'][2]:.0f}m")
+                    else:
+                        st.warning("⚠️ Regional RK training failed. Will use local training per tile.")
+            
+            elif st.session_state.interpolation_method == 'quantile_rf' and st.session_state.regional_qrf_model is None:
+                with st.spinner("🌍 Training REGIONAL Quantile RF model on all Canterbury wells..."):
+                    from interpolation import train_regional_qrf_model
+                    all_wells = st.session_state.wells_data
+                    regional_model = train_regional_qrf_model(
+                        all_wells,
+                        river_centerlines=st.session_state.river_centerlines,
+                        soil_rock_polygons=st.session_state.soil_rock_polygons
+                    )
+                    if regional_model.get('success'):
+                        st.session_state.regional_qrf_model = regional_model
+                        st.success("✅ Regional QRF model trained!")
+                    else:
+                        st.warning("⚠️ Regional QRF training failed. Will use local training per tile.")
+        else:
+            if not has_covariates:
+                st.info("ℹ️ Upload river centerlines and soil/rock shapefiles to enable regional ML model training")
 
     # Indicator Kriging Variogram Settings (only for indicator methods)
     is_indicator_method = st.session_state.interpolation_method in [

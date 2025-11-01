@@ -636,23 +636,252 @@ def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
         print(f"Error creating indicator polygon geometry: {e}")
         return None
 
+
+def train_regional_rk_model(all_wells_df, river_centerlines=None, soil_rock_polygons=None):
+    """
+    Train a REGIONAL Regression Kriging model on ALL Canterbury wells.
+    This model is trained once and reused for all tiles.
+    
+    Parameters:
+    -----------
+    all_wells_df : DataFrame
+        ALL wells in Canterbury (not filtered by radius)
+    river_centerlines : GeoDataFrame
+        River centerlines for distance covariate
+    soil_rock_polygons : GeoDataFrame
+        Soil/rock polygons for geology covariate
+    
+    Returns:
+    --------
+    dict : {
+        'rf_model': RandomForestRegressor,
+        'vario_params': [nugget, sill, range],
+        'training_points': GeoDataFrame (wells + artificial zeros),
+        'residuals': np.array,
+        'feature_names': list,
+        'rock_type_cols': list,
+        'success': bool
+    }
+    """
+    from sklearn.ensemble import RandomForestRegressor
+    from covariate_processing import build_covariate_matrix
+    import warnings
+    warnings.filterwarnings('ignore')
+    
+    try:
+        print("=" * 80)
+        print("🌍 REGIONAL RK TRAINING: Training ONE model on ALL Canterbury wells")
+        print("=" * 80)
+        
+        # Prepare wells GeoDataFrame
+        wells_prepared = all_wells_df.copy()
+        
+        if 'ground water level' not in wells_prepared.columns:
+            print("❌ REGIONAL RK: 'ground water level' column not found")
+            return {'success': False}
+        
+        # Map ground water level to DTW
+        raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
+        wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
+        
+        negative_count = np.sum(raw_gwl_values < 0)
+        if negative_count > 0:
+            print(f"🌍 Converted {negative_count} artesian wells to DTW=0")
+        
+        wells_gdf = gpd.GeoDataFrame(
+            wells_prepared,
+            geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
+            crs='EPSG:4326'
+        )
+        
+        print(f"🌍 Training on {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
+        
+        # Build training data with covariates
+        X, y, training_points, feature_names = build_covariate_matrix(
+            wells_gdf,
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons,
+            include_artificial_zeros=True
+        )
+        
+        if X is None or len(X) == 0:
+            print("❌ REGIONAL RK: Failed to build covariate matrix")
+            return {'success': False}
+        
+        rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
+        print(f"🌍 Training data: {len(X)} samples, {len(feature_names)} features")
+        
+        # Train Random Forest
+        print(f"🌍 Training Regional Random Forest (n_estimators=1000)...")
+        rf = RandomForestRegressor(n_estimators=1000, random_state=42, oob_score=True, n_jobs=-1)
+        rf.fit(X, y)
+        print(f"✅ REGIONAL RF trained! OOB R²: {rf.oob_score_:.3f}")
+        
+        # Compute residuals
+        y_pred_train = rf.predict(X)
+        residuals = y - y_pred_train
+        print(f"📊 Regional residuals: mean={residuals.mean():.2f}m, std={residuals.std():.2f}m")
+        
+        # Get training coordinates in NZTM2000
+        training_coords = training_points.to_crs('EPSG:2193')
+        easting = training_coords.geometry.x.values
+        northing = training_coords.geometry.y.values
+        
+        # Fit variogram to residuals
+        try:
+            from skgstat import Variogram
+            print("🌍 Fitting REGIONAL variogram to residuals...")
+            V = Variogram(
+                coordinates=np.column_stack([easting, northing]),
+                values=residuals,
+                model='spherical',
+                n_lags=25,
+                maxlag='median'
+            )
+            V.fit()
+            vario_params = [V.parameters[0], V.parameters[1], V.parameters[2]]
+            
+            # Validate parameters
+            if vario_params[2] < 100:
+                print(f"⚠️ Regional variogram range too small ({vario_params[2]:.0f}m), using defaults")
+                vario_params = [0.5, 2.0, 5000.0]
+            elif np.isnan(vario_params).any() or np.isinf(vario_params).any():
+                print(f"⚠️ Invalid regional variogram parameters, using defaults")
+                vario_params = [0.5, 2.0, 5000.0]
+            else:
+                print(f"✅ REGIONAL VARIOGRAM: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
+        except Exception as e:
+            vario_params = [0.5, 2.0, 5000.0]
+            print(f"⚠️ Regional variogram fitting failed ({e}), using defaults: {vario_params}")
+        
+        print("=" * 80)
+        print("✅ REGIONAL RK MODEL READY - Will be reused for all tiles!")
+        print("=" * 80)
+        
+        return {
+            'rf_model': rf,
+            'vario_params': vario_params,
+            'training_points': training_points,
+            'residuals': residuals,
+            'feature_names': feature_names,
+            'rock_type_cols': rock_type_cols,
+            'success': True
+        }
+        
+    except Exception as e:
+        print(f"❌ Regional RK training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False}
+
+
+def train_regional_qrf_model(all_wells_df, river_centerlines=None, soil_rock_polygons=None):
+    """
+    Train a REGIONAL Quantile Regression Forest model on ALL Canterbury wells.
+    This model is trained once and reused for all tiles.
+    
+    Parameters:
+    -----------
+    all_wells_df : DataFrame
+        ALL wells in Canterbury (not filtered by radius)
+    river_centerlines : GeoDataFrame
+        River centerlines
+    soil_rock_polygons : GeoDataFrame
+        Soil/rock polygons
+    
+    Returns:
+    --------
+    dict : {
+        'qrf_model': QuantileRegressionForest,
+        'training_points': GeoDataFrame,
+        'feature_names': list,
+        'rock_type_cols': list,
+        'success': bool
+    }
+    """
+    from quantile_forest import QuantileRegressionForest
+    from covariate_processing import build_covariate_matrix
+    
+    try:
+        print("=" * 80)
+        print("🌍 REGIONAL QRF TRAINING: Training ONE model on ALL Canterbury wells")
+        print("=" * 80)
+        
+        wells_prepared = all_wells_df.copy()
+        
+        if 'ground water level' not in wells_prepared.columns:
+            print("❌ REGIONAL QRF: 'ground water level' column not found")
+            return {'success': False}
+        
+        raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
+        wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
+        
+        negative_count = np.sum(raw_gwl_values < 0)
+        if negative_count > 0:
+            print(f"🌍 Converted {negative_count} artesian wells to DTW=0")
+        
+        wells_gdf = gpd.GeoDataFrame(
+            wells_prepared,
+            geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
+            crs='EPSG:4326'
+        )
+        
+        print(f"🌍 Training on {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
+        
+        # Build training data
+        X, y, training_points, feature_names = build_covariate_matrix(
+            wells_gdf,
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons,
+            include_artificial_zeros=True
+        )
+        
+        if X is None or len(X) == 0:
+            print("❌ REGIONAL QRF: Failed to build covariate matrix")
+            return {'success': False}
+        
+        rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
+        print(f"🌍 Training data: {len(X)} samples, {len(feature_names)} features")
+        
+        # Train Quantile Regression Forest
+        print(f"🌍 Training Regional Quantile RF (n_estimators=1000)...")
+        qrf = QuantileRegressionForest(n_estimators=1000, random_state=42, n_jobs=-1)
+        qrf.fit(X, y)
+        print(f"✅ REGIONAL QRF trained!")
+        
+        print("=" * 80)
+        print("✅ REGIONAL QRF MODEL READY - Will be reused for all tiles!")
+        print("=" * 80)
+        
+        return {
+            'qrf_model': qrf,
+            'training_points': training_points,
+            'feature_names': feature_names,
+            'rock_type_cols': rock_type_cols,
+            'success': True
+        }
+        
+    except Exception as e:
+        print(f"❌ Regional QRF training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False}
+
+
 def regression_kriging_interpolation(wells_df, center_point, radius_km, resolution=50, 
-                                    river_centerlines=None, soil_rock_polygons=None):
+                                    river_centerlines=None, soil_rock_polygons=None,
+                                    regional_model=None):
     """
     Regression Kriging: Random Forest trend + Kriged residuals.
     
-    Follows the attached code examples:
-    1. Train RF on wells + artificial zeros with covariates
-    2. Predict RF trend on grid
-    3. Compute residuals = observed - RF_prediction
-    4. Fit variogram to residuals
-    5. Krige residuals
-    6. Final prediction = trend + kriged_residuals
+    HYBRID ARCHITECTURE:
+    - If regional_model provided: Use shared RF + variogram from regional training
+    - If regional_model is None: Fall back to local training (legacy mode)
     
     Parameters:
     -----------
     wells_df : DataFrame
-        Wells with DTW (depth-to-water) values
+        Wells with DTW (depth-to-water) values (local wells for kriging residuals)
     center_point : tuple
         (latitude, longitude) center
     radius_km : float
@@ -663,6 +892,12 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         River features for distance covariate
     soil_rock_polygons : GeoDataFrame or None
         Soil/rock polygons for geology covariate
+    regional_model : dict or None
+        Regional model from train_regional_rk_model() containing:
+        - 'rf_model': Trained RandomForestRegressor
+        - 'vario_params': [nugget, sill, range]
+        - 'training_points': GeoDataFrame with training locations + residuals
+        - 'rock_type_cols': List of rock type column names
     
     Returns:
     --------
@@ -675,89 +910,104 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
     warnings.filterwarnings('ignore')
     
     try:
-        print(f"🌲 REGRESSION KRIGING: Starting RK interpolation")
+        use_regional = regional_model is not None and regional_model.get('success', False)
         
-        # Prepare wells GeoDataFrame with DTW column from ground water level
-        wells_prepared = wells_df.copy()
+        if use_regional:
+            print(f"🌍 HYBRID RK: Using REGIONAL model (trained once on all Canterbury wells)")
+            rf = regional_model['rf_model']
+            vario_params = regional_model['vario_params']
+            rock_type_cols = regional_model['rock_type_cols']
+            training_points = regional_model['training_points']
+            residuals = regional_model['residuals']
+            print(f"✅ Regional RF model loaded, variogram: range={vario_params[2]:.0f}m")
+        else:
+            print(f"🌲 LOCAL RK: Training local model (legacy mode)")
+            
+            # Prepare wells GeoDataFrame with DTW column from ground water level
+            wells_prepared = wells_df.copy()
+            
+            # Use 'ground water level' column (wells are pre-filtered)
+            if 'ground water level' not in wells_prepared.columns:
+                print("❌ RK: 'ground water level' column not found")
+                return None, None, None, None
+            
+            # Map ground water level to DTW, converting negatives to 0 (artesian conditions)
+            raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
+            wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
+            
+            negative_count = np.sum(raw_gwl_values < 0)
+            if negative_count > 0:
+                print(f"🌲 RK: Converted {negative_count} negative values (artesian) to 0")
+            
+            wells_gdf = gpd.GeoDataFrame(
+                wells_prepared,
+                geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
+                crs='EPSG:4326'
+            )
+            
+            print(f"🌲 RK: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
+            
+            # Build training data with covariates
+            X, y, training_points, feature_names = build_covariate_matrix(
+                wells_gdf, 
+                river_centerlines=river_centerlines,
+                soil_rock_polygons=soil_rock_polygons,
+                include_artificial_zeros=True
+            )
+            
+            if X is None or len(X) == 0:
+                print("❌ RK: No training data available")
+                return None, None, None, None
+            
+            # Extract rock type columns for prediction grid alignment
+            rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
+            
+            # Train Random Forest for trend
+            print(f"🌲 Training Random Forest (n_estimators=1000)...")
+            rf = RandomForestRegressor(n_estimators=1000, random_state=42, oob_score=True, n_jobs=-1)
+            rf.fit(X, y)
+            print(f"✅ RF OOB R²: {rf.oob_score_:.3f}")
+            
+            # Compute residuals
+            y_pred_train = rf.predict(X)
+            residuals = y - y_pred_train
+            print(f"📊 Residuals: mean={residuals.mean():.2f}m, std={residuals.std():.2f}m")
+            
+            # Fit variogram to residuals using scikit-gstat
+            try:
+                from skgstat import Variogram
+                training_coords = training_points.to_crs('EPSG:2193')
+                easting = training_coords.geometry.x.values
+                northing = training_coords.geometry.y.values
+                
+                V = Variogram(
+                    coordinates=np.column_stack([easting, northing]),
+                    values=residuals,
+                    model='spherical',
+                    n_lags=20,
+                    maxlag='median'
+                )
+                V.fit()
+                vario_params = [V.parameters[0], V.parameters[1], V.parameters[2]]  # nugget, sill, range
+                
+                # Validate variogram parameters
+                if vario_params[2] < 100:  # range too small (< 100m)
+                    print(f"⚠️ Variogram range too small ({vario_params[2]:.0f}m), using defaults")
+                    vario_params = [0.5, 2.0, 5000.0]
+                elif np.isnan(vario_params).any() or np.isinf(vario_params).any():
+                    print(f"⚠️ Invalid variogram parameters, using defaults")
+                    vario_params = [0.5, 2.0, 5000.0]
+                else:
+                    print(f"📈 Variogram fitted: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
+            except Exception as e:
+                # Fallback to default parameters
+                vario_params = [0.5, 2.0, 5000.0]
+                print(f"⚠️ Variogram fitting failed ({e}), using default parameters: {vario_params}")
         
-        # Use 'ground water level' column (wells are pre-filtered)
-        if 'ground water level' not in wells_prepared.columns:
-            print("❌ RK: 'ground water level' column not found")
-            return None, None, None, None
-        
-        # Map ground water level to DTW, converting negatives to 0 (artesian conditions)
-        raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
-        wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
-        
-        negative_count = np.sum(raw_gwl_values < 0)
-        if negative_count > 0:
-            print(f"🌲 RK: Converted {negative_count} negative values (artesian) to 0")
-        
-        wells_gdf = gpd.GeoDataFrame(
-            wells_prepared,
-            geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
-            crs='EPSG:4326'
-        )
-        
-        print(f"🌲 RK: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
-        
-        # Build training data with covariates
-        X, y, training_points, feature_names = build_covariate_matrix(
-            wells_gdf, 
-            river_centerlines=river_centerlines,
-            soil_rock_polygons=soil_rock_polygons,
-            include_artificial_zeros=True
-        )
-        
-        if X is None or len(X) == 0:
-            print("❌ RK: No training data available")
-            return None, None, None, None
-        
-        # Extract rock type columns for prediction grid alignment
-        rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
-        
-        # Train Random Forest for trend
-        print(f"🌲 Training Random Forest (n_estimators=1000)...")
-        rf = RandomForestRegressor(n_estimators=1000, random_state=42, oob_score=True, n_jobs=-1)
-        rf.fit(X, y)
-        print(f"✅ RF OOB R²: {rf.oob_score_:.3f}")
-        
-        # Compute residuals
-        y_pred_train = rf.predict(X)
-        residuals = y - y_pred_train
-        print(f"📊 Residuals: mean={residuals.mean():.2f}m, std={residuals.std():.2f}m")
-        
-        # Get training coordinates in NZTM2000
+        # Get training coordinates for kriging (regardless of regional or local mode)
         training_coords = training_points.to_crs('EPSG:2193')
         easting = training_coords.geometry.x.values
         northing = training_coords.geometry.y.values
-        
-        # Fit variogram to residuals using scikit-gstat
-        try:
-            from skgstat import Variogram
-            V = Variogram(
-                coordinates=np.column_stack([easting, northing]),
-                values=residuals,
-                model='spherical',
-                n_lags=20,
-                maxlag='median'
-            )
-            V.fit()
-            vario_params = [V.parameters[0], V.parameters[1], V.parameters[2]]  # nugget, sill, range
-            
-            # Validate variogram parameters
-            if vario_params[2] < 100:  # range too small (< 100m)
-                print(f"⚠️ Variogram range too small ({vario_params[2]:.0f}m), using defaults")
-                vario_params = [0.5, 2.0, 5000.0]
-            elif np.isnan(vario_params).any() or np.isinf(vario_params).any():
-                print(f"⚠️ Invalid variogram parameters, using defaults")
-                vario_params = [0.5, 2.0, 5000.0]
-            else:
-                print(f"📈 Variogram fitted: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
-        except Exception as e:
-            # Fallback to default parameters
-            vario_params = [0.5, 2.0, 5000.0]
-            print(f"⚠️ Variogram fitting failed ({e}), using default parameters: {vario_params}")
         
         # Create prediction grid
         crs_grid = build_crs_grid(center_point, radius_km, resolution)
@@ -828,20 +1078,19 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
 
 
 def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
-                              river_centerlines=None, soil_rock_polygons=None):
+                              river_centerlines=None, soil_rock_polygons=None,
+                              regional_model=None):
     """
     Quantile Regression Forest: Predict median + uncertainty intervals.
     
-    Follows attached code examples:
-    1. Train QRF on wells + artificial zeros with covariates
-    2. Predict quantiles (5th, 50th, 95th percentiles)
-    3. Median = 50th percentile
-    4. Uncertainty = 95th - 5th percentile
+    HYBRID ARCHITECTURE:
+    - If regional_model provided: Use shared QRF from regional training
+    - If regional_model is None: Fall back to local training (legacy mode)
     
     Parameters:
     -----------
     wells_df : DataFrame
-        Wells with DTW values
+        Wells with DTW values (local wells, not used if regional_model provided)
     center_point : tuple
         (latitude, longitude) center
     radius_km : float
@@ -852,6 +1101,11 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
         River features
     soil_rock_polygons : GeoDataFrame or None
         Soil/rock polygons
+    regional_model : dict or None
+        Regional model from train_regional_qrf_model() containing:
+        - 'qrf_model': Trained QuantileRegressionForest
+        - 'training_points': GeoDataFrame with training locations
+        - 'rock_type_cols': List of rock type column names
     
     Returns:
     --------
@@ -861,51 +1115,59 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
     from covariate_processing import build_covariate_matrix, build_prediction_grid_covariates
     
     try:
-        print(f"🌳 QUANTILE RF: Starting QRF interpolation")
+        use_regional = regional_model is not None and regional_model.get('success', False)
         
-        # Prepare wells GeoDataFrame with DTW column from ground water level
-        wells_prepared = wells_df.copy()
-        
-        # Use 'ground water level' column (wells are pre-filtered)
-        if 'ground water level' not in wells_prepared.columns:
-            print("❌ QRF: 'ground water level' column not found")
-            return None, None, None, None
-        
-        # Map ground water level to DTW, converting negatives to 0 (artesian conditions)
-        raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
-        wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
-        
-        negative_count = np.sum(raw_gwl_values < 0)
-        if negative_count > 0:
-            print(f"🌳 QRF: Converted {negative_count} negative values (artesian) to 0")
-        
-        wells_gdf = gpd.GeoDataFrame(
-            wells_prepared,
-            geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
-            crs='EPSG:4326'
-        )
-        
-        print(f"🌳 QRF: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
-        
-        # Build training data
-        X, y, training_points, feature_names = build_covariate_matrix(
-            wells_gdf,
-            river_centerlines=river_centerlines,
-            soil_rock_polygons=soil_rock_polygons,
-            include_artificial_zeros=True
-        )
-        
-        if X is None or len(X) == 0:
-            print("❌ QRF: No training data available")
-            return None, None, None, None
-        
-        # Extract rock type columns for prediction grid alignment
-        rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
-        
-        # Train Quantile Regression Forest
-        print(f"🌳 Training Quantile Regression Forest (n_estimators=1000)...")
-        qrf = QuantileRegressionForest(n_estimators=1000, random_state=42, n_jobs=-1)
-        qrf.fit(X, y)
+        if use_regional:
+            print(f"🌍 HYBRID QRF: Using REGIONAL model (trained once on all Canterbury wells)")
+            qrf = regional_model['qrf_model']
+            rock_type_cols = regional_model['rock_type_cols']
+            print(f"✅ Regional QRF model loaded")
+        else:
+            print(f"🌳 LOCAL QRF: Training local model (legacy mode)")
+            
+            # Prepare wells GeoDataFrame with DTW column from ground water level
+            wells_prepared = wells_df.copy()
+            
+            # Use 'ground water level' column (wells are pre-filtered)
+            if 'ground water level' not in wells_prepared.columns:
+                print("❌ QRF: 'ground water level' column not found")
+                return None, None, None, None
+            
+            # Map ground water level to DTW, converting negatives to 0 (artesian conditions)
+            raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
+            wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
+            
+            negative_count = np.sum(raw_gwl_values < 0)
+            if negative_count > 0:
+                print(f"🌳 QRF: Converted {negative_count} negative values (artesian) to 0")
+            
+            wells_gdf = gpd.GeoDataFrame(
+                wells_prepared,
+                geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
+                crs='EPSG:4326'
+            )
+            
+            print(f"🌳 QRF: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
+            
+            # Build training data
+            X, y, training_points, feature_names = build_covariate_matrix(
+                wells_gdf,
+                river_centerlines=river_centerlines,
+                soil_rock_polygons=soil_rock_polygons,
+                include_artificial_zeros=True
+            )
+            
+            if X is None or len(X) == 0:
+                print("❌ QRF: No training data available")
+                return None, None, None, None
+            
+            # Extract rock type columns for prediction grid alignment
+            rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
+            
+            # Train Quantile Regression Forest
+            print(f"🌳 Training Quantile Regression Forest (n_estimators=1000)...")
+            qrf = QuantileRegressionForest(n_estimators=1000, random_state=42, n_jobs=-1)
+            qrf.fit(X, y)
         
         # Create prediction grid
         crs_grid = build_crs_grid(center_point, radius_km, resolution)
@@ -1411,11 +1673,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if soil_rock_polygons is None:
                 soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
         
-        # Call RK interpolation
+        # Get regional RK model from session state (if available)
+        import streamlit as st
+        regional_rk_model = st.session_state.get('regional_rk_model', None)
+        
+        # Call RK interpolation with regional model
         grid_lats, grid_lons, dtw_values, uncertainty_values = regression_kriging_interpolation(
             wells_df, center_point, radius_km, resolution,
             river_centerlines=river_centerlines,
-            soil_rock_polygons=soil_rock_polygons
+            soil_rock_polygons=soil_rock_polygons,
+            regional_model=regional_rk_model
         )
         
         if grid_lats is None:
@@ -1479,11 +1746,16 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             if soil_rock_polygons is None:
                 soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
         
-        # Call QRF interpolation
+        # Get regional QRF model from session state (if available)
+        import streamlit as st
+        regional_qrf_model = st.session_state.get('regional_qrf_model', None)
+        
+        # Call QRF interpolation with regional model
         grid_lats, grid_lons, dtw_median, uncertainty_range = quantile_rf_interpolation(
             wells_df, center_point, radius_km, resolution,
             river_centerlines=river_centerlines,
-            soil_rock_polygons=soil_rock_polygons
+            soil_rock_polygons=soil_rock_polygons,
+            regional_model=regional_qrf_model
         )
         
         if grid_lats is None:

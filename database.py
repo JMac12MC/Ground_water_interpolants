@@ -1,6 +1,7 @@
 # Fix JSON parsing issues in database operations
 import os
 import pandas as pd
+import numpy as np
 import sqlalchemy
 from sqlalchemy import create_engine, text, Table, Column, Integer, String, Float, DateTime, MetaData, inspect
 from sqlalchemy.dialects.postgresql import JSON
@@ -8,6 +9,31 @@ import geopandas as gpd
 from shapely import wkt
 import json
 from datetime import datetime
+
+def sanitize_for_json(obj):
+    """
+    Recursively convert numpy arrays and scalars to Python native types for JSON serialization.
+    
+    Parameters:
+    -----------
+    obj : any
+        Object to sanitize (dict, list, numpy array, numpy scalar, etc.)
+        
+    Returns:
+    --------
+    any
+        JSON-serializable version of the object
+    """
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.generic):
+        return obj.item()
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(item) for item in obj]
+    else:
+        return obj
 
 class PolygonDatabase:
     def __init__(self):
@@ -486,7 +512,12 @@ class PolygonDatabase:
                         return -existing_id  # Return negative ID to signal duplicate
                     
                     # Insert new heatmap if no duplicate found - include colormap metadata for consistency
-                    colormap_json = json.dumps(colormap_metadata) if colormap_metadata else None
+                    # Sanitize all data to ensure numpy arrays/scalars are converted to JSON-compatible types
+                    clean_geojson = sanitize_for_json(geojson_data) if geojson_data else None
+                    clean_heatmap_data = sanitize_for_json(heatmap_data)
+                    clean_colormap_metadata = sanitize_for_json(colormap_metadata) if colormap_metadata else None
+                    
+                    colormap_json = json.dumps(clean_colormap_metadata) if clean_colormap_metadata else None
                     print(f"💾 STORING COLORMAP METADATA: {colormap_metadata}")
                     print(f"💾 STORING VARIOGRAM PARAMS: Range={indicator_range}, Sill={indicator_sill}, Nugget={indicator_nugget}, Auto-fit={indicator_auto_fit}")
                     
@@ -506,8 +537,8 @@ class PolygonDatabase:
                         'center_lon': center_lon_float,
                         'radius_km': float(radius_km),
                         'interpolation_method': interpolation_method,
-                        'heatmap_data': json.dumps(heatmap_data),
-                        'geojson_data': json.dumps(geojson_data) if geojson_data else None,
+                        'heatmap_data': json.dumps(clean_heatmap_data),
+                        'geojson_data': json.dumps(clean_geojson) if clean_geojson else None,
                         'well_count': int(well_count),
                         'colormap_metadata': colormap_json,
                         'indicator_range': float(indicator_range) if indicator_range is not None else None,

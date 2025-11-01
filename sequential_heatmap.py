@@ -841,11 +841,14 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         indicator_auto_fit=actual_auto_fit
                     )
                     
-                    if stored_heatmap_id:
+                    if stored_heatmap_id and stored_heatmap_id > 0:
                         stored_heatmap_ids.append((location_name, stored_heatmap_id))
                         print(f"  ✅ {location_name.upper()}: Stored as ID {stored_heatmap_id}")
+                    elif stored_heatmap_id and stored_heatmap_id < 0:
+                        print(f"  ⚠️  {location_name.upper()}: Already exists in database (ID {-stored_heatmap_id})")
                     else:
-                        print(f"  ⚠️  {location_name.upper()}: Already exists in database")
+                        print(f"  ❌ {location_name.upper()}: Failed to store in database")
+                        error_messages.append(f"{location_name} heatmap storage failed")
                         
             else:
                 error_messages.append(f"Failed to generate {location_name} heatmap - no features")

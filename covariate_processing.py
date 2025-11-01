@@ -158,6 +158,28 @@ def extract_soil_rock_types(points_gdf, soil_rock_polygons, type_column='rock_ty
         if points_gdf.crs != soil_rock_polygons.crs:
             soil_rock_polygons = soil_rock_polygons.to_crs(points_gdf.crs)
         
+        # Auto-detect type column if the default doesn't exist
+        if type_column not in soil_rock_polygons.columns:
+            # Common column names for rock/soil type classification
+            possible_columns = ['rock_type', 'ROCK_TYPE', 'geology', 'GEOLOGY', 
+                              'soil_type', 'SOIL_TYPE', 'lithology', 'LITHOLOGY',
+                              'type', 'TYPE', 'class', 'CLASS', 'name', 'NAME']
+            
+            for col in possible_columns:
+                if col in soil_rock_polygons.columns:
+                    type_column = col
+                    print(f"🔍 Auto-detected soil/rock type column: '{type_column}'")
+                    break
+            else:
+                # If no suitable column found, use first non-geometry column
+                non_geom_cols = [c for c in soil_rock_polygons.columns if c != 'geometry']
+                if non_geom_cols:
+                    type_column = non_geom_cols[0]
+                    print(f"⚠️ Using first available column '{type_column}' for rock/soil types")
+                else:
+                    print(f"❌ No suitable type column found in soil/rock polygons")
+                    return pd.DataFrame({'rock_unknown': np.ones(len(points_gdf))})
+        
         # Spatial join to get rock type at each point
         joined = gpd.sjoin(points_gdf, soil_rock_polygons[[type_column, 'geometry']], 
                           how='left', predicate='within')

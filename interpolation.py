@@ -749,10 +749,10 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         
         # Create prediction grid
         crs_grid = build_crs_grid(center_point, radius_km, resolution)
-        grid_lats = crs_grid['grid_lats']
-        grid_lons = crs_grid['grid_lons']
-        grid_x_m = crs_grid['grid_x_m'].flatten()
-        grid_y_m = crs_grid['grid_y_m'].flatten()
+        grid_lats = crs_grid['LATS_2D']
+        grid_lons = crs_grid['LONS_2D']
+        grid_x_m = crs_grid['X_m'].flatten()
+        grid_y_m = crs_grid['Y_m'].flatten()
         
         # Build grid covariates for RF prediction
         from covariate_processing import build_prediction_grid_covariates
@@ -886,8 +886,8 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
         
         # Create prediction grid
         crs_grid = build_crs_grid(center_point, radius_km, resolution)
-        grid_lats = crs_grid['grid_lats']
-        grid_lons = crs_grid['grid_lons']
+        grid_lats = crs_grid['LATS_2D']
+        grid_lons = crs_grid['LONS_2D']
         
         # Build grid covariates
         grid_points_gdf = gpd.GeoDataFrame(

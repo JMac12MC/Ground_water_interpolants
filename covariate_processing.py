@@ -221,10 +221,11 @@ def build_covariate_matrix(wells_gdf, river_centerlines=None, soil_rock_polygons
     
     Returns:
     --------
-    tuple: (X, y, training_points_gdf)
+    tuple: (X, y, training_points_gdf, feature_names)
         X: Feature matrix (n_samples, n_features)
         y: Target values (DTW in meters)
         training_points_gdf: Combined wells + zeros geodataframe
+        feature_names: List of feature column names
     """
     try:
         # Ensure wells are in NZTM2000
@@ -274,13 +275,13 @@ def build_covariate_matrix(wells_gdf, river_centerlines=None, soil_rock_polygons
         print(f"✅ Feature matrix built: {X.shape} (samples × features)")
         print(f"   Features: {', '.join(feature_names)}")
         
-        return X, y, training_points
+        return X, y, training_points, feature_names
         
     except Exception as e:
         print(f"❌ Error building covariate matrix: {e}")
         import traceback
         traceback.print_exc()
-        return None, None, None
+        return None, None, None, None
 
 
 def build_prediction_grid_covariates(grid_points_gdf, river_centerlines=None, 

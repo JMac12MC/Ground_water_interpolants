@@ -702,7 +702,7 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         print(f"🌲 RK: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
         
         # Build training data with covariates
-        X, y, training_points = build_covariate_matrix(
+        X, y, training_points, feature_names = build_covariate_matrix(
             wells_gdf, 
             river_centerlines=river_centerlines,
             soil_rock_polygons=soil_rock_polygons,
@@ -712,6 +712,9 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         if X is None or len(X) == 0:
             print("❌ RK: No training data available")
             return None, None, None, None
+        
+        # Extract rock type columns for prediction grid alignment
+        rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
         
         # Train Random Forest for trend
         print(f"🌲 Training Random Forest (n_estimators=1000)...")
@@ -764,7 +767,8 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         X_grid = build_prediction_grid_covariates(
             grid_points_gdf,
             river_centerlines=river_centerlines,
-            soil_rock_polygons=soil_rock_polygons
+            soil_rock_polygons=soil_rock_polygons,
+            training_rock_types=rock_type_cols
         )
         
         if X_grid is None:
@@ -868,7 +872,7 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
         print(f"🌳 QRF: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
         
         # Build training data
-        X, y, training_points = build_covariate_matrix(
+        X, y, training_points, feature_names = build_covariate_matrix(
             wells_gdf,
             river_centerlines=river_centerlines,
             soil_rock_polygons=soil_rock_polygons,
@@ -878,6 +882,9 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
         if X is None or len(X) == 0:
             print("❌ QRF: No training data available")
             return None, None, None, None
+        
+        # Extract rock type columns for prediction grid alignment
+        rock_type_cols = [col for col in feature_names if col.startswith('rock_')]
         
         # Train Quantile Regression Forest
         print(f"🌳 Training Quantile Regression Forest (n_estimators=1000)...")
@@ -898,7 +905,8 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
         X_grid = build_prediction_grid_covariates(
             grid_points_gdf,
             river_centerlines=river_centerlines,
-            soil_rock_polygons=soil_rock_polygons
+            soil_rock_polygons=soil_rock_polygons,
+            training_rock_types=rock_type_cols
         )
         
         if X_grid is None:

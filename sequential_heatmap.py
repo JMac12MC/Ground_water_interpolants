@@ -95,7 +95,7 @@ def cleanup_memory():
     """
     gc.collect()
 
-def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1):
+def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1, river_centerlines=None, soil_rock_polygons=None):
     """
     Generate heatmaps using pre-calculated grid points from the 19.82km grid visualization.
     
@@ -282,7 +282,9 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 indicator_auto_fit=indicator_auto_fit,
                 indicator_range=indicator_range,
                 indicator_sill=indicator_sill,
-                indicator_nugget=indicator_nugget
+                indicator_nugget=indicator_nugget,
+                river_centerlines=river_centerlines,
+                soil_rock_polygons=soil_rock_polygons
             )
             
             if not geo_json_result or not isinstance(geo_json_result, dict) or 'features' not in geo_json_result:

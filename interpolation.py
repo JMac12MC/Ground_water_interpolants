@@ -1047,7 +1047,7 @@ def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolutio
         print(f"Error generating indicator mask: {e}")
         return None, None, None, None, None
 
-def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None, exclusion_polygons=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1):
+def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, method='kriging', show_variance=False, auto_fit_variogram=False, variogram_model='spherical', soil_polygons=None, indicator_mask=None, new_clipping_polygon=None, exclusion_polygons=None, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1, river_centerlines=None, soil_rock_polygons=None):
     """
     Generate GeoJSON grid with interpolated yield values for accurate visualization
 
@@ -1379,10 +1379,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         
         print(f"Regression Kriging: using {len(wells_df)} wells with ground water level data")
         
-        # Get covariate data from session state
-        import streamlit as st
-        river_centerlines = st.session_state.get('river_centerlines', None)
-        soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
+        # Get covariate data from parameters or session state (fallback for interactive use)
+        if river_centerlines is None or soil_rock_polygons is None:
+            import streamlit as st
+            if river_centerlines is None:
+                river_centerlines = st.session_state.get('river_centerlines', None)
+            if soil_rock_polygons is None:
+                soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
         
         # Call RK interpolation
         grid_lats, grid_lons, dtw_values, uncertainty_values = regression_kriging_interpolation(
@@ -1444,10 +1447,13 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         
         print(f"Quantile RF: using {len(wells_df)} wells with ground water level data")
         
-        # Get covariate data from session state
-        import streamlit as st
-        river_centerlines = st.session_state.get('river_centerlines', None)
-        soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
+        # Get covariate data from parameters or session state (fallback for interactive use)
+        if river_centerlines is None or soil_rock_polygons is None:
+            import streamlit as st
+            if river_centerlines is None:
+                river_centerlines = st.session_state.get('river_centerlines', None)
+            if soil_rock_polygons is None:
+                soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
         
         # Call QRF interpolation
         grid_lats, grid_lons, dtw_median, uncertainty_range = quantile_rf_interpolation(

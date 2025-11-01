@@ -172,7 +172,7 @@ def test_automated_generation(wells_data, interpolation_method, polygon_db, soil
         return {"success": False, "error": error_msg}
 
 
-def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, search_radius_km=20, max_tiles=1000, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1):
+def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, search_radius_km=20, max_tiles=1000, indicator_auto_fit=False, indicator_range=1500.0, indicator_sill=0.25, indicator_nugget=0.1, river_centerlines=None, soil_rock_polygons=None):
     """
     Generate comprehensive heatmap coverage using the proven sequential system.
     This is the main function called by app.py for full automated generation.
@@ -302,7 +302,9 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         indicator_auto_fit=indicator_auto_fit,
         indicator_range=indicator_range,
         indicator_sill=indicator_sill,
-        indicator_nugget=indicator_nugget
+        indicator_nugget=indicator_nugget,
+        river_centerlines=river_centerlines,
+        soil_rock_polygons=soil_rock_polygons
     )
     
     if isinstance(result, tuple) and len(result) >= 3:

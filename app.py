@@ -745,7 +745,9 @@ with st.sidebar:
                 indicator_auto_fit=params['indicator_auto_fit'],
                 indicator_range=params['indicator_range'],
                 indicator_sill=params['indicator_sill'],
-                indicator_nugget=params['indicator_nugget']
+                indicator_nugget=params['indicator_nugget'],
+                river_centerlines=st.session_state.get('river_centerlines', None),
+                soil_rock_polygons=st.session_state.get('soil_rock_polygons', None)
             )
             
             # Clear flag after successful completion

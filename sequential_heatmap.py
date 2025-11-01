@@ -802,19 +802,6 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     else:
                         heatmap_name = f"{interpolation_method}_{location_name}_{center_lat:.3f}_{center_lon:.3f}"
                     
-                    # Convert to heatmap data format
-                    heatmap_data = []
-                    for feature in geojson_data.get('features', []):
-                        if 'geometry' in feature and 'properties' in feature:
-                            geom = feature['geometry']
-                            if geom['type'] == 'Polygon' and len(geom['coordinates']) > 0:
-                                coords = geom['coordinates'][0]
-                                if len(coords) >= 3:
-                                    lat = sum(coord[1] for coord in coords) / len(coords)
-                                    lon = sum(coord[0] for coord in coords) / len(coords)
-                                    value = feature['properties'].get('yield', 0)
-                                    heatmap_data.append([lat, lon, value])
-                    
                     # Extract ACTUAL variogram parameters from the GeoJSON result (fitted if auto-fit was used)
                     variogram_params = geojson_data.get('variogram_params', {})
                     actual_range = variogram_params.get('indicator_range', indicator_range)
@@ -825,13 +812,14 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     print(f"  💾 {location_name.upper()} PARAMETERS: range={actual_range:.1f}, sill={actual_sill:.3f}, nugget={actual_nugget:.3f}, auto_fit={actual_auto_fit}")
                     
                     # Store in database WITH CONSISTENT COLORMAP METADATA AND ACTUAL FITTED PARAMETERS
+                    # Store only GeoJSON (not redundant heatmap_data) to reduce payload from ~100MB to ~60MB
                     stored_heatmap_id = polygon_db.store_heatmap(
                         heatmap_name=heatmap_name,
                         center_lat=center_lat,
                         center_lon=center_lon,
                         radius_km=search_radius,
                         interpolation_method=interpolation_method,
-                        heatmap_data=heatmap_data,
+                        heatmap_data=[],
                         geojson_data=geojson_data,
                         well_count=len(filtered_wells),
                         colormap_metadata=colormap_metadata,

@@ -749,32 +749,50 @@ def train_regional_rk_model(all_wells_df, river_centerlines=None, soil_rock_poly
             easting_sample = easting
             northing_sample = northing
         
-        # Fit variogram to residuals
-        try:
-            from skgstat import Variogram
-            print(f"🌍 Fitting REGIONAL variogram to {len(residuals_sample)} residuals...")
-            V = Variogram(
-                coordinates=np.column_stack([easting_sample, northing_sample]),
-                values=residuals_sample,
-                model='spherical',
-                n_lags=25,
-                maxlag='median'
-            )
-            V.fit()
-            vario_params = [V.parameters[0], V.parameters[1], V.parameters[2]]
-            
-            # Validate parameters
-            if vario_params[2] < 100:
-                print(f"⚠️ Regional variogram range too small ({vario_params[2]:.0f}m), using defaults")
-                vario_params = [0.5, 2.0, 5000.0]
-            elif np.isnan(vario_params).any() or np.isinf(vario_params).any():
-                print(f"⚠️ Invalid regional variogram parameters, using defaults")
-                vario_params = [0.5, 2.0, 5000.0]
-            else:
-                print(f"✅ REGIONAL VARIOGRAM: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
-        except Exception as e:
-            vario_params = [0.5, 2.0, 5000.0]
-            print(f"⚠️ Regional variogram fitting failed ({e}), using defaults: {vario_params}")
+        # Compute empirical variogram parameters from residuals
+        print(f"🌍 Computing EMPIRICAL variogram from {len(residuals_sample)} residuals...")
+        
+        # Compute variance (sill estimate)
+        residual_var = residuals_sample.var()
+        sill = residual_var
+        
+        # Empirical range estimation: distance at which correlation drops to ~37% (1/e)
+        # Sample random pairs to estimate spatial correlation
+        n_pairs = min(5000, len(residuals_sample))
+        rng = np.random.RandomState(42)
+        idx1 = rng.choice(len(residuals_sample), size=n_pairs, replace=True)
+        idx2 = rng.choice(len(residuals_sample), size=n_pairs, replace=True)
+        
+        # Compute distances
+        dx = easting_sample[idx1] - easting_sample[idx2]
+        dy = northing_sample[idx1] - northing_sample[idx2]
+        distances = np.sqrt(dx**2 + dy**2)
+        
+        # Compute semivariance at each distance
+        semivariances = 0.5 * (residuals_sample[idx1] - residuals_sample[idx2])**2
+        
+        # Bin by distance and compute mean semivariance
+        dist_bins = np.percentile(distances[distances > 100], [20, 40, 60, 80])
+        range_estimate = None
+        
+        for bin_threshold in dist_bins:
+            mask = (distances > bin_threshold * 0.8) & (distances < bin_threshold * 1.2)
+            if mask.sum() > 10:
+                mean_semivar = semivariances[mask].mean()
+                if mean_semivar > 0.7 * sill:  # Reached ~70% of sill
+                    range_estimate = bin_threshold
+                    break
+        
+        if range_estimate is None or range_estimate < 1000:
+            # Use median distance as fallback
+            range_estimate = np.median(distances[distances > 100])
+            range_estimate = np.clip(range_estimate, 5000, 15000)
+        
+        # Nugget: small fraction of sill for measurement error
+        nugget = 0.1 * sill
+        
+        vario_params = [nugget, sill, range_estimate]
+        print(f"✅ EMPIRICAL VARIOGRAM: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
         
         print("=" * 80)
         print("✅ REGIONAL RK MODEL READY - Will be reused for all tiles!")

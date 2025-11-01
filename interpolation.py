@@ -677,10 +677,28 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
     try:
         print(f"🌲 REGRESSION KRIGING: Starting RK interpolation")
         
-        # Prepare wells GeoDataFrame
+        # Prepare wells GeoDataFrame with DTW column
+        wells_prepared = wells_df.copy()
+        
+        # Map depth_to_groundwater or ground water level to DTW
+        if 'depth_to_groundwater' in wells_prepared.columns:
+            wells_prepared['DTW'] = wells_prepared['depth_to_groundwater']
+        elif 'ground water level' in wells_prepared.columns:
+            wells_prepared['DTW'] = wells_prepared['ground water level']
+        else:
+            print("❌ RK: No DTW-compatible column found")
+            return None, None, None, None
+        
+        # Filter valid DTW values
+        wells_prepared = wells_prepared[wells_prepared['DTW'].notna()]
+        
+        if len(wells_prepared) == 0:
+            print("❌ RK: No wells with valid DTW data")
+            return None, None, None, None
+        
         wells_gdf = gpd.GeoDataFrame(
-            wells_df,
-            geometry=gpd.points_from_xy(wells_df['longitude'], wells_df['latitude']),
+            wells_prepared,
+            geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
             crs='EPSG:4326'
         )
         
@@ -826,10 +844,28 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
     try:
         print(f"🌳 QUANTILE RF: Starting QRF interpolation")
         
-        # Prepare wells GeoDataFrame
+        # Prepare wells GeoDataFrame with DTW column
+        wells_prepared = wells_df.copy()
+        
+        # Map depth_to_groundwater or ground water level to DTW
+        if 'depth_to_groundwater' in wells_prepared.columns:
+            wells_prepared['DTW'] = wells_prepared['depth_to_groundwater']
+        elif 'ground water level' in wells_prepared.columns:
+            wells_prepared['DTW'] = wells_prepared['ground water level']
+        else:
+            print("❌ QRF: No DTW-compatible column found")
+            return None, None, None, None
+        
+        # Filter valid DTW values
+        wells_prepared = wells_prepared[wells_prepared['DTW'].notna()]
+        
+        if len(wells_prepared) == 0:
+            print("❌ QRF: No wells with valid DTW data")
+            return None, None, None, None
+        
         wells_gdf = gpd.GeoDataFrame(
-            wells_df,
-            geometry=gpd.points_from_xy(wells_df['longitude'], wells_df['latitude']),
+            wells_prepared,
+            geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
             crs='EPSG:4326'
         )
         

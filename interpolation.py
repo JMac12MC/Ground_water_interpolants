@@ -735,13 +735,27 @@ def train_regional_rk_model(all_wells_df, river_centerlines=None, soil_rock_poly
         easting = training_coords.geometry.x.values
         northing = training_coords.geometry.y.values
         
+        # Subsample for variogram fitting (too many points causes crashes)
+        max_vario_points = 5000
+        if len(residuals) > max_vario_points:
+            print(f"🌍 Subsampling {max_vario_points} points from {len(residuals)} for variogram fitting...")
+            rng = np.random.RandomState(42)
+            sample_idx = rng.choice(len(residuals), size=max_vario_points, replace=False)
+            residuals_sample = residuals[sample_idx]
+            easting_sample = easting[sample_idx]
+            northing_sample = northing[sample_idx]
+        else:
+            residuals_sample = residuals
+            easting_sample = easting
+            northing_sample = northing
+        
         # Fit variogram to residuals
         try:
             from skgstat import Variogram
-            print("🌍 Fitting REGIONAL variogram to residuals...")
+            print(f"🌍 Fitting REGIONAL variogram to {len(residuals_sample)} residuals...")
             V = Variogram(
-                coordinates=np.column_stack([easting, northing]),
-                values=residuals,
+                coordinates=np.column_stack([easting_sample, northing_sample]),
+                values=residuals_sample,
                 model='spherical',
                 n_lags=25,
                 maxlag='median'

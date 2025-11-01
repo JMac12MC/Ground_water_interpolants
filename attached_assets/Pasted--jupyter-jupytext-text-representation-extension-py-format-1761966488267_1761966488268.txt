@@ -1,0 +1,408 @@
+# ---
+# jupyter:
+#   jupytext:
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.16.3
+#   kernelspec:
+#     display_name: Python 3
+#     language: python
+#     name: python3
+# ---
+
+# + [markdown]
+# # Canterbury Depth to Groundwater: RK + QRF
+# 
+# **Inputs (your 4 files):**
+# - `raw/dem_25m.tif`
+# - `raw/rivers_centerlines.shp`
+# - `raw/wells.csv`
+# - `raw/soil_rock_polygons.shp`
+# 
+# **Outputs (100m rasters):**
+# - `canterbury_dtw_rk_100m.tif`
+# - `canterbury_unc_rk_100m.tif`
+# - `canterbury_dtw_qrf_100m.tif`
+# - `canterbury_prob_shallow_100m.tif`
+# 
+# **Run all cells → Done**
+
+# +
+# Install required packages (run once)
+# !pip install geopandas rasterio rioxarray scikit-learn quantile-forest pykrige scikit-gstat numpy pandas matplotlib
+
+# +
+import os
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+import rasterio
+from rasterio.sample import sample
+from rasterio.transform import from_origin
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from quantile_forest import QuantileRegressionForest
+from scikit_gstat import Variogram
+from pykrige.ok import OrdinaryKriging
+import warnings
+warnings.filterwarnings('ignore')
+
+# Create directories
+for d in ['processed', 'covariates', 'output']:
+    os.makedirs(d, exist_ok=True)
+
+print("Setup complete.")
+# -
+
+```python
+# ---
+# ## 1. Load & Clean Well Data
+# ---
+
+```python
+# Load wells
+df = pd.read_csv('raw/wells.csv')
+
+# Required columns (adjust names if different)
+required = ['Easting', 'Northing', 'INITIAL_SWL', 'SURFACE_LEVEL']
+if not all(col in df.columns for col in required):
+    print("Adjust column names in CSV:")
+    print(df.columns.tolist())
+    raise ValueError("Missing required columns")
+
+# Clean
+df = df.dropna(subset=required)
+df = df[(df['INITIAL_SWL'] > 0) & (df['SURFACE_LEVEL'] > 0)]
+df['DTW'] = df['SURFACE_LEVEL'] - df['INITIAL_SWL']
+df = df[(df['DTW'] > 0) & (df['DTW'] < 50)]
+
+# To GeoDataFrame
+gdf = gpd.GeoDataFrame(
+    df, 
+    geometry=gpd.points_from_xy(df.Easting, df.Northing),
+    crs='EPSG:2193'
+)
+gdf.to_file('processed/wells_clean.shp')
+print(f"Clean wells: {len(gdf)}")
+# -
+
+```python
+# ---
+# ## 2. Build 100m Covariates
+# ---
+# ### 2.1 DEM → dem, slope, twi
+# ---
+
+```python
+from subprocess import run
+
+# Resample DEM
+cmd = [
+    'gdalwarp', '-tr', '100', '100', '-r', 'bilinear',
+    'raw/dem_25m.tif', 'processed/dem_100m.tif'
+]
+run(cmd, check=True)
+
+# Slope & TWI via SAGA (install SAGA GIS or use GDAL)
+# Here: use GDAL for slope
+cmd_slope = [
+    'gdaldem', 'slope', 'processed/dem_100m.tif', 'covariates/slope_100m.tif',
+    '-compute_edges'
+]
+run(cmd_slope, check=True)
+
+# TWI: use SAGA or approximate with ln(a/tan(slope))
+print("TWI requires SAGA. Using placeholder (DEM/1000).")
+with rasterio.open('processed/dem_100m.tif') as src:
+    dem = src.read(1)
+    profile = src.profile
+    profile.update(dtype=rasterio.float32, count=1)
+    twi = dem / 1000.0
+    with rasterio.open('covariates/twi_100m.tif', 'w', **profile) as dst:
+        dst.write(twi.astype('float32'), 1)
+# -
+
+```python
+# ### 2.2 Rivers → distance + artificial zeros
+# ---
+
+```python
+# Buffer rivers 50m
+cmd_buffer = [
+    'ogr2ogr', '-f', 'ESRI Shapefile',
+    'processed/rivers_buffer_50m.shp', 'raw/rivers_centerlines.shp',
+    '-dialect', 'sqlite', '-sql',
+    "SELECT ST_Buffer(geometry, 50) AS geometry FROM rivers_centerlines"
+]
+run(cmd_buffer, check=True)
+
+# Rasterize
+cmd_raster = [
+    'gdal_rasterize', '-burn', '1', '-a_nodata', '0',
+    '-tr', '100', '100',
+    'processed/rivers_buffer_50m.shp', 'processed/river_mask_100m.tif'
+]
+run(cmd_raster, check=True)
+
+# Horizontal distance
+cmd_prox = [
+    'gdal_proximity.py', 'processed/river_mask_100m.tif',
+    'covariates/dist_horz_100m.tif', '-distunits', 'GEO'
+]
+run(cmd_prox, check=True)
+
+# Vertical distance
+cmd_calc = [
+    'gdal_calc.py', '-A', 'processed/dem_100m.tif',
+    '-B', 'processed/river_mask_100m.tif',
+    '--outfile=covariates/dist_vert_100m.tif',
+    '--calc=A*(B==1)', '--NoDataValue=0'
+]
+run(cmd_calc, check=True)
+
+# Artificial zeros
+rivers = gpd.read_file('processed/rivers_buffer_50m.shp')
+zeros = gpd.GeoDataFrame(geometry=[], crs='EPSG:2193')
+np.random.seed(42)
+n_zeros = 1500
+i = 0
+while len(zeros) < n_zeros and i < len(rivers):
+    geom = rivers.iloc[i].geometry
+    bounds = geom.bounds
+    x = np.random.uniform(bounds[0], bounds[2])
+    y = np.random.uniform(bounds[1], bounds[3])
+    pt = gpd.GeoSeries([gpd.points_from_xy([x],[y])[0]], crs='EPSG:2193')
+    if pt.within(geom).iloc[0]:
+        zeros = pd.concat([zeros, pt.to_frame('geometry')], ignore_index=True)
+    i += 1
+zeros = zeros.head(n_zeros)
+zeros['DTW'] = 0.0
+zeros.to_file('covariates/artificial_zeros.shp')
+print(f"Artificial zeros: {len(zeros)}")
+# -
+
+```python
+# ### 2.3 Soil/Rock → one-hot
+# ---
+
+```python
+# Rasterize rock type
+cmd_rock = [
+    'gdal_rasterize', '-a', 'rock_type', '-tr', '100', '100',
+    '-a_nodata', 'None', 'raw/soil_rock_polygons.shp',
+    'covariates/rock_type_100m.tif'
+]
+run(cmd_rock, check=True)
+# -
+
+```python
+# ---
+# ## 3. Training Data: Wells + Zeros
+# ---
+
+```python
+wells = gpd.read_file('processed/wells_clean.shp')
+zeros = gpd.read_file('covariates/artificial_zeros.shp')
+train = pd.concat([wells, zeros], ignore_index=True)
+print(f"Total training points: {len(train)}")
+# -
+
+```python
+# ---
+# ## 4. Extract Covariates at Points
+# ---
+
+```python
+cov_files = [
+    'covariates/dem_100m.tif',
+    'covariates/slope_100m.tif',
+    'covariates/twi_100m.tif',
+    'covariates/dist_horz_100m.tif',
+    'covariates/dist_vert_100m.tif'
+]
+
+X_cont = []
+coords = [(p.x, p.y) for p in train.geometry]
+
+for f in cov_files:
+    with rasterio.open(f) as src:
+        values = [row[0] for row in src.sample(coords)]
+        X_cont.append(np.array(values))
+X_cont = np.array(X_cont).T
+
+# One-hot rock type
+with rasterio.open('covariates/rock_type_100m.tif') as src:
+    rock_vals = [row[0] for row in src.sample(coords)]
+X_rock = pd.get_dummies(rock_vals, prefix='rock').values
+
+# Coordinates
+X_coords = train[['Easting', 'Northing']].values
+
+# Final X
+X = np.hstack([X_cont, X_rock, X_coords])
+y = train['DTW'].values
+
+print(f"Feature matrix: {X.shape}")
+# -
+
+```python
+# ---
+# ## 5. Build 100m Prediction Grid
+# ---
+
+```python
+# Use DEM as template
+with rasterio.open('processed/dem_100m.tif') as src:
+    template = src
+    grid_shape = src.shape
+    transform = src.transform
+    crs = src.crs
+
+# Grid coordinates
+rows, cols = np.indices(grid_shape)
+easting = transform[2] + cols * transform[0]
+northing = transform[5] + rows * transform[4]
+grid_coords = np.column_stack((easting.ravel(), northing.ravel()))
+
+# Extract same covariates on grid
+grid_X_cont = []
+for f in cov_files:
+    with rasterio.open(f) as src:
+        values = src.read(1).ravel()
+        grid_X_cont.append(values)
+grid_X_cont = np.array(grid_X_cont).T
+
+# Rock type on grid
+with rasterio.open('covariates/rock_type_100m.tif') as src:
+    rock_grid = src.read(1).ravel()
+grid_X_rock = pd.get_dummies(rock_grid, prefix='rock').reindex(
+    columns=pd.get_dummies(rock_vals, prefix='rock').columns, fill_value=0
+).values
+
+grid_X = np.hstack([grid_X_cont, grid_X_rock, grid_coords])
+print(f"Grid size: {grid_X.shape}")
+# -
+
+```python
+# ---
+# ## 6. REGRESSION KRIGING (RK)
+# ---
+
+```python
+# Train RF
+rf = RandomForestRegressor(n_estimators=1000, random_state=42, oob_score=True)
+rf.fit(X, y)
+
+# Predict trend
+trend = rf.predict(grid_X).reshape(grid_shape)
+
+# Residuals
+resid = y - rf.predict(X)
+
+# Variogram
+V = Variogram(train[['Easting','Northing']].values, resid, model='spherical', n_lags=20)
+V.fit()
+print(f"Variogram: nugget={V.parameters[0]:.2f}, sill={V.parameters[1]:.2f}, range={V.parameters[2]:.2f}")
+
+# Krige
+ok = OrdinaryKriging(
+    train.Easting.values, train.Northing.values, resid,
+    variogram_model='spherical',
+    variogram_parameters=[V.parameters[0], V.parameters[1], V.parameters[2]]
+)
+k_resid, k_var = ok.execute('grid', easting[0,:], northing[:,0])
+
+# Final
+dtw_rk = trend + k_resid
+unc_rk = np.sqrt(k_var)
+
+# Save
+profile = template.profile
+profile.update(dtype=rasterio.float32, count=1)
+
+with rasterio.open('output/canterbury_dtw_rk_100m.tif', 'w', **profile) as dst:
+    dst.write(dtw_rk.astype('float32'), 1)
+
+with rasterio.open('output/canterbury_unc_rk_100m.tif', 'w', **profile) as dst:
+    dst.write(unc_rk.astype('float32'), 1)
+
+print("RK complete.")
+# -
+
+```python
+# ---
+# ## 7. QUANTILE REGRESSION FORESTS (QRF)
+# ---
+
+```python
+# Train
+qrf = QuantileRegressionForest(n_estimators=1000, random_state=42)
+qrf.fit(X, y)
+
+# Predict quantiles
+quantiles = [0.05, 0.50, 0.95]
+preds = qrf.predict(grid_X, quantiles=quantiles)
+lower, median, upper = [p.reshape(grid_shape) for p in preds.T]
+
+# Probability P(DTW < 1.0)
+fine_q = np.linspace(0, 1, 50)
+prob_shallow = np.mean(qrf.predict(grid_X, quantiles=fine_q) < 1.0, axis=1)
+prob_shallow = prob_shallow.reshape(grid_shape)
+
+# Save
+with rasterio.open('output/canterbury_dtw_qrf_100m.tif', 'w', **profile) as dst:
+    dst.write(median.astype('float32'), 1)
+
+with rasterio.open('output/canterbury_prob_shallow_100m.tif', 'w', **profile) as dst:
+    dst.write(prob_shallow.astype('float32'), 1)
+
+print("QRF complete.")
+# -
+
+```python
+# ---
+# ## 8. Validation
+# ---
+
+```python
+from sklearn.metrics import mean_absolute_error, r2_score
+
+# RK
+y_pred_trend = rf.oob_prediction_
+print(f"RK Trend - MAE: {mean_absolute_error(y, y_pred_trend):.2f}m, R²: {r2_score(y, y_pred_trend):.2f}")
+
+# QRF
+y_pred_50 = qrf.predict(X, quantiles=[0.5]).flatten()
+print(f"QRF - MAE: {mean_absolute_error(y, y_pred_50):.2f}m")
+# -
+
+```python
+# ---
+# ## 9. Plot Results
+# ---
+
+```python
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+imgs = [
+    plt.imread('output/canterbury_dtw_rk_100m.tif') if os.path.exists('output/canterbury_dtw_rk_100m.tif') else None,
+    plt.imread('output/canterbury_unc_rk_100m.tif') if os.path.exists('output/canterbury_unc_rk_100m.tif') else None,
+    plt.imread('output/canterbury_dtw_qrf_100m.tif') if os.path.exists('output/canterbury_dtw_qrf_100m.tif') else None,
+    plt.imread('output/canterbury_prob_shallow_100m.tif') if os.path.exists('output/canterbury_prob_shallow_100m.tif') else None
+]
+titles = ['RK DTW', 'RK Uncertainty', 'QRF DTW', 'P(DTW < 1m)']
+
+for ax, img, title in zip(axes.flat, imgs, titles):
+    if img is not None:
+        ax.imshow(img, cmap='terrain' if 'DTW' in title else 'Reds')
+    ax.set_title(title)
+    ax.axis('off')
+
+plt.tight_layout()
+plt.show()
+# -
+
+```python
+print("All done! Check output/ folder.")

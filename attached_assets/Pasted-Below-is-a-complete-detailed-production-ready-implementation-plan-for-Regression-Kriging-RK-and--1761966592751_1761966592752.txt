@@ -1,0 +1,334 @@
+Below is a complete, detailed, production-ready implementation plan for Regression Kriging (RK) and Quantile Regression Forests (QRF) using only your 4 data sources:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+InputFormatSource25 m DEMGeoTIFFLINZRiver centerlinesShapefileLINZWell CSVCSVECanSoil & rock type polygonsShapefileGNS / Landcare
+
+FINAL OUTPUTS (100 m GeoTIFFs)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MethodFileMeaningRKcanterbury_dtw_rk_100m.tifBest estimate of DTW (m below surface)canterbury_unc_rk_100m.tifKriging standard error (σ)QRFcanterbury_dtw_qrf_100m.tifMedian DTW (50th percentile)canterbury_prob_shallow_100m.tifP(DTW < 1.0 m)
+
+FULL IMPLEMENTATION PLAN
+
+1. DIRECTORY & ENVIRONMENT SETUP
+bashmkdir canterbury_gw_project
+cd canterbury_gw_project
+mkdir raw processed covariates output
+Install Required Tools
+bash# Conda (recommended)
+conda create -n gw python=3.11
+conda activate gw
+pip install geopandas rasterio rioxarray scikit-learn quantile-forest pykrige scikit-gstat numpy pandas matplotlib
+
+2. INPUT DATA → PROCESSED 100 m COVARIATES
+
+2.1 Well CSV → Cleaned Training Points
+python# raw/wells.csv → processed/wells_clean.shp
+import pandas as pd
+import geopandas as gpd
+
+df = pd.read_csv('raw/wells.csv')
+
+# Filter
+df = df[df['WELL_STATUS'] == 'AE']
+df = df.dropna(subset=['INITIAL_SWL', 'SURFACE_LEVEL', 'Easting', 'Northing'])
+df = df[(df['INITIAL_SWL'] > 0) & (df['SURFACE_LEVEL'] > 0)]
+
+# Compute DTW (positive = below surface)
+df['DTW'] = df['SURFACE_LEVEL'] - df['INITIAL_SWL']
+df = df[(df['DTW'] > 0) & (df['DTW'] < 50)]  # Remove outliers
+
+# To GeoDataFrame (NZTM EPSG:2193)
+gdf = gpd.GeoDataFrame(
+    df, 
+    geometry=gpd.points_from_xy(df.Easting, df.Northing),
+    crs='EPSG:2193'
+)
+gdf.to_file('processed/wells_clean.shp')
+
+2.2 DEM → 3 Topographic Covariates
+bash# Resample to 100m
+gdalwarp -tr 100 100 -r bilinear raw/dem_25m.tif processed/dem_100m.tif
+
+# Slope & TWI using SAGA GIS
+saga_cmd ta_morphometry 0 -ELEVATION processed/dem_100m.tif -SLOPE covariates/slope_100m.tif
+saga_cmd ta_hydrology 0 -ELEVATION processed/dem_100m.tif -TWI covariates/twi_100m.tif
+
+2.3 River Centerlines → Distance & Artificial Zeros
+bash# Buffer rivers to 50m (to sample points inside)
+ogr2ogr -f "ESRI Shapefile" processed/rivers_buffer_50m.shp raw/rivers_centerlines.shp -dialect sqlite -sql "SELECT ST_Buffer(geometry, 50) AS geometry FROM rivers_centerlines"
+
+# Rasterize to mask
+gdal_rasterize -burn 1 -a_nodata 0 -tr 100 100 processed/rivers_buffer_50m.shp processed/river_mask_100m.tif
+
+# Horizontal distance
+gdal_proximity.py processed/river_mask_100m.tif covariates/dist_horz_100m.tif -distunits GEO
+
+# Vertical distance (DEM - river elevation ≈ 0)
+gdal_calc.py -A processed/dem_100m.tif -B processed/river_mask_100m.tif \
+  --outfile=covariates/dist_vert_100m.tif --calc="A*(B==1)"
+Artificial Zeros (1500 points)
+python# Sample points inside buffered rivers
+import geopandas as gpd
+import numpy as np
+
+rivers = gpd.read_file('processed/rivers_buffer_50m.shp')
+zeros = gpd.GeoDataFrame(geometry=[], crs='EPSG:2193')
+
+for geom in rivers.sample(1500).geometry:
+    bounds = geom.bounds
+    while len(zeros) < 1500:
+        x = np.random.uniform(bounds[0], bounds[2])
+        y = np.random.uniform(bounds[1], bounds[3])
+        pt = gpd.GeoSeries([gpd.points_from_xy([x], [y])[0]], crs='EPSG:2193')
+        if pt.within(geom).iloc[0]:
+            zeros = zeros.append(pt.to_frame('geometry'), ignore_index=True)
+            break
+
+zeros['DTW'] = 0.0
+zeros = zeros.head(1500)
+zeros.to_file('covariates/artificial_zeros.shp')
+
+2.4 Soil & Rock Type Polygons → One-Hot Encoded
+bash# Rasterize to 100m with rock type label
+gdal_rasterize -a rock_type -tr 100 100 -a_nodata "None" \
+  raw/soil_rock_polygons.shp covariates/rock_type_100m.tif
+
+No manual scoring — model learns from well data
+
+
+3. COVARIATE STACK (100 m)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CovariateFile1dem_100m.tif2slope_100m.tif3twi_100m.tif4dist_horz_100m.tif5dist_vert_100m.tif6rock_type_100m.tif → one-hot encoded
+
+4. TRAINING DATA: Wells + Artificial Zeros
+pythonwells = gpd.read_file('processed/wells_clean.shp')
+zeros = gpd.read_file('covariates/artificial_zeros.shp')
+train = pd.concat([wells, zeros], ignore_index=True)
+
+5. EXTRACT COVARIATES AT TRAINING POINTS
+pythonimport rasterio
+from rasterio.sample import sample
+
+cov_files = [
+    'covariates/dem_100m.tif',
+    'covariates/slope_100m.tif',
+    'covariates/twi_100m.tif',
+    'covariates/dist_horz_100m.tif',
+    'covariates/dist_vert_100m.tif'
+]
+
+X_cont = []
+for f in cov_files:
+    with rasterio.open(f) as src:
+        values = sample(src, [(p.x, p.y) for p in train.geometry])
+        X_cont.append(np.array(values).flatten())
+X_cont = np.array(X_cont).T
+
+# One-hot encode rock type
+with rasterio.open('covariates/rock_type_100m.tif') as src:
+    rock_labels = [row[0] for row in src.sample([(p.x, p.y) for p in train.geometry])]
+
+X_rock = pd.get_dummies(rock_labels, prefix='rock')
+X_rock = X_rock.values
+
+# Add coordinates
+X_coords = train[['Easting', 'Northing']].values
+
+# Final X
+X = np.hstack([X_cont, X_rock, X_coords])
+y = train['DTW'].values
+
+6. REGRESSION KRIGING (RK)
+pythonfrom sklearn.ensemble import RandomForestRegressor
+from scikit_gstat import Variogram
+from pykrige.ok import OrdinaryKriging
+
+# 1. Train RF trend
+rf = RandomForestRegressor(n_estimators=1000, random_state=42, oob_score=True)
+rf.fit(X, y)
+
+# 2. Predict trend on 100m grid
+trend = rf.predict(grid_100m_X).reshape(grid_shape)
+
+# 3. Residuals
+resid = y - rf.predict(X)
+
+# 4. Fit variogram
+V = Variogram(train[['Easting','Northing']].values, resid, model='spherical')
+V.fit()
+params = [V.parameters[0], V.parameters[1], V.parameters[2]]  # [nugget, sill, range]
+
+# 5. Krige residuals
+ok = OrdinaryKriging(
+    train.Easting, train.Northing, resid,
+    variogram_model='spherical',
+    variogram_parameters=params
+)
+k_resid, k_var = ok.execute('grid', grid_x, grid_y)
+
+# 6. Final
+dtw_rk = trend + k_resid
+unc_rk = np.sqrt(k_var)
+
+# Save
+save_raster('output/canterbury_dtw_rk_100m.tif', dtw_rk)
+save_raster('output/canterbury_unc_rk_100m.tif', unc_rk)
+
+7. QUANTILE REGRESSION FORESTS (QRF)
+pythonfrom quantile_forest import QuantileRegressionForest
+
+# 1. Train QRF
+qrf = QuantileRegressionForest(n_estimators=1000, random_state=42)
+qrf.fit(X, y)
+
+# 2. Predict quantiles
+quantiles = [0.05, 0.50, 0.95]
+lower, median, upper = qrf.predict(grid_100m_X, quantiles=quantiles).T
+lower = lower.reshape(grid_shape)
+median = median.reshape(grid_shape)
+
+# 3. Probability P(DTW < 1.0 m)
+prob_shallow = np.mean(qrf.predict(grid_100m_X, quantiles=np.linspace(0,1,50)) < 1.0, axis=1)
+prob_shallow = prob_shallow.reshape(grid_shape)
+
+# Save
+save_raster('output/canterbury_dtw_qrf_100m.tif', median)
+save_raster('output/canterbury_prob_shallow_100m.tif', prob_shallow)
+
+8. VALIDATION
+pythonfrom sklearn.metrics import mean_absolute_error, r2_score
+
+# RK
+y_pred_trend = rf.oob_prediction_
+mae_trend = mean_absolute_error(y, y_pred_trend)
+print(f"RK Trend MAE: {mae_trend:.2f} m")
+
+# QRF
+y_pred_50 = qrf.predict(X, quantiles=[0.5]).flatten()
+mae_qrf = mean_absolute_error(y, y_pred_50)
+print(f"QRF MAE: {mae_qrf:.2f} m")
+
+9. FULL WORKFLOW SUMMARY
+#mermaid-diagram-mermaid-52oehxc{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mermaid-diagram-mermaid-52oehxc .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mermaid-diagram-mermaid-52oehxc .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mermaid-diagram-mermaid-52oehxc .error-icon{fill:#552222;}#mermaid-diagram-mermaid-52oehxc .error-text{fill:#552222;stroke:#552222;}#mermaid-diagram-mermaid-52oehxc .edge-thickness-normal{stroke-width:1px;}#mermaid-diagram-mermaid-52oehxc .edge-thickness-thick{stroke-width:3.5px;}#mermaid-diagram-mermaid-52oehxc .edge-pattern-solid{stroke-dasharray:0;}#mermaid-diagram-mermaid-52oehxc .edge-thickness-invisible{stroke-width:0;fill:none;}#mermaid-diagram-mermaid-52oehxc .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-diagram-mermaid-52oehxc .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-diagram-mermaid-52oehxc .marker{fill:#666;stroke:#666;}#mermaid-diagram-mermaid-52oehxc .marker.cross{stroke:#666;}#mermaid-diagram-mermaid-52oehxc svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-diagram-mermaid-52oehxc p{margin:0;}#mermaid-diagram-mermaid-52oehxc .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#000000;}#mermaid-diagram-mermaid-52oehxc .cluster-label text{fill:#333;}#mermaid-diagram-mermaid-52oehxc .cluster-label span{color:#333;}#mermaid-diagram-mermaid-52oehxc .cluster-label span p{background-color:transparent;}#mermaid-diagram-mermaid-52oehxc .label text,#mermaid-diagram-mermaid-52oehxc span{fill:#000000;color:#000000;}#mermaid-diagram-mermaid-52oehxc .node rect,#mermaid-diagram-mermaid-52oehxc .node circle,#mermaid-diagram-mermaid-52oehxc .node ellipse,#mermaid-diagram-mermaid-52oehxc .node polygon,#mermaid-diagram-mermaid-52oehxc .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mermaid-diagram-mermaid-52oehxc .rough-node .label text,#mermaid-diagram-mermaid-52oehxc .node .label text,#mermaid-diagram-mermaid-52oehxc .image-shape .label,#mermaid-diagram-mermaid-52oehxc .icon-shape .label{text-anchor:middle;}#mermaid-diagram-mermaid-52oehxc .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mermaid-diagram-mermaid-52oehxc .rough-node .label,#mermaid-diagram-mermaid-52oehxc .node .label,#mermaid-diagram-mermaid-52oehxc .image-shape .label,#mermaid-diagram-mermaid-52oehxc .icon-shape .label{text-align:center;}#mermaid-diagram-mermaid-52oehxc .node.clickable{cursor:pointer;}#mermaid-diagram-mermaid-52oehxc .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mermaid-diagram-mermaid-52oehxc .arrowheadPath{fill:#333333;}#mermaid-diagram-mermaid-52oehxc .edgePath .path{stroke:#666;stroke-width:2.0px;}#mermaid-diagram-mermaid-52oehxc .flowchart-link{stroke:#666;fill:none;}#mermaid-diagram-mermaid-52oehxc .edgeLabel{background-color:white;text-align:center;}#mermaid-diagram-mermaid-52oehxc .edgeLabel p{background-color:white;}#mermaid-diagram-mermaid-52oehxc .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mermaid-diagram-mermaid-52oehxc .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mermaid-diagram-mermaid-52oehxc .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mermaid-diagram-mermaid-52oehxc .cluster text{fill:#333;}#mermaid-diagram-mermaid-52oehxc .cluster span{color:#333;}#mermaid-diagram-mermaid-52oehxc div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mermaid-diagram-mermaid-52oehxc .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mermaid-diagram-mermaid-52oehxc rect.text{fill:none;stroke-width:0;}#mermaid-diagram-mermaid-52oehxc .icon-shape,#mermaid-diagram-mermaid-52oehxc .image-shape{background-color:white;text-align:center;}#mermaid-diagram-mermaid-52oehxc .icon-shape p,#mermaid-diagram-mermaid-52oehxc .image-shape p{background-color:white;padding:2px;}#mermaid-diagram-mermaid-52oehxc .icon-shape rect,#mermaid-diagram-mermaid-52oehxc .image-shape rect{opacity:0.5;background-color:white;fill:white;}#mermaid-diagram-mermaid-52oehxc :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}25m DEMResample + Slope + TWIRiver CenterlinesBuffer + Distance + ZerosWell CSVClean + DTWSoil/Rock PolygonsRasterize + One-HotTraining Data + ZerosExtract Covariates at PointsRK: RF → Residuals → KrigeQRF: Quantiles → ProbDTW + Uncertainty
+
+FINAL DELIVERABLES
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FileSizeFormatcanterbury_dtw_rk_100m.tif~50 MBGeoTIFFcanterbury_unc_rk_100m.tif~50 MBGeoTIFFcanterbury_dtw_qrf_100m.tif~50 MBGeoTIFFcanterbury_prob_shallow_100m.tif~50 MBGeoTIFF

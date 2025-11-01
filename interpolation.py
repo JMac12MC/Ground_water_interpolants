@@ -1137,7 +1137,6 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         
         # CRITICAL FIX: Deduplicate wells by coordinates to prevent PyKrige singular matrix crash
         # Many Canterbury wells share identical coordinates, which makes the covariance matrix non-invertible
-        import pandas as pd
         wells_for_kriging = pd.DataFrame({
             'easting': easting,
             'northing': northing,

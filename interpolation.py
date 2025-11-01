@@ -960,6 +960,28 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
     try:
         use_regional = regional_model is not None and regional_model.get('success', False)
         
+        # CRITICAL FIX: Clip river centerlines to LOCAL search radius to prevent generating
+        # 5,000 artificial zeros from ALL Canterbury rivers (14,169km total)
+        # This reduces artificial zeros from 5,000 to ~50-200 per tile based on local river density
+        local_river_centerlines = None
+        if river_centerlines is not None:
+            from shapely.geometry import Point as ShapelyPoint
+            # Convert center point to NZTM2000 and create search buffer
+            center_lat, center_lon = center_point
+            center_x, center_y = to_nztm2000(center_lon, center_lat)
+            search_buffer = ShapelyPoint(center_x, center_y).buffer(radius_km * 1000)  # km to meters
+            
+            # Clip rivers to search buffer
+            rivers_nztm = river_centerlines.to_crs('EPSG:2193') if river_centerlines.crs != 'EPSG:2193' else river_centerlines
+            local_river_centerlines = rivers_nztm[rivers_nztm.intersects(search_buffer)].copy()
+            
+            if len(local_river_centerlines) > 0:
+                local_river_length = local_river_centerlines.geometry.length.sum() / 1000.0
+                print(f"🌊 LOCAL RIVERS: Clipped to {len(local_river_centerlines)} segments ({local_river_length:.1f}km) within {radius_km}km radius")
+            else:
+                print(f"⚠️  No rivers found within {radius_km}km radius")
+                local_river_centerlines = None
+        
         if use_regional:
             print(f"🌍 HYBRID RK: Using REGIONAL model (trained once on all Canterbury wells)")
             rf = regional_model['rf_model']
@@ -984,10 +1006,10 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
                 crs='EPSG:4326'
             )
             
-            # Build LOCAL covariate matrix to get RF predictions
+            # Build LOCAL covariate matrix to get RF predictions (using LOCAL rivers only)
             X_local, y_local, training_points, feature_names_local = build_covariate_matrix(
                 wells_gdf,
-                river_centerlines=river_centerlines,
+                river_centerlines=local_river_centerlines,
                 soil_rock_polygons=soil_rock_polygons,
                 include_artificial_zeros=True
             )
@@ -1041,10 +1063,10 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
             
             print(f"🌲 RK: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
             
-            # Build training data with covariates
+            # Build training data with covariates (using LOCAL rivers only)
             X, y, training_points, feature_names = build_covariate_matrix(
                 wells_gdf, 
-                river_centerlines=river_centerlines,
+                river_centerlines=local_river_centerlines,
                 soil_rock_polygons=soil_rock_polygons,
                 include_artificial_zeros=True
             )
@@ -1119,7 +1141,7 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         
         X_grid = build_prediction_grid_covariates(
             grid_points_gdf,
-            river_centerlines=river_centerlines,
+            river_centerlines=local_river_centerlines,
             soil_rock_polygons=soil_rock_polygons,
             training_rock_types=rock_type_cols
         )
@@ -1241,6 +1263,27 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
     from covariate_processing import build_covariate_matrix, build_prediction_grid_covariates
     
     try:
+        # CRITICAL FIX: Clip river centerlines to LOCAL search radius
+        # This reduces artificial zeros from 5,000 to ~50-200 per tile based on local river density
+        local_river_centerlines = None
+        if river_centerlines is not None:
+            from shapely.geometry import Point as ShapelyPoint
+            # Convert center point to NZTM2000 and create search buffer
+            center_lat, center_lon = center_point
+            center_x, center_y = to_nztm2000(center_lon, center_lat)
+            search_buffer = ShapelyPoint(center_x, center_y).buffer(radius_km * 1000)  # km to meters
+            
+            # Clip rivers to search buffer
+            rivers_nztm = river_centerlines.to_crs('EPSG:2193') if river_centerlines.crs != 'EPSG:2193' else river_centerlines
+            local_river_centerlines = rivers_nztm[rivers_nztm.intersects(search_buffer)].copy()
+            
+            if len(local_river_centerlines) > 0:
+                local_river_length = local_river_centerlines.geometry.length.sum() / 1000.0
+                print(f"🌊 LOCAL RIVERS: Clipped to {len(local_river_centerlines)} segments ({local_river_length:.1f}km) within {radius_km}km radius")
+            else:
+                print(f"⚠️  No rivers found within {radius_km}km radius")
+                local_river_centerlines = None
+        
         use_regional = regional_model is not None and regional_model.get('success', False)
         
         if use_regional:
@@ -1275,10 +1318,10 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
             
             print(f"🌳 QRF: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
             
-            # Build training data
+            # Build training data (using LOCAL rivers only)
             X, y, training_points, feature_names = build_covariate_matrix(
                 wells_gdf,
-                river_centerlines=river_centerlines,
+                river_centerlines=local_river_centerlines,
                 soil_rock_polygons=soil_rock_polygons,
                 include_artificial_zeros=True
             )
@@ -1308,7 +1351,7 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
         
         X_grid = build_prediction_grid_covariates(
             grid_points_gdf,
-            river_centerlines=river_centerlines,
+            river_centerlines=local_river_centerlines,
             soil_rock_polygons=soil_rock_polygons,
             training_rock_types=rock_type_cols
         )

@@ -258,59 +258,118 @@ with st.sidebar:
     # River centerlines uploader
     river_file = st.file_uploader(
         "Upload River Centerlines (Shapefile)", 
-        type=['shp', 'shx', 'dbf', 'prj'],
+        type=['zip', 'shp', 'shx', 'dbf', 'prj'],
         key="river_uploader",
-        help="Upload river centerline shapefile for computing distance covariates (RK/QRF methods only)",
+        help="Upload shapefile as ZIP (recommended) or select all files (.shp, .shx, .dbf, .prj) together",
         accept_multiple_files=True
     )
     
     if river_file:
         try:
-            # Save uploaded files temporarily
             import tempfile
             import zipfile
             temp_dir = tempfile.mkdtemp()
             
-            for uploaded_file in river_file:
-                file_path = os.path.join(temp_dir, uploaded_file.name)
-                with open(file_path, 'wb') as f:
-                    f.write(uploaded_file.getvalue())
-            
-            # Find the .shp file
-            shp_file = [f for f in river_file if f.name.endswith('.shp')]
-            if shp_file:
-                shp_path = os.path.join(temp_dir, shp_file[0].name)
-                st.session_state.river_centerlines = gpd.read_file(shp_path)
-                st.success(f"✅ Loaded river centerlines: {len(st.session_state.river_centerlines)} features")
+            # Check if ZIP file uploaded
+            zip_files = [f for f in river_file if f.name.endswith('.zip')]
+            if zip_files:
+                # Extract ZIP file
+                zip_path = os.path.join(temp_dir, zip_files[0].name)
+                with open(zip_path, 'wb') as f:
+                    f.write(zip_files[0].getvalue())
+                
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                
+                # Find .shp file in extracted files
+                shp_files = [f for f in os.listdir(temp_dir) if f.endswith('.shp')]
+                if shp_files:
+                    shp_path = os.path.join(temp_dir, shp_files[0])
+                    st.session_state.river_centerlines = gpd.read_file(shp_path)
+                    st.success(f"✅ Loaded river centerlines: {len(st.session_state.river_centerlines)} features")
+                else:
+                    st.error("No .shp file found in ZIP archive")
+            else:
+                # Multiple individual files uploaded
+                for uploaded_file in river_file:
+                    file_path = os.path.join(temp_dir, uploaded_file.name)
+                    with open(file_path, 'wb') as f:
+                        f.write(uploaded_file.getvalue())
+                
+                # Check for required files
+                uploaded_names = [f.name for f in river_file]
+                shp_file = [f for f in uploaded_names if f.endswith('.shp')]
+                shx_file = [f for f in uploaded_names if f.endswith('.shx')]
+                
+                if not shp_file:
+                    st.error("Missing .shp file")
+                elif not shx_file:
+                    st.error("⚠️ Missing .shx file. Shapefiles need ALL components (.shp, .shx, .dbf, .prj). Tip: Upload as ZIP file instead!")
+                else:
+                    shp_path = os.path.join(temp_dir, shp_file[0])
+                    st.session_state.river_centerlines = gpd.read_file(shp_path)
+                    st.success(f"✅ Loaded river centerlines: {len(st.session_state.river_centerlines)} features")
         except Exception as e:
             st.error(f"Error loading river shapefile: {e}")
+            st.info("💡 Tip: ZIP all shapefile components (.shp, .shx, .dbf, .prj) and upload the ZIP file")
     
     # Soil/rock polygons uploader
     soil_rock_file = st.file_uploader(
         "Upload Soil/Rock Polygons (Shapefile)", 
-        type=['shp', 'shx', 'dbf', 'prj'],
+        type=['zip', 'shp', 'shx', 'dbf', 'prj'],
         key="soil_rock_uploader",
-        help="Upload soil/rock polygon shapefile for geology covariates (RK/QRF methods only)",
+        help="Upload shapefile as ZIP (recommended) or select all files (.shp, .shx, .dbf, .prj) together",
         accept_multiple_files=True
     )
     
     if soil_rock_file:
         try:
             import tempfile
+            import zipfile
             temp_dir = tempfile.mkdtemp()
             
-            for uploaded_file in soil_rock_file:
-                file_path = os.path.join(temp_dir, uploaded_file.name)
-                with open(file_path, 'wb') as f:
-                    f.write(uploaded_file.getvalue())
-            
-            shp_file = [f for f in soil_rock_file if f.name.endswith('.shp')]
-            if shp_file:
-                shp_path = os.path.join(temp_dir, shp_file[0].name)
-                st.session_state.soil_rock_polygons = gpd.read_file(shp_path)
-                st.success(f"✅ Loaded soil/rock polygons: {len(st.session_state.soil_rock_polygons)} features")
+            # Check if ZIP file uploaded
+            zip_files = [f for f in soil_rock_file if f.name.endswith('.zip')]
+            if zip_files:
+                # Extract ZIP file
+                zip_path = os.path.join(temp_dir, zip_files[0].name)
+                with open(zip_path, 'wb') as f:
+                    f.write(zip_files[0].getvalue())
+                
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                
+                # Find .shp file in extracted files
+                shp_files = [f for f in os.listdir(temp_dir) if f.endswith('.shp')]
+                if shp_files:
+                    shp_path = os.path.join(temp_dir, shp_files[0])
+                    st.session_state.soil_rock_polygons = gpd.read_file(shp_path)
+                    st.success(f"✅ Loaded soil/rock polygons: {len(st.session_state.soil_rock_polygons)} features")
+                else:
+                    st.error("No .shp file found in ZIP archive")
+            else:
+                # Multiple individual files uploaded
+                for uploaded_file in soil_rock_file:
+                    file_path = os.path.join(temp_dir, uploaded_file.name)
+                    with open(file_path, 'wb') as f:
+                        f.write(uploaded_file.getvalue())
+                
+                # Check for required files
+                uploaded_names = [f.name for f in soil_rock_file]
+                shp_file = [f for f in uploaded_names if f.endswith('.shp')]
+                shx_file = [f for f in uploaded_names if f.endswith('.shx')]
+                
+                if not shp_file:
+                    st.error("Missing .shp file")
+                elif not shx_file:
+                    st.error("⚠️ Missing .shx file. Shapefiles need ALL components (.shp, .shx, .dbf, .prj). Tip: Upload as ZIP file instead!")
+                else:
+                    shp_path = os.path.join(temp_dir, shp_file[0])
+                    st.session_state.soil_rock_polygons = gpd.read_file(shp_path)
+                    st.success(f"✅ Loaded soil/rock polygons: {len(st.session_state.soil_rock_polygons)} features")
         except Exception as e:
             st.error(f"Error loading soil/rock shapefile: {e}")
+            st.info("💡 Tip: ZIP all shapefile components (.shp, .shx, .dbf, .prj) and upload the ZIP file")
 
     st.header("Filters")
 

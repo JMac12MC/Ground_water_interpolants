@@ -10,30 +10,19 @@ from shapely import wkt
 import json
 from datetime import datetime
 
-def sanitize_for_json(obj):
+class NumpyEncoder(json.JSONEncoder):
     """
-    Recursively convert numpy arrays and scalars to Python native types for JSON serialization.
-    
-    Parameters:
-    -----------
-    obj : any
-        Object to sanitize (dict, list, numpy array, numpy scalar, etc.)
-        
-    Returns:
-    --------
-    any
-        JSON-serializable version of the object
+    Custom JSON encoder that handles numpy arrays and scalars during serialization.
+    Much faster than recursive pre-processing for large datasets.
     """
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, np.generic):
-        return obj.item()
-    elif isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [sanitize_for_json(item) for item in obj]
-    else:
-        return obj
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.generic):
+            return obj.item()
+        elif isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
+        return super().default(obj)
 
 class PolygonDatabase:
     def __init__(self):

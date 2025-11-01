@@ -985,7 +985,7 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
             )
             
             # Build LOCAL covariate matrix to get RF predictions
-            X_local, y_local, training_points, feature_names = build_covariate_matrix(
+            X_local, y_local, training_points, feature_names_local = build_covariate_matrix(
                 wells_gdf,
                 river_centerlines=river_centerlines,
                 soil_rock_polygons=soil_rock_polygons,
@@ -996,8 +996,20 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
                 print("❌ RK: No local training data available")
                 return None, None, None, None
             
-            # Predict using REGIONAL RF model on LOCAL wells
-            y_pred_local = rf.predict(X_local)
+            # CRITICAL: Align local features with regional model's expected features
+            # Regional model was trained on all 48 rock types, local tile may have fewer
+            regional_feature_names = regional_model['feature_names']
+            
+            # Convert to DataFrame for easier alignment
+            X_local_df = pd.DataFrame(X_local, columns=feature_names_local)
+            
+            # Reindex to match regional features, filling missing columns with 0
+            X_local_aligned = X_local_df.reindex(columns=regional_feature_names, fill_value=0.0)
+            
+            print(f"🔧 Feature alignment: {len(feature_names_local)} local → {len(regional_feature_names)} regional features")
+            
+            # Predict using REGIONAL RF model on aligned LOCAL wells
+            y_pred_local = rf.predict(X_local_aligned.values)
             
             # Compute LOCAL residuals
             residuals = y_local - y_pred_local

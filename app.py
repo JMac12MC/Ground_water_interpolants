@@ -718,6 +718,12 @@ with st.sidebar:
     if 'show_generated_grid_points' not in st.session_state:
         st.session_state.show_generated_grid_points = False
     st.session_state.show_generated_grid_points = st.checkbox("Show Generated Grid Point Numbers", value=st.session_state.show_generated_grid_points, help="Display numbered markers showing actual grid points where heatmaps were generated and their coordinates")
+    
+    # Toggle for 2x3 grid heatmap ID markers
+    if 'show_heatmap_id_markers' not in st.session_state:
+        st.session_state.show_heatmap_id_markers = True
+    st.session_state.show_heatmap_id_markers = st.checkbox("Show Heatmap ID Numbers", value=st.session_state.show_heatmap_id_markers, help="Display blue numbered markers showing heatmap database IDs on the map")
+    
     if st.session_state.soil_polygons is not None:
         st.session_state.show_soil_polygons = st.checkbox("Show Soil Drainage Areas", value=st.session_state.show_soil_polygons, help="Shows areas suitable for groundwater")
     
@@ -1481,8 +1487,8 @@ try:
                 })
                 break
     
-    # Add markers for each 2x3 heatmap
-    if grid_2x3_heatmaps:
+    # Add markers for each 2x3 heatmap (only if toggle is enabled)
+    if st.session_state.get('show_heatmap_id_markers', True) and grid_2x3_heatmaps:
         for heatmap_info in grid_2x3_heatmaps:
             folium.Marker(
                 [heatmap_info['lat'], heatmap_info['lon']],
@@ -1508,7 +1514,10 @@ try:
         
         print(f"2x3 GRID MARKERS: Added {len(grid_2x3_heatmaps)} numbered blue markers for 2x3 heatmaps (IDs: {[h['id'] for h in grid_2x3_heatmaps]})")
     else:
-        print("2x3 GRID MARKERS: No 2x3 positioned heatmaps found in database")
+        if not st.session_state.get('show_heatmap_id_markers', True):
+            print("2x3 GRID MARKERS: Hidden by user toggle")
+        else:
+            print("2x3 GRID MARKERS: No 2x3 positioned heatmaps found in database")
         
 except Exception as e:
     print(f"Error adding 2x3 grid markers: {e}")

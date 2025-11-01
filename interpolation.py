@@ -636,6 +636,270 @@ def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
         print(f"Error creating indicator polygon geometry: {e}")
         return None
 
+def regression_kriging_interpolation(wells_df, center_point, radius_km, resolution=50, 
+                                    river_centerlines=None, soil_rock_polygons=None):
+    """
+    Regression Kriging: Random Forest trend + Kriged residuals.
+    
+    Follows the attached code examples:
+    1. Train RF on wells + artificial zeros with covariates
+    2. Predict RF trend on grid
+    3. Compute residuals = observed - RF_prediction
+    4. Fit variogram to residuals
+    5. Krige residuals
+    6. Final prediction = trend + kriged_residuals
+    
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        Wells with DTW (depth-to-water) values
+    center_point : tuple
+        (latitude, longitude) center
+    radius_km : float
+        Radius for interpolation area
+    resolution : int
+        Grid resolution
+    river_centerlines : GeoDataFrame or None
+        River features for distance covariate
+    soil_rock_polygons : GeoDataFrame or None
+        Soil/rock polygons for geology covariate
+    
+    Returns:
+    --------
+    tuple: (grid_lats, grid_lons, dtw_values, uncertainty_values)
+    """
+    from sklearn.ensemble import RandomForestRegressor
+    from pykrige.ok import OrdinaryKriging
+    from covariate_processing import build_covariate_matrix
+    import warnings
+    warnings.filterwarnings('ignore')
+    
+    try:
+        print(f"🌲 REGRESSION KRIGING: Starting RK interpolation")
+        
+        # Prepare wells GeoDataFrame
+        wells_gdf = gpd.GeoDataFrame(
+            wells_df,
+            geometry=gpd.points_from_xy(wells_df['longitude'], wells_df['latitude']),
+            crs='EPSG:4326'
+        )
+        
+        # Build training data with covariates
+        X, y, training_points = build_covariate_matrix(
+            wells_gdf, 
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons,
+            include_artificial_zeros=True
+        )
+        
+        if X is None or len(X) == 0:
+            print("❌ RK: No training data available")
+            return None, None, None, None
+        
+        # Train Random Forest for trend
+        print(f"🌲 Training Random Forest (n_estimators=1000)...")
+        rf = RandomForestRegressor(n_estimators=1000, random_state=42, oob_score=True, n_jobs=-1)
+        rf.fit(X, y)
+        print(f"✅ RF OOB R²: {rf.oob_score_:.3f}")
+        
+        # Compute residuals
+        y_pred_train = rf.predict(X)
+        residuals = y - y_pred_train
+        print(f"📊 Residuals: mean={residuals.mean():.2f}m, std={residuals.std():.2f}m")
+        
+        # Get training coordinates in NZTM2000
+        training_coords = training_points.to_crs('EPSG:2193')
+        easting = training_coords.geometry.x.values
+        northing = training_coords.geometry.y.values
+        
+        # Fit variogram to residuals using scikit-gstat
+        try:
+            from skgstat import Variogram
+            V = Variogram(
+                coordinates=np.column_stack([easting, northing]),
+                values=residuals,
+                model='spherical',
+                n_lags=20,
+                maxlag='median'
+            )
+            V.fit()
+            vario_params = [V.parameters[0], V.parameters[1], V.parameters[2]]  # nugget, sill, range
+            print(f"📈 Variogram fitted: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
+        except:
+            # Fallback to default parameters
+            vario_params = [0.5, 2.0, 5000.0]
+            print(f"⚠️ Using default variogram parameters: {vario_params}")
+        
+        # Create prediction grid
+        crs_grid = build_crs_grid(center_point, radius_km, resolution)
+        grid_lats = crs_grid['grid_lats']
+        grid_lons = crs_grid['grid_lons']
+        grid_x_m = crs_grid['grid_x_m'].flatten()
+        grid_y_m = crs_grid['grid_y_m'].flatten()
+        
+        # Build grid covariates for RF prediction
+        from covariate_processing import build_prediction_grid_covariates
+        grid_points_gdf = gpd.GeoDataFrame(
+            geometry=gpd.points_from_xy(grid_lons.flatten(), grid_lats.flatten()),
+            crs='EPSG:4326'
+        )
+        
+        X_grid = build_prediction_grid_covariates(
+            grid_points_gdf,
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons
+        )
+        
+        if X_grid is None:
+            print("❌ RK: Failed to build grid covariates")
+            return None, None, None, None
+        
+        # Predict RF trend on grid
+        print(f"🌲 Predicting RF trend on {len(X_grid)} grid points...")
+        trend_grid = rf.predict(X_grid)
+        
+        # Krige residuals
+        print(f"🗺️ Kriging residuals...")
+        ok = OrdinaryKriging(
+            easting, northing, residuals,
+            variogram_model='spherical',
+            variogram_parameters=vario_params,
+            verbose=False,
+            enable_plotting=False
+        )
+        
+        # Krige on grid
+        residual_grid, residual_var = ok.execute('points', grid_x_m, grid_y_m)
+        
+        # Combine trend + residuals
+        dtw_rk = trend_grid + residual_grid
+        uncertainty_rk = np.sqrt(residual_var)
+        
+        # Reshape to grid
+        dtw_values = dtw_rk.reshape(grid_lats.shape)
+        uncertainty_values = uncertainty_rk.reshape(grid_lats.shape)
+        
+        print(f"✅ RK complete: DTW range [{dtw_values.min():.1f}, {dtw_values.max():.1f}]m")
+        
+        return grid_lats, grid_lons, dtw_values, uncertainty_values
+        
+    except Exception as e:
+        print(f"❌ Regression Kriging failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None, None
+
+
+def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
+                              river_centerlines=None, soil_rock_polygons=None):
+    """
+    Quantile Regression Forest: Predict median + uncertainty intervals.
+    
+    Follows attached code examples:
+    1. Train QRF on wells + artificial zeros with covariates
+    2. Predict quantiles (5th, 50th, 95th percentiles)
+    3. Median = 50th percentile
+    4. Uncertainty = 95th - 5th percentile
+    
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        Wells with DTW values
+    center_point : tuple
+        (latitude, longitude) center
+    radius_km : float
+        Radius for interpolation
+    resolution : int
+        Grid resolution
+    river_centerlines : GeoDataFrame or None
+        River features
+    soil_rock_polygons : GeoDataFrame or None
+        Soil/rock polygons
+    
+    Returns:
+    --------
+    tuple: (grid_lats, grid_lons, dtw_median, uncertainty_range)
+    """
+    from quantile_forest import QuantileRegressionForest
+    from covariate_processing import build_covariate_matrix, build_prediction_grid_covariates
+    
+    try:
+        print(f"🌳 QUANTILE RF: Starting QRF interpolation")
+        
+        # Prepare wells GeoDataFrame
+        wells_gdf = gpd.GeoDataFrame(
+            wells_df,
+            geometry=gpd.points_from_xy(wells_df['longitude'], wells_df['latitude']),
+            crs='EPSG:4326'
+        )
+        
+        # Build training data
+        X, y, training_points = build_covariate_matrix(
+            wells_gdf,
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons,
+            include_artificial_zeros=True
+        )
+        
+        if X is None or len(X) == 0:
+            print("❌ QRF: No training data available")
+            return None, None, None, None
+        
+        # Train Quantile Regression Forest
+        print(f"🌳 Training Quantile Regression Forest (n_estimators=1000)...")
+        qrf = QuantileRegressionForest(n_estimators=1000, random_state=42, n_jobs=-1)
+        qrf.fit(X, y)
+        
+        # Create prediction grid
+        crs_grid = build_crs_grid(center_point, radius_km, resolution)
+        grid_lats = crs_grid['grid_lats']
+        grid_lons = crs_grid['grid_lons']
+        
+        # Build grid covariates
+        grid_points_gdf = gpd.GeoDataFrame(
+            geometry=gpd.points_from_xy(grid_lons.flatten(), grid_lats.flatten()),
+            crs='EPSG:4326'
+        )
+        
+        X_grid = build_prediction_grid_covariates(
+            grid_points_gdf,
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons
+        )
+        
+        if X_grid is None:
+            print("❌ QRF: Failed to build grid covariates")
+            return None, None, None, None
+        
+        # Predict quantiles: 5th, 50th (median), 95th
+        print(f"🌳 Predicting quantiles on {len(X_grid)} grid points...")
+        quantiles = [0.05, 0.50, 0.95]
+        predictions = qrf.predict(X_grid, quantiles=quantiles)
+        
+        # Extract quantiles
+        q05 = predictions[:, 0]
+        q50 = predictions[:, 1]  # Median
+        q95 = predictions[:, 2]
+        
+        # Uncertainty = interquartile range (95th - 5th)
+        uncertainty = q95 - q05
+        
+        # Reshape to grid
+        dtw_median = q50.reshape(grid_lats.shape)
+        uncertainty_range = uncertainty.reshape(grid_lats.shape)
+        
+        print(f"✅ QRF complete: Median DTW range [{dtw_median.min():.1f}, {dtw_median.max():.1f}]m")
+        print(f"   Uncertainty range: [{uncertainty_range.min():.1f}, {uncertainty_range.max():.1f}]m")
+        
+        return grid_lats, grid_lons, dtw_median, uncertainty_range
+        
+    except Exception as e:
+        print(f"❌ Quantile RF failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None, None
+
+
 def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolution=50, soil_polygons=None, threshold=0.7):
     """
     Generate an indicator kriging mask for high-probability zones (≥ threshold)
@@ -1064,6 +1328,104 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
             print(f"Ground water level interpolation: converted {negative_count} negative values (artesian) to 0 (surface level)")
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
+    elif method == 'regression_kriging':
+        # Regression Kriging - requires DTW and covariates
+        import streamlit as st
+        river_centerlines = st.session_state.get('river_centerlines', None)
+        soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
+        
+        # Call RK interpolation
+        grid_lats, grid_lons, dtw_values, uncertainty_values = regression_kriging_interpolation(
+            wells_df, center_point, radius_km, resolution,
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons
+        )
+        
+        if grid_lats is None:
+            return {"type": "FeatureCollection", "features": []}
+        
+        # Convert to GeoJSON format following existing pattern
+        # Build features list with polygons for each grid cell
+        features = []
+        for i in range(len(grid_lats) - 1):
+            for j in range(len(grid_lons) - 1):
+                # Create polygon for grid cell
+                coords = [
+                    [grid_lons[j], grid_lats[i]],
+                    [grid_lons[j+1], grid_lats[i]],
+                    [grid_lons[j+1], grid_lats[i+1]],
+                    [grid_lons[j], grid_lats[i+1]],
+                    [grid_lons[j], grid_lats[i]]
+                ]
+                
+                # Get interpolated value for this cell
+                value = dtw_values[i, j]
+                
+                # Create feature
+                feature = {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [coords]
+                    },
+                    "properties": {
+                        "value": float(value),
+                        "yield": float(value)  # For compatibility
+                    }
+                }
+                features.append(feature)
+        
+        return {"type": "FeatureCollection", "features": features}
+        
+    elif method == 'quantile_rf':
+        # Quantile Regression Forest - requires DTW and covariates
+        import streamlit as st
+        river_centerlines = st.session_state.get('river_centerlines', None)
+        soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
+        
+        # Call QRF interpolation
+        grid_lats, grid_lons, dtw_median, uncertainty_range = quantile_rf_interpolation(
+            wells_df, center_point, radius_km, resolution,
+            river_centerlines=river_centerlines,
+            soil_rock_polygons=soil_rock_polygons
+        )
+        
+        if grid_lats is None:
+            return {"type": "FeatureCollection", "features": []}
+        
+        # Convert to GeoJSON format following existing pattern
+        features = []
+        for i in range(len(grid_lats) - 1):
+            for j in range(len(grid_lons) - 1):
+                # Create polygon for grid cell
+                coords = [
+                    [grid_lons[j], grid_lats[i]],
+                    [grid_lons[j+1], grid_lats[i]],
+                    [grid_lons[j+1], grid_lats[i+1]],
+                    [grid_lons[j], grid_lats[i+1]],
+                    [grid_lons[j], grid_lats[i]]
+                ]
+                
+                # Get interpolated median value for this cell
+                value = dtw_median[i, j]
+                
+                # Create feature
+                feature = {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [coords]
+                    },
+                    "properties": {
+                        "value": float(value),
+                        "yield": float(value),  # For compatibility
+                        "uncertainty": float(uncertainty_range[i, j])
+                    }
+                }
+                features.append(feature)
+        
+        return {"type": "FeatureCollection", "features": features}
+        
     elif method == 'indicator_kriging' or method == 'indicator_kriging_spherical' or method == 'indicator_kriging_spherical_continuous':
         # For indicator kriging, we need wells with ACTUAL yield data (including 0.0)
         # But exclude wells that have missing yield data entirely

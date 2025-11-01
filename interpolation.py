@@ -677,30 +677,29 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
     try:
         print(f"🌲 REGRESSION KRIGING: Starting RK interpolation")
         
-        # Prepare wells GeoDataFrame with DTW column
+        # Prepare wells GeoDataFrame with DTW column from ground water level
         wells_prepared = wells_df.copy()
         
-        # Map depth_to_groundwater or ground water level to DTW
-        if 'depth_to_groundwater' in wells_prepared.columns:
-            wells_prepared['DTW'] = wells_prepared['depth_to_groundwater']
-        elif 'ground water level' in wells_prepared.columns:
-            wells_prepared['DTW'] = wells_prepared['ground water level']
-        else:
-            print("❌ RK: No DTW-compatible column found")
+        # Use 'ground water level' column (wells are pre-filtered)
+        if 'ground water level' not in wells_prepared.columns:
+            print("❌ RK: 'ground water level' column not found")
             return None, None, None, None
         
-        # Filter valid DTW values
-        wells_prepared = wells_prepared[wells_prepared['DTW'].notna()]
+        # Map ground water level to DTW, converting negatives to 0 (artesian conditions)
+        raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
+        wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
         
-        if len(wells_prepared) == 0:
-            print("❌ RK: No wells with valid DTW data")
-            return None, None, None, None
+        negative_count = np.sum(raw_gwl_values < 0)
+        if negative_count > 0:
+            print(f"🌲 RK: Converted {negative_count} negative values (artesian) to 0")
         
         wells_gdf = gpd.GeoDataFrame(
             wells_prepared,
             geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
             crs='EPSG:4326'
         )
+        
+        print(f"🌲 RK: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
         
         # Build training data with covariates
         X, y, training_points = build_covariate_matrix(
@@ -844,30 +843,29 @@ def quantile_rf_interpolation(wells_df, center_point, radius_km, resolution=50,
     try:
         print(f"🌳 QUANTILE RF: Starting QRF interpolation")
         
-        # Prepare wells GeoDataFrame with DTW column
+        # Prepare wells GeoDataFrame with DTW column from ground water level
         wells_prepared = wells_df.copy()
         
-        # Map depth_to_groundwater or ground water level to DTW
-        if 'depth_to_groundwater' in wells_prepared.columns:
-            wells_prepared['DTW'] = wells_prepared['depth_to_groundwater']
-        elif 'ground water level' in wells_prepared.columns:
-            wells_prepared['DTW'] = wells_prepared['ground water level']
-        else:
-            print("❌ QRF: No DTW-compatible column found")
+        # Use 'ground water level' column (wells are pre-filtered)
+        if 'ground water level' not in wells_prepared.columns:
+            print("❌ QRF: 'ground water level' column not found")
             return None, None, None, None
         
-        # Filter valid DTW values
-        wells_prepared = wells_prepared[wells_prepared['DTW'].notna()]
+        # Map ground water level to DTW, converting negatives to 0 (artesian conditions)
+        raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
+        wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
         
-        if len(wells_prepared) == 0:
-            print("❌ QRF: No wells with valid DTW data")
-            return None, None, None, None
+        negative_count = np.sum(raw_gwl_values < 0)
+        if negative_count > 0:
+            print(f"🌳 QRF: Converted {negative_count} negative values (artesian) to 0")
         
         wells_gdf = gpd.GeoDataFrame(
             wells_prepared,
             geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
             crs='EPSG:4326'
         )
+        
+        print(f"🌳 QRF: Using {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
         
         # Build training data
         X, y, training_points = build_covariate_matrix(

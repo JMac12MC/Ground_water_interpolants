@@ -1365,7 +1365,23 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
         print(f"Ground water level interpolation: using {len(yields)} wells with values ranging from {yields.min():.2f} to {yields.max():.2f}")
     elif method == 'regression_kriging':
-        # Regression Kriging - requires DTW and covariates
+        # Regression Kriging - uses ground water level data with ML + geostatistics
+        # Get wells appropriate for ground water level interpolation
+        wells_df = get_wells_for_interpolation(wells_df, 'ground_water_level')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
+        # Filter for valid ground water level data
+        valid_gwl_mask = wells_df['ground water level'].notna()
+        wells_df = wells_df[valid_gwl_mask].copy()
+        
+        if wells_df.empty:
+            print("No valid ground water level data found for Regression Kriging")
+            return {"type": "FeatureCollection", "features": []}
+        
+        print(f"Regression Kriging: using {len(wells_df)} wells with ground water level data")
+        
+        # Get covariate data from session state
         import streamlit as st
         river_centerlines = st.session_state.get('river_centerlines', None)
         soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)
@@ -1414,7 +1430,23 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         return {"type": "FeatureCollection", "features": features}
         
     elif method == 'quantile_rf':
-        # Quantile Regression Forest - requires DTW and covariates
+        # Quantile Regression Forest - uses ground water level data with ML uncertainty
+        # Get wells appropriate for ground water level interpolation
+        wells_df = get_wells_for_interpolation(wells_df, 'ground_water_level')
+        if wells_df.empty:
+            return {"type": "FeatureCollection", "features": []}
+        
+        # Filter for valid ground water level data
+        valid_gwl_mask = wells_df['ground water level'].notna()
+        wells_df = wells_df[valid_gwl_mask].copy()
+        
+        if wells_df.empty:
+            print("No valid ground water level data found for Quantile RF")
+            return {"type": "FeatureCollection", "features": []}
+        
+        print(f"Quantile RF: using {len(wells_df)} wells with ground water level data")
+        
+        # Get covariate data from session state
         import streamlit as st
         river_centerlines = st.session_state.get('river_centerlines', None)
         soil_rock_polygons = st.session_state.get('soil_rock_polygons', None)

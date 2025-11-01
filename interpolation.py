@@ -965,9 +965,43 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
             rf = regional_model['rf_model']
             vario_params = regional_model['vario_params']
             rock_type_cols = regional_model['rock_type_cols']
-            training_points = regional_model['training_points']
-            residuals = regional_model['residuals']
             print(f"✅ Regional RF model loaded, variogram: range={vario_params[2]:.0f}m")
+            
+            # CRITICAL: Compute residuals from LOCAL wells (not all 27,848 regional training wells)
+            # Prepare LOCAL wells GeoDataFrame
+            wells_prepared = wells_df.copy()
+            if 'ground water level' not in wells_prepared.columns:
+                print("❌ RK: 'ground water level' column not found in local wells")
+                return None, None, None, None
+            
+            # Map ground water level to DTW
+            raw_gwl_values = wells_prepared['ground water level'].values.astype(float)
+            wells_prepared['DTW'] = np.maximum(raw_gwl_values, 0)
+            
+            wells_gdf = gpd.GeoDataFrame(
+                wells_prepared,
+                geometry=gpd.points_from_xy(wells_prepared['longitude'], wells_prepared['latitude']),
+                crs='EPSG:4326'
+            )
+            
+            # Build LOCAL covariate matrix to get RF predictions
+            X_local, y_local, training_points, feature_names = build_covariate_matrix(
+                wells_gdf,
+                river_centerlines=river_centerlines,
+                soil_rock_polygons=soil_rock_polygons,
+                include_artificial_zeros=True
+            )
+            
+            if X_local is None or len(X_local) == 0:
+                print("❌ RK: No local training data available")
+                return None, None, None, None
+            
+            # Predict using REGIONAL RF model on LOCAL wells
+            y_pred_local = rf.predict(X_local)
+            
+            # Compute LOCAL residuals
+            residuals = y_local - y_pred_local
+            print(f"📊 Local residuals: mean={residuals.mean():.2f}m, std={residuals.std():.2f}m, n={len(residuals)}")
         else:
             print(f"🌲 LOCAL RK: Training local model (legacy mode)")
             

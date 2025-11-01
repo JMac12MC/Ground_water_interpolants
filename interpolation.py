@@ -744,11 +744,20 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
             )
             V.fit()
             vario_params = [V.parameters[0], V.parameters[1], V.parameters[2]]  # nugget, sill, range
-            print(f"📈 Variogram fitted: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
-        except:
+            
+            # Validate variogram parameters
+            if vario_params[2] < 100:  # range too small (< 100m)
+                print(f"⚠️ Variogram range too small ({vario_params[2]:.0f}m), using defaults")
+                vario_params = [0.5, 2.0, 5000.0]
+            elif np.isnan(vario_params).any() or np.isinf(vario_params).any():
+                print(f"⚠️ Invalid variogram parameters, using defaults")
+                vario_params = [0.5, 2.0, 5000.0]
+            else:
+                print(f"📈 Variogram fitted: nugget={vario_params[0]:.2f}, sill={vario_params[1]:.2f}, range={vario_params[2]:.0f}m")
+        except Exception as e:
             # Fallback to default parameters
             vario_params = [0.5, 2.0, 5000.0]
-            print(f"⚠️ Using default variogram parameters: {vario_params}")
+            print(f"⚠️ Variogram fitting failed ({e}), using default parameters: {vario_params}")
         
         # Create prediction grid
         crs_grid = build_crs_grid(center_point, radius_km, resolution)
@@ -781,16 +790,23 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         
         # Krige residuals
         print(f"🗺️ Kriging residuals...")
-        ok = OrdinaryKriging(
-            easting, northing, residuals,
-            variogram_model='spherical',
-            variogram_parameters=vario_params,
-            verbose=False,
-            enable_plotting=False
-        )
-        
-        # Krige on grid
-        residual_grid, residual_var = ok.execute('points', grid_x_m, grid_y_m)
+        try:
+            ok = OrdinaryKriging(
+                easting, northing, residuals,
+                variogram_model='spherical',
+                variogram_parameters=vario_params,
+                verbose=False,
+                enable_plotting=False
+            )
+            
+            # Krige on grid
+            residual_grid, residual_var = ok.execute('points', grid_x_m, grid_y_m)
+            print(f"✅ Kriging complete")
+        except Exception as e:
+            print(f"⚠️ Kriging failed ({e}), using zero residuals")
+            # If kriging fails, use zero residuals (just RF prediction)
+            residual_grid = np.zeros(len(grid_x_m))
+            residual_var = np.zeros(len(grid_x_m))
         
         # Combine trend + residuals
         dtw_rk = trend_grid + residual_grid

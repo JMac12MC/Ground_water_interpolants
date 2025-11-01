@@ -245,9 +245,72 @@ with st.sidebar:
         st.warning("Database connection not available. Cannot load soil polygons.")
         st.session_state.soil_polygons = None
 
-
-
-
+    # File uploaders for RK/QRF covariates
+    st.markdown("---")
+    st.subheader("ML Covariates (for RK/QRF)")
+    
+    # Initialize covariate session state
+    if 'river_centerlines' not in st.session_state:
+        st.session_state.river_centerlines = None
+    if 'soil_rock_polygons' not in st.session_state:
+        st.session_state.soil_rock_polygons = None
+    
+    # River centerlines uploader
+    river_file = st.file_uploader(
+        "Upload River Centerlines (Shapefile)", 
+        type=['shp', 'shx', 'dbf', 'prj'],
+        key="river_uploader",
+        help="Upload river centerline shapefile for computing distance covariates (RK/QRF methods only)",
+        accept_multiple_files=True
+    )
+    
+    if river_file:
+        try:
+            # Save uploaded files temporarily
+            import tempfile
+            import zipfile
+            temp_dir = tempfile.mkdtemp()
+            
+            for uploaded_file in river_file:
+                file_path = os.path.join(temp_dir, uploaded_file.name)
+                with open(file_path, 'wb') as f:
+                    f.write(uploaded_file.getvalue())
+            
+            # Find the .shp file
+            shp_file = [f for f in river_file if f.name.endswith('.shp')]
+            if shp_file:
+                shp_path = os.path.join(temp_dir, shp_file[0].name)
+                st.session_state.river_centerlines = gpd.read_file(shp_path)
+                st.success(f"✅ Loaded river centerlines: {len(st.session_state.river_centerlines)} features")
+        except Exception as e:
+            st.error(f"Error loading river shapefile: {e}")
+    
+    # Soil/rock polygons uploader
+    soil_rock_file = st.file_uploader(
+        "Upload Soil/Rock Polygons (Shapefile)", 
+        type=['shp', 'shx', 'dbf', 'prj'],
+        key="soil_rock_uploader",
+        help="Upload soil/rock polygon shapefile for geology covariates (RK/QRF methods only)",
+        accept_multiple_files=True
+    )
+    
+    if soil_rock_file:
+        try:
+            import tempfile
+            temp_dir = tempfile.mkdtemp()
+            
+            for uploaded_file in soil_rock_file:
+                file_path = os.path.join(temp_dir, uploaded_file.name)
+                with open(file_path, 'wb') as f:
+                    f.write(uploaded_file.getvalue())
+            
+            shp_file = [f for f in soil_rock_file if f.name.endswith('.shp')]
+            if shp_file:
+                shp_path = os.path.join(temp_dir, shp_file[0].name)
+                st.session_state.soil_rock_polygons = gpd.read_file(shp_path)
+                st.success(f"✅ Loaded soil/rock polygons: {len(st.session_state.soil_rock_polygons)} features")
+        except Exception as e:
+            st.error(f"Error loading soil/rock shapefile: {e}")
 
     st.header("Filters")
 
@@ -297,10 +360,12 @@ with st.sidebar:
             "Ground Water Level (Spherical Kriging)",
             "Indicator Kriging (Yield Suitability)",
             "Indicator Kriging (Spherical)",
-            "Indicator Kriging (Spherical Continuous)"
+            "Indicator Kriging (Spherical Continuous)",
+            "Regression Kriging (ML + Geostatistics)",
+            "Quantile Regression Forest (ML Uncertainty)"
         ],
         index=5,  # Default to Ground Water Level (Spherical Kriging)
-        help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
+        help="Choose the visualization type: yield estimation, depth analysis, groundwater level, yield suitability probability, or machine learning methods (RK/QRF)",
         key="visualization_method_selector"
     )
 
@@ -362,8 +427,16 @@ with st.sidebar:
         st.session_state.show_kriging_variance = False
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
-        # Log confirmation that enhanced functionality is active
         print(f"🎯 ENHANCED CONTINUOUS INDICATOR: Selected method with 2x well search radius functionality")
+    elif visualization_method == "Regression Kriging (ML + Geostatistics)":
+        st.session_state.interpolation_method = 'regression_kriging'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = True
+        st.session_state.variogram_model = 'spherical'
+    elif visualization_method == "Quantile Regression Forest (ML Uncertainty)":
+        st.session_state.interpolation_method = 'quantile_rf'
+        st.session_state.show_kriging_variance = False
+        st.session_state.auto_fit_variogram = False
 
     # Indicator Kriging Variogram Settings (only for indicator methods)
     is_indicator_method = st.session_state.interpolation_method in [

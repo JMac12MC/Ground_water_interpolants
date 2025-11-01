@@ -24,4 +24,5 @@ dependencies = [
     "rasterio>=1.4.3",
     "rio-cogeo>=5.4.2",
     "pillow>=11.2.1",
+    "quantile-forest>=1.4.1",
 ]

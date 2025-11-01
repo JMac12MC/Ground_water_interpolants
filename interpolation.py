@@ -1088,9 +1088,42 @@ def regression_kriging_interpolation(wells_df, center_point, radius_km, resoluti
         
         # Krige residuals
         print(f"🗺️ Kriging residuals...")
+        
+        # CRITICAL FIX: Deduplicate wells by coordinates to prevent PyKrige singular matrix crash
+        # Many Canterbury wells share identical coordinates, which makes the covariance matrix non-invertible
+        import pandas as pd
+        wells_for_kriging = pd.DataFrame({
+            'easting': easting,
+            'northing': northing,
+            'residual': residuals
+        })
+        
+        # Round to nearest meter to identify true duplicates
+        wells_for_kriging['east_round'] = np.round(wells_for_kriging['easting'])
+        wells_for_kriging['north_round'] = np.round(wells_for_kriging['northing'])
+        
+        # Count duplicates before deduplication
+        n_before = len(wells_for_kriging)
+        
+        # Group by rounded coordinates and average residuals
+        wells_unique = wells_for_kriging.groupby(['east_round', 'north_round'], as_index=False).agg({
+            'easting': 'mean',
+            'northing': 'mean',
+            'residual': 'mean'
+        })
+        
+        n_after = len(wells_unique)
+        if n_before > n_after:
+            print(f"🔧 Deduplicated: {n_before} wells → {n_after} unique locations ({n_before - n_after} duplicates merged)")
+        
+        # Extract deduplicated arrays for PyKrige
+        easting_unique = wells_unique['easting'].values
+        northing_unique = wells_unique['northing'].values
+        residuals_unique = wells_unique['residual'].values
+        
         try:
             ok = OrdinaryKriging(
-                easting, northing, residuals,
+                easting_unique, northing_unique, residuals_unique,
                 variogram_model='spherical',
                 variogram_parameters=vario_params,
                 verbose=False,

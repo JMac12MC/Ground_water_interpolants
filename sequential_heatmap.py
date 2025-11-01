@@ -187,9 +187,9 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
         'method': interpolation_method,
         'generated_at': str(np.datetime64('now')),
         'percentiles': {
-            '25th': percentile_25,
-            '50th': percentile_50, 
-            '75th': percentile_75
+            '25th': float(percentile_25) if percentile_25 is not None else None,
+            '50th': float(percentile_50) if percentile_50 is not None else None, 
+            '75th': float(percentile_75) if percentile_75 is not None else None
         } if global_values else None,
         'total_values': len(global_values) if global_values else 0
     }
@@ -702,9 +702,9 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
         'method': interpolation_method,
         'generated_at': str(np.datetime64('now')),
         'percentiles': {
-            '25th': percentile_25,
-            '50th': percentile_50, 
-            '75th': percentile_75
+            '25th': float(percentile_25) if percentile_25 is not None else None,
+            '50th': float(percentile_50) if percentile_50 is not None else None, 
+            '75th': float(percentile_75) if percentile_75 is not None else None
         } if global_values else None,
         'total_values': len(global_values) if global_values else 0
     }

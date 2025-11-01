@@ -501,12 +501,8 @@ class PolygonDatabase:
                         return -existing_id  # Return negative ID to signal duplicate
                     
                     # Insert new heatmap if no duplicate found - include colormap metadata for consistency
-                    # Sanitize all data to ensure numpy arrays/scalars are converted to JSON-compatible types
-                    clean_geojson = sanitize_for_json(geojson_data) if geojson_data else None
-                    clean_heatmap_data = sanitize_for_json(heatmap_data)
-                    clean_colormap_metadata = sanitize_for_json(colormap_metadata) if colormap_metadata else None
-                    
-                    colormap_json = json.dumps(clean_colormap_metadata) if clean_colormap_metadata else None
+                    # Use NumpyEncoder to handle numpy arrays/scalars during JSON serialization
+                    colormap_json = json.dumps(colormap_metadata, cls=NumpyEncoder) if colormap_metadata else None
                     print(f"💾 STORING COLORMAP METADATA: {colormap_metadata}")
                     print(f"💾 STORING VARIOGRAM PARAMS: Range={indicator_range}, Sill={indicator_sill}, Nugget={indicator_nugget}, Auto-fit={indicator_auto_fit}")
                     
@@ -526,8 +522,8 @@ class PolygonDatabase:
                         'center_lon': center_lon_float,
                         'radius_km': float(radius_km),
                         'interpolation_method': interpolation_method,
-                        'heatmap_data': json.dumps(clean_heatmap_data),
-                        'geojson_data': json.dumps(clean_geojson) if clean_geojson else None,
+                        'heatmap_data': json.dumps(heatmap_data, cls=NumpyEncoder),
+                        'geojson_data': json.dumps(geojson_data, cls=NumpyEncoder) if geojson_data else None,
                         'well_count': int(well_count),
                         'colormap_metadata': colormap_json,
                         'indicator_range': float(indicator_range) if indicator_range is not None else None,

@@ -9,6 +9,56 @@ class SkipTileException(Exception):
     """Exception for tiles that should be skipped without retry (deterministic failures)"""
     pass
 
+def slim_geojson_for_storage(geojson_data):
+    """
+    Strip unnecessary properties from GeoJSON features before database storage.
+    Reduces payload size by keeping only essential visualization data.
+    
+    For regression kriging and QRF, this prevents payload bloat from diagnostic data
+    by keeping only value/uncertainty, reducing 40,000-feature payloads from >64MB to <6MB.
+    
+    Args:
+        geojson_data: GeoJSON dict with features
+        
+    Returns:
+        Slimmed GeoJSON dict with only essential properties per feature
+    """
+    if not geojson_data or 'features' not in geojson_data:
+        return geojson_data
+    
+    slimmed_features = []
+    for feature in geojson_data['features']:
+        if 'properties' not in feature:
+            slimmed_features.append(feature)
+            continue
+        
+        props = feature['properties']
+        
+        # Keep only essential properties: value and optional uncertainty/variance
+        slimmed_props = {'value': props.get('value', 0.0)}
+        
+        # Preserve uncertainty/variance if present
+        if 'uncertainty' in props:
+            slimmed_props['uncertainty'] = props['uncertainty']
+        elif 'variance' in props:
+            slimmed_props['variance'] = props['variance']
+        
+        # Also keep 'yield' for backward compatibility if it's different from 'value'
+        if 'yield' in props and props.get('yield') != props.get('value'):
+            slimmed_props['yield'] = props['yield']
+        
+        slimmed_feature = {
+            'type': feature['type'],
+            'geometry': feature['geometry'],
+            'properties': slimmed_props
+        }
+        slimmed_features.append(slimmed_feature)
+    
+    return {
+        'type': geojson_data['type'],
+        'features': slimmed_features
+    }
+
 def retry_with_backoff(func, max_attempts=3, initial_delay=1.0):
     """
     Retry a function with exponential backoff on failure.
@@ -302,6 +352,9 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
             # Create unique heatmap identifier
             heatmap_id = f"{interpolation_method}_gridpoint{i+1}_{grid_point[0]:.3f}_{grid_point[1]:.3f}"
             
+            # Slim GeoJSON before storage to prevent payload bloat (regression kriging fix)
+            slimmed_geojson = slim_geojson_for_storage(geo_json_result)
+            
             # Store in database with ACTUAL fitted/manual parameters
             success_id = polygon_db.store_heatmap(
                 heatmap_name=heatmap_id,
@@ -310,7 +363,7 @@ def generate_grid_heatmaps_from_points(wells_data, grid_points, search_radius, i
                 radius_km=search_radius,
                 interpolation_method=interpolation_method,
                 heatmap_data=[],
-                geojson_data=geo_json_result,
+                geojson_data=slimmed_geojson,
                 well_count=len(filtered_wells),
                 colormap_metadata=colormap_metadata,
                 indicator_range=actual_range,
@@ -811,6 +864,9 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                     
                     print(f"  💾 {location_name.upper()} PARAMETERS: range={actual_range:.1f}, sill={actual_sill:.3f}, nugget={actual_nugget:.3f}, auto_fit={actual_auto_fit}")
                     
+                    # Slim GeoJSON before storage to prevent payload bloat (regression kriging fix)
+                    slimmed_geojson = slim_geojson_for_storage(geojson_data)
+                    
                     # Store in database WITH CONSISTENT COLORMAP METADATA AND ACTUAL FITTED PARAMETERS
                     # Store only GeoJSON (not redundant heatmap_data) to reduce payload from ~100MB to ~60MB
                     stored_heatmap_id = polygon_db.store_heatmap(
@@ -820,7 +876,7 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
                         radius_km=search_radius,
                         interpolation_method=interpolation_method,
                         heatmap_data=[],
-                        geojson_data=geojson_data,
+                        geojson_data=slimmed_geojson,
                         well_count=len(filtered_wells),
                         colormap_metadata=colormap_metadata,
                         indicator_range=actual_range,

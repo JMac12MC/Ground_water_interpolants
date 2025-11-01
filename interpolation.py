@@ -696,6 +696,14 @@ def train_regional_rk_model(all_wells_df, river_centerlines=None, soil_rock_poly
         
         print(f"🌍 Training on {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
         
+        # Filter out wells with NaN DTW values
+        wells_gdf['depth_to_water'] = wells_gdf['DTW']
+        nan_count = wells_gdf['depth_to_water'].isna().sum()
+        if nan_count > 0:
+            print(f"⚠️ Filtering out {nan_count} wells with missing DTW values")
+            wells_gdf = wells_gdf[~wells_gdf['depth_to_water'].isna()].copy()
+            print(f"🌍 After filtering: {len(wells_gdf)} wells remaining")
+        
         # Build training data with covariates
         X, y, training_points, feature_names = build_covariate_matrix(
             wells_gdf,
@@ -827,6 +835,14 @@ def train_regional_qrf_model(all_wells_df, river_centerlines=None, soil_rock_pol
         )
         
         print(f"🌍 Training on {len(wells_gdf)} wells, DTW range [{wells_prepared['DTW'].min():.1f}, {wells_prepared['DTW'].max():.1f}]m")
+        
+        # Filter out wells with NaN DTW values
+        wells_gdf['depth_to_water'] = wells_gdf['DTW']
+        nan_count = wells_gdf['depth_to_water'].isna().sum()
+        if nan_count > 0:
+            print(f"⚠️ Filtering out {nan_count} wells with missing DTW values")
+            wells_gdf = wells_gdf[~wells_gdf['depth_to_water'].isna()].copy()
+            print(f"🌍 After filtering: {len(wells_gdf)} wells remaining")
         
         # Build training data
         X, y, training_points, feature_names = build_covariate_matrix(

@@ -247,8 +247,10 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     # Get bounds for grid generation
     min_x, min_y, max_x, max_y = hull_polygon.bounds
     
-    # Generate grid points at dynamic spacing based on search area size
-    grid_spacing_km = search_radius_km - 0.180
+    # Generate grid points at dynamic spacing based on tile overlap mode
+    # Get spacing from session state (set by user in sidebar)
+    import streamlit as st
+    grid_spacing_km = st.session_state.get('tile_spacing_km', 19.82)
     grid_spacing = int(grid_spacing_km * 1000)  # Convert km to meters (NZTM units)
     
     # Calculate grid bounds with padding

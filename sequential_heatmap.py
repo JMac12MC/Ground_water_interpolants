@@ -449,13 +449,14 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
     import numpy as np
     import math
     
-    # Calculate positions for all heatmaps using dynamic spacing based on search area
-    # Each heatmap uses search_radius, but centers are (search_radius - 0.180km) apart
+    # Calculate positions for all heatmaps using dynamic spacing based on tile overlap mode
+    # Spacing is determined by user's selection in sidebar (19.82km standard or 9.91km high overlap)
     # This creates overlapping coverage for seamless visual joining
     clicked_lat, clicked_lng = click_point
     
-    # Use dynamic offset - all adjacent heatmaps spaced at (search_radius - 0.180km)
-    target_offset_km = search_radius - 0.180
+    # Get spacing from session state (set by tile overlap mode selector)
+    import streamlit as st
+    target_offset_km = st.session_state.get('tile_spacing_km', 19.82)
     
     # SURVEY-GRADE GEODETIC CALCULATIONS with adaptive precision targeting
     # Achieves professional-grade accuracy through intelligent convergence algorithms

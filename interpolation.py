@@ -2507,8 +2507,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
 
     # Create final square clipping geometry (smaller than original search area)
     # Original search area is radius_km x radius_km square
-    # Final clipping area is 50% of original (10km for 20km original)
-    final_clip_factor = 0.5
+    # Final clipping area is configurable: 50% (standard) or 25% (high overlap)
+    import streamlit as st
+    final_clip_factor = st.session_state.get('tile_clip_factor', 0.5)
     final_radius_km = radius_km * final_clip_factor
     
     # Create final square clipping polygon centered on the original center

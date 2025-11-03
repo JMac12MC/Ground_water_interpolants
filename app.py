@@ -743,6 +743,28 @@ with st.sidebar:
     
     st.write("Generate heatmaps automatically covering all available well data without manual clicking.")
     
+    # Tile Overlap Mode Selection
+    st.subheader("Tile Overlap Mode")
+    overlap_mode = st.radio(
+        "Choose tile overlap configuration:",
+        options=[
+            "Standard (50% clip, 19.82km spacing)",
+            "High Overlap (25% clip, 9.91km spacing)"
+        ],
+        index=0,
+        help="Standard: 20km search → 10km tile, centers 19.82km apart. High Overlap: 20km search → 5km tile, centers 9.91km apart (4x more tiles, smoother boundaries)"
+    )
+    
+    # Store clip factor in session state
+    if "High Overlap" in overlap_mode:
+        st.session_state.tile_clip_factor = 0.25
+        st.session_state.tile_spacing_km = 9.91
+        st.info("📐 **High Overlap Mode**: Each tile is 25% of search radius (5km from 20km search), with centers 9.91km apart for maximum smoothness")
+    else:
+        st.session_state.tile_clip_factor = 0.5
+        st.session_state.tile_spacing_km = 19.82
+        st.info("📐 **Standard Mode**: Each tile is 50% of search radius (10km from 20km search), with centers 19.82km apart")
+    
     max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=1000, value=100, step=10,
                                     help="Automated generation continues until reaching actual well data bounds (up to this limit)")
     

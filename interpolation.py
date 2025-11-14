@@ -5224,7 +5224,7 @@ def fit_global_variogram(wells_df, attribute='ground water level', bin_size=500)
             coordinates=coordinates,
             values=values,
             model='spherical',
-            n_lags=20,
+            n_lags=40,
             bin_func='even'
         )
         

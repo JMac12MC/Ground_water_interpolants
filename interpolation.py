@@ -5142,17 +5142,19 @@ def fit_global_variogram(wells_df, attribute='ground water level', max_wells=200
             values=values,
             model='spherical',
             n_lags=20,
-            maxlag='median',
-            normalize=False
+            bin_func='even'
         )
         
-        # Fit the model
-        V.fit()
+        # Extract fitted parameters
+        # In scikit-gstat, cof contains [range, sill] for spherical model
+        # cof = coefficient of the model
+        # nugget is stored separately
+        range_m = V.cof[0]  # Range
+        sill = V.cof[1]  # Partial sill (variance contribution above nugget)
+        nugget = V.parameters[0]  # Nugget variance
         
-        # Extract parameters: [nugget, sill, range]
-        nugget = V.parameters[0]
-        sill = V.parameters[1]
-        range_m = V.parameters[2]
+        # For spherical model, total sill = nugget + partial sill
+        total_sill = nugget + sill
         
         # Calculate RMSE of fit
         # Get fitted values by calling the fitted model at lag distances
@@ -5163,13 +5165,14 @@ def fit_global_variogram(wells_df, attribute='ground water level', max_wells=200
         
         print(f"   ✅ Variogram fitted successfully!")
         print(f"      Nugget: {nugget:.2f}")
-        print(f"      Sill: {sill:.2f}")
+        print(f"      Partial Sill: {sill:.2f}")
+        print(f"      Total Sill: {total_sill:.2f}")
         print(f"      Range: {range_m:.0f} m ({range_m/1000:.2f} km)")
         print(f"      RMSE: {rmse:.4f}")
         
         return {
             'nugget': nugget,
-            'sill': sill,
+            'sill': total_sill,  # Return total sill for user display
             'range': range_m,
             'rmse': rmse,
             'n_wells': len(valid_wells),
@@ -5215,12 +5218,14 @@ def plot_empirical_variogram(variogram_obj):
     ax.plot(lags, fitted, 'r-', linewidth=2, label='Fitted Model', zorder=2)
     
     # Add horizontal lines for nugget and sill
+    # Extract parameters correctly from scikit-gstat
     nugget = variogram_obj.parameters[0]
-    sill = variogram_obj.parameters[1]
-    range_m = variogram_obj.parameters[2]
+    partial_sill = variogram_obj.cof[1]
+    total_sill = nugget + partial_sill
+    range_m = variogram_obj.cof[0]
     
     ax.axhline(y=nugget, color='gray', linestyle='--', alpha=0.5, label=f'Nugget ({nugget:.2f})')
-    ax.axhline(y=sill, color='orange', linestyle='--', alpha=0.5, label=f'Sill ({sill:.2f})')
+    ax.axhline(y=total_sill, color='orange', linestyle='--', alpha=0.5, label=f'Total Sill ({total_sill:.2f})')
     ax.axvline(x=range_m, color='green', linestyle='--', alpha=0.5, label=f'Range ({range_m/1000:.1f} km)')
     
     ax.set_xlabel('Lag Distance (m)', fontsize=11)
@@ -5257,13 +5262,21 @@ def plot_semivariogram_cloud(variogram_obj):
     empirical = variogram_obj.experimental
     
     # Get lag class counts to visualize density
-    lag_classes = variogram_obj.lag_classes()
+    # lag_classes() returns a generator, convert to list
+    try:
+        lag_classes_list = list(variogram_obj.lag_classes())
+    except:
+        # If lag_classes fails, just use empirical points
+        lag_classes_list = []
     
     # Create scatter plot with some jitter for visualization
     for i, (lag, semivar) in enumerate(zip(lags, empirical)):
         # Add multiple points per bin to simulate cloud (proportional to count)
-        n_points = len(lag_classes[i]) if i < len(lag_classes) else 1
-        n_display = min(n_points, 100)  # Limit display points for performance
+        if i < len(lag_classes_list):
+            n_points = len(lag_classes_list[i])
+            n_display = min(n_points, 100)  # Limit display points for performance
+        else:
+            n_display = 10  # Default if no lag class info
         
         if n_display > 0:
             # Add jitter around the lag distance

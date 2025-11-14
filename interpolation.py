@@ -5155,7 +5155,9 @@ def fit_global_variogram(wells_df, attribute='ground water level', max_wells=200
         range_m = V.parameters[2]
         
         # Calculate RMSE of fit
-        fitted_values = V.fitted_model
+        # Get fitted values by calling the fitted model at lag distances
+        lags = V.bins
+        fitted_values = np.array([V.fitted_model(lag) for lag in lags])
         empirical_values = V.experimental
         rmse = np.sqrt(np.mean((fitted_values - empirical_values)**2))
         
@@ -5204,7 +5206,7 @@ def plot_empirical_variogram(variogram_obj):
     # Get lag distances and semivariances
     lags = variogram_obj.bins
     empirical = variogram_obj.experimental
-    fitted = variogram_obj.fitted_model
+    fitted = np.array([variogram_obj.fitted_model(lag) for lag in lags])
     
     # Plot empirical points
     ax.scatter(lags, empirical, c='blue', s=50, alpha=0.6, label='Empirical', zorder=3)

@@ -739,7 +739,7 @@ with st.sidebar:
     st.markdown("---")
     with st.expander("🔬 Variogram Diagnostics", expanded=False):
         st.write("Analyze spatial structure by fitting a variogram to your data globally.")
-        st.caption("This tool samples up to 5000 wells to avoid memory issues with large datasets.")
+        st.caption("Uses ALL wells via spatial binning (500m x 500m grid cells) for optimal performance.")
         
         # Attribute selector
         diagnostic_attribute = st.selectbox(
@@ -1190,11 +1190,11 @@ if st.session_state.get('variogram_diagnostic_trigger', False):
         if st.session_state.wells_data is not None:
             with st.spinner(f"Fitting variogram to {st.session_state.variogram_diagnostic_attribute} data..."):
                 try:
-                    # Call global variogram fitting
+                    # Call global variogram fitting with spatial binning
                     results = fit_global_variogram(
                         st.session_state.wells_data,
                         attribute=st.session_state.variogram_diagnostic_attribute,
-                        max_wells=5000
+                        bin_size=500
                     )
                     
                     if results.get('error'):
@@ -1203,11 +1203,8 @@ if st.session_state.get('variogram_diagnostic_trigger', False):
                         # Display header
                         st.subheader(f"Fitted Variogram Parameters for {st.session_state.variogram_diagnostic_attribute.replace('_', ' ').title()}")
                         
-                        # Display sampling info if applicable
-                        if results['sampled']:
-                            st.info(f"ℹ️ Sampled {results['n_wells']:,} wells from {results['n_total']:,} total wells to optimize performance")
-                        else:
-                            st.success(f"✅ Used all {results['n_wells']:,} available wells")
+                        # Display binning info
+                        st.success(f"✅ Processed all {results['n_wells']:,} wells using {results['n_bins']:,} spatial bins")
                         
                         # Row 1: Main variogram parameters
                         col1, col2, col3 = st.columns(3)
@@ -1221,14 +1218,14 @@ if st.session_state.get('variogram_diagnostic_trigger', False):
                             st.metric("Range", f"{results['range']/1000:.2f} km")
                             st.caption(f"{results['range']:.0f} m")
                         
-                        # Row 2: Fit quality metrics
+                        # Row 2: Fit quality and data metrics
                         col4, col5 = st.columns(2)
                         with col4:
                             st.metric("RMSE", f"{results['rmse']:.4f}")
                             st.caption("Root Mean Square Error of fit")
                         with col5:
-                            st.metric("Wells Used", f"{results['n_wells']:,}")
-                            st.caption(f"out of {results['n_total']:,} total")
+                            st.metric("Spatial Bins", f"{results['n_bins']:,}")
+                            st.caption(f"from {results['n_wells']:,} wells")
                         
                         st.markdown("---")
                         

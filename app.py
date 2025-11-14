@@ -739,7 +739,7 @@ with st.sidebar:
     st.markdown("---")
     with st.expander("🔬 Variogram Diagnostics", expanded=False):
         st.write("Analyze spatial structure by fitting a variogram to your data globally.")
-        st.caption("This tool samples up to 2000 wells to avoid memory issues with large datasets.")
+        st.caption("This tool samples up to 5000 wells to avoid memory issues with large datasets.")
         
         # Attribute selector
         diagnostic_attribute = st.selectbox(
@@ -1194,7 +1194,7 @@ if st.session_state.get('variogram_diagnostic_trigger', False):
                     results = fit_global_variogram(
                         st.session_state.wells_data,
                         attribute=st.session_state.variogram_diagnostic_attribute,
-                        max_wells=2000
+                        max_wells=5000
                     )
                     
                     if results.get('error'):

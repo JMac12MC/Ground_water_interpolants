@@ -5059,7 +5059,7 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
         return None
 
 
-def fit_global_variogram(wells_df, attribute='ground water level', max_wells=2000):
+def fit_global_variogram(wells_df, attribute='ground water level', max_wells=5000):
     """
     Fit a variogram globally using available wells for the selected attribute.
     
@@ -5078,7 +5078,7 @@ def fit_global_variogram(wells_df, attribute='ground water level', max_wells=200
     attribute : str
         Attribute to analyze ('ground water level' or 'depth')
     max_wells : int, optional
-        Maximum number of wells to use for fitting (default 2000)
+        Maximum number of wells to use for fitting (default 5000)
         If more wells available, random sampling is applied
         
     Returns:
@@ -5233,6 +5233,12 @@ def plot_empirical_variogram(variogram_obj):
     ax.set_title('Empirical Variogram with Fitted Spherical Model', fontsize=12, fontweight='bold')
     ax.legend(loc='best', fontsize=9)
     ax.grid(True, alpha=0.3)
+    
+    # Set Y-axis limits based on empirical data range for better visualization
+    # Use percentiles to exclude outliers
+    emp_max = np.percentile(empirical, 95)
+    y_margin = emp_max * 0.2  # 20% margin above max
+    ax.set_ylim(0, emp_max + y_margin)
     
     plt.tight_layout()
     return fig

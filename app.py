@@ -10,7 +10,7 @@ import requests
 import geopandas as gpd
 from utils import get_distance, download_as_csv
 from data_loader import load_sample_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay
+from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay, fit_global_variogram, plot_empirical_variogram, plot_semivariogram_cloud
 from database import PolygonDatabase
 from polygon_display import parse_coordinates_file, add_polygon_to_map
 import time
@@ -735,7 +735,34 @@ with st.sidebar:
             help="Display the comprehensive clipping polygon for Canterbury Plains drainage areas"
         )
     
-
+    # Variogram Diagnostics Section
+    st.markdown("---")
+    with st.expander("🔬 Variogram Diagnostics", expanded=False):
+        st.write("Analyze spatial structure by fitting a variogram to your data globally.")
+        st.caption("This tool samples up to 2000 wells to avoid memory issues with large datasets.")
+        
+        # Attribute selector
+        diagnostic_attribute = st.selectbox(
+            "Select Attribute to Analyze",
+            options=["Ground Water Level", "Depth to Water Table"],
+            help="Choose which attribute to analyze for spatial structure"
+        )
+        
+        # Map display name to actual column name
+        attribute_mapping = {
+            "Ground Water Level": "ground water level",
+            "Depth to Water Table": "depth"
+        }
+        selected_attribute = attribute_mapping[diagnostic_attribute]
+        
+        # Run button
+        if st.button("🚀 Run Auto-Fit Variogram", help="Fit variogram using all available wells for this attribute"):
+            if st.session_state.wells_data is not None:
+                # Store parameters to trigger variogram fitting in main panel
+                st.session_state.variogram_diagnostic_trigger = True
+                st.session_state.variogram_diagnostic_attribute = selected_attribute
+            else:
+                st.error("Wells data not loaded. Please wait for data to load.")
 
     # Automated Heatmap Generation Section
     st.markdown("---")
@@ -1156,6 +1183,81 @@ with st.sidebar:
 if st.session_state.auto_generation_in_progress:
     st.info("⏳ Auto-generation in progress... Map display temporarily disabled to prevent interruption.")
     st.stop()  # Stop script execution here during generation
+
+# Variogram Diagnostics Results Display
+if st.session_state.get('variogram_diagnostic_trigger', False):
+    with st.expander("🔬 Variogram Diagnostics Results", expanded=True):
+        if st.session_state.wells_data is not None:
+            with st.spinner(f"Fitting variogram to {st.session_state.variogram_diagnostic_attribute} data..."):
+                try:
+                    # Call global variogram fitting
+                    results = fit_global_variogram(
+                        st.session_state.wells_data,
+                        attribute=st.session_state.variogram_diagnostic_attribute,
+                        max_wells=2000
+                    )
+                    
+                    if results.get('error'):
+                        st.error(f"Error fitting variogram: {results['error']}")
+                    else:
+                        # Display header
+                        st.subheader(f"Fitted Variogram Parameters for {st.session_state.variogram_diagnostic_attribute.replace('_', ' ').title()}")
+                        
+                        # Display sampling info if applicable
+                        if results['sampled']:
+                            st.info(f"ℹ️ Sampled {results['n_wells']:,} wells from {results['n_total']:,} total wells to optimize performance")
+                        else:
+                            st.success(f"✅ Used all {results['n_wells']:,} available wells")
+                        
+                        # Row 1: Main variogram parameters
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Nugget", f"{results['nugget']:.2f}")
+                            st.caption("Short-range variability")
+                        with col2:
+                            st.metric("Sill", f"{results['sill']:.2f}")
+                            st.caption("Total variance")
+                        with col3:
+                            st.metric("Range", f"{results['range']/1000:.2f} km")
+                            st.caption(f"{results['range']:.0f} m")
+                        
+                        # Row 2: Fit quality metrics
+                        col4, col5 = st.columns(2)
+                        with col4:
+                            st.metric("RMSE", f"{results['rmse']:.4f}")
+                            st.caption("Root Mean Square Error of fit")
+                        with col5:
+                            st.metric("Wells Used", f"{results['n_wells']:,}")
+                            st.caption(f"out of {results['n_total']:,} total")
+                        
+                        st.markdown("---")
+                        
+                        # Row 3: Plots side-by-side
+                        st.subheader("Variogram Visualizations")
+                        col_plot1, col_plot2 = st.columns(2)
+                        
+                        with col_plot1:
+                            st.caption("Empirical Variogram with Fitted Model")
+                            fig1 = plot_empirical_variogram(results['variogram_obj'])
+                            st.pyplot(fig1)
+                        
+                        with col_plot2:
+                            st.caption("Semivariogram Cloud (Point Pairs)")
+                            fig2 = plot_semivariogram_cloud(results['variogram_obj'])
+                            st.pyplot(fig2)
+                        
+                        st.markdown("---")
+                        st.caption("💡 **Tip**: These parameters can be used to configure manual variogram settings for your interpolation methods.")
+                        
+                except Exception as e:
+                    st.error(f"Unexpected error during variogram fitting: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+        else:
+            st.warning("Wells data not available. Please wait for data to load.")
+        
+        # Reset trigger after rendering (successful or failed)
+        st.session_state.variogram_diagnostic_trigger = False
 
 # Default location (New Zealand as example)
 default_location = [-43.5320, 172.6306]  # Christchurch, New Zealand

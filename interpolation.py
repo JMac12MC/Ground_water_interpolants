@@ -5057,3 +5057,227 @@ def generate_smooth_raster_overlay(geojson_data, bounds, raster_size=(512, 512),
     except Exception as e:
         print(f"Error generating smooth raster overlay: {e}")
         return None
+
+
+def fit_global_variogram(wells_df, attribute='ground water level', max_wells=2000):
+    """
+    Fit a variogram globally using available wells for the selected attribute.
+    
+    PERFORMANCE OPTIMIZATION: scikit-gstat builds O(n²) distance matrix, so we sample
+    large datasets to avoid memory exhaustion. This diagnostic tool prioritizes speed
+    over perfect representation.
+    
+    This function provides diagnostic information about spatial structure without
+    running full interpolation. It fits a variogram directly to raw attribute values
+    (no trend removal) using scikit-gstat.
+    
+    Parameters:
+    -----------
+    wells_df : DataFrame
+        All wells data
+    attribute : str
+        Attribute to analyze ('ground water level' or 'depth')
+    max_wells : int, optional
+        Maximum number of wells to use for fitting (default 2000)
+        If more wells available, random sampling is applied
+        
+    Returns:
+    --------
+    dict with keys:
+        - 'nugget': float, nugget variance
+        - 'sill': float, sill variance  
+        - 'range': float, range in meters
+        - 'rmse': float, root mean square error of fit
+        - 'n_wells': int, number of wells used
+        - 'n_total': int, total wells available (before sampling)
+        - 'sampled': bool, whether sampling was applied
+        - 'variogram_obj': skgstat.Variogram object for plotting
+        - 'error': str or None, error message if fitting failed
+    """
+    try:
+        from skgstat import Variogram
+        
+        print(f"\n🔬 GLOBAL VARIOGRAM DIAGNOSTICS")
+        print(f"   Attribute: {attribute}")
+        
+        # Filter wells for the selected attribute
+        if attribute == 'ground water level':
+            valid_wells = wells_df[wells_df['ground water level'].notna()].copy()
+            values = valid_wells['ground water level'].values.astype(float)
+        elif attribute == 'depth':
+            valid_wells = wells_df[wells_df['depth'].notna()].copy()
+            values = valid_wells['depth'].values.astype(float)
+        else:
+            return {'error': f'Unknown attribute: {attribute}'}
+        
+        if len(valid_wells) == 0:
+            return {'error': f'No wells found with {attribute} data'}
+        
+        n_total = len(valid_wells)
+        print(f"   Wells found: {n_total}")
+        print(f"   Value range: [{values.min():.1f}, {values.max():.1f}]")
+        
+        # PERFORMANCE FIX: Sample if too many wells (scikit-gstat is O(n²))
+        sampled = False
+        if n_total > max_wells:
+            print(f"   ⚠️  Sampling {max_wells} wells from {n_total} to avoid memory issues...")
+            sample_indices = np.random.choice(n_total, size=max_wells, replace=False)
+            valid_wells = valid_wells.iloc[sample_indices].copy()
+            values = valid_wells[attribute if attribute == 'depth' else 'ground water level'].values.astype(float)
+            sampled = True
+            print(f"   ✅ Random sample selected: {len(valid_wells)} wells")
+        
+        # Convert to NZTM2000 coordinates
+        lons = valid_wells['longitude'].values
+        lats = valid_wells['latitude'].values
+        x_coords, y_coords = to_nztm2000(lons, lats)
+        
+        # Create coordinate array for scikit-gstat
+        coordinates = np.column_stack([x_coords, y_coords])
+        
+        # Fit variogram using spherical model
+        print(f"   Fitting spherical variogram model...")
+        V = Variogram(
+            coordinates=coordinates,
+            values=values,
+            model='spherical',
+            n_lags=20,
+            maxlag='median',
+            normalize=False
+        )
+        
+        # Fit the model
+        V.fit()
+        
+        # Extract parameters: [nugget, sill, range]
+        nugget = V.parameters[0]
+        sill = V.parameters[1]
+        range_m = V.parameters[2]
+        
+        # Calculate RMSE of fit
+        fitted_values = V.fitted_model
+        empirical_values = V.experimental
+        rmse = np.sqrt(np.mean((fitted_values - empirical_values)**2))
+        
+        print(f"   ✅ Variogram fitted successfully!")
+        print(f"      Nugget: {nugget:.2f}")
+        print(f"      Sill: {sill:.2f}")
+        print(f"      Range: {range_m:.0f} m ({range_m/1000:.2f} km)")
+        print(f"      RMSE: {rmse:.4f}")
+        
+        return {
+            'nugget': nugget,
+            'sill': sill,
+            'range': range_m,
+            'rmse': rmse,
+            'n_wells': len(valid_wells),
+            'n_total': n_total,
+            'sampled': sampled,
+            'variogram_obj': V,
+            'error': None
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fitting global variogram: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+
+def plot_empirical_variogram(variogram_obj):
+    """
+    Create a matplotlib figure showing empirical variogram with fitted model curve.
+    
+    Parameters:
+    -----------
+    variogram_obj : skgstat.Variogram
+        Fitted variogram object from fit_global_variogram()
+        
+    Returns:
+    --------
+    matplotlib.figure.Figure
+    """
+    import matplotlib.pyplot as plt
+    
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    # Get lag distances and semivariances
+    lags = variogram_obj.bins
+    empirical = variogram_obj.experimental
+    fitted = variogram_obj.fitted_model
+    
+    # Plot empirical points
+    ax.scatter(lags, empirical, c='blue', s=50, alpha=0.6, label='Empirical', zorder=3)
+    
+    # Plot fitted model curve
+    ax.plot(lags, fitted, 'r-', linewidth=2, label='Fitted Model', zorder=2)
+    
+    # Add horizontal lines for nugget and sill
+    nugget = variogram_obj.parameters[0]
+    sill = variogram_obj.parameters[1]
+    range_m = variogram_obj.parameters[2]
+    
+    ax.axhline(y=nugget, color='gray', linestyle='--', alpha=0.5, label=f'Nugget ({nugget:.2f})')
+    ax.axhline(y=sill, color='orange', linestyle='--', alpha=0.5, label=f'Sill ({sill:.2f})')
+    ax.axvline(x=range_m, color='green', linestyle='--', alpha=0.5, label=f'Range ({range_m/1000:.1f} km)')
+    
+    ax.set_xlabel('Lag Distance (m)', fontsize=11)
+    ax.set_ylabel('Semivariance', fontsize=11)
+    ax.set_title('Empirical Variogram with Fitted Spherical Model', fontsize=12, fontweight='bold')
+    ax.legend(loc='best', fontsize=9)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_semivariogram_cloud(variogram_obj):
+    """
+    Create a scatter plot showing all point-pair distances vs semivariances (variogram cloud).
+    
+    Parameters:
+    -----------
+    variogram_obj : skgstat.Variogram
+        Fitted variogram object from fit_global_variogram()
+        
+    Returns:
+    --------
+    matplotlib.figure.Figure
+    """
+    import matplotlib.pyplot as plt
+    
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    # Get distance matrix and semivariance cloud
+    # Note: scikit-gstat doesn't expose the full cloud directly, so we'll use binned data
+    # For a true cloud, we'd need to compute all pairwise distances and semivariances
+    lags = variogram_obj.bins
+    empirical = variogram_obj.experimental
+    
+    # Get lag class counts to visualize density
+    lag_classes = variogram_obj.lag_classes()
+    
+    # Create scatter plot with some jitter for visualization
+    for i, (lag, semivar) in enumerate(zip(lags, empirical)):
+        # Add multiple points per bin to simulate cloud (proportional to count)
+        n_points = len(lag_classes[i]) if i < len(lag_classes) else 1
+        n_display = min(n_points, 100)  # Limit display points for performance
+        
+        if n_display > 0:
+            # Add jitter around the lag distance
+            jitter_x = np.random.normal(lag, lag * 0.05, n_display)
+            jitter_y = np.random.normal(semivar, semivar * 0.1, n_display)
+            ax.scatter(jitter_x, jitter_y, c='blue', s=10, alpha=0.3)
+    
+    # Overlay the binned averages
+    ax.scatter(lags, empirical, c='red', s=80, alpha=0.8, marker='D', 
+               label='Binned Averages', zorder=3, edgecolors='darkred')
+    
+    ax.set_xlabel('Lag Distance (m)', fontsize=11)
+    ax.set_ylabel('Semivariance', fontsize=11)
+    ax.set_title('Semivariogram Cloud (Point Pairs)', fontsize=12, fontweight='bold')
+    ax.legend(loc='best', fontsize=9)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    return fig

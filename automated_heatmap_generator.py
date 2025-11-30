@@ -292,9 +292,93 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         actual_total = total_grid_points
         print(f"📐 Using all {total_grid_points} grid points")
     
+    # ===== GLOBAL DRY WELL PROXIMITY FILTER FOR INDICATOR KRIGING =====
+    # Apply the 200m filter ONCE on the full dataset before splitting into grid cells
+    # This ensures wet/dry pairs that straddle grid cell boundaries are properly handled
+    wells_data_for_generation = wells_data.copy()
+    
+    if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
+        print(f"🔍 GLOBAL DRY WELL FILTER: Preprocessing indicator kriging wells data...")
+        
+        from interpolation import filter_dry_wells_near_wet_wells
+        import pandas as pd
+        
+        # Reset index to ensure clean positional indexing throughout
+        wells_data_for_generation = wells_data_for_generation.reset_index(drop=True)
+        
+        # Get wells with valid coordinates
+        valid_coord_mask = (
+            wells_data_for_generation['latitude'].notna() & 
+            wells_data_for_generation['longitude'].notna()
+        )
+        
+        # Get positional indices of wells with valid coordinates
+        valid_indices = np.where(valid_coord_mask)[0]
+        
+        if len(valid_indices) > 0:
+            # Extract coordinate arrays for wells with valid coords
+            lats = wells_data_for_generation.loc[valid_indices, 'latitude'].values.astype(float)
+            lons = wells_data_for_generation.loc[valid_indices, 'longitude'].values.astype(float)
+            
+            # Compute indicator values using the same logic as generate_geo_json_grid
+            yield_threshold = 0.1
+            raw_yields = wells_data_for_generation.loc[valid_indices, 'yield_rate'].fillna(0).values.astype(float)
+            
+            # Check for ground water level data
+            has_gwl_data = 'ground water level' in wells_data_for_generation.columns
+            if has_gwl_data:
+                gwl_values = wells_data_for_generation.loc[valid_indices, 'ground water level'].values.astype(float)
+                gwl_valid = ~np.isnan(gwl_values)
+                gwl_viable = gwl_valid  # Any recorded depth means water was found
+            else:
+                gwl_viable = np.zeros(len(valid_indices), dtype=bool)
+            
+            # Check for status data
+            has_status_data = 'status' in wells_data_for_generation.columns
+            if has_status_data:
+                status_values = wells_data_for_generation.loc[valid_indices, 'status'].fillna('')
+                status_viable = (status_values == "Active (exist, present)").values
+            else:
+                status_viable = np.zeros(len(valid_indices), dtype=bool)
+            
+            # Combined viability: viable if ANY condition is met
+            yield_viable = raw_yields >= yield_threshold
+            combined_viable = yield_viable | gwl_viable | status_viable
+            indicator_values = combined_viable.astype(float)
+            
+            # Apply the 200m proximity filter
+            dry_well_proximity_m = 200
+            keep_mask, n_excluded = filter_dry_wells_near_wet_wells(
+                lats, lons, indicator_values, proximity_meters=dry_well_proximity_m
+            )
+            
+            if n_excluded > 0:
+                # Get the positional indices of excluded wells (relative to valid_indices)
+                excluded_positions = np.where(~keep_mask)[0]
+                excluded_original_indices = valid_indices[excluded_positions]
+                
+                # Log excluded well IDs
+                if 'well_id' in wells_data_for_generation.columns:
+                    excluded_well_ids = wells_data_for_generation.loc[excluded_original_indices, 'well_id'].tolist()
+                    print(f"🚫 GLOBAL DRY WELL FILTER: Excluded {n_excluded} dry wells within {dry_well_proximity_m}m of wet wells")
+                    print(f"   Excluded well IDs: {excluded_well_ids[:10]}{'...' if len(excluded_well_ids) > 10 else ''}")
+                else:
+                    print(f"🚫 GLOBAL DRY WELL FILTER: Excluded {n_excluded} dry wells within {dry_well_proximity_m}m of wet wells")
+                
+                # Remove the excluded wells from the DataFrame
+                wells_data_for_generation = wells_data_for_generation.drop(index=excluded_original_indices).reset_index(drop=True)
+                
+                print(f"   Original wells: {len(wells_data)}, After filter: {len(wells_data_for_generation)}")
+                
+                # Verify the exclusion worked
+                assert len(wells_data_for_generation) == len(wells_data) - n_excluded, \
+                    f"Filter error: expected {len(wells_data) - n_excluded} wells, got {len(wells_data_for_generation)}"
+            else:
+                print(f"✅ GLOBAL DRY WELL FILTER: No dry wells found within {dry_well_proximity_m}m of wet wells")
+    
     from sequential_heatmap import generate_grid_heatmaps_from_points
     result = generate_grid_heatmaps_from_points(
-        wells_data, 
+        wells_data_for_generation,  # Use filtered data for indicator kriging
         grid_points_latlon, 
         search_radius_km,  # use the parameter value
         interpolation_method, 

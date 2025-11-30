@@ -2158,9 +2158,9 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         yields = combined_viable.astype(float)  # Binary: 1 or 0
 
         # ===== DRY WELL PROXIMITY FILTER =====
-        # Remove dry wells (indicator=0) that are within 20m of wet wells (indicator=1)
+        # Remove dry wells (indicator=0) that are within 200m of wet wells (indicator=1)
         # These may be data anomalies or unreliable measurements
-        dry_well_proximity_m = 20  # meters
+        dry_well_proximity_m = 200  # meters
         keep_mask, n_dry_excluded = filter_dry_wells_near_wet_wells(
             lats, lons, yields, proximity_meters=dry_well_proximity_m
         )
@@ -3154,8 +3154,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 yields[i] = 0.0
         
         # ===== DRY WELL PROXIMITY FILTER (HEAT MAP) =====
-        # Remove dry wells (indicator=0) that are within 20m of wet wells (indicator=1)
-        dry_well_proximity_m = 20  # meters
+        # Remove dry wells (indicator=0) that are within 200m of wet wells (indicator=1)
+        dry_well_proximity_m = 200  # meters
         keep_mask, n_dry_excluded = filter_dry_wells_near_wet_wells(
             lats, lons, yields, proximity_meters=dry_well_proximity_m
         )

@@ -297,7 +297,7 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
     # This ensures wet/dry pairs that straddle grid cell boundaries are properly handled
     wells_data_for_generation = wells_data.copy()
     
-    if interpolation_method in ['indicator_kriging', 'indicator_kriging_spherical']:
+    if interpolation_method.startswith('indicator_kriging'):
         print(f"🔍 GLOBAL DRY WELL FILTER: Preprocessing indicator kriging wells data...")
         
         from interpolation import filter_dry_wells_near_wet_wells

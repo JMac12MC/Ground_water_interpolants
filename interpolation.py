@@ -69,6 +69,83 @@ def to_wgs84(x_coords, y_coords):
     _, transformer_to_wgs84 = get_transformers()
     return transformer_to_wgs84.transform(x_coords, y_coords)
 
+def filter_dry_wells_near_wet_wells(lats, lons, indicator_values, proximity_meters=20):
+    """
+    Filter out dry wells (indicator=0) that are within a specified distance of wet wells (indicator=1).
+    
+    This helps improve indicator kriging quality by removing potentially unreliable dry well data
+    that may be anomalies when located very close to wells with confirmed water.
+    
+    Parameters:
+    -----------
+    lats : array-like
+        Latitude coordinates of wells (WGS84)
+    lons : array-like
+        Longitude coordinates of wells (WGS84)
+    indicator_values : array-like
+        Binary indicator values (0=dry, 1=wet/viable)
+    proximity_meters : float, optional
+        Distance threshold in meters (default 20m). Dry wells within this distance
+        of any wet well will be excluded.
+        
+    Returns:
+    --------
+    tuple: (keep_mask, n_excluded)
+        - keep_mask: boolean array, True for wells to keep, False for wells to exclude
+        - n_excluded: int, number of dry wells excluded due to proximity
+    """
+    from scipy.spatial import cKDTree
+    
+    lats = np.asarray(lats)
+    lons = np.asarray(lons)
+    indicator_values = np.asarray(indicator_values)
+    
+    # Identify dry and wet wells
+    dry_mask = indicator_values == 0
+    wet_mask = indicator_values == 1
+    
+    n_dry = np.sum(dry_mask)
+    n_wet = np.sum(wet_mask)
+    
+    if n_dry == 0 or n_wet == 0:
+        # No filtering needed if no dry wells or no wet wells
+        return np.ones(len(lats), dtype=bool), 0
+    
+    # Convert all coordinates to NZTM2000 (meters) for accurate distance calculation
+    x_coords, y_coords = to_nztm2000(lons, lats)
+    
+    # Get coordinates of wet wells
+    wet_x = x_coords[wet_mask]
+    wet_y = y_coords[wet_mask]
+    wet_coords = np.column_stack([wet_x, wet_y])
+    
+    # Get coordinates of dry wells
+    dry_indices = np.where(dry_mask)[0]
+    dry_x = x_coords[dry_mask]
+    dry_y = y_coords[dry_mask]
+    dry_coords = np.column_stack([dry_x, dry_y])
+    
+    # Build KD-tree from wet well coordinates for fast proximity search
+    wet_tree = cKDTree(wet_coords)
+    
+    # For each dry well, check if any wet well is within proximity_meters
+    # query_ball_point returns indices of wet wells within the distance
+    n_excluded = 0
+    keep_mask = np.ones(len(lats), dtype=bool)
+    
+    for i, (dx, dy) in enumerate(dry_coords):
+        # Find wet wells within proximity_meters of this dry well
+        nearby_wet = wet_tree.query_ball_point([dx, dy], r=proximity_meters)
+        
+        if len(nearby_wet) > 0:
+            # This dry well has a wet well nearby - exclude it
+            original_idx = dry_indices[i]
+            keep_mask[original_idx] = False
+            n_excluded += 1
+    
+    return keep_mask, n_excluded
+
+
 def calculate_authoritative_bounds(lats, lons, lat_step, lon_step):
     """
     SINGLE SOURCE OF TRUTH for all bounds calculations.
@@ -2080,6 +2157,45 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         combined_viable = yield_viable | gwl_viable | status_viable
         yields = combined_viable.astype(float)  # Binary: 1 or 0
 
+        # ===== DRY WELL PROXIMITY FILTER =====
+        # Remove dry wells (indicator=0) that are within 20m of wet wells (indicator=1)
+        # These may be data anomalies or unreliable measurements
+        dry_well_proximity_m = 20  # meters
+        keep_mask, n_dry_excluded = filter_dry_wells_near_wet_wells(
+            lats, lons, yields, proximity_meters=dry_well_proximity_m
+        )
+        
+        if n_dry_excluded > 0:
+            print(f"🚫 DRY WELL FILTER: Excluded {n_dry_excluded} dry wells within {dry_well_proximity_m}m of wet wells")
+            # Apply filter using positional indexing to avoid index alignment issues
+            # Reset index first to ensure .iloc works with boolean mask
+            wells_df = wells_df.reset_index(drop=True).iloc[keep_mask].copy()
+            # Recompute arrays from filtered DataFrame to ensure alignment
+            lats = wells_df['latitude'].values.astype(float)
+            lons = wells_df['longitude'].values.astype(float)
+            # Recompute yields from filtered data
+            raw_yields = wells_df['yield_rate'].values.astype(float)
+            if has_gwl_data:
+                gwl_values = wells_df['ground water level'].values.astype(float)
+                gwl_valid = ~np.isnan(gwl_values)
+                gwl_viable = np.zeros_like(gwl_values, dtype=bool)
+                gwl_viable[gwl_valid] = True
+            else:
+                gwl_viable = np.zeros_like(raw_yields, dtype=bool)
+            if has_status_data:
+                status_values = wells_df['status'].fillna('')
+                status_viable = status_values == "Active (exist, present)"
+            else:
+                status_viable = np.zeros_like(raw_yields, dtype=bool)
+            yield_viable = raw_yields >= yield_threshold
+            combined_viable = yield_viable | gwl_viable | status_viable
+            yields = combined_viable.astype(float)
+            print(f"   Remaining wells after filter: {len(wells_df)}")
+            # Verify filtering worked
+            assert len(lats) == len(wells_df), f"Filter alignment error: lats={len(lats)}, wells_df={len(wells_df)}"
+        else:
+            print(f"✅ DRY WELL FILTER: No dry wells found within {dry_well_proximity_m}m of wet wells")
+
         # Count wells in each category for detailed logging
         viable_count = np.sum(yields == 1)
         non_viable_count = np.sum(yields == 0)
@@ -3009,6 +3125,8 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
             print("No wells found with either yield or groundwater level data for indicator kriging")
             return []
 
+        # Reset index BEFORE computing lats/lons/yields to ensure alignment for proximity filter
+        wells_df_filtered = wells_df_filtered.reset_index(drop=True)
         lats = wells_df_filtered['latitude'].values.astype(float)
         lons = wells_df_filtered['longitude'].values.astype(float)
 
@@ -3035,15 +3153,44 @@ def generate_heat_map_data(wells_df, center_point, radius_km, resolution=50, met
                 # No yield or GWL data = non-viable (should not happen due to filtering)
                 yields[i] = 0.0
         
+        # ===== DRY WELL PROXIMITY FILTER (HEAT MAP) =====
+        # Remove dry wells (indicator=0) that are within 20m of wet wells (indicator=1)
+        dry_well_proximity_m = 20  # meters
+        keep_mask, n_dry_excluded = filter_dry_wells_near_wet_wells(
+            lats, lons, yields, proximity_meters=dry_well_proximity_m
+        )
+        
+        if n_dry_excluded > 0:
+            print(f"🚫 HEAT MAP DRY WELL FILTER: Excluded {n_dry_excluded} dry wells within {dry_well_proximity_m}m of wet wells")
+            # Apply filter using positional indexing (index already reset earlier)
+            wells_df_filtered = wells_df_filtered.iloc[keep_mask].copy().reset_index(drop=True)
+            # Recompute arrays from filtered DataFrame to ensure alignment
+            lats = wells_df_filtered['latitude'].values.astype(float)
+            lons = wells_df_filtered['longitude'].values.astype(float)
+            # Recompute yields from filtered data
+            yields = np.zeros(len(wells_df_filtered))
+            for i, (idx, row) in enumerate(wells_df_filtered.iterrows()):
+                has_yield_row = pd.notna(row['yield_rate']) and row['yield_rate'] > 0
+                has_gwl_row = False
+                if 'ground water level' in wells_df_filtered.columns:
+                    has_gwl_row = pd.notna(row['ground water level']) and row['ground water level'] != 0
+                if has_yield_row:
+                    yields[i] = 1.0 if row['yield_rate'] >= yield_threshold else 0.0
+                elif has_gwl_row:
+                    yields[i] = 1.0
+                else:
+                    yields[i] = 0.0
+            print(f"   Remaining wells after filter: {len(wells_df_filtered)}")
+            # Verify filtering worked
+            assert len(lats) == len(wells_df_filtered) == len(yields), f"Filter alignment error: lats={len(lats)}, wells_df_filtered={len(wells_df_filtered)}, yields={len(yields)}"
+        else:
+            print(f"✅ HEAT MAP DRY WELL FILTER: No dry wells found within {dry_well_proximity_m}m of wet wells")
+        
         # Count wells in each category for logging
         viable_count = np.sum(yields == 1)
         non_viable_count = np.sum(yields == 0)
-        yield_based_count = np.sum(has_yield_data[indicator_wells_mask])
-        gwl_based_count = np.sum(~has_yield_data[indicator_wells_mask] & has_gwl_data[indicator_wells_mask])
 
         print(f"Heat map indicator kriging: using {len(yields)} wells with binary classification")
-        print(f"Wells with yield data: {yield_based_count}")
-        print(f"Wells with only groundwater level data (treated as viable): {gwl_based_count}")
         print(f"Final classification - Viable: {viable_count} ({100*viable_count/len(yields):.1f}%), Non-viable: {non_viable_count} ({100*non_viable_count/len(yields):.1f}%)")
     else:
         # Get wells appropriate for yield interpolation

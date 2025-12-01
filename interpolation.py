@@ -2049,16 +2049,28 @@ def generate_geo_json_grid(wells_df, center_point, radius_km, resolution=50, met
         if 'yield_rate' not in wells_df_original.columns:
             return {"type": "FeatureCollection", "features": []}
 
-        # For indicator kriging, be more selective about 0.0 values
-        # Only include wells that are explicitly water wells with yield measurements
-        # Exclude wells that appear to be monitoring, geotechnical, or no-yield wells
-
-        # Filter for valid coordinates and wells with actual yield measurements
+        # For indicator kriging, include wells that can be classified as viable/non-viable
+        # A well can be classified if it has yield data OR ground water level data OR active status
+        # This matches the viability criteria used later (lines 2121-2158)
+        
+        # Check for each viability condition
+        has_yield_data = wells_df_original['yield_rate'].notna()
+        has_gwl_data = wells_df_original['ground water level'].notna() if 'ground water level' in wells_df_original.columns else pd.Series(False, index=wells_df_original.index)
+        has_active_status = (wells_df_original['status'] == "Active (exist, present)") if 'status' in wells_df_original.columns else pd.Series(False, index=wells_df_original.index)
+        
+        # Filter for valid coordinates AND at least one viability classification criterion
         valid_coord_mask = (
             wells_df_original['latitude'].notna() & 
             wells_df_original['longitude'].notna() &
-            wells_df_original['yield_rate'].notna()  # Must have yield data
+            (has_yield_data | has_gwl_data | has_active_status)  # Must have data for viability classification
         )
+        
+        # Log how many wells are retained by each criterion
+        n_yield = has_yield_data.sum()
+        n_gwl = has_gwl_data.sum() if isinstance(has_gwl_data, pd.Series) else 0
+        n_status = has_active_status.sum() if isinstance(has_active_status, pd.Series) else 0
+        n_gwl_only = ((has_gwl_data) & (~has_yield_data)).sum() if isinstance(has_gwl_data, pd.Series) else 0
+        print(f"📊 VIABILITY DATA SOURCES: {n_yield} with yield, {n_gwl} with GWL ({n_gwl_only} GWL-only), {n_status} active status")
 
         # Additional filtering to exclude wells that shouldn't be in indicator kriging
         if 'well_use' in wells_df_original.columns:

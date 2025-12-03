@@ -618,14 +618,14 @@ def generate_quad_heatmaps_sequential(wells_data, click_point, search_radius, in
             
             locations.append((name, [lat, lng]))
     
-    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in {grid_rows}x{grid_cols} grid (PERFECT 19.82km spacing)")
+    print(f"SEQUENTIAL HEATMAP GENERATION: Starting {len(locations)} heatmaps in {grid_rows}x{grid_cols} grid (PERFECT {target_offset_km:.2f}km spacing)")
     for i, (name, coords) in enumerate(locations):
         print(f"  {i+1}. {name.upper()}: ({coords[0]:.6f}, {coords[1]:.6f})")
         
     # Show grid layout summary
     if len(locations) > 6:
         print(f"EXTENDED GRID LAYOUT: {grid_rows} rows × {grid_cols} columns = {len(locations)} total heatmaps")
-        print(f"  Coverage area: {(grid_rows-1)*19.82:.1f}km south × {(grid_cols-1)*19.82:.1f}km east")
+        print(f"  Coverage area: {(grid_rows-1)*target_offset_km:.1f}km south × {(grid_cols-1)*target_offset_km:.1f}km east")
     
     # ULTRA-PRECISE SPACING VERIFICATION - adaptive for any grid size
     print("ULTRA-PRECISE SPACING VERIFICATION:")

@@ -712,7 +712,7 @@ with st.sidebar:
     st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
     st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary calculated from ALL wells (62% more efficient than rectangular bounds)")
-    st.session_state.show_grid_points = st.checkbox("Show 19.82km Grid Points", value=getattr(st.session_state, 'show_grid_points', False), help="Show grid of potential heatmap centers at 19.82km spacing within the convex hull boundary")
+    st.session_state.show_grid_points = st.checkbox("Show Grid Points", value=getattr(st.session_state, 'show_grid_points', False), help="Show grid of potential heatmap centers at configured tile spacing within the convex hull boundary")
     
     # Show actual grid point numbers from generated heatmaps
     if 'show_generated_grid_points' not in st.session_state:
@@ -772,25 +772,33 @@ with st.sidebar:
     
     # Tile Overlap Mode Selection
     st.subheader("Tile Overlap Mode")
+    
+    # Get current search radius to calculate dynamic spacing
+    current_search_radius = st.session_state.search_radius
+    # Include overlap buffer (0.18km per 20km = 0.9% of search radius) to prevent gaps between tiles
+    overlap_buffer = current_search_radius * 0.009
+    standard_spacing = current_search_radius - overlap_buffer  # 50% clip with slight overlap
+    high_overlap_spacing = (current_search_radius * 0.5) - (overlap_buffer * 0.5)  # 25% clip with proportional overlap
+    
     overlap_mode = st.radio(
         "Choose tile overlap configuration:",
         options=[
-            "Standard (50% clip, 19.82km spacing)",
-            "High Overlap (25% clip, 9.91km spacing)"
+            f"Standard (50% clip, {standard_spacing:.1f}km spacing)",
+            f"High Overlap (25% clip, {high_overlap_spacing:.1f}km spacing)"
         ],
         index=0,
-        help="Standard: 20km search → 10km tile, centers 19.82km apart. High Overlap: 20km search → 5km tile, centers 9.91km apart (4x more tiles, smoother boundaries)"
+        help=f"Standard: {current_search_radius}km search → {current_search_radius*0.5:.1f}km tile, centers {standard_spacing:.1f}km apart. High Overlap: {current_search_radius}km search → {current_search_radius*0.25:.1f}km tile, centers {high_overlap_spacing:.1f}km apart (4x more tiles, smoother boundaries)"
     )
     
-    # Store clip factor in session state
+    # Store clip factor in session state - calculate spacing from search radius
     if "High Overlap" in overlap_mode:
         st.session_state.tile_clip_factor = 0.25
-        st.session_state.tile_spacing_km = 9.91
-        st.info("📐 **High Overlap Mode**: Each tile is 25% of search radius (5km from 20km search), with centers 9.91km apart for maximum smoothness")
+        st.session_state.tile_spacing_km = high_overlap_spacing
+        st.info(f"📐 **High Overlap Mode**: Each tile is 25% of search radius ({current_search_radius*0.25:.1f}km from {current_search_radius}km search), with centers {high_overlap_spacing:.1f}km apart for maximum smoothness")
     else:
         st.session_state.tile_clip_factor = 0.5
-        st.session_state.tile_spacing_km = 19.82
-        st.info("📐 **Standard Mode**: Each tile is 50% of search radius (10km from 20km search), with centers 19.82km apart")
+        st.session_state.tile_spacing_km = standard_spacing
+        st.info(f"📐 **Standard Mode**: Each tile is 50% of search radius ({current_search_radius*0.5:.1f}km from {current_search_radius}km search), with centers {standard_spacing:.1f}km apart")
     
     max_tiles_full = st.number_input("Max tiles for full generation", min_value=10, max_value=1000, value=100, step=10,
                                     help="Automated generation continues until reaching actual well data bounds (up to this limit)")

@@ -83,6 +83,7 @@ session_defaults = {
     'show_convex_hull': False,
     'show_grid_points': False,
     'heatmap_visualization_mode': 'smooth_raster',  # 'triangular_mesh' or 'smooth_raster'
+    'map_viewport_bounds': None,  # Store current map bounds for viewport-based well filtering
     
     # Regional ML models (trained once, reused for all tiles)
     'regional_rk_model': None,
@@ -706,7 +707,7 @@ with st.sidebar:
     st.session_state.heatmap_opacity = opacity
     
     st.session_state.heat_map_visibility = st.checkbox("Show Heat Map", value=st.session_state.heat_map_visibility)
-    st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False)
+    st.session_state.well_markers_visibility = st.checkbox("Show Well Markers", value=False, help="Shows wells in current map view only. Toggle off/on to refresh after panning or zooming.")
     st.session_state.show_well_bounds = st.checkbox("Show Well Data Bounds", value=getattr(st.session_state, 'show_well_bounds', False), help="Show the rectangular boundary of all well data used for automated generation")
     st.session_state.show_convex_hull = st.checkbox("Show Convex Hull Boundary", value=getattr(st.session_state, 'show_convex_hull', False), help="Show the efficient convex hull boundary calculated from ALL wells (62% more efficient than rectangular bounds)")
     st.session_state.show_grid_points = st.checkbox("Show Grid Points", value=getattr(st.session_state, 'show_grid_points', False), help="Show grid of potential heatmap centers at configured tile spacing within the convex hull boundary")
@@ -3267,60 +3268,40 @@ else:
 total_displayed = stored_heatmap_count
 print(f"TOTAL HEATMAPS ON MAP: {total_displayed} (All via stored heatmaps)")
 
-# Show wells that overlap with displayed heatmap areas
+# Show wells in current viewport only (viewport-based loading to prevent browser crash)
 if st.session_state.well_markers_visibility:
-    wells_layer = folium.FeatureGroup(name="Heatmap Area Wells").add_to(m)
+    wells_layer = folium.FeatureGroup(name="Viewport Wells").add_to(m)
     
-    # Collect all wells from stored heatmaps
-    all_heatmap_wells = []
+    # Get viewport bounds from session state (stored from previous map interaction)
+    viewport_bounds = st.session_state.map_viewport_bounds
     
-    # Get wells from stored heatmaps
-    if st.session_state.stored_heatmaps:
-        for stored_heatmap in st.session_state.stored_heatmaps:
-            # Extract center coordinates and radius from stored heatmap
-            center_lat = stored_heatmap.get('center_lat')
-            center_lon = stored_heatmap.get('center_lon') 
-            radius_km = stored_heatmap.get('radius_km', 20)
-            
-            if center_lat and center_lon:
-                # Use existing wells data from session state
-                try:
-                    wells_df = st.session_state.wells_data
-                    
-                    if wells_df is not None and not wells_df.empty:
-                        # Filter wells within this heatmap's radius
-                        from utils import get_distance
-                        wells_in_area = []
-                        
-                        for idx, well in wells_df.iterrows():
-                            distance = get_distance(
-                                center_lat, center_lon,
-                                well['latitude'], well['longitude']
-                            )
-                            if distance <= radius_km:
-                                wells_in_area.append(well.to_dict())
-                        
-                        all_heatmap_wells.extend(wells_in_area)
-                        print(f"Found {len(wells_in_area)} wells in heatmap area: {stored_heatmap['heatmap_name']}")
-                except Exception as e:
-                    print(f"Error loading wells for heatmap area: {e}")
+    # If no bounds stored yet, calculate approximate bounds from map center and zoom
+    if viewport_bounds is None:
+        # Calculate approximate viewport bounds from center and zoom level
+        map_center = center_location
+        zoom = st.session_state.zoom_level
+        # Approximate degrees visible at different zoom levels (rough estimate)
+        # Zoom 10 ~= 0.5 degrees, zoom 8 ~= 2 degrees, zoom 12 ~= 0.125 degrees
+        degrees_visible = 180 / (2 ** zoom)
+        viewport_bounds = {
+            'north': map_center[0] + degrees_visible,
+            'south': map_center[0] - degrees_visible,
+            'east': map_center[1] + degrees_visible * 1.5,  # Wider aspect ratio
+            'west': map_center[1] - degrees_visible * 1.5
+        }
+        print(f"📍 VIEWPORT: Using calculated bounds from zoom {zoom} (no stored bounds yet)")
     
-    # Get wells from current filtered wells if available
-    if 'filtered_wells' in st.session_state and st.session_state.filtered_wells is not None:
-        current_wells = st.session_state.filtered_wells.to_dict('records')
-        all_heatmap_wells.extend(current_wells)
-    
-    # Remove duplicates based on well_id and create display wells
-    if all_heatmap_wells:
-        import pandas as pd
-        display_wells_df = pd.DataFrame(all_heatmap_wells)
+    if viewport_bounds and st.session_state.wells_data is not None:
+        wells_df = st.session_state.wells_data.copy()
         
-        # Remove duplicates by well_id if column exists
-        if 'well_id' in display_wells_df.columns:
-            display_wells_df = display_wells_df.drop_duplicates(subset=['well_id'])
-        else:
-            # Fallback: remove duplicates by coordinates
-            display_wells_df = display_wells_df.drop_duplicates(subset=['latitude', 'longitude'])
+        # Filter wells to only those within current viewport
+        viewport_mask = (
+            (wells_df['latitude'] >= viewport_bounds['south']) &
+            (wells_df['latitude'] <= viewport_bounds['north']) &
+            (wells_df['longitude'] >= viewport_bounds['west']) &
+            (wells_df['longitude'] <= viewport_bounds['east'])
+        )
+        display_wells_df = wells_df[viewport_mask].copy()
         
         # Filter out geotechnical/geological investigation wells
         if 'well_use' in display_wells_df.columns:
@@ -3336,8 +3317,8 @@ if st.session_state.well_markers_visibility:
         if 'depth' in display_wells_df.columns:
             display_wells_df = display_wells_df[display_wells_df['depth'].notna() & (display_wells_df['depth'] > 0)]
 
-        # Create well markers for all wells in heatmap areas
-        print(f"Displaying {len(display_wells_df)} wells in heatmap areas")
+        # Create well markers for wells in viewport
+        print(f"📍 VIEWPORT WELLS: Displaying {len(display_wells_df)} wells in current map view (bounds: N={viewport_bounds['north']:.3f}, S={viewport_bounds['south']:.3f}, E={viewport_bounds['east']:.3f}, W={viewport_bounds['west']:.3f})")
         for idx, row in display_wells_df.iterrows():
             try:
                 folium.CircleMarker(
@@ -3352,7 +3333,7 @@ if st.session_state.well_markers_visibility:
             except Exception as e:
                 print(f"Error creating marker for well: {e}")
     else:
-        print("No wells found in heatmap areas")
+        print("📍 VIEWPORT WELLS: No viewport bounds stored yet - toggle well markers off and on after panning/zooming to load wells")
 
 # Add click event to capture coordinates (only need this once)
 folium.LatLngPopup().add_to(m)
@@ -3388,8 +3369,17 @@ try:
         use_container_width=True,
         height=600,
         key="main_map",
-        returned_objects=["last_clicked"]
+        returned_objects=["last_clicked", "bounds"]
     )
+    # Store viewport bounds for well marker filtering
+    if map_data and "bounds" in map_data and map_data["bounds"]:
+        bounds = map_data["bounds"]
+        st.session_state.map_viewport_bounds = {
+            'north': bounds['_northEast']['lat'],
+            'south': bounds['_southWest']['lat'],
+            'east': bounds['_northEast']['lng'],
+            'west': bounds['_southWest']['lng']
+        }
 except Exception as e:
     print(f"Map rendering error: {e}")
     map_data = None

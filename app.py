@@ -2736,7 +2736,8 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 all_values = []
                 
                 for stored_heatmap in st.session_state.stored_heatmaps:
-                    if stored_heatmap in st.session_state.get('hidden_heatmaps', set()):
+                    heatmap_id = stored_heatmap.get('id') if isinstance(stored_heatmap, dict) else None
+                    if heatmap_id and heatmap_id in st.session_state.get('hidden_heatmaps', set()):
                         continue
                     
                     geojson_data = stored_heatmap.get('geojson_data')

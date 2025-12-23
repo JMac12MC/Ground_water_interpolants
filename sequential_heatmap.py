@@ -54,10 +54,20 @@ def slim_geojson_for_storage(geojson_data):
         }
         slimmed_features.append(slimmed_feature)
     
-    return {
+    result = {
         'type': geojson_data['type'],
         'features': slimmed_features
     }
+    
+    # Preserve raw_grid for smooth raster generation (essential for display quality)
+    if 'raw_grid' in geojson_data:
+        result['raw_grid'] = geojson_data['raw_grid']
+    
+    # Preserve variogram parameters for reference
+    if 'variogram_params' in geojson_data:
+        result['variogram_params'] = geojson_data['variogram_params']
+    
+    return result
 
 def retry_with_backoff(func, max_attempts=3, initial_delay=1.0):
     """

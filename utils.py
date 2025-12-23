@@ -23,18 +23,6 @@ def get_distance(lat1, lon1, lat2, lon2):
     
     return distance
 
-def calculate_yield_score(yield_rate, max_yield=None):
-    """
-    Convert yield rate to a score between 0 and 1
-    """
-    if max_yield is None:
-        # If no max provided, use a reasonable maximum (adjust as needed)
-        max_yield = 100
-    
-    # Normalize the yield rate
-    score = min(1.0, max(0.0, yield_rate / max_yield))
-    return score
-
 def is_within_square(lat, lon, center_lat, center_lon, radius_km):
     """
     Check if a point is within a square area defined by radius from center
@@ -49,21 +37,6 @@ def is_within_square(lat, lon, center_lat, center_lon, radius_km):
     lon_within = abs(lon - center_lon) <= lon_radius_deg
     
     return lat_within and lon_within
-
-def download_as_csv(dataframe):
-    """
-    Convert a DataFrame to a CSV string for download
-    """
-    # Create a string buffer
-    buffer = io.StringIO()
-    
-    # Write the DataFrame to the buffer as a CSV
-    dataframe.to_csv(buffer, index=False)
-    
-    # Get the value of the buffer as a string
-    csv_string = buffer.getvalue()
-    
-    return csv_string
 
 def get_red_orange_polygon_for_download(polygon_db):
     """

@@ -406,17 +406,3 @@ def generate_automated_heatmaps(wells_data, interpolation_method, polygon_db, so
         error_msg = "Unexpected result format from sequential generation"
         print(f"❌ {error_msg}")
         return 0, [], [error_msg]
-
-
-def full_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None):
-    """
-    Legacy function name - redirect to generate_automated_heatmaps
-    """
-    return generate_automated_heatmaps(
-        wells_data=wells_data,
-        interpolation_method=interpolation_method, 
-        polygon_db=polygon_db,
-        soil_polygons=soil_polygons,
-        new_clipping_polygon=new_clipping_polygon,
-        max_tiles=100
-    )

@@ -2381,16 +2381,6 @@ if st.session_state.wells_data is not None:
                 def get_color(value):
                     return get_global_unified_color(value, st.session_state.interpolation_method)
 
-                # Style function that uses our color mapping
-                def style_feature(feature):
-                    yield_value = feature['properties']['yield']
-                    return {
-                        'fillColor': get_color(yield_value),
-                        'color': '',
-                        'weight': 0,
-                        'fillOpacity': st.session_state.get('heatmap_opacity', 0.7)
-                    }
-
                 # Add the GeoJSON with our custom styling
                 display_field = 'variance' if st.session_state.interpolation_method == 'kriging_variance' else 'yield'
 

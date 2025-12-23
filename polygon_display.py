@@ -162,24 +162,6 @@ def load_new_clipping_polygon():
         print(f"❌ Error loading comprehensive clipping polygon: {e}")
         return None
 
-def load_banks_peninsula_coords():
-    """LEGACY: Load Banks Peninsula coordinates from text file (kept for backward compatibility)."""
-    
-    try:
-        file_path = "attached_assets/banks peninsula_1753603323297.txt"
-        if Path(file_path).exists():
-            coordinates = parse_coordinates_file(file_path)
-            if coordinates:
-                print(f"✅ Loaded Banks Peninsula coordinates: {len(coordinates)} points")
-                return coordinates
-        
-        print("❌ Banks Peninsula coordinate file not found")
-        return None
-        
-    except Exception as e:
-        print(f"❌ Error loading Banks Peninsula coordinates: {e}")
-        return None
-
 if __name__ == "__main__":
     # Test the coordinate parsing
     file_path = "attached_assets/banks peninsula_1753603323297.txt"

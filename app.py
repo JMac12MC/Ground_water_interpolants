@@ -869,8 +869,9 @@ with st.sidebar:
                 st.success(f"✅ Generated {success_count} heatmaps successfully!")
                 if errors:
                     st.warning(f"⚠️ {len(errors)} tiles had errors")
-                # Don't reload stored_heatmaps here - it triggers rerun before flag clear takes effect
-                # Map will auto-load them when it renders
+                # Reload stored_heatmaps to pick up newly generated data (including raw_grid)
+                st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
+                print(f"🔄 Reloaded {len(st.session_state.stored_heatmaps)} stored heatmaps after generation")
             else:
                 st.error("❌ No heatmaps generated. Check console for details.")
                 

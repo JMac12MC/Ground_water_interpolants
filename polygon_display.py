@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import pandas as pd
-import re
 import folium
-import json
 import geopandas as gpd
 from pathlib import Path
 import subprocess

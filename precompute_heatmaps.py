@@ -1,17 +1,10 @@
-
 import pandas as pd
 import numpy as np
 from pykrige.ok import OrdinaryKriging
-from sklearn.model_selection import train_test_split
-import psycopg2
 from sqlalchemy import create_engine, text
-import geopandas as gpd
 from shapely.geometry import Point, Polygon
-import json
-import os
 from data_loader import load_nz_govt_data
 from database import PolygonDatabase
-import time
 import gc
 
 class HeatmapPreprocessor:

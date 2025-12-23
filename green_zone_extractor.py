@@ -5,9 +5,8 @@ Creates boundary polygons around low-probability indicator kriging zones (<0.5, 
 
 import json
 import numpy as np
-from shapely.geometry import Point, Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon
 from shapely.ops import unary_union
-import geopandas as gpd
 
 def extract_green_zones_from_indicator_heatmaps(polygon_db):
     """

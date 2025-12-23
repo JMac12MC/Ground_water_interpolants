@@ -5,10 +5,7 @@ Only snaps vertices that are on the actual boundaries between different heatmap 
 
 import json
 import numpy as np
-from scipy.spatial import KDTree
-from shapely.geometry import Point, Polygon, LineString
-from shapely.ops import unary_union
-import geopandas as gpd
+from shapely.geometry import LineString
 
 SNAP_DISTANCE_METERS = 300
 

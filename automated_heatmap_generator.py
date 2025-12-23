@@ -4,7 +4,6 @@ Leverages the proven sequential heatmap system to generate comprehensive coverag
 """
 
 import streamlit as st
-import pandas as pd
 import numpy as np
 
 def test_automated_generation(wells_data, interpolation_method, polygon_db, soil_polygons=None, new_clipping_polygon=None, num_tiles=5):

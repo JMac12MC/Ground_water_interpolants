@@ -3,7 +3,6 @@
 
 import time
 import gc
-from sqlalchemy import create_engine
 
 class SkipTileException(Exception):
     """Exception for tiles that should be skipped without retry (deterministic failures)"""

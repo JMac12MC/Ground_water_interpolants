@@ -1,7 +1,5 @@
-import pandas as pd
 import numpy as np
 import math
-import csv
 import io
 
 def get_distance(lat1, lon1, lat2, lon2):

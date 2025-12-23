@@ -1,12 +1,8 @@
 # Fix JSON parsing issues in database operations
 import os
-import pandas as pd
 import numpy as np
-import sqlalchemy
-from sqlalchemy import create_engine, text, Table, Column, Integer, String, Float, DateTime, MetaData, inspect
+from sqlalchemy import create_engine, text, MetaData, inspect
 from sqlalchemy.dialects.postgresql import JSON
-import geopandas as gpd
-from shapely import wkt
 import json
 from datetime import datetime
 

@@ -1,18 +1,15 @@
 import streamlit as st
 import folium
-from folium.plugins import HeatMap, MarkerCluster
-from streamlit_folium import folium_static
 import pandas as pd
 import numpy as np
 import os
-import base64
 import requests
 import geopandas as gpd
-from utils import get_distance, download_as_csv
-from data_loader import load_sample_data, load_nz_govt_data, load_api_data
-from interpolation import generate_heat_map_data, generate_geo_json_grid, calculate_kriging_variance, generate_indicator_kriging_mask, create_indicator_polygon_geometry, get_prediction_at_point, create_map_with_interpolated_data, generate_smooth_raster_overlay, fit_global_variogram, plot_empirical_variogram, plot_semivariogram_cloud
+from utils import get_distance
+from data_loader import load_sample_data, load_nz_govt_data
+from interpolation import generate_geo_json_grid, generate_indicator_kriging_mask, generate_smooth_raster_overlay, fit_global_variogram, plot_empirical_variogram, plot_semivariogram_cloud
 from database import PolygonDatabase
-from polygon_display import parse_coordinates_file, add_polygon_to_map
+from polygon_display import parse_coordinates_file
 import time
 # Regional heatmap removed per user request
 

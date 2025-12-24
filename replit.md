@@ -47,11 +47,6 @@ Preferred communication style: Simple, everyday language.
 5. **Visualization**: Conversion of interpolated data to GeoJSON for map rendering.
 6. **Performance Path**: Utilization of pre-computed heatmaps from the database for large datasets.
 
-### Well Marker Display
-- **Viewport-Based Loading**: Well markers only load for the current map view to prevent browser crashes with 10,000+ wells
-- **Toggle to Refresh**: After panning or zooming, toggle the "Show Well Markers" checkbox off then on to refresh wells for the new view
-- **Tooltip Info**: Hovering over well markers shows Well ID, yield, depth, and indicator classification
-
 ### Indicator Kriging Variogram Configuration
 **Known Issue - Auto-Fit Limitations:**
 - Auto-fit variogram often produces **pixelated results** (scattered red/orange/green) with sparse well data

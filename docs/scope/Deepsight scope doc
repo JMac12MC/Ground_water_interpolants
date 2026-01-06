@@ -1,0 +1,1773 @@
+
+DeepSight — Groundwater Intelligence Platform
+1. Context
+DeepSight is a decision-support service for farmers, businesses, and local authorities planning to drill groundwater wells.
+Drilling a well can cost $50,000–$150,000+, yet many drilling decisions are still guided by intuition, divining, or incomplete local knowledge. Meanwhile, large volumes of public borehole and groundwater data already exist, collected by councils, regulators, and neighbouring landowners.
+DeepSight transforms this fragmented data into probability-based, spatially explicit groundwater intelligence, allowing users to understand:
+Where groundwater is likely to exist
+How deep it is
+How much water can be expected
+How confidence and uncertainty vary spatially and seasonally
+Example public dataset:
+Canterbury Regional Council well database
+https://opendata.canterburymaps.govt.nz/datasets/ecan::wells-bores-existing/explore
+
+2. Project Overview
+Elevator Pitch
+Before you spend $100,000 drilling a well, wouldn’t you want to understand the likelihood of finding groundwater?
+DeepSight uses real borehole and environmental data to model where to drill, how deep to go, and how much water to expect — reducing risk and saving tens of thousands of dollars per decision.
+App Name
+DeepSight
+Problem Being Solved
+Farmers and organisations currently lack:
+Clear probability estimates of hitting usable groundwater
+Reliable depth-to-water predictions
+Understanding of seasonal variability
+Insight into neighbouring well interference and long-term trends
+This leads to:
+Wells drilled in poor locations
+Wells drilled too shallow or too deep
+Expensive failures or underperforming wells
+Hesitation to drill when groundwater does exist
+High-Level Goal
+Build a web-based groundwater intelligence platform that:
+Quantifies probability, depth, yield, and uncertainty
+Visualises spatial and seasonal groundwater behaviour
+Enables users to make risk-aware drilling decisions
+Is grounded in hydrogeologically accepted methods
+Success = users can confidently answer:
+“Is it worth drilling here, how deep should I go, and what water can I realistically expect?”
+DeepSight is decision-support infrastructure for groundwater professionals.
+ It is not:
+a consumer mapping product
+a guarantee of drilling success
+a generic AI prediction engine
+DeepSight exists to reduce risk, not eliminate it, by making uncertainty explicit, spatially grounded, and professionally defensible.
+DeepSight explicitly chooses not to grow if professional trust is compromised. Growth without trust is treated as a failure mode.
+
+3. Users & Use Cases
+Target Users
+Farmers (irrigation, stock water)
+Local authorities (drinking water supply)
+Businesses & drillers (commercial and industrial use)
+Farmers & Landowners (Decision Makers)
+As a farmer, I want to see where groundwater is most likely on my property so I can identify the best place to drill.
+As a farmer, I want to understand the probability of finding usable groundwater and how that probability changes across my land.
+As a farmer, I want to know the expected drilling depth and water yield so I can estimate drilling cost versus benefit.
+As a farmer, I want to understand the confidence and uncertainty of these predictions so I know how much risk I am taking.
+As a farmer, I want to see how groundwater behaves seasonally and during dry periods so I can assess long-term reliability.
+As a farmer, I want all of this combined into a clear cost–risk–reward summary for a specific drilling location, without needing to interpret technical models.
+
+Drillers & Groundwater Consultants (Professional Users)
+As a driller, I want to quickly assess where groundwater is unlikely to be found so I can avoid failed wells.
+As a driller, I want defensible depth-to-water and yield estimates that I can confidently stand behind when advising clients.
+As a driller, I want to understand uncertainty and data coverage so I can set realistic expectations with landowners.
+As a driller, I want to compare multiple potential drilling locations to choose the option with the highest likelihood of success.
+As a driller, I want professional-grade reports that I can share with clients to justify drilling recommendations.
+As a driller, I want access to higher-accuracy local models that incorporate my own private data without exposing it to competitors.
+
+Local Authorities, Utilities & Regulators (Planning & Oversight)
+As a local authority, I want region-wide groundwater depth and probability surfaces to support water supply planning.
+As a regulator, I want transparent, auditable groundwater models with clear uncertainty to support permitting decisions.
+As a council, I want to understand long-term and seasonal groundwater behaviour to assess sustainability and drought risk.
+As a utility, I want to identify areas of low interference risk and stable supply for future infrastructure investment.
+
+Data Contributors (Accuracy Partners)
+As a data contributor, I want to add private bore, monitoring, or test-pumping data to improve model accuracy in my area.
+As a data contributor, I want to retain ownership and control over my data and decide who can benefit from it.
+As a data contributor, I want to clearly see how my data improves predictions and reduces uncertainty locally.
+As a data contributor, I want access to enhanced accuracy layers as a direct benefit of sharing data.
+
+Cross-User Outcome
+As any user, I want DeepSight to clearly communicate what is known, what is uncertain, and why, so I can make informed, defensible groundwater decisions appropriate to my level of risk and responsibility.
+
+Why This Matters
+This expanded user-story set reflects the reality that:
+Farmers trigger decisions
+Drillers influence outcomes
+Authorities govern sustainability
+Data contributors drive accuracy
+DeepSight succeeds by serving all four roles — not just end landowners.
+
+4. Key Workflows
+User opens the map and views regional groundwater depth and probability surfaces
+User zooms to their property
+User clicks a point of interest
+DeepSight generates a location-specific report including:
+Probability of usable groundwater
+Expected depth range (seasonal min/max)
+Expected yield range
+Uncertainty indicators
+“Nearby wells and potential interference (distance-based heuristic; full modelling in Phase 2)”
+Geological context like how many aquifers are below that location, there depth and the material that needs to be drilled through
+
+5. Core Features & Scientific Models
+5.1 Is There Groundwater? (Probability of Encountering Usable Water)
+Primary question:
+ “If I drill here, what is the probability that I will encounter usable groundwater?”
+This is the gateway layer for all further analysis. DeepSight models groundwater presence as a probabilistic spatial process, not a binary classification.
+5.1.1 Definition of Groundwater Presence
+Groundwater is considered present where a well drilled to a reasonable depth:
+Intersects a saturated zone
+Produces extractable water
+Is supported by nearby producing wells in the same aquifer context
+Shallow dry wells do not automatically imply absence of deeper groundwater.
+5.1.2 Modelling Approach
+DeepSight uses an ensemble framework:
+Indicator kriging as the spatial baseline
+Machine learning classifiers (Random Forest, Gradient Boosting) using geological and recharge covariates
+Monte Carlo bootstrapping to quantify uncertainty
+Outputs include:
+Mean probability of groundwater
+Confidence and uncertainty classification
+Validation uses spatial cross-validation only with calibration metrics (Brier score, reliability curves).
+
+5.1.3 Data Inputs for Groundwater Presence
+
+Depth-to-groundwater estimates (from 5.2, only in regions already classified as likely groundwater-bearing).
+Primary well-derived inputs
+Well outcome: producing vs dry
+Final drilled depth
+Notes indicating refusal, partial yields, or abandonment
+Screen presence (where available)
+
+
+Contextual inputs
+Aquifer / geological unit
+Proximity to recharge features
+Neighbouring well outcomes
+Depth-to-groundwater estimates (from 5.2, used conditionally)
+All wells are spatially and geologically contextualised before modelling.
+
+5.1.4 Pre-Processing & Domain Rules (Critical)
+To avoid systematic bias, DeepSight applies hydrogeologically motivated rules before modelling.
+Dry well handling
+A dry well does not automatically imply absence of groundwater.
+A dry well is down-weighted or excluded if:
+a producing well exists within ~300 m at greater depth, or
+triangulation of the nearest 3 producing wells indicates deeper groundwater
+This prevents:
+shallow drilling failures
+poor drilling decisions
+ from incorrectly suppressing deeper aquifer probability.
+Aquifer-aware labelling
+Presence/absence is evaluated per aquifer system
+A dry shallow aquifer does not imply a dry deep aquifer
+
+5.1.5 Modelling Approaches (Ensemble, Not Single Model)
+DeepSight uses multiple complementary models to estimate groundwater probability.
+No single model is trusted everywhere.
+A. Indicator Kriging (Spatial Baseline
+Method
+Convert wells to binary outcomes (1 = producing, 0 = dry)
+Compute variograms of the indicator variable
+Interpolate to a continuous probability surface
+Why it is used
+Well-established in hydrogeology
+Purely spatial and highly interpretable
+Produces calibrated probability estimates
+Limitations
+Does not use explanatory covariates
+Can underperform in complex geology
+Indicator kriging provides the spatial backbone of probability estimates.
+
+B. Machine Learning Probability Models (Covariate-Aware)
+Models
+Random Forest Classifier
+Gradient Boosting Classifier
+Inputs
+Geological and aquifer unit
+Distance to recharge features
+Recharge proxies
+Depth-to-groundwater estimates where stable
+Surface elevation and DEM-derived features are only retained if they improve spatially cross-validated RMSE within a modelling zone
+Outputs
+Probability of encountering groundwater
+Calibrated probabilities using isotonic or Platt scaling
+Why used
+Captures nonlinear relationships
+Performs well in heterogeneous geology
+Complements purely spatial models
+
+C. Monte Carlo Ensemble Probability Modelling (Confidence Engine)
+To avoid false precision, DeepSight treats probability itself as uncertain.
+Process
+Train ~100 model realisations
+Each run:
+bootstraps wells
+perturbs training data
+refits models
+Predict probability for each run
+Outputs
+Mean probability of groundwater
+Variance / uncertainty
+Confidence classification
+This enables maps such as:
+High probability, high confidence
+Moderate probability, low confidence
+Low probability, high confidence
+
+5.1.6 Model Combination Strategy
+Final groundwater probability is derived by combining:
+Indicator kriging output (spatial continuity)
+Machine-learning probability output (covariate signal)
+Monte Carlo ensemble statistics (uncertainty)
+Combination weights are region-specific and governed by spatial cross-validated performance. No model dominates universally.
+
+5.1.7 Validation & Accuracy Assessment
+Groundwater presence models are validated using:
+Spatial cross-validation only
+Region or aquifer hold-outs
+Metrics include:
+Brier score
+Log loss
+Calibration curves
+Contextual confusion matrices
+Accuracy is interpreted in terms of decision risk, recognising that false positives and false negatives have different real-world costs.
+
+5.1.8 User-Facing Outputs
+For any selected location, DeepSight provides:
+Probability of encountering groundwater (%)
+Confidence level (high / medium / low)
+Nearby producing and dry wells used in inference
+Plain-language explanation of dominant drivers
+Probability outputs are explicitly separated from:
+Depth-to-groundwater estimates (Section 5.2)
+Yield estimates (Section 5.3)
+
+5.1.9 Defensibility & Role in the Platform
+This approach:
+Aligns with hydrogeological best practice
+Avoids misleading binary classifications
+Explicitly communicates uncertainty
+Handles sparse and biased well datasets
+Reflects real drilling outcomes
+Section 5.1 acts as the gateway layer for DeepSight:
+It filters poor locations early
+Frames drilling risk
+Underpins trust in depth and yield modelling
+
+5.2 Depth to Groundwater (DTW)
+Primary question:
+ “If groundwater exists here, how deep do I need to drill — and how confident is that estimate?”
+DTW is modelled using Regression Kriging, combining machine learning and geostatistics.
+Drilling cost
+Well design
+Risk of premature failure
+Seasonal reliability
+DeepSight models DTW using a Regression Kriging (RK) framework, which combines machine learning with geostatistics and is widely regarded as a best-practice approach for groundwater surfaces when covariates are available.
+
+5.2.1 Step-by-Step Modelling Pipeline (Depth to Groundwater)
+Why Regression Kriging Is Used
+Pure kriging assumes:
+Strong spatial autocorrelation
+Stationarity
+No explanatory covariates
+However, real groundwater systems:
+Are strongly controlled by geology and aquifer structure
+Exhibit anisotropy
+Show nonlinear behaviour
+Often have weak correlation with surface elevation (e.g. Canterbury plains)
+Regression Kriging solves this by:
+Using machine learning to explain the deterministic component of DTW
+Using kriging on residuals to capture spatial structure the ML model cannot explain
+This yields:
+Higher accuracy than kriging alone
+Spatial smoothness missing from ML alone
+Interpretable uncertainty surfaces
+
+This pipeline defines the authoritative method used by DeepSight to generate depth-to-groundwater (DTW) surfaces, uncertainty estimates, and accuracy metrics.
+ All DTW outputs in the application must be traceable to this pipeline.
+
+Step 0 — Define Modelling Domain & Zones
+Goal: Ensure groundwater systems are modelled independently where required.
+Inputs
+Aquifer boundaries
+Geological units
+Recharge system extents
+Well metadata
+Process
+Assign each well to:
+an aquifer
+a modelling zone
+Merge aquifers only if:
+well density is insufficient
+hydraulic behaviour is similar
+Enforce:
+one DTW model per zone
+independent variograms per zone
+Output
+Zonal well datasets
+Zone configuration metadata
+PR candidates
+Aquifer zoning logic
+Zone config schema
+Step 1 — Feature Engineering & Covariate Assembly
+Goal: Build physically meaningful predictors for DTW.
+Inputs
+Well depth, screen depth, static water level
+Geological model
+Rivers and recharge features
+Soil data
+Surface elevation and DEM-derived features are only retained if they improve spatially cross-validated RMSE within a modelling zone
+Features generated per well
+Aquifer / geological unit (categorical)
+Horizontal distance to recharge features (m)
+Vertical distance between screen and recharge surface (m)
+3D hydraulic distance to recharge
+Aquifer thickness proxy (m)
+Soil permeability class
+Recharge potential index (0–1)
+Surface elevation and DEM-derived features are only retained if they improve spatially cross-validated RMSE within a modelling zone
+Rules
+No covariate is included without hydrogeological justification
+DEM is excluded if it worsens spatial RMSE
+Features are standardised per zone
+Output
+Feature matrix X_zone
+Target vector y_zone = DTW_observed
+PR candidates
+Feature engineering module
+Covariate governance tests
+Step 2 — Data Filtering & Validation
+Goal: Remove misleading wells that bias DTW.
+Rules
+Shallow dry well exclusion
+Ignore dry wells if:
+a producing well exists within ~300 m
+producing well is deeper
+Triangulation check
+If nearest 3 producing wells imply deeper DTW than a dry well depth, exclude the dry well
+Outlier handling
+Flag extreme DTW values
+Retain only if spatially and geologically consistent
+Output
+Cleaned well dataset per zone
+PR candidates
+Well filtering logic
+Validation reports
+Step 3 — Regression Model Training (Deterministic Component)
+Goal: Capture non-spatial, geological controls on DTW.
+Models
+Random Forest Regressor
+Gradient Boosted Trees
+Training
+Spatial cross-validation (block or region hold-out)
+Hyperparameter tuning per zone
+Feature importance analysis
+Metrics computed
+Regression-only RMSE (spatial CV)
+Feature importance stability
+Rules
+If DEM increases RMSE → remove it
+If model overfits clustered wells → increase spatial block size
+Outputs
+Trained regression model
+Predicted DTW at each well
+Regression RMSE
+PR candidates
+Spatial CV framework
+Model training pipeline
+Step 4 — Residual Computation
+Goal: Isolate spatial structure unexplained by covariates.
+Residual_i = Observed_DTW_i − Predicted_DTW_i
+Checks
+Mean residual ≈ 0
+No correlation with covariates
+Spatial autocorrelation present
+Output
+Residual dataset with coordinates
+PR candidates
+Residual diagnostics
+Step 5 — Variogram Analysis (Residuals)
+Goal: Quantify spatial dependence of residuals.
+Process
+Compute experimental variograms
+Test:
+omnidirectional
+directional (anisotropy)
+Fit candidate models:
+spherical
+exponential
+Gaussian
+linear (fallback)
+Parameters
+Nugget
+Range
+Sill
+Anisotropy ratio & direction (if supported)
+Rules
+One variogram per zone
+No forced global variogram
+Poorly structured residuals → simplified model
+Output
+Variogram model configuration per zone
+PR candidates
+Variogram fitting engine
+Anisotropy detection
+Step 6 — Kriging of Residuals
+Goal: Interpolate local spatial corrections.
+Method
+Ordinary Kriging on residuals
+Zone-specific variogram
+Anisotropy applied if valid
+Outputs
+Kriged residual surface
+Kriging variance surface
+PR candidates
+Kriging execution
+Raster generation
+Step 7 — Final DTW Surface Assembly
+Goal: Combine regression and kriging.
+DTW_final(x,y) = DTW_regression(x,y) + DTW_residual_kriged(x,y)
+Outputs
+Continuous DTW raster (m below ground)
+Spatially coherent surface
+PR candidates
+Surface composer
+Raster tiling
+Step 8 — Monte Carlo Uncertainty Propagation
+Goal: Quantify true prediction uncertainty.
+Process
+Repeat Steps 2–7 ~100 times
+Each run:
+randomly remove ~10% of wells
+retrain regression
+refit variogram
+re-krige residuals
+Aggregated outputs
+Mean DTW
+Standard deviation
+P10 / P50 / P90 surfaces
+RMSE distribution
+Why
+Captures data sparsity
+Captures model instability
+Superior to kriging variance alone
+PR candidates
+Monte Carlo orchestrator
+Uncertainty aggregation
+Step 9 — Accuracy Metrics (RMSE)
+Goal: Quantify predictive accuracy honestly.
+Computed using
+Spatial cross-validation only
+Reported metrics
+Regression-only RMSE
+Final RK RMSE
+RMSE distribution across Monte Carlo runs
+Usage
+Gate production deployment
+Drive confidence classification
+Control covariate inclusion
+PR candidates
+Accuracy reporting
+Model governance rules
+Step 10 — Seasonal DTW Surfaces (Optional)
+Goal: Estimate worst- and best-case depths.
+Approach
+Detect seasonal signal at wells
+Infer amplitude and phase
+Generate:
+seasonal high DTW
+seasonal low DTW
+Fallback
+Sinusoidal approximation with regional envelopes
+Outputs
+Seasonal min/max DTW rasters
+PR candidates
+Seasonal modelling module
+Step 11 — Post-Processing & Masking
+Goal: Prepare user-safe outputs.
+Actions
+Mask outside aquifer extents
+Flag high-uncertainty zones
+Smooth artefacts without bias
+Outputs
+Final DTW products
+Confidence layers
+PR candidates
+Masking & QA logic
+Step 12 — User-Facing Outputs
+For any location:
+Median DTW
+Seasonal min/max
+Uncertainty range
+RMSE context
+Supporting wells
+This ensures decisions are based on depth + risk, not just a map.
+
+5.3 Groundwater Yield
+Primary question:
+ “How much water can I extract?”
+Approaches include:
+Spatial interpolation of tested yields
+ML-based yield prediction using screen length, aquifer type, depth, and geology
+Ensemble uncertainty estimation
+Yield Confidence Classification Rule
+Yield outputs are explicitly classified as Decision-Grade or Advisory based on local data support, not just model fit. A yield estimate is considered Decision-Grade only when minimum evidence is met within the relevant zone (e.g., sufficient density of pumping tests or reliable yield records, acceptable spatial CV stability, and low ensemble spread). Where data are sparse or heterogeneous, DeepSight still provides a yield estimate but labels it Advisory, increases uncertainty bounds, and applies confidence-adjusted pricing and report messaging accordingly.
+This rule prevents yield from being interpreted as equally reliable everywhere and aligns with how drilling professionals evaluate supply estimates in practice.
+
+
+5.4 Aquifer Geometry & Geology
+Identification of extractable aquifers
+Estimation of aquifer depth ranges
+Grouping of sparse aquifers where required
+Geological cross-sections with uncertainty envelopes
+
+5.5 Seasonal & Neighbour Interference Effects
+Seasonal high and low groundwater surfaces
+Drawdown cones around producing wells
+Neighbour interference risk estimation
+Long-term trend analysis
+
+6. Data Sources
+6.1 Well and Bore Data (Primary)
+Used for probability, DTW, and yield modelling.
+Well location (lat/long or projected coordinates)
+Total drilled depth
+Static water level or water level observations used to infer DTW
+Producing vs dry outcome
+Screen intervals (top and bottom depths where available)
+Well construction metadata (casing, diameter where available)
+ Typical sources: council well registries, national groundwater portals, open data catalogues.
+6.2 Lithology and Geology From Wells (High Value)
+Used for aquifer assignment, covariates, and cross sections.
+Lithology logs (material vs depth)
+Interpreted stratigraphy where available
+Aquifer unit labels derived from:
+well logs, and/or
+regional geological/aquifer map overlays
+ Note: Where lithology is only free-text, it is normalized into standard classes (e.g., gravel, sand, silt, clay, basalt).
+6.3 Yield and Pumping Test Data (Yield Layer)
+Used for expected yield modelling and calibration.
+Reported yield (L/s or m3/day)
+Pumping test outcomes and duration (if present)
+Drawdown and recovery (Phase 2 for interference modelling)
+ Sources: well completion reports, driller test sheets, council consent documents.
+6.4 Monitoring Bore Time Series (Seasonal and Trend Layers)
+Used for seasonal min/max DTW, long-term trends, and model validation.
+Water level time series (timestamp, level)
+Metadata: sensor type, datum, measurement frequency
+Quality flags if provided
+ Sources: council monitoring networks, utility monitoring networks, restricted datasets (permissioned).
+6.5 Rivers and Recharge Feature Datasets (Covariates and Physical Structure)
+Used to derive recharge proximity and hydraulic context predictors.
+River centerlines (braided rivers and major tributaries)
+River stage surfaces where available (optional)
+Recharge zones (foothills, alluvial fans, known recharge polygons)
+Watershed boundaries (optional)
+ Derived features generated from these datasets
+Horizontal distance to nearest river (m)
+Horizontal distance to recharge zone boundary (m)
+Vertical distance between well screen elevation and recharge reference elevation (m) where river stage or potentiometric surfaces exist
+3D hydraulic distance combining horizontal and vertical distance
+6.6 Geological and Aquifer Maps (Model Zoning and Covariates)
+Used to assign modelling zones and constrain prediction domains.
+Aquifer extents and grouping
+Faults/barriers where mapped
+Geological units (surface and subsurface interpretations)
+Aquifer thickness proxies (where mapped)
+6.7 Soil and Permeability Classification (Recharge Proxy)
+Used primarily for shallow systems and recharge potential indices.
+Soil type polygons or raster classification
+Drainage/permeability class
+Land surface infiltration potential proxies (if available)
+6.8 Elevation Data (Conditional Covariate)
+Used only where it improves spatial cross-validated performance.
+Surface elevation and DEM-derived features are only retained if they improve spatially cross-validated RMSE within a modelling zone
+Derived slope/curvature (optional)
+ Important: In regions like Canterbury where DTW is often weakly correlated with elevation, DEM is treated as optional and is dropped if it reduces accuracy.
+Update Frequency
+Static for historical wells
+Periodic refresh as new wells are published
+6.9 Data Contracts
+
+ Include:
+Canonical well record schema (required vs optional fields)
+Units + normalisation rules (L/s vs m³/day, depth datum assumptions, etc.)
+CRS rules:
+storage CRS(s)
+compute CRS (metric)
+display CRS (WebMercator tiles)
+
+
+Null handling rules (e.g., missing screen depth, missing static WL)
+QA flags taxonomy (what flags exist and how they affect modelling inclusion)
+7. Backend Logic & Processing
+Core Libraries
+PyKrige / GSTools
+Scikit-learn
+NumPy / SciPy
+GeoPandas / Rasterio
+PostGIS
+“Model & Tile Versioning Rules”
+Semantic versioning for:
+model logic
+covariates
+data refresh
+
+
+Immutable tile URLs per version
+
+
+Report must reference:
+model version
+data cut date
+Model Registry & Provenance
+Define:
+release_id format (code_version + data_cut + config_version) (you already describe this—codify fields)
+ Water design Scope doc (7)
+model_run_id per zone and per layer
+hashes:
+input dataset hash
+training set hash per zone
+stored artifacts per run:
+fitted variogram params
+regression model params
+calibration method
+spatial CV configuration
+lineage links:
+tileset manifest → model run → input datasets
+
+8. Frontend & Visualization
+Screens / pages (reference to your prototypes)
+Interactive prototypes
+To build trust and give an immediate impression of the solution a map that visually shows the depth to ground water for the entire region, so the initial experience is very intuitive and the user can see where ground water is and the likely depth
+
+If the user clicks on the map they get a report for that location that opens in a new page
+
+
+Rendering Strategy
+Next.js (React) frontend
+MapLibre GL JS for base mapping
+deck.gl for GPU-accelerated scientific overlays
+This stack supports millions of polygons at interactive frame rates and avoids DOM bottlenecks.
+
+9. System Architecture
+Frontend: Next.js + MapLibre + deck.gl
+Backend: Python (FastAPI)
+Database: Postgres + PostGIS
+Object storage: tiled rasters and vector tiles
+Compute: batch and on-demand model execution
+Hosting: Docker-based cloud deployment
+Mermaid diagram
+
+Diagram Legend (Data Tiers and What Users See)
+Baseline (Public): Uses public well registry, public geology/soil maps, and public river/recharge datasets. Visible to all users under standard access.
+Enhanced (Private Scoped): Baseline plus an organization’s private drilling or monitoring data. Visible only to that organization (and explicitly authorized users).
+Professional Shared (Opt-in Aggregation): Aggregated enhancements from multiple contributors where contracts allow derived use. Visible to licensed professional users in participating regions.
+Institutional: Full access to restricted datasets and advanced governance/audit needs (councils/utilities), often including monitoring networks and planning layers.
+In the diagram, tiering is enforced by AuthN/AuthZ + Tiers controlling access to tile namespaces in object storage/CDN.
+Explicit Non-Responsibilities (Runtime Constraints)
+To ensure performance and scalability, DeepSight enforces the following runtime constraints:
+No kriging, regression-kriging, variogram fitting, or Monte Carlo ensembles are executed as part of a standard user map interaction.
+No full-resolution rasters are generated on user click; all map layers are served as precomputed tiles (value tiles preferred; raster fallback only).
+User clicks request only: precomputed tiles, summary statistics, and a report assembled from stored model artifacts.
+On-demand compute is permitted only for scoped reruns (affected zones only) and is queued, cached, and released as a new model version (never silently overwriting an existing release).
+Model & Tile Versioning and Release Rules
+All model outputs and tiles are versioned so that maps and reports are reproducible and auditable. Every published surface (probability, DTW, yield, uncertainty) is associated with a Model Release ID composed of three components: code version, data cut, and configuration version (covariates, zoning, variogram settings, calibration choices). Tile URLs are immutable per release (new releases generate new tile namespaces), and the UI can safely cache tiles because a “release” never changes once published.
+Releases are promoted using governance gates: spatial cross-validation metrics must meet minimum thresholds (e.g., RMSE for DTW, Brier/calibration for probability, yield confidence class rules) and the release is recorded with provenance (input dataset versions, preprocessing rules applied, and model parameters). Location reports always include: release ID, data cut date, and confidence tier so professional users can cite outputs in client-facing documents.
+Model execution produces two artifacts: (1) model surfaces and statistics (mean, P10/P50/P90, uncertainty metrics) and (2) tile products for fast delivery (value tiles primary). Both are stored with the same release ID and are served through versioned namespaces so frontend caching is safe and rollbacks are straightforward. Any change to covariates, zoning, preprocessing rules, calibration, or training data triggers a new release; releases are promoted only after passing spatial validation gates and are never modified after publication.
+Private Data Isolation Mechanism
+Private-data-enhanced models run in isolated model namespaces that are separate from baseline public releases. Private datasets are stored with explicit ownership and access controls, and model runs that incorporate private data produce tiles and artifacts under separate tile prefixes (e.g., enhanced/{org_id}/{release_id}/...) that are only accessible to authorized users. Baseline public models are never overwritten or contaminated; instead, the system supports parallel releases (Baseline vs Enhanced) so contributors receive local accuracy uplift without exposing raw data or derived advantages to competitors
+Quality Gates (Agent Contracts)
+Two parts:
+A) Golden science outputs
+Fixed fixture dataset(s) per region/zone
+Expected outputs with tolerances:
+DTW: sampled grid values + mean/quantiles
+Probability: Brier score range + calibration curve error bounds
+Rule: PRs that change modelling must update fixtures explicitly and explain why.
+B) Performance budgets (enforced)
+API: point query p95 < X ms
+Tiles: time-to-first paint < 1.5s (from your doc)
+ Water design Scope doc (7)
+Tile payload cap per view: < X MB
+Browser: max memory for tile cache, LRU settings
+Rule: perf regression > 25% fails CI
+Tile Specification
+Include:
+Tile coordinate scheme (XYZ WebMercator)
+Zoom mapping to ground resolution (“100m truth grid” → which max zoom)
+Raster tiles:
+format choice (WebP vs PNG)
+nodata encoding (alpha=0 etc.)
+Value tiles:
+chosen encoding (RGB terrain-style vs uint16 quantized)
+value range, scaling, precision
+nodata sentinel
+Manifest fields:
+layer_name, unit, min/max, percentiles, colormap id, release_id, created_at
+Seam handling rule (buffer + crop) (you mention tile-first compute; make it explicit)
+ Water design Scope doc (7)
+AuthZ & Tenant Isolation Model
+ Define:
+entities: org, user, role, tier, release_namespace
+
+
+enforcement:
+tile prefix access (CDN signed URLs / gateway auth)
+query scoping by release namespace
+
+
+audit events:
+“who accessed which release/layer in which region”
+
+Frontend
+Purpose: Instant first paint, smooth pan/zoom, progressive refinement, and interactive analysis.
+Technology
+Web framework: Next.js (or equivalent)
+Map rendering: MapLibre GL JS
+GPU overlays (optional/advanced): deck.gl
+Tile rendering types
+Raster tiles (WebP/PNG) — pre-colored pixels for fastest initial UX
+Value tiles (numeric tiles):
+RGB-encoded value images (terrain-RGB style), or
+Quantized binary numeric tiles
+Vector tiles (MVT) — wells, boundaries, contours
+How tiles are displayed
+Raster tiles: drawn directly as textures
+Value tiles:
+decoded in a WebGL fragment shader
+color ramps, thresholds, and opacity applied on the GPU
+Vector tiles: GPU-rendered points/lines with clustering
+UX & performance guarantees
+< 1.5 s first paint using low-zoom tiles
+Progressive refinement as higher-resolution tiles stream in
+Viewport-only tile requests + adaptive prefetch
+Cancellation of stale requests during fast pan/zoom
+Bounded in-memory tile cache with LRU eviction
+User interaction
+Click-to-evaluate (DTW, probability, yield, confidence)
+Toggleable confidence / coverage overlays
+Seamless region switching (NZ / AU / USA)
+
+Backend
+Purpose: Low-latency tile delivery and fast analytical queries, with no runtime raster generation.
+API Gateway
+Authentication, rate limiting, logging
+Routes requests to tile, query, and metadata services
+Core services
+Tile Service
+Serves static tiles (z/x/y) via CDN
+Supports:
+raster tiles (WebP/PNG)
+value tiles (RGB-encoded or binary)
+vector tiles (MVT)
+Optionally serves PMTiles or COG-backed dynamic tiles
+
+
+Query Service
+Point query (lat/lon → predictions + confidence)
+Nearest-well lookup
+Region and layer metadata
+
+
+Catalog & Metadata Service
+Model versions, tile versions
+Update timestamps
+Attribution and licensing text
+
+
+Ingestion & Normalization Service
+Imports wells from NZ, AU, US public and private sources
+Normalizes schema, units, CRS, QA flags
+Triggers incremental tile recomputation
+
+
+
+Database
+Purpose: Store and query millions of wells and all metadata — not large rasters.
+Primary database
+PostgreSQL + PostGIS
+Stores:
+well geometries and attributes
+QA flags and timestamps
+region/state/basin polygons
+model and tile metadata
+licensing and provenance
+Scaling strategies
+GiST spatial indexing
+Partitioning by region/state (critical for US scale)
+Thin tables for map rendering; full records fetched on demand
+
+
+Caching
+Redis for:
+point query results
+nearest-well queries
+hot metadata
+
+
+Explicit non-responsibility
+The database does not store full 100 m rasters or heatmap pixels. Raster tiles are stored in object storage and served via CDN; Postgres stores only wells and metadata
+
+Raster & Tile Storage
+Purpose: Efficient storage and ultra-fast delivery of massive heatmap outputs.
+Tile types stored
+Raster tiles: pre-colored pixels (WebP/PNG)
+Value tiles:
+RGB-encoded numeric tiles
+Quantized binary numeric tiles
+Vector tiles: Mapbox Vector Tiles (MVT)
+Storage layer
+Object storage (S3 / GCS / Azure Blob)
+Delivery
+Global CDN (CloudFront / Cloudflare / Fastly)
+Immutable, versioned URLs for aggressive caching
+Optional packaging
+PMTiles for single-file national/regional tile archives
+COGs with overviews for dynamic tiling workflows
+Why this scales
+Browser fetches only 10–50 tiles per view
+CDN edge caching serves most traffic
+No country-scale raster is ever loaded or transmitted
+
+Compute
+Purpose: Generate and maintain 100 m truth-grid heatmaps at national scale.
+Core pattern: tile-first compute
+Interpolate/model per tile with buffer
+Crop to tile bounds to prevent seams
+Write directly to tile storage
+Distributed execution
+Worker framework: Ray or Dask
+Job queue: managed queue (SQS / PubSub / RabbitMQ)
+Pipeline orchestration: Airflow / Dagster / Prefect
+Model execution
+Baseline models for rapid coverage (IDW / RBF)
+High-accuracy models (Regression Kriging / hybrid ML)
+Confidence mask computed per tile (distance, density, uncertainty)
+Incremental updates
+Identify tiles impacted by new wells/covariates
+Recompute only those tiles
+Version outputs for rollback
+Hardware
+CPU-optimized nodes for spatial modeling
+GPU optional (not required for kriging-based workflows)
+
+Hosting
+Purpose: Global low-latency delivery with elastic compute and cost control.
+Frontend
+CDN-backed hosting (Vercel, Cloudflare Pages, Netlify)
+APIs
+Containerized services on Cloud Run / ECS / Fargate
+Kubernetes optional at later scale
+Tiles
+Object storage + CDN (critical path for UX)
+Compute
+Separate autoscaling worker pool
+Spot/preemptible instances where possible
+Observability & operations
+Centralized logging
+Metrics dashboards (latency, cache hit rate, failures)
+Alerting on pipeline and tile generation errors
+Security
+Auth for premium layers
+Rate limiting at CDN and gateway
+Full audit trail of data and model versions
+
+Why this architecture meets your requirements
+Geographic scale: Millions of wells and country-scale 100 m grids are feasible because tiles—not rasters—are the unit of storage and delivery.
+Performance: Maps feel instant because only a handful of cached tiles are loaded.
+Flexibility: Value tiles enable dynamic styling without reprocessing data.
+Accuracy: All modeling is done in metric CRSs on a true 100 m grid.
+Trust: Confidence masks and provenance are first-class outputs.
+
+10. Produce high-resolution map views
+1.1 Output products (what you must generate)
+R1. Map layers (minimum)
+Depth to groundwater (DTW): continuous surface (meters)
+Probability of groundwater: 0–1 (or 0–100%) surface
+Expected yield (if available): continuous surface (e.g., L/s or m³/day)
+Uncertainty / confidence: continuous surface (e.g., prediction std dev, or quantile width)
+Data coverage / reliability mask: categorical or continuous “trust” layer
+R2. Multi-scale pyramid outputs
+ Each layer must be available as a multi-resolution pyramid with zoom levels supporting:
+country / continent overview (coarse)
+regional (medium)
+local farm-scale detail (fine)
+“Fine” must include your 100 m × 100 m ground grid as the highest required resolution (or finer, but not required).
+R3. Tile-based deliverables
+ Output must be consumable as a tile set (z/x/y) for fast web display.
+Supported delivery formats (at least one):
+Pre-rendered raster tiles (WebP/PNG) per layer, per zoom
+Value tiles (RGB-encoded or quantized values) for GPU colorization in-browser
+Optional: COG + tiler (dynamic tiles) if fewer stored files are preferred
+Acceptance criteria
+Given a bbox and a zoom, the system can return the exact set of tiles needed to render all enabled layers.
+Incremental Recompute Algorithm
+Define:
+What triggers recompute (new wells, updated covariates, zoning changes)
+Impacted tiles detection:
+spatial index lookup of tiles intersecting buffer radius
+per-zone impacted set
+Rules:
+recompute by zone or tile depending on model type
+release creation rules (never overwrite; new release namespace)
+Observability requirements per tile (you mention them—define table fields) 
+API Contracts”
+ Minimum endpoints:
+GET /tiles/{release}/{layer}/{z}/{x}/{y}
+GET /query/point?lat=..&lon=..&release=..
+GET /catalog/releases
+GET /catalog/layers?release=..
+GET /wells/nearby?lat=..&lon=..&radius=..
+
+
+Include response shape + caching headers behavior.
+
+1.4 Performance + orchestration requirements (production scale)
+R11. Throughput
+Support ~5,000 wells per interpolation tile
+Generate 1,000s–100,000s of tiles across zoom levels
+R12. Parallelism
+Tile jobs must be embarrassingly parallel (Dask / Ray / queue workers)
+Workers must be stateless
+R13. Incremental updates
+Identify impacted tiles
+Recompute only affected tiles
+Version outputs for rollback
+R14. Storage + CDN
+Tiles stored in object storage
+Served via CDN with long-lived caching and versioned URLs
+R15. Observability
+ Track per-tile:
+model used
+input counts
+compute time
+error state
+uncertainty summary
+Maintain dashboards for failures and hotspots.
+Acceptance criteria
+Partial rebuilds complete without full reprocessing
+Tiles remain fast and cacheable under load
+
+11. Display maps with a great user experience
+2.1 “Windy.com-like” UX goals (non-functional)
+D1. Instant first paint
+< 1.5 seconds to meaningful map
+Load basemap + low-zoom tiles + UI skeleton
+D2. Smooth interaction
+60 fps target on modern laptops
+Graceful degradation on weaker devices
+D3. Progressive refinement
+Show coarse tiles immediately
+Refine as higher-zoom tiles arrive
+Never block interaction
+D4. Predictable performance
+Never download country-scale rasters
+Request only viewport + small prefetch margin
+
+2.2 Rendering requirements
+D5. WebGL renderer
+MapLibre GL / Mapbox GL / deck.gl
+Support stacked layers, opacity, blend modes
+D6. Layer types
+Continuous surfaces: raster tiles or value-tile shaders
+Probability: raster or value tiles with thresholding
+Wells: point layer with clustering + tooltips
+Optional: contours (low density)
+D7. Color ramps + legends
+Units displayed
+Global + local min/max
+Percentile clipping toggle
+D8. No-data transparency
+Transparent or hatched areas for coverage gaps
+Acceptance criteria
+Layer toggles are instant
+Legends always match rendered data
+
+2.3 Interaction requirements
+D9. Click-to-evaluate
+ Returns:
+predicted DTW / probability / yield
+confidence score
+nearest wells (count, distances)
+“why” breakdown (top drivers if ML)
+D10. Drilldown panel
+values + confidence
+nearby wells list
+cross-section (later)
+downloadable report (later)
+D11. Region switching
+Seamless NZ / AU / USA switching
+Region-specific extents and layers
+Acceptance criteria
+Click response < 500 ms
+Region switch keeps UI state, swaps tiles
+
+2.4 Performance engineering requirements (browser)
+D12. Tile request management
+Prioritize center-viewport tiles
+Cancel stale requests
+Adaptive prefetch
+D13. Memory management
+Tile cache limits
+LRU eviction
+D14. Mobile fallback
+Reduced effects
+Optional max-zoom cap
+Prefer pre-colored tiles
+Acceptance criteria
+No memory bloat or pan stutter
+
+2.5 Trust, transparency, and safety UX (critical)
+D15. Confidence-first design
+Confidence always visible
+Data-density overlay toggle
+D16. Explain limitations
+Clear inline disclaimers
+Nudge users when uncertainty is high
+D17. Versioning & provenance
+Model version
+Data freshness
+Source attribution
+Acceptance criteria
+Users can clearly distinguish reliable vs speculative areas
+
+Suggested MVP scope (ship fast, correctly)
+MVP v1
+Pre-colored raster tiles (WebP) for DTW + Probability
+Wells overlay + click query
+Confidence mask overlay
+NZ (Canterbury) → one AU state → one US state
+MVP v2
+Value tiles + GPU color ramps
+Incremental tile recompute + versioning
+Uncertainty layer
+
+12. Non-Functional Requirements
+Performance: sub-second map interaction
+Scalability: regional to national datasets
+Security: read-only public data, permissioned private layers
+Reliability: cached model outputs
+Compliance: regional data usage regulations
+13. MVP Definition
+V1 (Decision-Grade Core)
+Probability of groundwater
+Depth to groundwater (seasonal min/max)
+Expected yield
+Uncertainty surfaces
+Regression kriging and indicator kriging
+V2 (Advanced Hydro Features)
+Drawdown cones
+Well interference modelling
+Flow lines and contours
+Geological cross-sections
+Long-term groundwater trends
+
+14. Risks & Assumptions
+Risks
+Sparse data in some regions
+Variable public data quality
+Misinterpretation of uncertainty
+Assumptions
+Users accept probabilistic outputs
+Public datasets remain accessible
+Decision support is valued over guarantees
+15. Commercial Model, Pricing & Market Strategy
+DeepSight is positioned as decision-grade infrastructure for groundwater planning, not a consumer mapping product. Its commercial model reflects how groundwater decisions are actually made, who carries risk, and who influences outcomes.
+
+15.1 Market Reality & Buying Dynamics
+Groundwater drilling decisions have three defining characteristics:
+High irreversible cost
+ ($50k–$150k+ per well)
+Asymmetric risk
+ One failed well can outweigh years of small savings
+Delegated expertise
+ Farmers rely on drillers and consultants to interpret risk
+As a result, DeepSight is designed to monetise:
+decisions, not browsing
+professional usage, not casual curiosity
+confidence and defensibility, not raw data access
+
+15.2 Primary Customer Segments (Who Actually Pays)
+1. Drilling Companies & Groundwater Consultants (Primary Revenue Driver)
+This is the most important commercial insight from the recent chats.
+Drillers are:
+repeat users
+geographically mobile
+highly incentivised to improve success rates
+reputationally exposed when wells fail
+Contrary to initial intuition:
+Drill failures hurt drillers more than farmers in the long run.
+Failed wells:
+reduce referrals
+create disputes
+damage local reputation
+increase regulatory scrutiny
+Why drillers pay
+To choose where not to drill as much as where to drill
+To justify decisions to clients
+To reduce failure rates
+To differentiate from competitors using intuition or divining
+How they buy
+Annual or multi-year professional licenses
+Access to multiple inventory layers
+Commercial usage rights (client-facing)
+This is where predictable revenue lives.
+
+2. Farmers & Landowners (Transaction-Based Buyers)
+Farmers:
+pay only when a drilling decision is imminent
+do not want ongoing subscriptions
+want answers, not tools
+Why they pay
+To decide whether to drill
+To decide where and how deep
+To understand risk before committing capital
+Buying behaviour
+One-off or short-term access
+Will pay hundreds of dollars to reduce a six-figure risk
+Value clarity over technical depth
+Farmers are best served as:
+pay-per-report users
+or indirect beneficiaries via driller usage
+
+3. Councils, Utilities & Institutions (Secondary, High-Value)
+These users:
+value transparency, auditability, and uncertainty
+move slowly
+require procurement processes
+pay well once adopted
+They are not the MVP target, but represent:
+long-term contracts
+regional-scale deployments
+strong credibility signals
+
+15.3 Inventory-Layer Monetisation (Key Commercial Lever)
+DeepSight’s defensibility and revenue scale come from layered inventory, not user count.
+Each layer answers a more expensive question.
+Inventory Layer
+Question Answered
+Commercial Value
+Depth to groundwater
+“How deep do I drill?”
+Core cost driver
+Probability of groundwater
+“Will this work at all?”
+Risk framing
+Yield estimate
+“Will it meet demand?”
+Operational viability
+Seasonal min/max
+“Will it fail in summer?”
+Reliability
+Uncertainty surfaces
+“How confident is this?”
+Trust & liability
+Interference / drawdown
+“Will neighbours affect me?”
+Advanced / V2
+Cross-sections & geology
+“Why is this happening?”
+Professional justification
+
+Users pay more as they move closer to action and accountability.
+
+15.4 Pricing Model 
+Tier A — Driller / Consultant License (Core Revenue)
+Target
+Drilling companies
+Hydro consultants
+Includes
+Full regional access
+All V1 inventory layers
+Client-facing reports
+Commercial usage rights
+Indicative pricing
+NZ / AU: $5,000 – $15,000 per year per company
+USA (state-based): $10,000 – $25,000+ per year
+Only a small fraction of drillers need to adopt for strong revenue.
+
+Tier B — Property Decision Report (Farmer-Facing)
+Target
+Farmers about to drill
+Includes
+One location
+DTW (seasonal min/max)
+Probability + uncertainty
+Yield range
+Neighbouring wells context
+Indicative pricing
+$200 – $500 per report
+This is intentionally:
+cheaper than a drilling mistake
+expensive enough to signal seriousness
+
+Tier C — Regional / Institutional Access (Phase 2)
+Target
+Councils
+Utilities
+Regulators
+Includes
+Regional models
+Scenario analysis
+Long-term trend layers
+Audit documentation
+Pricing
+Custom / contract-based
+
+15.5 Adoption Expectations
+This is not a mass-market SaaS.
+Expected adoption:
+5–15% of drillers in a region
+Low churn (workflow embedded)
+Farmers mostly arrive via drillers or just-in-time decisions
+DeepSight succeeds if:
+It becomes a standard pre-drilling check among professionals.
+
+15.6 Competitive & AI Defensibility 
+DeepSight is defensible because:
+It encodes domain rules (dry-well handling, aquifer zoning)
+It uses spatial validation, not generic ML metrics
+It exposes uncertainty explicitly
+It is regionally tuned (not globally generic)
+It produces outputs that can be stood behind professionally
+Generic AI tools:
+can explain groundwater concepts
+cannot produce decision-grade, spatially validated, auditable outputs
+This makes DeepSight infrastructure, not content.
+
+15.7 Commercial Success Criteria
+DeepSight is commercially successful when:
+Drillers reference it when advising clients
+Reports are attached to drilling quotes
+Failed wells decrease in covered regions
+“Did you check DeepSight?” becomes a normal question
+At that point, pricing power follows naturally.
+16. Private Data Integration & Accuracy Uplift Model
+DeepSight recognises that the highest-quality groundwater intelligence often exists outside public datasets.
+ Local authorities, drilling companies, and consultants frequently hold private or semi-private data that can materially improve model accuracy for specific areas.
+Rather than treating this as a data acquisition problem, DeepSight treats it as a commercial accuracy upgrade.
+
+16.1 Types of Private Data Held by Local Bodies & Drillers
+Potential contributors often hold data such as:
+Drillers
+Failed wells not reported publicly
+Precise static water levels
+Screen intervals and test yields
+Pumping test results
+Temporal measurements during drilling
+Anecdotal “near-miss” locations
+Local Authorities / Utilities
+Monitoring bore time series
+Aquifer pressure data
+Long-term trend analyses
+Regulatory-only datasets
+Recharge estimates and flow models
+This data is often:
+spatially dense
+regionally specific
+unavailable to competitors
+extremely valuable for local accuracy
+
+16.2 Why Contributors Are Incentivised to Share Data
+Contributors do not want to “give away” their data — but they do want better outcomes.
+Key incentives:
+Improved Local Accuracy
+
+
+Their data improves predictions where they operate
+Fewer failed wells
+Better decision outcomes
+
+
+Competitive Advantage
+
+
+Contributors receive access to enhanced local models
+Non-contributors see only baseline public-data models
+
+
+Data Control & Privacy
+
+
+Data is:
+
+
+permissioned
+region-scoped
+never exposed raw to other users
+
+
+Reduced Liability
+
+
+Better models → fewer disputes
+Clear uncertainty communication
+
+16.3 How Private Data Is Integrated (Technically & Commercially)
+Private data is integrated as a model augmentation, not a global overwrite.
+Key principles
+Data is:
+
+
+isolated by contributor
+spatially scoped
+versioned
+Models are:
+
+
+recalibrated locally
+never “polluted” globally
+Integration workflow
+Contributor uploads or authorises data
+Data is validated and normalised
+Models are re-run for affected zones
+Accuracy metrics (RMSE, uncertainty) are re-evaluated
+Enhanced layers are generated
+
+16.4 Tiered Accuracy Model (Critical Commercial Mechanism)
+DeepSight operates with explicit accuracy tiers:
+Model Tier
+Data Sources
+Who Sees It
+Baseline
+Public datasets only
+All users
+Enhanced
+Public + contributor private data
+Contributor only
+Professional Shared
+Aggregated private data (opt-in)
+Licensed professionals
+Institutional
+Full datasets
+Councils / utilities
+
+This ensures:
+Contributors benefit first
+Data sharing never erodes competitive position
+Accuracy becomes a paid feature
+
+16.5 Commercialisation of Data Contribution
+Private data integration is not free — it is a premium capability.
+Pricing mechanisms
+Included in higher-tier professional licenses
+Additional fee for:
+model re-runs
+accuracy uplift
+private-layer hosting
+Long-term contracts for councils and utilities
+This reframes the value proposition from:
+“Give us your data”
+to:
+“Pay to unlock higher-accuracy models using your data”
+
+16.6 Data Governance & Trust
+To make this viable, DeepSight enforces strict governance:
+Raw private data is never exposed to other users
+Models clearly label:
+data sources
+confidence levels
+coverage extent
+Contributors retain ownership of their data
+Data can be withdrawn or time-limited
+Trust is treated as a core product feature, not a legal afterthought.
+
+16.7 Strategic Impact
+This model creates a powerful flywheel:
+More contributors → better local accuracy
+Better accuracy → stronger professional adoption
+Professional adoption → more data contribution
+Importantly:
+DeepSight improves fastest where it is already trusted, not everywhere at once.
+This aligns incentives without relying on altruism or open data.
+
+16.8 Why This Is Defensible
+This approach is hard to copy because it requires:
+Technical ability to isolate models spatially
+Robust uncertainty handling
+Strong governance
+Trust from professionals
+Generic AI tools cannot replicate this without deep domain integration.
+
+Summary (Why This Matters)
+This model:
+unlocks hidden data value
+creates premium accuracy tiers
+strengthens professional lock-in
+improves outcomes without compromising data ownership
+It turns data asymmetry into a feature, not a problem.
+
+17. Confidence-Adjusted Pricing, Revenue Model & Valuation
+17.1 Confidence-Adjusted Pricing (Critical Mechanism)
+DeepSight pricing is explicitly tied to decision confidence, not just feature access.
+Groundwater decisions carry asymmetric risk:
+A confident recommendation can justify action
+A low-confidence result must be cheaper, or advisory only
+
+
+DeepSight therefore prices certainty, not pixels.
+Confidence Tiers (User-Facing)
+Confidence Tier
+Characteristics
+User Meaning
+High
+Dense wells, consistent depths, stable geology
+Decision-grade
+Moderate
+Mixed data density, some disagreement
+Advisory
+Low
+Sparse or conflicting data
+Risk screening only
+
+Pricing Implication
+High confidence outputs justify higher pricing
+Low confidence outputs are explicitly discounted
+Users are never charged “decision-grade prices” for speculative areas
+This aligns:
+Trust
+Liability
+Willingness to pay
+
+17.2 Pricing by User Type (With Confidence Adjustment)
+Tier A — Driller / Consultant License
+Base price covers access
+ Effective value scales with confidence availability in their operating regions
+High-confidence regions → higher ROI → strong renewal
+Low-confidence regions → advisory usage only
+This naturally limits churn.
+Tier B — Property Decision Report (Farmer)
+Report pricing is confidence-aware:
+Confidence Outcome
+Indicative Price
+High confidence
+$400–$500
+Moderate confidence
+$250–$350
+Low confidence
+$100–$200 (screening only)
+
+This prevents:
+Overcharging in uncertain regions
+Perceived “map selling”
+
+17.3 Revenue Ramp to $2.5M (Conservative)
+
+Value Alignment: Professionals (drillers/consultants) stand to gain the most—defensible reports reduce reputational risk, avoid failed wells (saving $50k+ per avoidance), and enable premium client charging. A $5k–$7k fee delivers quick ROI if it prevents even one moderate failure or wins extra jobs. This is conservative compared to the scope's higher targets ($10k–$25k in USA) but realistic for launch.
+Market Benchmarks:
+Closest analog: DrillerDB (US water well drilling ops software with AI depth estimation) uses a "simple monthly subscription" (implied affordable, likely $200–$500/month or ~$2.4k–$6k/year, including unlimited users/support).
+Oil/gas drilling reporting tools (e.g., On Demand Well Operations) start at ~$750/month (~$9k/year), but that's for larger ops.
+Broader B2B agtech/environmental SaaS: Professional tools often $3k–$15k/year (e.g., precision ag platforms like Farmers Edge or environmental GIS add-ons). Hydrogeology software (e.g., Groundwater Vistas) is often perpetual license (~$5k–$10k one-time) with annual maintenance, but SaaS shifts to recurring.
+General B2B SaaS trends (2026): Mid-market tools average $5k–$20k/year for specialized decision-support, with hybrids blending subscription + usage.
+Regional Starter Adjustment: Begin lower in NZ/AU ($4k–$6k NZD/AUD equiv.) where drillers may be smaller operations, then tier up for USA ($8k+). This matches the scope's regional variance ($5k–$15k NZ/AU vs. higher US).
+Launch Strategy: Start at the lower end ($5k–$6k) for beta/early users to drive adoption and testimonials. Include perks like unlimited reports, private data integration, and support to justify value.
+To encourage uptake:
+Basic Professional: $4,800/year (~$400/month) – Core maps, probability/depth/yield reports (limited credits), basic uncertainty.
+Standard Professional (Recommended Start): $6,000–$7,200/year – Unlimited reports, seasonal layers, custom branding for client sharing.
+Premium: $9,000+ – Advanced (V2 interference), priority support, private data uplifts.
+Add a 20–30% discount for annual prepay or multi-year commitments. Pilot with 10–20 drillers at introductory rates to validate.
+This range balances accessibility (avoiding sticker shock in a conservative industry) with profitability, setting up upsells as the data flywheel improves accuracy. Test via surveys or A/B offers—aim for 3–5x perceived ROI to hit 10% adoption quickly.
+Market realities temper projections:
+NZ has ~50–100 active water well drilling companies (based on federation listings and directories showing dozens of registered firms).
+Australia has several hundred (directories list 100+ specialists).
+US groundwater drilling is vast but fragmented (thousands of licensed drillers, e.g., California/Texas alone have massive well counts).
+Total addressable professional users in initial markets: ~400–600 drillers/consultants.
+B2B SaaS benchmarks (2025 data): Median Year 1 revenue for early-stage startups is low ($100k–$500k), with growth slowing to 28–50% YoY as ARR scales. Agtech/environmental niches often start slower due to conservative adoption.
+Closest analog (DrillerDB): Affordable monthly subscriptions (~$79–$199/month), suggesting room for premium pricing if value (probabilistic intelligence) proves out.
+Customer Acquisition Cost (CAC): ~$1,000–$3,000 per professional customer in agtech/B2B (higher for field-based sales; lower with inbound/freemium).
+Assumptions (Explicit & Conservative)
+Region example: NZ + 1 AU state + 1 US state
+Drillers in scope: ~400
+Adoption rate: 10% (40 companies)
+Farmer reports are mostly pull-through, not primary sales
+Revised Revenue
+Year 1 (validation)
+10 drillers × $5k = $50k
+150 reports × $300 = $45k
+Total: ~$95k
+Year 2 (early PMF)
+25 drillers × $5.5k = $137k
+450 reports × $325 = $146k
+Total: ~$283k
+Year 3 (regional credibility)
+40 drillers × $6.5k = $260k
+900 reports × $375 = $338k
+Total: ~$600k
+Year 4 (controlled expansion)
+120 drillers × $8k = $960k
+2,400 reports × $425 = $1.02M
+3 enterprise / institutional contracts × $180k = $540k
+Total: ~$2.52M
+$2.5M ARR is achievable by Year 4 through moderate geographic expansion, increased professional ARPU as users adopt higher tiers, maturation of report pull-through, and a small number (3–5) of regional enterprise contracts — without requiring mass-market farmer adoption.
+
+17.4 Valuation (Conservative Multiples)
+DeepSight is decision-grade infrastructure, not content SaaS.
+Appropriate multiples:
+4–6× ARR (conservative, infrastructure-adjacent)
+Higher if institutional contracts dominate
+At $2.5M ARR:
+Multiple
+Valuation
+4×
+$10M
+5×
+$12.5M
+6×
+$15M
+
+This excludes:
+Strategic value to drilling firms
+Data moat compounding
+Expansion to additional regions
+
+17.5 Failure Case — What Breaks This
+DeepSight fails if any one of the following occurs:
+Uncertainty is hidden or softened
+Leads to mistrust
+Leads to reputational damage
+
+
+Drillers do not adopt
+Farmer-only sales do not scale
+Product becomes a “map curiosity”
+
+
+Private data governance fails
+Loss of trust
+Immediate professional churn
+
+
+Models are not spatially validated
+RMSE looks good, outcomes are bad
+Professionals stop trusting outputs
+
+
+Pricing ignores confidence
+Users feel overcharged in poor data regions
+Perception of pseudo-science risk
+The current architecture and model choices explicitly mitigate these risks — but they must remain product rules, not marketing language.
+Operational Failure Modes
+ Examples:
+tiles missing at some zoom → fallback to lower zoom, show warning
+query service degraded → cached result or “temporarily unavailable”
+sparse data region → force “screening only” UX and pricing tier
+modelling job fails mid-run → release is not promoted; old release remains
+18. Report
+(Primary orientation section)
+Purpose
+Provide a clear framing of the decision and its key risks, without oversimplification.
+This section allows users to understand:
+what the analysis suggests
+where uncertainty lies
+what requires further consideration
+DeepSight intentionally sacrifices coverage and confidence in low-data regions rather than producing misleading outputs.
+ Areas with insufficient data are:
+flagged
+discounted
+sometimes deliberately not recommended
+The absence of guidance is treated as a valid, decision-relevant outcome.
+Contents
+Headline guidance (plain language)
+ Example:
+“Relocating approximately 200–300 m east of the originally proposed site is associated with lower overall drilling risk based on available data.”
+Decision status indicator
+🟢 Lower risk relative to nearby alternatives
+🟡 Moderate risk / uncertainty present
+🔴 High risk based on current information
+Key summary metrics
+Likelihood of encountering usable groundwater (%)
+Expected drilling depth range (P10–P90)
+Yield adequacy (qualitative: adequate / marginal / uncertain)
+Interference risk (qualitative: Low / Moderate / High / Unknown)
+Primary risk drivers (e.g. seasonal variability, sparse data, neighbour abstraction pressure)
+Anchor reference
+Selected analysis location
+Distance and direction from any original proposed site
+Why this section exists
+It orients the reader
+It frames trade-offs
+It avoids false certainty
+
+18.1 Confidence & Data Transparency
+(Trust and expectation management)
+Purpose
+Explain how confident the assessment is and why.
+Contents
+Confidence score
+Numeric score (e.g. 78 / 100)
+Qualitative label: High / Moderate / Low
+Drivers of confidence (plain-language bullets)
+ Examples:
+Density of nearby wells
+Consistency of groundwater depths
+Geological uniformity
+Agreement between independent models
+Clarity of neighbour well context (where metadata exists)
+Data support inset
+Small map showing data density or coverage
+Explicit limitation statement
+“This assessment is probabilistic and reflects available data and modelled uncertainty. It does not guarantee drilling outcomes.”
+Why this section exists
+Prevents over-interpretation
+Protects professional credibility
+Justifies pricing based on confidence
+
+18.2 Local Groundwater Overview
+(From point selection to spatial context)
+Purpose
+Show how groundwater conditions vary across the local area, not just at a single point.
+Contents
+Map of the local context envelope (parcel or defined buffer)
+Groundwater probability surface (contextual)
+Highlighted recommended drilling area(s), if identified
+Currently selected anchor location
+Neighbour well context (nearby wells and local density, shown visually)
+Key rule
+This section provides context, not conclusions.
+
+18.3. Recommended Drilling Areas
+(Guidance, not prescriptions)
+Concept
+DeepSight identifies recommended drilling areas where overall drilling risk is lower relative to nearby alternatives, based on multiple factors considered jointly.
+Internal basis (not exposed numerically)
+Probability of groundwater
+Model confidence / uncertainty
+Yield adequacy
+Seasonal reliability
+Interference risk screening (proximity and density of neighbouring wells, where data exists)
+Depth to groundwater is treated as a cost and design consideration, not a suitability driver, in regions where deeper systems may be more reliable.
+User-facing representation
+One or two softly shaded areas
+Simple labels (e.g. “More reliable area”)
+If no area meets minimum reliability thresholds, no recommended area is shown.
+ This absence is an intentional and meaningful result.
+Explanation of Recommended Areas
+Whenever a recommended drilling area is shown, the report must clearly explain why that area is favoured relative to nearby alternatives.
+This explanation is provided through:
+spatial context on the map
+cross sections intersecting the recommended area
+a short, fixed-format plain-language summary
+The explanation must reference:
+relative groundwater likelihood
+yield adequacy
+seasonal stability
+model confidence
+neighbour interference screening (e.g. fewer nearby high-use wells)
+Numerical optimisation scores or factor weightings are intentionally not exposed.
+If no area can be clearly justified as lower risk, no recommended area is shown, and this outcome is explicitly stated.
+Why this is the right balance
+answers the user’s “why”
+keeps the UX simple
+reinforces trust through visuals
+avoids overclaiming
+aligns with a cross-section-first design
+In short:
+The shaded area draws attention
+The cross section explains it
+The bullets confirm it
+
+18.4 Cross Sections & Subsurface Explanation
+(Primary explanatory mechanism)
+Purpose
+Explain why conditions vary spatially and why certain areas are favoured.
+Automatic generation
+For every selected location, DeepSight generates two cross sections automatically:
+Cross Section A: aligned with the strongest local change in depth and/or confidence
+Cross Section B: perpendicular context section
+Both sections:
+span the local context envelope
+are anchored at the selected location
+Cross section contents
+Each cross section visualises, in a single view:
+Median depth to groundwater
+Seasonal depth envelope (min / max)
+Prediction uncertainty
+Simplified aquifer / geological context
+Nearby wells intersecting or adjacent to the section
+Neighbour well markers and local abstraction context (where metadata exists)
+Where applicable, seasonal behaviour and potential neighbour influence are reflected visually through:
+widening seasonal envelopes
+changes in depth consistency
+clustering or absence of supporting wells
+This avoids the need for separate, abstract sections for seasonality or interference.
+
+18.5 Cross Section Interaction & Update Workflow
+(Explicit UX requirement)
+Click-to-regenerate behaviour
+Clicking a new location on the map:
+re-anchors the analysis
+regenerates both cross sections automatically
+updates recommended drilling areas
+updates the report content
+Users do not manage or “reset” cross sections — clicking again is the reset.
+Interactive adjustment
+Cross sections are always visible as lines on the map
+Each section has draggable endpoints
+Dragging a section:
+updates the cross-section view immediately
+updates supporting summaries in the report
+This makes cross sections:
+easy to generate
+easy to reinterpret
+spatially obvious at all times
+
+18.6. Alternatives & Trade-Offs
+(Comparison, not optimisation)
+Purpose
+Help users understand relative risk differences, not to optimise numerically.
+Contents
+Spatial alternatives table, comparing:
+selected anchor
+nearby alternatives
+original proposed site (if applicable)
+Metrics are comparative and rounded:
+probability (approximate)
+depth range
+confidence
+interference risk (Low / Moderate / High / Unknown)
+qualitative overall risk
+Interpretive text
+ Example:
+“Locations 200–300 m east show lower uncertainty, more stable seasonal behaviour, and lower neighbour-interference screening risk compared to the original site.”
+This section supports judgment rather than replacing it.
+
+18.7. Summary & Next Considerations
+(Close with clarity, not instruction)
+Contents
+Summary of key findings
+Where conditions appear more or less reliable
+Interference considerations (e.g. nearby abstraction, data gaps)
+Primary uncertainties to consider
+What additional information could change the assessment
+Validity statement
+“This assessment reflects data available as of [date] and should be revisited if new wells or pumping information becomes available.”
+
+Golden Rule (Explicit)
+The report must support careful decision-making even when uncertainty remains, without creating false confidence or unnecessary complexity.
+
+Why this structure is intentional
+It respects the seriousness of the decision
+It avoids unvetted financial or operational prescriptions
+It uses cross sections as the unifying explanation for:
+depth
+yield adequacy
+seasonality
+neighbour interference context
+It keeps the UX simple:
+ click → see → adjust → understand
+Ff
+
+Links
+https://geostat-framework.readthedocs.io/projects/gstools/en/stable/examples/03_variogram/03_directional_2d.html
+https://www.researchgate.net/figure/Main-aquifer-types-of-Canterbury-region-inset-figure-shows-New-Zealand-include-coastal_fig1_363320994
+https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2018WR023437
+
+https://www.researchgate.net/publication/353245804_Spatial_Interpolation_for_the_Distribution_of_Groundwater_Level_in_an_Area_of_Complex_Geology_Using_Widely_Available_GIS_Tools
+
+https://lida.leeds.ac.uk/research-projects/harnessing-ai-for-groundwater-predictions/
+
+https://www.fulcrumapp.com/blog/ai-driven-groundwater-monitoring-exploring-cutting-edge-technologies/
+
+chrome-extension://efaidnbmnnnibpcajpcglclefindmkaj/https://www.ijraset.com/best-journal/ai-enabled-water-well-predictor
+
+https://github.com/peterson-tim-j/HydroSight/blob/master/README.md
+
+https://farmonaut.com/precision-farming/ai-enabled-water-well-predictor-ai-crop-yield-prediction#ai-enabled-water-well-predictor
+
+https://peterson-tim-j.github.io/HydroSight/
+
+

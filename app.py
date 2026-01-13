@@ -2566,152 +2566,149 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
                 print(f"🔧   Features: {feature_count}, Sample coords: {coord_samples[:3]}")
             
             valid_heatmaps_for_raster.append(stored_heatmap['heatmap_name'])
+    
+    # Generate single unified smooth raster if we have combined data (OUTSIDE the for loop)
+    if combined_geojson['features']:
+        print(f"🌬️  UNIFIED SMOOTH RASTER: Combining {len(combined_geojson['features'])} triangles from {len(valid_heatmaps_for_raster)} heatmaps")
+        print(f"🌬️  Heatmaps included: {', '.join(valid_heatmaps_for_raster)}")
+        print(f"🌬️  Overall bounds: N={overall_bounds['north']:.3f}, S={overall_bounds['south']:.3f}, E={overall_bounds['east']:.3f}, W={overall_bounds['west']:.3f}")
         
-        # Generate single unified smooth raster if we have combined data
-        if combined_geojson['features']:
-            print(f"🌬️  UNIFIED SMOOTH RASTER: Combining {len(combined_geojson['features'])} triangles from {len(valid_heatmaps_for_raster)} heatmaps")
-            print(f"🌬️  Heatmaps included: {', '.join(valid_heatmaps_for_raster)}")
-            print(f"🌬️  Overall bounds: N={overall_bounds['north']:.3f}, S={overall_bounds['south']:.3f}, E={overall_bounds['east']:.3f}, W={overall_bounds['west']:.3f}")
-            
-            # Use the stored heatmap's interpolation method for colormap consistency
-            method = st.session_state.stored_heatmaps[0].get('interpolation_method', 'kriging') if st.session_state.stored_heatmaps else 'kriging'
-            
-            # Create combined clipping polygon: include soil areas AND exclude red/orange zones
-            combined_clipping_polygon = st.session_state.new_clipping_polygon
-            
-            # For non-indicator methods, subtract red/orange exclusion zones AND hydrogeological basement exclusions from clipping polygon
-            if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
-                try:
-                    import geopandas as gpd
-                    from shapely.ops import unary_union
-                    
-                    all_exclusions = []
-                    
-                    # Load red/orange exclusion zones
-                    exclusion_file_path = "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson"
-                    if os.path.exists(exclusion_file_path):
-                        exclusion_gdf = gpd.read_file(exclusion_file_path)
-                        all_exclusions.append(exclusion_gdf.geometry.unary_union)
-                        print(f"🚫 SMOOTH RASTER: Loaded {len(exclusion_gdf)} red/orange exclusion polygons")
-                    else:
-                        print(f"🚫 SMOOTH RASTER: Red/orange exclusion file not found: {exclusion_file_path}")
-                    
-                    # Load hydrogeological basement exclusions (zones 1-3)
-                    from hydrogeological_basement_reader import load_hydrogeological_exclusions
-                    hydro_exclusions = load_hydrogeological_exclusions()
-                    if hydro_exclusions is not None and len(hydro_exclusions) > 0:
-                        # Extract geometry from GeoDataFrame
-                        hydro_geom = hydro_exclusions.geometry.iloc[0]
-                        all_exclusions.append(hydro_geom)
-                        print(f"🚫 SMOOTH RASTER: Loaded hydrogeological basement exclusions (zones 1-3)")
-                    
-                    # If we have any exclusions, apply them
-                    if all_exclusions:
-                        # Combine all exclusion geometries
-                        combined_exclusion_union = unary_union(all_exclusions)
-                        print(f"🚫 SMOOTH RASTER: Combined {len(all_exclusions)} exclusion layer(s)")
-                        
-                        # If we have a base clipping polygon, subtract exclusion zones from it
-                        if combined_clipping_polygon is not None and len(combined_clipping_polygon) > 0:
-                            # Get the clipping polygon geometry  
-                            if hasattr(combined_clipping_polygon, 'geometry'):
-                                base_clipping_geom = combined_clipping_polygon.geometry.unary_union
-                            else:
-                                base_clipping_geom = combined_clipping_polygon
-                            
-                            # Subtract all exclusion zones from clipping polygon using difference
-                            try:
-                                combined_clipping_geom = base_clipping_geom.difference(combined_exclusion_union)
-                                # Convert back to GeoDataFrame for consistency
-                                combined_clipping_polygon = gpd.GeoDataFrame([1], geometry=[combined_clipping_geom], crs='EPSG:4326')
-                                print(f"🚫 SMOOTH RASTER: Successfully created combined clipping polygon (soil areas minus all exclusions)")
-                            except Exception as e:
-                                print(f"🚫 SMOOTH RASTER: Failed to subtract exclusion zones: {e}, using original clipping")
-                        else:
-                            print(f"🚫 SMOOTH RASTER: No base clipping polygon, exclusions not applied to smooth raster")
-                    else:
-                        print(f"🚫 SMOOTH RASTER: No exclusion zones loaded")
-                except Exception as e:
-                    print(f"🚫 SMOOTH RASTER: Error applying exclusion clipping: {e}")
-            
-            # Generate single unified smooth raster across ALL interpolation data
-            # OPTIMIZATION: Aggregate raw_grid data from all heatmaps to preserve full kriging detail
-            
-            # Aggregate raw_grid data from all stored heatmaps
-            aggregated_raw_grid = None
+        # Use the stored heatmap's interpolation method for colormap consistency
+        method = st.session_state.stored_heatmaps[0].get('interpolation_method', 'kriging') if st.session_state.stored_heatmaps else 'kriging'
+        
+        # Create combined clipping polygon: include soil areas AND exclude red/orange zones
+        combined_clipping_polygon = st.session_state.new_clipping_polygon
+        
+        # For non-indicator methods, subtract red/orange exclusion zones AND hydrogeological basement exclusions from clipping polygon
+        if method not in ['indicator_kriging', 'indicator_kriging_spherical', 'indicator_kriging_spherical_continuous']:
             try:
-                all_lons = []
-                all_lats = []
-                all_values = []
+                import geopandas as gpd
+                from shapely.ops import unary_union
                 
-                for stored_heatmap in st.session_state.stored_heatmaps:
-                    heatmap_id = stored_heatmap.get('id') if isinstance(stored_heatmap, dict) else None
-                    if heatmap_id and heatmap_id in st.session_state.get('hidden_heatmaps', set()):
-                        continue
-                    
-                    geojson_data = stored_heatmap.get('geojson_data')
-                    if geojson_data and isinstance(geojson_data, dict):
-                        raw_grid = geojson_data.get('raw_grid')
-                        if raw_grid and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
-                            all_lons.extend(raw_grid['lons'])
-                            all_lats.extend(raw_grid['lats'])
-                            all_values.extend(raw_grid['values'])
+                all_exclusions = []
                 
-                if all_lons and all_lats and all_values:
-                    aggregated_raw_grid = {
-                        'lons': all_lons,
-                        'lats': all_lats,
-                        'values': all_values
-                    }
-                    print(f"✅ RAW GRID AGGREGATION: Combined {len(all_lons):,} grid points from {len(valid_heatmaps_for_raster)} heatmaps")
-                    print(f"   This preserves FULL kriging detail at 100m resolution (no triangle averaging!)")
+                # Load red/orange exclusion zones
+                exclusion_file_path = "attached_assets/red_orange_zones_stored_2025-09-16_1758401039896.geojson"
+                if os.path.exists(exclusion_file_path):
+                    exclusion_gdf = gpd.read_file(exclusion_file_path)
+                    all_exclusions.append(exclusion_gdf.geometry.unary_union)
+                    print(f"🚫 SMOOTH RASTER: Loaded {len(exclusion_gdf)} red/orange exclusion polygons")
                 else:
-                    print(f"⚠️ RAW GRID AGGREGATION: No raw_grid data found in stored heatmaps, falling back to triangle extraction")
+                    print(f"🚫 SMOOTH RASTER: Red/orange exclusion file not found: {exclusion_file_path}")
+                
+                # Load hydrogeological basement exclusions (zones 1-3)
+                from hydrogeological_basement_reader import load_hydrogeological_exclusions
+                hydro_exclusions = load_hydrogeological_exclusions()
+                if hydro_exclusions is not None and len(hydro_exclusions) > 0:
+                    # Extract geometry from GeoDataFrame
+                    hydro_geom = hydro_exclusions.geometry.iloc[0]
+                    all_exclusions.append(hydro_geom)
+                    print(f"🚫 SMOOTH RASTER: Loaded hydrogeological basement exclusions (zones 1-3)")
+                
+                # If we have any exclusions, apply them
+                if all_exclusions:
+                    # Combine all exclusion geometries
+                    combined_exclusion_union = unary_union(all_exclusions)
+                    print(f"🚫 SMOOTH RASTER: Combined {len(all_exclusions)} exclusion layer(s)")
+                    
+                    # If we have a base clipping polygon, subtract exclusion zones from it
+                    if combined_clipping_polygon is not None and len(combined_clipping_polygon) > 0:
+                        # Get the clipping polygon geometry  
+                        if hasattr(combined_clipping_polygon, 'geometry'):
+                            base_clipping_geom = combined_clipping_polygon.geometry.unary_union
+                        else:
+                            base_clipping_geom = combined_clipping_polygon
+                        
+                        # Subtract all exclusion zones from clipping polygon using difference
+                        try:
+                            combined_clipping_geom = base_clipping_geom.difference(combined_exclusion_union)
+                            # Convert back to GeoDataFrame for consistency
+                            combined_clipping_polygon = gpd.GeoDataFrame([1], geometry=[combined_clipping_geom], crs='EPSG:4326')
+                            print(f"🚫 SMOOTH RASTER: Successfully created combined clipping polygon (soil areas minus all exclusions)")
+                        except Exception as e:
+                            print(f"🚫 SMOOTH RASTER: Failed to subtract exclusion zones: {e}, using original clipping")
+                    else:
+                        print(f"🚫 SMOOTH RASTER: No base clipping polygon, exclusions not applied to smooth raster")
+                else:
+                    print(f"🚫 SMOOTH RASTER: No exclusion zones loaded")
             except Exception as e:
-                print(f"⚠️ RAW GRID AGGREGATION: Failed to aggregate raw grids ({e}), falling back to triangle extraction")
-                aggregated_raw_grid = None
-            
-            # ADAPTIVE RASTER RESOLUTION: Use higher resolution for large multi-heatmap displays
-            num_heatmaps = len(valid_heatmaps_for_raster)
-            if num_heatmaps >= 50:
-                adaptive_raster_size = (2048, 2048)  # High detail for 50+ tiles (e.g., 202 Canterbury-wide)
-                print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 2048x2048 raster for fine detail")
-            elif num_heatmaps >= 10:
-                adaptive_raster_size = (1024, 1024)  # Medium detail for 10-49 tiles
-                print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 1024x1024 raster")
-            else:
-                adaptive_raster_size = (512, 512)  # Standard detail for <10 tiles
-                print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 512x512 raster")
-            
-            raster_overlay = generate_smooth_raster_overlay(
-                combined_geojson, 
-                overall_bounds, 
-                raster_size=adaptive_raster_size, 
-                global_colormap_func=lambda value: get_global_unified_color(value, method),
-                opacity=st.session_state.get('heatmap_opacity', 0.7),
-                clipping_polygon=combined_clipping_polygon,
-                raw_grid=aggregated_raw_grid  # OPTIMIZED: Use aggregated raw grids for maximum detail preservation
-            )
-            
-            if raster_overlay:
-                # Add single unified raster overlay to map
-                folium.raster_layers.ImageOverlay(
-                    image=f"data:image/png;base64,{raster_overlay['image_base64']}",
-                    bounds=raster_overlay['bounds'],
-                    opacity=raster_overlay['opacity'],
-                    name=f"Unified Smooth Raster ({len(valid_heatmaps_for_raster)} tiles)"
-                ).add_to(m)
-                stored_heatmap_count = len(valid_heatmaps_for_raster)
-                print(f"🌬️  SUCCESS: Added unified smooth raster covering {len(valid_heatmaps_for_raster)} heatmap areas")
-                print(f"🌬️  Using snapped boundary vertices from stored triangulated data - no gaps or overlaps")
-            else:
-                print(f"🌬️  FAILED: Could not generate unified smooth raster, falling back to individual processing")
+                print(f"🚫 SMOOTH RASTER: Error applying exclusion clipping: {e}")
         
-        # Skip individual loop if unified raster was successful
-        if stored_heatmap_count > 0:
-            print(f"🌬️  UNIFIED PROCESSING COMPLETE: Skipping individual raster generation to avoid overlaps")
+        # Aggregate raw_grid data from all stored heatmaps
+        aggregated_raw_grid = None
+        try:
+            all_lons = []
+            all_lats = []
+            all_values = []
+            
+            for stored_heatmap in st.session_state.stored_heatmaps:
+                heatmap_id = stored_heatmap.get('id') if isinstance(stored_heatmap, dict) else None
+                if heatmap_id and heatmap_id in st.session_state.get('hidden_heatmaps', set()):
+                    continue
+                
+                geojson_data = stored_heatmap.get('geojson_data')
+                if geojson_data and isinstance(geojson_data, dict):
+                    raw_grid = geojson_data.get('raw_grid')
+                    if raw_grid and 'lons' in raw_grid and 'lats' in raw_grid and 'values' in raw_grid:
+                        all_lons.extend(raw_grid['lons'])
+                        all_lats.extend(raw_grid['lats'])
+                        all_values.extend(raw_grid['values'])
+            
+            if all_lons and all_lats and all_values:
+                aggregated_raw_grid = {
+                    'lons': all_lons,
+                    'lats': all_lats,
+                    'values': all_values
+                }
+                print(f"✅ RAW GRID AGGREGATION: Combined {len(all_lons):,} grid points from {len(valid_heatmaps_for_raster)} heatmaps")
+                print(f"   This preserves FULL kriging detail at 100m resolution (no triangle averaging!)")
+            else:
+                print(f"⚠️ RAW GRID AGGREGATION: No raw_grid data found in stored heatmaps, falling back to triangle extraction")
+        except Exception as e:
+            print(f"⚠️ RAW GRID AGGREGATION: Failed to aggregate raw grids ({e}), falling back to triangle extraction")
+            aggregated_raw_grid = None
+        
+        # ADAPTIVE RASTER RESOLUTION: Use higher resolution for large multi-heatmap displays
+        num_heatmaps = len(valid_heatmaps_for_raster)
+        if num_heatmaps >= 50:
+            adaptive_raster_size = (2048, 2048)
+            print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 2048x2048 raster for fine detail")
+        elif num_heatmaps >= 10:
+            adaptive_raster_size = (1024, 1024)
+            print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 1024x1024 raster")
         else:
-            print(f"🌬️  UNIFIED PROCESSING FAILED: Falling back to individual triangle mesh display")
+            adaptive_raster_size = (512, 512)
+            print(f"📐 ADAPTIVE RESOLUTION: {num_heatmaps} heatmaps → 512x512 raster")
+        
+        raster_overlay = generate_smooth_raster_overlay(
+            combined_geojson, 
+            overall_bounds, 
+            raster_size=adaptive_raster_size, 
+            global_colormap_func=lambda value: get_global_unified_color(value, method),
+            opacity=st.session_state.get('heatmap_opacity', 0.7),
+            clipping_polygon=combined_clipping_polygon,
+            raw_grid=aggregated_raw_grid
+        )
+        
+        if raster_overlay:
+            # Add single unified raster overlay to map
+            folium.raster_layers.ImageOverlay(
+                image=f"data:image/png;base64,{raster_overlay['image_base64']}",
+                bounds=raster_overlay['bounds'],
+                opacity=raster_overlay['opacity'],
+                name=f"Unified Smooth Raster ({len(valid_heatmaps_for_raster)} tiles)"
+            ).add_to(m)
+            stored_heatmap_count = len(valid_heatmaps_for_raster)
+            print(f"🌬️  SUCCESS: Added unified smooth raster covering {len(valid_heatmaps_for_raster)} heatmap areas")
+            print(f"🌬️  Using snapped boundary vertices from stored triangulated data - no gaps or overlaps")
+        else:
+            print(f"🌬️  FAILED: Could not generate unified smooth raster, falling back to individual processing")
+    
+    # Skip individual loop if unified raster was successful
+    if stored_heatmap_count > 0:
+        print(f"🌬️  UNIFIED PROCESSING COMPLETE: Skipping individual raster generation to avoid overlaps")
+    else:
+        print(f"🌬️  UNIFIED PROCESSING FAILED: Falling back to individual triangle mesh display")
     
     # PERFORMANCE OPTIMIZATION 1: Viewport-based filtering
     def get_heatmap_bounds(geojson_data):

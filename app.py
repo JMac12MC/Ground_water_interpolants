@@ -1007,108 +1007,6 @@ with st.sidebar:
                 help="Display the boundary polygon around low/medium probability indicator zones"
             )
 
-        # Tile Boundary Snapping section
-        st.subheader("🔧 Tile Boundary Optimization")
-        st.write("Fix gaps and overlaps between adjacent heatmap tiles by snapping only boundary vertices (within 300m). Internal triangle vertices remain unchanged.")
-        
-        if st.button("🎯 Snap Boundary Vertices Only", type="primary"):
-            print("\n" + "="*50)
-            print("🎯 SNAP TILE BOUNDARIES BUTTON CLICKED!")
-            print("="*50)
-            
-            # Log current session state
-            heatmap_count = len(st.session_state.stored_heatmaps) if st.session_state.stored_heatmaps else 0
-            print(f"📊 BUTTON CLICK CONTEXT:")
-            print(f"   Session state heatmaps: {heatmap_count}")
-            print(f"   Database connection: {st.session_state.polygon_db is not None}")
-            
-            if st.session_state.stored_heatmaps:
-                print(f"✅ STORED HEATMAPS AVAILABLE: {len(st.session_state.stored_heatmaps)} heatmaps found")
-                
-                # Log some heatmap details for debugging
-                for i, heatmap in enumerate(st.session_state.stored_heatmaps[:3]):  # First 3 only
-                    has_geojson = bool(heatmap.get('geojson_data'))
-                    print(f"   Heatmap {i+1}: ID {heatmap['id']} - {heatmap['heatmap_name']} - GeoJSON: {has_geojson}")
-                
-                with st.spinner("Snapping tile boundaries to reduce gaps and overlaps..."):
-                    print("🔄 ENTERING SPINNER CONTEXT")
-                    try:
-                        print("📦 IMPORTING boundary_only_snapping module...")
-                        from boundary_only_snapping import run_boundary_only_snapping
-                        print("✅ Module imported successfully")
-                        
-                        # Capture the snapping process output
-                        import io
-                        import sys
-                        
-                        print("🔧 SETTING UP OUTPUT CAPTURE...")
-                        # Redirect stdout to capture print statements
-                        old_stdout = sys.stdout
-                        sys.stdout = captured_output = io.StringIO()
-                        
-                        print("🎯 CALLING run_boundary_only_snapping()...")
-                        # Run the boundary-only snapping using existing database connection
-                        run_boundary_only_snapping(st.session_state.polygon_db)
-                        
-                        # Restore stdout and get the output
-                        sys.stdout = old_stdout
-                        output = captured_output.getvalue()
-                        
-                        print("📋 SNAPPING FUNCTION COMPLETED")
-                        print(f"📏 OUTPUT LENGTH: {len(output)} characters")
-                        print(f"📄 OUTPUT PREVIEW: {output[:200]}..." if len(output) > 200 else output)
-                        
-                        # Display results
-                        if "BOUNDARY-ONLY SNAPPING COMPLETE" in output or "BOUNDARY SNAPPING COMPLETE" in output:
-                            print("✅ SUCCESS: Found 'BOUNDARY SNAPPING COMPLETE' in output")
-                            st.success("Tile boundaries snapped successfully!")
-                            
-                            # Extract statistics from output
-                            lines = output.split('\n')
-                            stats_found = 0
-                            for line in lines:
-                                if "vertices snapped across" in line:
-                                    st.info(f"📊 {line.strip()}")
-                                    stats_found += 1
-                                elif "Tile " in line and ": " in line and "vertices snapped" in line:
-                                    st.write(f"  • {line.strip()}")
-                                    stats_found += 1
-                            
-                            print(f"📊 DISPLAYED {stats_found} statistics lines")
-                            
-                            # Refresh stored heatmaps to show updated data
-                            print("🔄 REFRESHING SESSION STATE...")
-                            st.session_state.stored_heatmaps = st.session_state.polygon_db.get_all_stored_heatmaps()
-                            print("🔄 CALLING st.rerun()...")
-                            st.rerun()
-                            
-                        elif "NO BOUNDARY SNAPPING NEEDED" in output or "NO SNAPPING NEEDED" in output:
-                            print("ℹ️ INFO: Found 'NO SNAPPING NEEDED' in output")
-                            st.info("All tiles are already well-aligned (within 100m tolerance)")
-                        else:
-                            print("⚠️ WARNING: No recognized status message in output")
-                            print(f"🔍 FULL OUTPUT FOR DEBUGGING:\n{output}")
-                            st.warning("Boundary snapping completed but no clear status was reported")
-                            st.code(output, language="text")  # Show raw output to user
-                            
-                    except Exception as e:
-                        print(f"❌ EXCEPTION DURING SNAPPING: {e}")
-                        print(f"🐛 EXCEPTION TYPE: {type(e).__name__}")
-                        import traceback
-                        traceback_str = traceback.format_exc()
-                        print(f"🔍 FULL TRACEBACK:\n{traceback_str}")
-                        
-                        st.error(f"Error during boundary snapping: {e}")
-                        st.code(traceback_str, language="text")  # Show traceback to user
-                        
-            else:
-                print("⚠️ WARNING: No stored heatmaps available")
-                print(f"📊 STORED_HEATMAPS VALUE: {st.session_state.stored_heatmaps}")
-                st.warning("No stored heatmaps available for boundary snapping")
-            
-            print("🏁 BUTTON CLICK PROCESSING COMPLETE")
-            print("="*50)
-
         st.divider()
 
         # Display each stored heatmap with details
@@ -2700,7 +2598,6 @@ if st.session_state.stored_heatmaps and len(st.session_state.stored_heatmaps) > 
             ).add_to(m)
             stored_heatmap_count = len(valid_heatmaps_for_raster)
             print(f"🌬️  SUCCESS: Added unified smooth raster covering {len(valid_heatmaps_for_raster)} heatmap areas")
-            print(f"🌬️  Using snapped boundary vertices from stored triangulated data - no gaps or overlaps")
         else:
             print(f"🌬️  FAILED: Could not generate unified smooth raster, falling back to individual processing")
     

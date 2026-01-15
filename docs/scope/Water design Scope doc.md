@@ -380,414 +380,929 @@ Section 5.1 acts as the gateway layer for DeepSight:
 
 ---
 
-### **5.2 Depth to Groundwater (DTW) Modelling Specification**
+### 5.2 Depth to Groundwater (DTW) Modelling Specification
 
 **DeepSight – Production-grade, zone-aware DTW mapping**
 
+**Version:** 2.0  
+**Status:** Authoritative  
+**Date:** 2026-01-15
+
 ---
 
-#### **5.2.1 Purpose & scope**
+#### 5.2.1 Purpose & Scope
 
-Produce **defensible, spatially valid Depth to Groundwater (DTW)** prediction surfaces with **quantified uncertainty**, suitable for:
+Produce defensible, spatially valid Depth to Groundwater (DTW) prediction surfaces with quantified uncertainty, suitable for:
 
-* drilling risk assessment  
-* seasonal reliability analysis  
-* regulator-facing reporting  
-* downstream tiling and visualization in DeepSight
+- Drilling risk assessment
+- Seasonal reliability analysis
+- Regulator-facing reporting
+- Downstream tiling and visualization in DeepSight
 
 The model must:
 
-* respect **hydrogeologic boundaries**  
-* avoid spatial leakage  
-* degrade gracefully in sparse data zones  
-* remain interpretable and auditable
+- Respect hydrogeologic boundaries
+- Avoid spatial leakage
+- Degrade gracefully in sparse data zones
+- Remain interpretable and auditable
+- Handle data quality issues robustly
+- Scale to production workloads
 
 ---
 
-#### **5.2.2 Target variable**
+#### 5.2.2 Target Variable
 
-##### **5.2.2.1 Definition**
+##### 5.2.2.1 Definition
 
 Depth to groundwater (DTW), in meters below ground surface:
 
-`DTW_m = ground_surface_elev_m − static_water_level_elev_m`
+```
+DTW_m = ground_surface_elev_m − static_water_level_elev_m
+```
 
-Sign convention:
+**Sign convention:**
+- Larger DTW = deeper water table
+- DTW < 0 = artesian conditions (flagged separately)
 
-* Larger DTW \= deeper water table
-
----
-
-##### **5.2.2.2 Seasonal targets (if time series available – recommended)**
+##### 5.2.2.2 Seasonal Targets
 
 For each well with sufficient observations:
 
-* **DTW\_low** \= P90 DTW (late summer / high risk)  
-* **DTW\_high** \= P10 DTW (late winter / recharge peak)  
-* **DTW\_med** \= P50 DTW (expected)
+```
+DTW_low  = P90 DTW (late summer / high risk)
+DTW_high = P10 DTW (late winter / recharge peak)
+DTW_med  = P50 DTW (expected)
+```
 
-Primary decision surface:
+**Primary decision surface:**
+- `DTW_low` (seasonal low / worst-case)
 
-**DTW\_low** (seasonal low / worst-case)
+Each target is modelled independently using the same pipeline.
 
-Each target is modelled **independently** using the same pipeline.
+**Temporal requirements:**
+- Minimum 3 years of observations for seasonal percentiles
+- Time window: most recent 10 years (configurable)
+- Wells with mixed measurement dates: use season-of-year median before computing percentiles
+- Optional output: seasonal variability `(DTW_high - DTW_low)` as separate raster
+
+##### 5.2.2.3 Temporal Transformation for Sparse Observations (Koch Method)
+
+For wells with fewer than 3 years of observations, a sinusoidal transformation model is applied to convert any given observation to an expected seasonal target (P10/P50/P90).
+
+**Methodology** (adapted from Koch et al., 2019):
+
+**Step 1: Define Hydrogeological Classes**
+
+Wells are classified into groups based on combinations of:
+- **Permeability**: high | low | unknown
+- **Aquifer condition**: confined | unconfined | unknown  
+- **Proximity**: near_coast | near_stream | other
+
+This results in up to 27 hydrogeological classes (3 × 3 × 3).
+
+**Step 2: Calibrate Amplitude per Class**
+
+For wells with ≥3 years of observations (reference wells):
+```python
+# Calculate standard deviation of DTW observations
+std_DTW = std(DTW_observations)
+
+# Amplitude = 99% confidence interval (assumes normality)
+amplitude_class = 2.576 × std_DTW
+```
+
+**Typical amplitude ranges by hydrogeology** (Denmark-derived, adjust for Canterbury):
+- High permeability, unconfined, near stream: **0.5 m**
+- Low permeability, unconfined, not near water: **1.5 m**
+- Confined aquifers: **0.3–0.8 m** (damped response)
+- Coastal zones: **0.4–0.7 m** (oceanic buffering)
+
+**Step 3: Apply Sinusoidal Model**
+
+For each sparse well, the annual cycle is modeled as:
+```python
+DTW(t) = DTW_mean + amplitude × sin(2π × (day_of_year - φ) / 365)
+
+where:
+  φ = phase_shift  # peak in mid-February (day 45)
+  amplitude = class-specific value from Step 2
+  DTW_mean = mean of available observations
+```
+
+**Step 4: Transform to Seasonal Target**
+
+```python
+# For P90 (late summer low, high risk)
+DTW_P90 = DTW_mean + amplitude
+
+# For P10 (late winter high, recharge peak)  
+DTW_P10 = DTW_mean - amplitude
+
+# For P50 (median)
+DTW_P50 = DTW_mean
+```
+
+**Quality flags:**
+```python
+if n_observations == 1:
+    quality_flag = "low"  # single obs, high uncertainty
+elif 1 < n_observations < 5:
+    quality_flag = "medium"  # sinusoidal correction applied
+elif n_observations >= 5 and span_years >= 3:
+    quality_flag = "high"  # direct percentile calculation
+```
+
+**Validation:**
+
+Koch et al. (2019) reported that sinusoidal-transformed values deviated by only 10–20 cm from directly observed minima at wells with long time series, which is within measurement uncertainty.
+
+**Implementation Notes:**
+
+1. **Amplitude calibration dataset**: Maintain separate calibration for Canterbury vs. Denmark due to climate differences
+2. **Artesian handling**: If `DTW_transformed < 0` in unconfined zones, set to `0` and flag
+3. **Confined aquifer amplitudes**: Typically 50–70% of unconfined amplitudes due to pressure damping
+4. **Uncertainty inflation**: Wells using sinusoidal correction should have their uncertainty increased by 1.2–1.5× in Section 5.2.10
+
+**References:**
+- Koch, J., Berger, H., Henriksen, H. J., and Sonnenborg, T. O. (2019). Modelling of the shallow water table at high spatial resolution using random forests, Hydrol. Earth Syst. Sci., 23, 4603–4619.
 
 ---
 
-#### **5.2.3 Modelling zones (non-negotiable)**
+#### 5.2.3 Modelling Zones (Non-Negotiable)
 
-##### **5.2.3.1 Zone definition**
+##### 5.2.3.1 Zone Definition
 
-Zones are defined by **aquifer / hydrostratigraphic boundaries**.
+Zones are defined by aquifer / hydrostratigraphic boundaries.
 
-Inputs:
+**Inputs:**
+```
+zones.gpkg
+  - zone_id (string, unique)
+  - geometry (Polygon)
+  - alpha_vertical (float, hydraulic anisotropy factor)
+  - max_extent_km (float, for computational tiling)
+```
 
-`zones.gpkg`  
-`- zone_id`  
-`- geometry`
+**Rules:**
+- Every well belongs to exactly one zone
+- No model spans zones
+- All training, CV, variograms, and outputs are zone-scoped
+- Zones >100km × 100km are split into computational sub-zones with 10km overlap
 
-Rules:
-
-* Every well belongs to **exactly one zone**  
-* **No model spans zones**  
-* All training, CV, variograms, and outputs are zone-scoped
-
-Rationale:
-
-* Controls non-stationarity  
-* Prevents cross-aquifer leakage  
-* Improves interpretability and CV honesty
-
----
-
-#### **5.2.4 Input data & canonical data model**
-
-##### **5.2.4.1 Wells (point data)**
-
-`wells.parquet`  
-`- well_id (string)`  
-`- x, y (float, projected CRS)`  
-`- ground_surface_elev_m (float)`  
-`- static_water_level_elev_m (float)`  
-`- well_depth_m (float)`  
-`- screen_top_m (float)`  
-`- screen_bottom_m (float)`  
-`- aquifer_unit (category)`  
-`- soil_perm_class (category)`
-
-Derived per well:
-
-`DTW_m`  
-`screen_thickness_m = screen_bottom_m − screen_top_m`  
-`screen_midpoint_elev_m`
+**Rationale:**
+- Controls non-stationarity
+- Prevents cross-aquifer leakage
+- Improves interpretability and CV honesty
+- Enables parallel processing
 
 ---
 
-##### **5.2.4.2 Recharge / river features**
+#### 5.2.4 Input Data & Canonical Data Model
 
-`recharge_features.gpkg`  
-`- geometry (LineString / Polygon)`  
-`- feature_type (river_losing, fan, recharge_zone)`  
-`- stage_elev_m (nullable)`
+##### 5.2.4.1 Wells (Point Data)
 
-Only **hydraulically connected / losing** features are used.
+```
+wells.parquet
+  - well_id (string, unique)
+  - x, y (float, projected CRS, e.g., NZTM2000)
+  - ground_surface_elev_m (float)
+  - static_water_level_elev_m (float)
+  - measurement_date (date, ISO8601)
+  - well_depth_m (float)
+  - screen_top_m (float, depth below surface)
+  - screen_bottom_m (float, depth below surface)
+  - aquifer_unit (category)
+  - aquifer_type (category: unconfined | confined | semi-confined)
+  - soil_perm_class (category)
+  - data_quality_flag (category: high | medium | low)
+```
+
+**Derived per well:**
+```python
+DTW_m = ground_surface_elev_m - static_water_level_elev_m
+screen_thickness_m = screen_bottom_m - screen_top_m
+screen_midpoint_depth_m = (screen_top_m + screen_bottom_m) / 2
+screen_midpoint_elev_m = ground_surface_elev_m - screen_midpoint_depth_m
+```
+
+##### 5.2.4.2 Data Quality Filters (Mandatory)
+
+**Exclusion rules (applied per well):**
+```python
+# Physical impossibilities
+exclude if well_depth_m < DTW_m  # water below well bottom
+exclude if DTW_m < -5.0  # artesian >5m (likely error)
+exclude if static_water_level_elev_m == nodata
+exclude if ground_surface_elev_m == nodata
+
+# Outlier detection
+exclude if abs(DTW_m - zone_median_DTW) > 5 × zone_MAD_DTW
+
+# Temporal consistency (for seasonal wells)
+flag if (max_DTW - min_DTW) > 50m  # review manually
+```
+
+**Minimum data requirements:**
+- Per zone: ≥20 wells for modelling (≥10 for trend-only fallback)
+- For seasonal targets: ≥3 observations per well spanning ≥3 years
+
+**Artesian wells:**
+- Flagged but not excluded
+- Handled separately: `DTW_artesian = min(0, DTW_calculated)`
+- Reported in separate output layer
+
+##### 5.2.4.3 Recharge / River Features
+
+```
+recharge_features.gpkg
+  - geometry (LineString | Polygon)
+  - feature_type (river_losing | fan | recharge_zone)
+  - stage_elev_m (nullable float)
+  - connection_quality (category: strong | moderate | weak)
+```
+
+**Usage rules:**
+- Only hydraulically connected / losing features are used
+- `connection_quality == weak` features excluded from distance calculations
+- Stage elevation required for 3D distance calculations
+
+##### 5.2.4.4 Raster Covariates
+
+```
+soil_perm_index.tif        (ordinal 1-5 or continuous 0-1)
+recharge_potential.tif     (0–1, unitless)
+dem.tif                    (meters, conditional inclusion per zone)
+```
+
+**Requirements:**
+- Common CRS (match wells.parquet)
+- Zone-consistent resolution (recommend 100m)
+- Explicit nodata handling (`-9999` or NaN)
+- Valid data extent covers all zone wells
 
 ---
 
-##### **5.2.4.3 Raster covariates**
+#### 5.2.5 Feature Engineering (Deterministic)
 
-`soil_perm_index.tif        (ordinal / numeric)`  
-`recharge_potential.tif     (0–1)`  
-`dem.tif                    (optional; gated by CV)`
+All features are computed per well, per zone.
 
-Rules:
-
-* Common CRS  
-* Zone-consistent resolution  
-* Explicit nodata handling
-
----
-
-#### **5.2.5 Feature engineering (deterministic)**
-
-All features are computed **per well, per zone**.
-
----
-
-##### **5.2.5.1 Recharge distance features**
+##### 5.2.5.1 Recharge Distance Features
 
 For each well:
 
-**Horizontal distance**
+**Horizontal distance:**
+```python
+d_xy = distance to nearest recharge feature (m)
+d_xy_capped = min(d_xy, zone_P95_d_xy)  # prevent extreme leverage
+```
 
-`d_xy = distance to nearest recharge feature (m)`
+**Vertical distance:**
+```python
+d_z = screen_midpoint_elev_m − recharge_surface_elev_m
+```
 
-**Vertical distance**
+**3D hydraulic distance:**
+```python
+alpha = zone.alpha_vertical  # from zones.gpkg, default 1.0
+d_3D = sqrt(d_xy^2 + (alpha × d_z)^2)
+```
 
-`d_z = screen_midpoint_elev_m − recharge_surface_elev_m`
+**Alpha calibration guidance:**
+- Highly permeable gravel aquifers: α ≈ 0.1–0.3 (horizontal dominates)
+- Mixed alluvial systems: α ≈ 0.5–2.0 (Canterbury typical)
+- Clay-bound aquifers: α ≈ 3.0–10.0 (vertical resistance high)
+- Per-zone α can be calibrated during CV if sufficient vertical data
 
-**3D hydraulic distance**
+**Transforms:**
+```python
+log_d_xy = log1p(d_xy_capped)
+log_d_3D = log1p(d_3D)
+inv_d_xy = 1 / (d_xy_capped + 100)  # smooth near-source behavior
+```
 
-`d_3D = sqrt(d_xy^2 + (α × d_z)^2)`
+##### 5.2.5.2 Aquifer / Storage Proxies
 
-Defaults:
+- `aquifer_unit` (one-hot encoded)
+- `aquifer_type` (ordinal or one-hot)
+- `screen_thickness_m` (proxy for saturated thickness / storage)
+- `screen_midpoint_elev_m` (absolute elevation context)
 
-`α = 1.0`  
-`d_xy capped at 95th percentile per zone`
+##### 5.2.5.3 Soil & Recharge Surface
 
-Transforms:
+- `soil_perm_class` (categorical → one-hot or ordinal encoding)
+- `recharge_potential_index` (0–1, sampled at well location)
 
-`log_d_xy  = log1p(d_xy)`  
-`log_d_3D  = log1p(d_3D)`
+##### 5.2.5.4 DEM & DEM-Derived Features (Conditional)
 
----
-
-##### **5.2.5.2 Aquifer / storage proxies**
-
-* Aquifer unit (one-hot encoded)  
-* Screen thickness (proxy for saturated thickness / storage)  
-* Aquifer thickness proxy (if separate from screen thickness)
-
----
-
-##### **5.2.5.3 Soil & recharge surface**
-
-* Soil permeability class (categorical → one-hot)  
-* Recharge potential index (0–1)
-
----
-
-##### **5.2.5.4 DEM & DEM-derived features (conditional)**
-
-Examples:
-
-* elevation  
-* slope  
-* curvature  
-* TPI  
-* flow accumulation
+**Candidate features:**
+- `elevation` (from DEM)
+- `slope` (degrees)
+- `curvature` (profile + plan)
+- `TPI` (Topographic Position Index, 1km radius)
+- `flow_accumulation` (log-transformed)
 
 **Inclusion rule (per zone):**
 
-DEM-derived features are **only retained** if they improve **spatial CV RMSE** by ≥ **2%** and do not introduce bias (Section 5.2.9).
+DEM-derived features are only retained if:
+```python
+RMSE_with_DEM <= RMSE_without_DEM × 0.98  # 2% improvement threshold
+AND
+abs(bias_with_DEM) <= abs(bias_without_DEM) × 1.1  # no bias inflation
+```
+
+Rationale: Prevents DEM imprinting in hydraulically flat systems (Canterbury-specific wisdom).
 
 ---
 
-#### **5.2.6 Model architecture (authoritative choice)**
+#### 5.2.6 Model Architecture (Authoritative Choice)
 
-##### **5.2.6.1 Core model**
+##### 5.2.6.1 Core Model
 
-**Regression Kriging with nonlinear trend**
-
-`DTW(x) = ML_trend(x) + spatial_residual(x)`
+**Regression Kriging with Nonlinear Trend:**
+```
+DTW(x) = ML_trend(x) + spatial_residual(x)
+```
 
 Where:
+- `ML_trend` = Gradient Boosted Trees (primary) or Random Forest (fallback)
+- `spatial_residual` = ordinary kriging of residuals
 
-* `ML_trend` \= Gradient Boosted Trees (primary) or Random Forest (fallback)  
-* `spatial_residual` \= ordinary kriging of residuals
+This is the best-performing, defensible approach for hydrogeologic applications.
 
-This is the **best-performing, defensible approach** for your inputs.
+##### 5.2.6.2 Trend Model
 
----
+**Primary:**
+```python
+LightGBM Regressor (or XGBoost)
+  objective: 'regression'
+  metric: 'rmse'
+  boosting_type: 'gbdt'
+  learning_rate: 0.05
+  num_leaves: 31
+  max_depth: -1
+  min_child_samples: 20
+  subsample: 0.8
+  colsample_bytree: 0.8
+  n_estimators: 100-500 (early stopping on validation)
+```
 
-##### **5.2.6.2 Trend model**
+**Fallback:**
+```python
+RandomForestRegressor
+  n_estimators: 100
+  max_depth: None
+  min_samples_split: 10
+  min_samples_leaf: 5
+```
 
-Primary:
+**Characteristics:**
+- Handles nonlinear distance effects
+- Handles categorical geology/soil
+- Learns interactions (e.g., distance × aquifer)
+- Robust to feature scale differences
 
-`LightGBM / XGBoost regressor`  
-`loss = L2`
+##### 5.2.6.3 Residual Kriging
 
-Fallback:
+**Requirements:**
+- Residuals computed on **training wells only**
+- Variogram fitted per zone (Section 5.2.9)
+- Ordinary kriging onto output grid
+- **Kriging neighborhood:** 50 nearest wells (max) within search radius
+- **Search radius:** 3 × variogram range (or zone extent / 4, whichever is smaller)
 
-`RandomForestRegressor`
+**Automatic disabling:**
+Residual kriging is disabled for a zone if:
+```python
+RMSE_trend_plus_kriging > RMSE_trend_only × 1.02
+```
 
-Characteristics:
-
-* Handles nonlinear distance effects  
-* Handles categorical geology/soil  
-* Learns interactions (e.g. distance × aquifer)
-
----
-
-##### **5.2.6.3 Residual kriging**
-
-* Residuals computed on **training wells only**  
-* Variogram fitted **per zone**  
-* Ordinary kriging onto output grid
-
-Residual kriging is **disabled automatically** if it worsens spatial CV RMSE.
-
----
-
-#### **5.2.7 Spatial cross-validation (mandatory)**
-
-##### **5.2.7.1 CV method**
-
-**Blocked spatial cross-validation**
-
-Defaults:
-
-`block_size_m = max(5 km, 3 × median well spacing in zone)`  
-`n_folds = 5`
-
-Algorithm:
-
-1. Tile zone extent into square blocks  
-2. Assign wells to blocks  
-3. Hold out entire blocks per fold
-
----
-
-##### **5.2.7.2 Metrics (per fold)**
-
-* RMSE (primary)  
-* MAE  
-* Bias (mean error)
-
-Aggregate:
-
-`mean ± std across folds`
+Logged as: `"residual_kriging_disabled": true, "reason": "worsened_cv_performance"`
 
 ---
 
-#### **5.2.8 Feature gating (DEM rule)**
+#### 5.2.7 Spatial Cross-Validation (Mandatory)
+
+##### 5.2.7.1 CV Method
+
+**Blocked Spatial Cross-Validation**
+
+**Parameters:**
+```python
+block_size_m = max(5000, 3 × median_well_spacing_in_zone)
+n_folds = 5
+min_wells_per_fold = 4  # skip fold if fewer
+```
+
+**Algorithm:**
+1. Tile zone extent into square blocks of size `block_size_m`
+2. Assign each well to its containing block
+3. Group blocks into n_folds using spatial clustering (k-means on block centroids)
+4. Hold out entire blocks per fold (ensures spatial independence)
+
+##### 5.2.7.2 Metrics (Per Fold)
+
+**Primary metrics:**
+- `RMSE` (root mean squared error)
+- `MAE` (mean absolute error)
+- `Bias` (mean error, should be near zero)
+- `R²` (coefficient of determination)
+
+**Aggregate reporting:**
+```python
+cv_metrics = {
+  "rmse_mean": mean(fold_rmse),
+  "rmse_std": std(fold_rmse),
+  "mae_mean": mean(fold_mae),
+  "bias_mean": mean(fold_bias),
+  "r2_mean": mean(fold_r2)
+}
+```
+
+##### 5.2.7.3 Fold Quality Checks
+
+**Warnings issued if:**
+- Any fold has <4 wells: skip fold
+- Fold RMSE > 2× mean RMSE: investigate outliers
+- Fold bias > 0.5 × RMSE: spatial trend not captured
+
+---
+
+#### 5.2.8 Feature Gating (DEM Rule)
 
 For each zone:
 
-1. Train model **without DEM features**  
-2. Train model **with DEM features**  
-3. Compare spatial CV RMSE
+1. Train model **without** DEM-derived features
+2. Train model **with** DEM-derived features
+3. Compare spatial CV performance
 
-Keep DEM features only if:
+**Retention criteria:**
+```python
+keep_dem_features = (
+    rmse_with_dem <= rmse_without_dem * 0.98
+    AND
+    abs(bias_with_dem) <= abs(bias_without_dem) * 1.1
+)
+```
 
-`RMSE_with_DEM ≤ RMSE_without_DEM × 0.98`
-
-This prevents DEM imprinting in Canterbury-style hydraulically flat systems.
-
----
-
-#### **5.2.9 Residual variogram specification**
-
-##### **5.2.9.1 Library**
-
-* `GSTools` or `scikit-gstat`
-
-##### **5.2.9.2 Allowed models**
-
-* Exponential  
-* Spherical  
-* Matérn
-
-##### **5.2.9.3 Fitting rules**
-
-* Fit all allowed models  
-* Select lowest AIC  
-* If unstable or degenerate:
-
-  * Fallback to exponential \+ nugget
+**Logged as:**
+```json
+{
+  "dem_features_included": false,
+  "reason": "insufficient_improvement",
+  "rmse_without_dem": 2.4,
+  "rmse_with_dem": 2.38,
+  "improvement_pct": 0.8
+}
+```
 
 ---
 
-#### **5.2.10 Uncertainty modelling**
+#### 5.2.9 Residual Variogram Specification
 
-##### **5.2.10.1 Spatial uncertainty**
+##### 5.2.9.1 Library
 
-* Kriging variance of residuals → `σ_krige(x)`
+**Primary:** `GSTools` (recommended)  
+**Fallback:** `scikit-gstat`
 
-##### **5.2.10.2 Trend uncertainty (choose one)**
+##### 5.2.9.2 Allowed Models
 
-Preferred:
+1. Exponential
+2. Spherical
+3. Matérn (ν=1.5)
 
-* Quantile GBM (P10 / P50 / P90)
+##### 5.2.9.3 Fitting Rules
 
-Fallback:
+**Preprocessing:**
+```python
+# Remove outlier residuals before fitting
+residuals_filtered = residuals[abs(residuals - median) < 3 × MAD]
+```
 
-* Ensemble spread (bootstrapped RF)
+**Variogram parameters:**
+```python
+max_lag = min(zone_extent * 0.5, 50000)  # meters
+n_lags = 20
+min_pairs_per_lag = 30
+```
+
+**Model selection:**
+1. Fit all allowed models to empirical variogram
+2. Compute AIC for each: `AIC = n × log(MSE) + 2k`
+3. Select model with lowest AIC
+
+**Fallback conditions:**
+If any of the following occur:
+- Negative sill
+- Range > 2 × zone_extent
+- Nugget > 0.9 × sill
+- Fitting fails to converge
+
+Then:
+```python
+fallback_model = "exponential"
+nugget = var(residuals) * 0.3
+sill = var(residuals) * 0.7
+range = median_well_spacing * 5
+```
+
+**Logged as:**
+```json
+{
+  "variogram_model": "exponential",
+  "nugget": 1.2,
+  "sill": 3.8,
+  "range": 4500,
+  "aic": 342.1,
+  "fit_quality": "stable" | "fallback"
+}
+```
 
 ---
 
-##### **5.2.10.3 Confidence classification (UX-facing)**
+#### 5.2.10 Uncertainty Modelling
+
+##### 5.2.10.1 Spatial Uncertainty (Kriging Variance)
+
+For each grid cell:
+```python
+sigma_krige(x) = sqrt(kriging_variance(x))
+```
+
+Normalized to 0–1 scale:
+```python
+sigma_norm(x) = sigma_krige(x) / max(sigma_krige)
+```
+
+##### 5.2.10.2 Trend Uncertainty
+
+**Preferred:** Quantile Gradient Boosting
+```python
+# Train three models simultaneously
+models = {
+  'p10': LGBMRegressor(objective='quantile', alpha=0.1),
+  'p50': LGBMRegressor(objective='quantile', alpha=0.5),
+  'p90': LGBMRegressor(objective='quantile', alpha=0.9)
+}
+
+trend_uncertainty(x) = DTW_p90(x) - DTW_p10(x)
+```
+
+**Fallback:** Ensemble Spread (Bootstrapped Random Forest)
+```python
+n_bootstrap = 20
+predictions = [rf_i.predict(x) for rf_i in ensemble]
+trend_uncertainty(x) = std(predictions)
+```
+
+##### 5.2.10.3 Combined Uncertainty
+
+```python
+total_uncertainty(x) = sqrt(
+    trend_uncertainty(x)^2 + 
+    (2 × sigma_krige(x))^2
+)
+```
+
+##### 5.2.10.4 Confidence Classification (UX-Facing)
 
 Per grid cell:
+```python
+if sigma_norm(x) < 0.3 AND cv_rmse < 2.5:
+    confidence = "high"
+elif sigma_norm(x) < 0.6 AND cv_rmse < 5.0:
+    confidence = "medium"
+else:
+    confidence = "low"
+```
 
-* **High**: low σ\_krige \+ strong CV performance  
-* **Medium**  
-* **Low**: sparse wells, high σ\_krige, or fallback mode
+Additional "low" triggers:
+- <5 wells within 5km
+- Extrapolation beyond convex hull of training wells
+- Fallback mode active
 
 ---
 
-#### **5.2.11 Outputs (contractual)**
+#### 5.2.11 Outputs (Contractual)
+
+##### 5.2.11.1 Raster Outputs
+
+Per zone, per target (e.g., `DTW_low`, `DTW_med`, `DTW_high`):
+
+```
+{zone_id}_{target}_trend.tif           # ML trend surface only
+{zone_id}_{target}_residual.tif        # Kriged residuals
+{zone_id}_{target}_final.tif           # trend + residual
+{zone_id}_{target}_uncertainty.tif     # total uncertainty (m)
+{zone_id}_{target}_confidence.tif      # "high" | "medium" | "low" (categorical)
+```
+
+**Raster specifications:**
+- **CRS:** NZTM2000 (EPSG:2193) or zone-appropriate
+- **Resolution:** 100m (configurable per zone)
+- **Format:** GeoTIFF, LZW compressed
+- **NoData:** -9999
+- **Cloud-optimized:** COG format for tiling/streaming
+
+##### 5.2.11.2 Vector Outputs
+
+```
+{zone_id}_wells_with_predictions.gpkg
+  - well_id
+  - geometry (Point)
+  - DTW_observed
+  - DTW_predicted
+  - residual
+  - cv_fold (if in CV)
+```
+
+##### 5.2.11.3 Metadata JSON
+
+```json
+{
+  "zone_id": "Canterbury_Central",
+  "target": "DTW_low",
+  "model_version": "2.0",
+  "timestamp": "2026-01-15T14:23:00Z",
+  
+  "data_summary": {
+    "n_wells_total": 856,
+    "n_wells_used": 823,
+    "n_wells_excluded": 33,
+    "date_range": "2015-01-01 to 2025-12-31"
+  },
+  
+  "cv_performance": {
+    "method": "blocked_spatial_cv",
+    "n_folds": 5,
+    "block_size_m": 7500,
+    "rmse_mean": 2.4,
+    "rmse_std": 0.3,
+    "mae_mean": 1.8,
+    "bias_mean": -0.1,
+    "r2_mean": 0.76
+  },
+  
+  "model_config": {
+    "model_type": "GBM + residual_kriging",
+    "trend_algorithm": "LightGBM",
+    "features_used": [
+      "log_d_xy", "log_d_3D", "screen_thickness_m",
+      "aquifer_unit", "soil_perm_class", "recharge_potential"
+    ],
+    "dem_included": false,
+    "dem_exclusion_reason": "insufficient_improvement"
+  },
+  
+  "variogram": {
+    "model": "exponential",
+    "nugget": 1.2,
+    "sill": 3.8,
+    "range_m": 4500,
+    "fit_quality": "stable"
+  },
+  
+  "kriging_config": {
+    "enabled": true,
+    "neighborhood_size": 50,
+    "search_radius_m": 13500
+  },
+  
+  "uncertainty": {
+    "method": "quantile_gbm",
+    "mean_uncertainty_m": 3.2,
+    "p90_uncertainty_m": 5.8
+  },
+  
+  "warnings": [],
+  "fallbacks_triggered": []
+}
+```
+
+##### 5.2.11.4 Quality Assurance Outputs
+
+```
+qa/{zone_id}_residual_map.tif                 # spatial error pattern
+qa/{zone_id}_variogram_fit.png                # empirical + fitted variogram
+qa/{zone_id}_cv_predictions_scatter.png       # obs vs pred
+qa/{zone_id}_cv_metrics_per_fold.csv          # fold-level performance
+qa/{zone_id}_feature_importance.csv           # from trend model
+```
+
+---
+
+#### 5.2.12 Failure & Fallback Rules (Agent-Critical)
+
+##### 5.2.12.1 Insufficient Data
+
+**Condition:** `n_wells_in_zone < 20`
+
+**Action:**
+- Use trend model only (no kriging)
+- Set all confidence to "low"
+- Log: `"fallback": "trend_only", "reason": "insufficient_wells"`
+
+**Hard stop:** `n_wells_in_zone < 10`
+- Do not model
+- Return error with diagnostic info
+
+##### 5.2.12.2 Variogram Fit Failure
+
+**Condition:** Variogram fitting unstable or degenerate
+
+**Action:**
+- Use exponential model with defaults
+- Inflate uncertainty: `sigma_krige *= 1.5`
+- Log: `"variogram_fit_quality": "fallback"`
+
+##### 5.2.12.3 Kriging Worsens Performance
+
+**Condition:** `RMSE_trend_plus_kriging > RMSE_trend_only × 1.02`
+
+**Action:**
+- Disable residual kriging for this zone
+- Use trend model only
+- Log: `"residual_kriging_disabled": true`
+
+##### 5.2.12.4 Extreme Computational Cost
+
+**Condition:** Zone has >50,000 wells or grid has >10M cells
+
+**Action:**
+- Spatially thin wells for variogram fitting (keep every Nth well, N=ceil(n_wells/10000))
+- Use chunked kriging prediction (1000×1000 cell chunks)
+- Log: `"computational_optimizations": ["spatial_thinning", "chunked_prediction"]`
+
+##### 5.2.12.5 Logging Requirements
+
+All fallbacks must:
+1. Be logged to metadata JSON
+2. Be surfaced in QA report
+3. Trigger email alert if multiple zones fail
+
+---
+
+#### 5.2.13 Implementation Constraints
+
+##### 5.2.13.1 Performance Targets
 
 Per zone:
+- **Runtime:** <30 minutes on 8-core CPU, 16GB RAM
+- **Memory:** <16GB peak (fail gracefully if exceeded)
+- **Output size:** <500MB per zone (all rasters combined)
 
-`DTW_trend.tif`  
-`DTW_residual.tif`  
-`DTW_final.tif`  
-`DTW_uncertainty.tif`  
-`confidence_class.tif`
+##### 5.2.13.2 Output Specifications
 
-Metadata JSON (same basename):
+- **CRS:** NZTM2000 (EPSG:2193) or zone-specific
+- **Resolution:** 100m (configurable: 50m–250m)
+- **Extent:** Zone bounding box + 1km buffer
+- **Format:** Cloud-Optimized GeoTIFF (COG) for web serving
 
-`{`  
-  `"zone_id": "...",`  
-  `"n_wells": 123,`  
-  `"cv_rmse": 2.4,`  
-  `"cv_mae": 1.8,`  
-  `"features_used": [...],`  
-  `"dem_included": false,`  
-  `"model_type": "GBM + residual kriging",`  
-  `"timestamp": "..."`  
-`}`
+##### 5.2.13.3 Dependencies
 
-All outputs:
-
-* Defined CRS  
-* Defined resolution  
-* Suitable for tiling / COG conversion
+**Required Python packages:**
+```
+geopandas >= 0.14
+rasterio >= 1.3
+lightgbm >= 4.0
+scikit-learn >= 1.3
+gstools >= 1.5
+pykrige >= 1.7 (fallback)
+pyproj >= 3.6
+```
 
 ---
 
-#### **5.2.12 Failure & fallback rules (agent-critical)**
+#### 5.2.14 Expected PR Decomposition (For Copilot)
 
-* **Too few wells (\< N\_min)**  
-   → trend only, low confidence  
-* **Variogram fit fails**  
-   → trend only, inflate uncertainty  
-* **Residual kriging worsens CV RMSE**  
-   → disable kriging for that zone
+The specification is designed to be split into these incremental PRs:
 
-All fallbacks must be **logged and surfaced**.
+1. **Data ingestion & validation**
+   - Read wells.parquet, zones.gpkg, recharge_features.gpkg
+   - Apply data quality filters (Section 5.2.4.2)
+   - Zone assignment
+   - Unit tests for edge cases
+
+2. **Feature engineering (distance + raster sampling)**
+   - Implement 3D hydraulic distance (Section 5.2.5.1)
+   - Raster covariate sampling at well locations
+   - Aquifer/soil encoding
+   - Transforms (log, inverse)
+
+3. **Zone partitioning**
+   - Split large zones into computational tiles
+   - Handle overlap regions
+   - Zone-level parallelization framework
+
+4. **Spatial CV framework**
+   - Blocked spatial CV implementation (Section 5.2.7)
+   - Fold assignment
+   - Metric computation
+   - CV results visualization
+
+5. **Trend model training**
+   - LightGBM / RandomForest training
+   - Hyperparameter tuning
+   - Feature importance extraction
+   - Quantile regression for uncertainty
+
+6. **DEM feature gating**
+   - Implement 2% improvement test (Section 5.2.8)
+   - Compare with/without DEM features
+   - Automatic feature selection
+
+7. **Residual variogram & kriging**
+   - Compute residuals from trend model
+   - Fit variogram models (Section 5.2.9)
+   - Ordinary kriging implementation
+   - Kriging variance computation
+
+8. **Uncertainty estimation**
+   - Combine trend + kriging uncertainty (Section 5.2.10)
+   - Confidence classification
+   - Uncertainty raster generation
+
+9. **Output rasterization & metadata**
+   - Write all output rasters (Section 5.2.11)
+   - Generate metadata JSON
+   - COG conversion
+   - QA output generation
+
+10. **Orchestration / CLI / pipeline runner**
+    - Command-line interface
+    - Multi-zone processing
+    - Error handling & logging
+    - Fallback logic integration
 
 ---
 
-#### **5.2.13 Expected PR decomposition (for Copilot)**
+#### 5.2.15 Validation & QA Requirements
 
-Copilot should be able to split this into:
+##### 5.2.15.1 Automated Checks
 
-1. Data ingestion & validation  
-2. Feature engineering (distance \+ raster sampling)  
-3. Zone partitioning  
-4. Spatial CV framework  
-5. Trend model training  
-6. DEM feature gating  
-7. Residual variogram & kriging  
-8. Uncertainty estimation  
-9. Output rasterization & metadata  
-10. Orchestration / CLI / pipeline runner
+For every model run:
+- [ ] All wells assigned to exactly one zone
+- [ ] No wells excluded due to missing features
+- [ ] CV RMSE < 10m (flag if exceeded)
+- [ ] Bias within ±1m (flag if exceeded)
+- [ ] No negative DTW predictions in unconfined zones
+- [ ] Output rasters have no holes within zone extent
+- [ ] Metadata JSON validates against schema
+
+##### 5.2.15.2 Manual Review Triggers
+
+Flag for human review if:
+- CV RMSE > 2× median RMSE across all zones
+- >20% of wells excluded for any reason
+- Variogram fit falls back to defaults
+- Any zone produces warnings in metadata
+
+##### 5.2.15.3 Production Acceptance Criteria
+
+Before deployment to DeepSight:
+- [ ] All zones processed without hard failures
+- [ ] Median CV RMSE < 5m across zones
+- [ ] <5% of grid cells classified as "low confidence"
+- [ ] QA plots reviewed by hydrogeologist
+- [ ] Metadata JSON complete for all zones
 
 ---
 
-#### **5.2.14 Authoritative modelling position**
+#### 5.2.16 Authoritative Modelling Position
 
-This spec intentionally:
+This specification intentionally:
 
-* Rejects pure kriging  
-* Rejects pure ML  
-* Rejects co-kriging for deterministic covariates
+- ✅ **Accepts:** Regression Kriging (ML trend + spatial residuals)
+- ✅ **Accepts:** Zone-aware modelling to respect aquifer boundaries
+- ✅ **Accepts:** Rigorous spatial CV for honest performance estimation
+- ✅ **Accepts:** Conditional inclusion of DEM features (via gating)
 
-It implements **best-practice DTW modelling** consistent with modern hydrogeologic literature and real-world decision risk.
+- ❌ **Rejects:** Pure kriging (ignores covariates, underperforms)
+- ❌ **Rejects:** Pure ML without spatial residuals (ignores spatial correlation)
+- ❌ **Rejects:** Co-kriging for deterministic covariates (unnecessary complexity)
+- ❌ **Rejects:** Global models that span aquifer boundaries (violates physics)
 
-Reference \- https://hess.copernicus.org/articles/23/4603/2019/
+**Rationale:**
+
+This approach implements best-practice DTW modelling consistent with:
+- Modern hydrogeologic literature (Hengl et al., 2007; Diggle & Ribeiro, 2007)
+- Real-world decision risk profiles (drilling confidence, seasonal reliability)
+- Regulatory reporting standards (transparent, auditable, defensible)
+
+---
+
+#### 5.2.17 References & Citations
+
+- Hengl, T., Heuvelink, G. B., & Rossiter, D. G. (2007). About regression-kriging: From equations to case studies. *Computers & Geosciences*, 33(10), 1301-1315.
+- Diggle, P. J., & Ribeiro, P. J. (2007). *Model-based geostatistics*. Springer.
+- Pebesma, E. J. (2004). Multivariable geostatistics in S: the gstat package. *Computers & Geosciences*, 30(7), 683-691.
+
+---
+
+**Document Control:**
+- Author: Technical Lead, DeepSight
+- Reviewers: Hydrogeology Team, ML Engineering
+- Approval: Product Owner
+- Next Review: 2026-06-01
 
 ---
 

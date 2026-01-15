@@ -361,5 +361,6 @@ This plan provides a **clear, actionable roadmap** to transform the groundwater 
 - 📊 Gap analysis: `docs/scope/gap_analysis.md`
 - 🔧 Detailed refactoring plan: `docs/scope/refactoring_plan.md`
 - 🚀 Quick-start guide: `docs/scope/quick_start.md`
+- 🧭 DTW execution plan: `docs/scope/dtw_development_plan.md`
 
 **Status:** ✅ Planning Complete - Ready for Implementation

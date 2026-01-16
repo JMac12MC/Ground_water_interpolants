@@ -1,0 +1,15 @@
+metric,value
+total_rows,551
+rows_with_issue,344
+rows_without_issue,207
+resolved.well_id,WELL_NO
+resolved.nztm_x,NZTMX
+resolved.nztm_y,NZTMY
+resolved.ground_surface_elev_m,GROUND_RL
+resolved.static_water_level_elev_m,INITIAL_SWL
+resolved.measurement_date,DATE_DRILLED
+resolved.well_depth_m,DEPTH
+issues.missing_required_value,281
+issues.missing_optional_value,286
+severity.error,281
+severity.warning,286

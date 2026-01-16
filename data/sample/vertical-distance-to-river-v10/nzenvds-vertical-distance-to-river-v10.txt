@@ -1,0 +1,47 @@
+========================================================================
+ NZEnvDS_Vertical distance to river v1.0
+------------------------------------------------------------------------
+ https://lris.scinfo.org.nz/layer/105719-nzenvds-vertical-distance-to-river-v10/
+========================================================================
+From: Landcare Research
+
+Description:
+  New Zealand Environmental Data Stack (NZEnvDS) comprises a set of 72 spatial
+  layers for environmental modelling and site characterisation. NZEnvDS includes
+  the layers that informed the Land Environments of New Zealand (LENZ), additional
+  layers generated for LENZ that were never publicly released, and additional
+  layers generated since, all covering mainland New Zealand and surrounding
+  inshore islands. The original/top copy of the dataset is available at
+  (https://doi.org/10.7931/m6rm-vz40), but the layers are reproduced here for ease
+  of access. See (https://newzealandecology.org/nzje/3440/) for a publication
+  describing NZEnvDS.
+  
+  Indicates the vertical height above the river network base level using the NZ
+  River Centrelines (Topo, 1:500 k) spatial layer (Land Information New Zealand
+  2020a) and the “elevation” DEM. Also known as “altitude above channel network”.
+  Calculated using the SAGA Channels module in SAGA GIS version 7.3.0.
+  
+  Please cite the original paper as attribution when using these layers.
+
+Region: New Zealand
+
+Category: Landscape
+
+CRS: WGS 84
+
+------------------------------------------------------------------------
+ Processing steps applied by LRIS Portal
+------------------------------------------------------------------------
+
+- imported to LRIS Portal in GeoTIFF format on 22 Jul 2021
+- reprojected from NZGD49 / New Zealand Map Grid to WGS 84
+- clipped to (43.297°S 172.047°E)-(43.367°S 172.158°E)
+- converted by LRIS Portal to GeoTIFF on 16 Jan 2026 (reference #4366111)
+
+------------------------------------------------------------------------
+ LICENSE: Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International
+ Link: https://lris.scinfo.org.nz/license/attribution-noncommercial-noderivatives-4-0-international/
+------------------------------------------------------------------------
+
+   http://creativecommons.org/.
+

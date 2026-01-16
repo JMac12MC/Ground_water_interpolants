@@ -1,0 +1,402 @@
+<gmd:MD_Metadata xmlns:gco="http://www.isotc211.org/2005/gco" xmlns:gmd="http://www.isotc211.org/2005/gmd" xmlns:gts="http://www.isotc211.org/2005/gts" xmlns:gml="http://www.opengis.net/gml" xmlns="http://www.isotc211.org/2005/gmd">
+  <gmd:fileIdentifier>
+    <gco:CharacterString>214de88b-6a03-c526-a67c-d99f65a71e64</gco:CharacterString>
+  </gmd:fileIdentifier>
+  <gmd:language>
+    <gco:CharacterString>eng</gco:CharacterString>
+  </gmd:language>
+  <gmd:characterSet>
+    <gmd:MD_CharacterSetCode codeList="./resources/codeList.xml#MD_CharacterSetCode" codeListValue="004"/>
+  </gmd:characterSet>
+  <gmd:hierarchyLevel>
+    <gmd:MD_ScopeCode codeList="./resources/codeList.xml#MD_ScopeCode" codeListValue="005"/>
+  </gmd:hierarchyLevel>
+  <gmd:hierarchyLevelName>
+    <gco:CharacterString>dataset</gco:CharacterString>
+  </gmd:hierarchyLevelName>
+  <gmd:contact>
+    <gmd:CI_ResponsibleParty>
+      <gmd:individualName>
+        <gco:CharacterString>Rogier Westerhoff</gco:CharacterString>
+      </gmd:individualName>
+      <gmd:organisationName>
+        <gco:CharacterString>Empty</gco:CharacterString>
+      </gmd:organisationName>
+      <gmd:positionName>
+        <gco:CharacterString>Empty</gco:CharacterString>
+      </gmd:positionName>
+      <gmd:role>
+        <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+      </gmd:role>
+    </gmd:CI_ResponsibleParty>
+  </gmd:contact>
+  <gmd:dateStamp>
+    <gco:DateTime>20191030</gco:DateTime>
+  </gmd:dateStamp>
+  <gmd:metadataStandardName>
+    <gco:CharacterString>ISO 19115:2003/19139</gco:CharacterString>
+  </gmd:metadataStandardName>
+  <gmd:metadataStandardVersion>
+    <gco:CharacterString>1.0</gco:CharacterString>
+  </gmd:metadataStandardVersion>
+  <gmd:spatialRepresentationInfo>
+    <gmd:MD_Georectified>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:numberOfDimensions>
+        <gco:Integer/>
+      </gmd:numberOfDimensions>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:cellGeometry>
+        <gmd:MD_CellGeometryCode codeList="./resources/codeList.xml#MD_CellGeometryCode" codeListValue=""/>
+      </gmd:cellGeometry>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:transformationParameterAvailability>
+        <gco:Boolean/>
+      </gmd:transformationParameterAvailability>
+      <gmd:checkPointAvailability>
+        <gco:Boolean>0</gco:Boolean>
+      </gmd:checkPointAvailability>
+      <gmd:cornerPoints/>
+      <gmd:cornerPoints/>
+      <gmd:cornerPoints/>
+      <gmd:cornerPoints/>
+      <gmd:centerPoint/>
+      <gmd:pointInPixel>
+        <gmd:MD_PixelOrientationCode>001</gmd:MD_PixelOrientationCode>
+      </gmd:pointInPixel>
+    </gmd:MD_Georectified>
+  </gmd:spatialRepresentationInfo>
+  <gmd:identificationInfo>
+    <gmd:MD_DataIdentification>
+      <gmd:citation>
+        <gmd:CI_Citation>
+          <gmd:title>
+            <gco:CharacterString>NZDepthToHydrogeologicalBasement_Classes.tif</gco:CharacterString>
+          </gmd:title>
+          <gmd:alternateTitle>
+            <gco:CharacterString>New Zealand Groundwater Atlas</gco:CharacterString>
+          </gmd:alternateTitle>
+          <gmd:citedResponsibleParty>
+            <gmd:CI_ResponsibleParty>
+              <gmd:individualName>
+                <gco:CharacterString>Rogier Westerhoff</gco:CharacterString>
+              </gmd:individualName>
+              <gmd:organisationName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:organisationName>
+              <gmd:positionName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:positionName>
+              <gmd:role>
+                <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+              </gmd:role>
+            </gmd:CI_ResponsibleParty>
+          </gmd:citedResponsibleParty>
+          <gmd:presentationForm>
+            <gmd:CI_PresentationFormCode codeList="./resources/codeList.xml#CI_PresentationFormCode" codeListValue="005"/>
+          </gmd:presentationForm>
+        </gmd:CI_Citation>
+      </gmd:citation>
+      <gmd:abstract>
+        <gco:CharacterString>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;A national model was used to estimate depth to hydrogeological basement. &lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;Hydrogeological basement refers to geological material with primary porosity and permeability that is low enough such that fluid volumes and flow rates can be considered negligible. More loosely, depth to hydrogeological basement can be described as depth to ‘the base of an aquifer’. &lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;Depth classes were defined to present the dataset in a manner that captures the inherent uncertainty of the dataset. &lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;TABLE&gt;&lt;TBODY&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;font-weight:bold;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;Depth class&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;font-weight:bold;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;Depth Range (mBGL)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;1&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;0 – 1&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;2&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;1 – 10&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;3&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;10 – 20&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;4&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;20 – 50 &lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;5&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;50 – 100 &lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;6&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;100 – 200 &lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;7&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;TD&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;&amp;gt; 200&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/TD&gt;&lt;/TR&gt;&lt;/TBODY&gt;&lt;/TABLE&gt;&lt;P&gt;&lt;SPAN /&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;Where reference to the data is to be included in a reference list the following citation is suggested: &lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;Westerhoff RS, Tschritter C, Rawlinson ZJ. 2019. New Zealand Groundwater Atlas: depth to hydrogeological basement. Lower Hutt (NZ): GNS Science. 19 p. Consultancy Report 2019/140.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</gco:CharacterString>
+      </gmd:abstract>
+      <gmd:purpose>
+        <gco:CharacterString>Classification of national-scale estimated depth to hydrogeological basement: 0=Surficial, 7=Very deep.</gco:CharacterString>
+      </gmd:purpose>
+      <gmd:pointOfContact>
+        <gmd:CI_ResponsibleParty>
+          <gmd:individualName>
+            <gco:CharacterString>Rogier Westerhoff</gco:CharacterString>
+          </gmd:individualName>
+          <gmd:organisationName>
+            <gco:CharacterString>Empty</gco:CharacterString>
+          </gmd:organisationName>
+          <gmd:positionName>
+            <gco:CharacterString>Empty</gco:CharacterString>
+          </gmd:positionName>
+          <gmd:role>
+            <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+          </gmd:role>
+        </gmd:CI_ResponsibleParty>
+      </gmd:pointOfContact>
+      <gmd:resourceConstraints>
+        <gmd:MD_LegalConstraints>
+          <gmd:useLimitation>
+            <gco:CharacterString>These data have been developed for the purpose of national-scale assessments. While all care and diligence has been used in processing, analysing and extracting data and information for this publication, the Ministry for the Environment and the Institute of Geological and Nuclear Sciences Limited (GNS Science) give no warranty in relation to these data - including its accuracy, reliability and suitability - and accept no liability whatsoever in relation to any loss, damage, or other costs relating to the use of any part of these data or any compilations, derivative works, or modifications of these data.</gco:CharacterString>
+          </gmd:useLimitation>
+          <gmd:accessConstraints>
+            <gmd:MD_RestrictionCode codeList="./resources/codeList.xml#MD_RestrictionCode" codeListValue="002"/>
+          </gmd:accessConstraints>
+          <gmd:useConstraints>
+            <gmd:MD_RestrictionCode codeList="./resources/codeList.xml#MD_RestrictionCode" codeListValue="002"/>
+          </gmd:useConstraints>
+        </gmd:MD_LegalConstraints>
+      </gmd:resourceConstraints>
+      <gmd:resourceConstraints>
+        <gmd:MD_Constraints>
+          <gmd:useLimitation>
+            <gco:CharacterString>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;Where reference to the data is to be included in a reference list the following citation is suggested: &lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;Westerhoff RS, Tschritter C, Rawlinson ZJ. 2019. New Zealand Groundwater Atlas: depth to hydrogeological basement. Lower Hutt (NZ): GNS Science. 19 p. Consultancy Report 2019/140.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</gco:CharacterString>
+          </gmd:useLimitation>
+        </gmd:MD_Constraints>
+      </gmd:resourceConstraints>
+      <gmd:spatialRepresentationType>
+        <gmd:MD_SpatialRepresentationTypeCode codeList="./resources/codeList.xml#MD_SpatialRepresentationTypeCode" codeListValue="002"/>
+      </gmd:spatialRepresentationType>
+      <gmd:language>
+        <gco:CharacterString>eng</gco:CharacterString>
+      </gmd:language>
+      <gmd:characterSet>
+        <gmd:MD_CharacterSetCode codeList="./resources/codeList.xml#MD_CharacterSetCode" codeListValue="004"/>
+      </gmd:characterSet>
+      <gmd:topicCategory>
+        <gmd:MD_TopicCategoryCode>geoscientificInformation</gmd:MD_TopicCategoryCode>
+      </gmd:topicCategory>
+      <gmd:topicCategory>
+        <gmd:MD_TopicCategoryCode>environment</gmd:MD_TopicCategoryCode>
+      </gmd:topicCategory>
+      <gmd:environmentDescription>
+        <gco:CharacterString>Version 6.2 (Build 9200) ; Esri ArcGIS 10.5.1.7333</gco:CharacterString>
+      </gmd:environmentDescription>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement/>
+        </gmd:EX_Extent>
+      </gmd:extent>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement/>
+        </gmd:EX_Extent>
+      </gmd:extent>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement/>
+        </gmd:EX_Extent>
+      </gmd:extent>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement>
+            <gmd:EX_GeographicBoundingBox>
+              <gmd:westBoundLongitude>
+                <gco:Decimal>165.91699050329265</gco:Decimal>
+              </gmd:westBoundLongitude>
+              <gmd:eastBoundLongitude>
+                <gco:Decimal>179.5267622692766</gco:Decimal>
+              </gmd:eastBoundLongitude>
+              <gmd:southBoundLatitude>
+                <gco:Decimal>-47.44228475520715</gco:Decimal>
+              </gmd:southBoundLatitude>
+              <gmd:northBoundLatitude>
+                <gco:Decimal>-33.89896828536652</gco:Decimal>
+              </gmd:northBoundLatitude>
+            </gmd:EX_GeographicBoundingBox>
+          </gmd:geographicElement>
+        </gmd:EX_Extent>
+      </gmd:extent>
+    </gmd:MD_DataIdentification>
+  </gmd:identificationInfo>
+  <gmd:contentInfo>
+    <gmd:MD_CoverageDescription>
+      <gmd:attributeDescription>
+        <gco:RecordType/>
+      </gmd:attributeDescription>
+      <gmd:contentType>
+        <gmd:MD_CoverageContentTypeCode codeList="./resources/codeList.xml#MD_CoverageContentTypeCode" codeListValue="002"/>
+      </gmd:contentType>
+      <gmd:dimension>
+        <gmd:MD_Band>
+          <gmd:descriptor>
+            <gco:CharacterString>Band_1</gco:CharacterString>
+          </gmd:descriptor>
+          <gmd:maxValue>
+            <gco:Real>4</gco:Real>
+          </gmd:maxValue>
+          <gmd:minValue>
+            <gco:Real>1</gco:Real>
+          </gmd:minValue>
+          <gmd:units/>
+          <gmd:bitsPerValue>
+            <gco:Integer>8</gco:Integer>
+          </gmd:bitsPerValue>
+        </gmd:MD_Band>
+      </gmd:dimension>
+    </gmd:MD_CoverageDescription>
+  </gmd:contentInfo>
+  <gmd:distributionInfo>
+    <gmd:MD_Distribution>
+      <gmd:distributor>
+        <gmd:MD_Distributor>
+          <gmd:distributorContact>
+            <gmd:CI_ResponsibleParty>
+              <gmd:individualName>
+                <gco:CharacterString>Rogier Westerhoff</gco:CharacterString>
+              </gmd:individualName>
+              <gmd:organisationName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:organisationName>
+              <gmd:positionName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:positionName>
+              <gmd:role>
+                <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+              </gmd:role>
+            </gmd:CI_ResponsibleParty>
+          </gmd:distributorContact>
+        </gmd:MD_Distributor>
+      </gmd:distributor>
+      <gmd:transferOptions>
+        <gmd:MD_DigitalTransferOptions>
+          <gmd:onLine>
+            <gmd:CI_OnlineResource>
+              <gmd:linkage>
+                <gmd:URL>https://data.mfe.govt.nz/layer/104446-depth-to-hydrogeological-basement-map-2019/</gmd:URL>
+              </gmd:linkage>
+            </gmd:CI_OnlineResource>
+          </gmd:onLine>
+        </gmd:MD_DigitalTransferOptions>
+      </gmd:transferOptions>
+    </gmd:MD_Distribution>
+  </gmd:distributionInfo>
+  <gmd:dataQualityInfo>
+    <gmd:DQ_DataQuality>
+      <gmd:scope>
+        <gmd:DQ_Scope>
+          <gmd:level>
+            <gmd:MD_ScopeCode codeList="./resources/codeList.xml#MD_ScopeCode" codeListValue="015"/>
+          </gmd:level>
+        </gmd:DQ_Scope>
+      </gmd:scope>
+      <gmd:lineage>
+        <gmd:LI_Lineage>
+          <gmd:statement>
+            <gco:CharacterString>Final dataset supplied to Ministry for the Environment by GNS Science in October 2019.</gco:CharacterString>
+          </gmd:statement>
+        </gmd:LI_Lineage>
+      </gmd:lineage>
+    </gmd:DQ_DataQuality>
+  </gmd:dataQualityInfo>
+  <gmd:metadataConstraints>
+    <gmd:MD_LegalConstraints>
+      <gmd:useLimitation>
+        <gco:CharacterString>These data have been developed for the purpose of national-scale assessments. While all care and diligence has been used in processing, analysing and extracting data and information for this publication, the Ministry for the Environment and the Institute of Geological and Nuclear Sciences Limited (GNS Science) give no warranty in relation to these data - including its accuracy, reliability and suitability - and accept no liability whatsoever in relation to any loss, damage, or other costs relating to the use of any part of these data or any compilations, derivative works, or modifications of these data.</gco:CharacterString>
+      </gmd:useLimitation>
+      <gmd:accessConstraints>
+        <gmd:MD_RestrictionCode codeList="./resources/codeList.xml#MD_RestrictionCode" codeListValue="002"/>
+      </gmd:accessConstraints>
+      <gmd:useConstraints>
+        <gmd:MD_RestrictionCode codeList="./resources/codeList.xml#MD_RestrictionCode" codeListValue="002"/>
+      </gmd:useConstraints>
+    </gmd:MD_LegalConstraints>
+  </gmd:metadataConstraints>
+  <gmd:metadataConstraints>
+    <gmd:MD_Constraints>
+      <gmd:useLimitation>
+        <gco:CharacterString>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;Where reference to the data is to be included in a reference list the following citation is suggested: &lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;Westerhoff RS, Tschritter C, Rawlinson ZJ. 2019. New Zealand Groundwater Atlas: depth to hydrogeological basement. Lower Hutt (NZ): GNS Science. 19 p. Consultancy Report 2019/140.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</gco:CharacterString>
+      </gmd:useLimitation>
+    </gmd:MD_Constraints>
+  </gmd:metadataConstraints>
+  <gmd:metadataConstraints>
+    <gmd:MD_LegalConstraints>
+      <gmd:useLimitation>Attribution 4.0 International</gmd:useLimitation>
+      <gmd:useLimitation>https://creativecommons.org/licenses/by/4.0/</gmd:useLimitation>
+      <gmd:useConstraints>
+        <gmd:MD_RestrictionCode codeList="http://standards.iso.org/ittf/PubliclyAvailableStandards/ISO_19139_Schemas/resources/Codelist/gmxCodelists.xml#MD_RestrictionCode" codeListValue="license">license</gmd:MD_RestrictionCode>
+      </gmd:useConstraints>
+    </gmd:MD_LegalConstraints>
+  </gmd:metadataConstraints>
+</gmd:MD_Metadata>

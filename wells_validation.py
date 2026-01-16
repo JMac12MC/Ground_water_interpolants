@@ -55,6 +55,8 @@ CRS_BOUNDS = {
     "nztm_y": (4_700_000, 6_500_000),
 }
 
+CSV_LINE_OFFSET = 2  # pandas index (0-based) + header row
+
 
 def resolve_columns(df_columns: Iterable[str]) -> Dict[str, str]:
     """Map canonical names to actual columns present in the dataframe."""
@@ -111,8 +113,12 @@ def validate(df: pd.DataFrame) -> tuple[List[Dict[str, str]], Dict[str, str]]:
         )
 
     for idx, row in df.iterrows():
-        row_number = idx + 2  # include header row in CSV line numbering
-        well_id = row[resolved["well_id"]] if "well_id" in resolved else ""
+        row_number = idx + CSV_LINE_OFFSET
+        well_id = ""
+        if "well_id" in resolved:
+            well_id_raw = row.get(resolved["well_id"], "")
+            if pd.notna(well_id_raw):
+                well_id = str(well_id_raw)
 
         # Required value checks
         for field in REQUIRED_FIELDS:
@@ -197,15 +203,12 @@ def write_outputs(
 
     issue_counter = Counter(issue["issue_type"] for issue in issues)
     severity_counter = Counter(issue["severity"] for issue in issues)
-    rows_with_issue = set()
-    for issue in issues:
-        row_id = issue.get("row_number")
-        if row_id in ("", None):
-            continue
-        try:
-            rows_with_issue.add(int(row_id))
-        except (TypeError, ValueError):
-            continue
+    rows_with_issue = {
+        int(issue["row_number"])
+        for issue in issues
+        if issue.get("row_number") not in ("", None)
+        and str(issue.get("row_number")).strip().lstrip("-").isdigit()
+    }
 
     summary_rows = [
         {"metric": "total_rows", "value": total_rows},

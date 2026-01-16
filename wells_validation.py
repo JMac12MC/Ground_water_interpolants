@@ -197,9 +197,15 @@ def write_outputs(
 
     issue_counter = Counter(issue["issue_type"] for issue in issues)
     severity_counter = Counter(issue["severity"] for issue in issues)
-    rows_with_issue = {
-        issue["row_number"] for issue in issues if isinstance(issue["row_number"], int)
-    }
+    rows_with_issue = set()
+    for issue in issues:
+        row_id = issue.get("row_number")
+        if row_id in ("", None):
+            continue
+        try:
+            rows_with_issue.add(int(row_id))
+        except (TypeError, ValueError):
+            continue
 
     summary_rows = [
         {"metric": "total_rows", "value": total_rows},

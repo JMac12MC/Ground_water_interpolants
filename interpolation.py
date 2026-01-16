@@ -711,10 +711,6 @@ def create_indicator_polygon_geometry(indicator_mask, threshold=0.7):
         return None
 
 
-def MARKER_DELETE_ME():
-        print("=" * 80)
-        
-
 def generate_indicator_kriging_mask(wells_df, center_point, radius_km, resolution=50, soil_polygons=None, threshold=0.7):
     """
     Generate an indicator kriging mask for high-probability zones (≥ threshold)

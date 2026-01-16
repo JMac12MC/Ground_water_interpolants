@@ -1,0 +1,13 @@
+<PAMDataset>
+  <Metadata>
+    <MDI key="AREA_OR_POINT">Area</MDI>
+    <MDI key="TIFFTAG_SOFTWARE">MATLAB 9.5, Mapping Toolbox 4.7</MDI>
+  </Metadata>
+  <PAMRasterBand band="1">
+    <Description>Layer_1</Description>
+    <ColorInterp>Gray</ColorInterp>
+    <Metadata>
+      <MDI key="LAYER_TYPE">athematic</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>

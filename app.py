@@ -82,12 +82,7 @@ session_defaults = {
     'show_well_bounds': False,
     'show_convex_hull': False,
     'show_grid_points': False,
-    'heatmap_visualization_mode': 'smooth_raster',  # 'triangular_mesh' or 'smooth_raster'
-    
-    # Regional ML models (trained once, reused for all tiles)
-    'regional_rk_model': None,
-    'regional_qrf_model': None,
-    'regional_models_trained': False
+    'heatmap_visualization_mode': 'smooth_raster'
 }
 
 # Initialize all session state variables
@@ -247,132 +242,6 @@ with st.sidebar:
         st.warning("Database connection not available. Cannot load soil polygons.")
         st.session_state.soil_polygons = None
 
-    # File uploaders for RK/QRF covariates
-    st.markdown("---")
-    st.subheader("ML Covariates (for RK/QRF)")
-    
-    # Initialize covariate session state
-    if 'river_centerlines' not in st.session_state:
-        st.session_state.river_centerlines = None
-    if 'soil_rock_polygons' not in st.session_state:
-        st.session_state.soil_rock_polygons = None
-    
-    # River centerlines uploader
-    river_file = st.file_uploader(
-        "Upload River Centerlines (Shapefile)", 
-        type=['zip', 'shp', 'shx', 'dbf', 'prj'],
-        key="river_uploader",
-        help="Upload shapefile as ZIP (recommended) or select all files (.shp, .shx, .dbf, .prj) together",
-        accept_multiple_files=True
-    )
-    
-    if river_file:
-        try:
-            import tempfile
-            import zipfile
-            temp_dir = tempfile.mkdtemp()
-            
-            # Check if ZIP file uploaded
-            zip_files = [f for f in river_file if f.name.endswith('.zip')]
-            if zip_files:
-                # Extract ZIP file
-                zip_path = os.path.join(temp_dir, zip_files[0].name)
-                with open(zip_path, 'wb') as f:
-                    f.write(zip_files[0].getvalue())
-                
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
-                
-                # Find .shp file in extracted files
-                shp_files = [f for f in os.listdir(temp_dir) if f.endswith('.shp')]
-                if shp_files:
-                    shp_path = os.path.join(temp_dir, shp_files[0])
-                    st.session_state.river_centerlines = gpd.read_file(shp_path)
-                    st.success(f"✅ Loaded river centerlines: {len(st.session_state.river_centerlines)} features")
-                else:
-                    st.error("No .shp file found in ZIP archive")
-            else:
-                # Multiple individual files uploaded
-                for uploaded_file in river_file:
-                    file_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(file_path, 'wb') as f:
-                        f.write(uploaded_file.getvalue())
-                
-                # Check for required files
-                uploaded_names = [f.name for f in river_file]
-                shp_file = [f for f in uploaded_names if f.endswith('.shp')]
-                shx_file = [f for f in uploaded_names if f.endswith('.shx')]
-                
-                if not shp_file:
-                    st.error("Missing .shp file")
-                elif not shx_file:
-                    st.error("⚠️ Missing .shx file. Shapefiles need ALL components (.shp, .shx, .dbf, .prj). Tip: Upload as ZIP file instead!")
-                else:
-                    shp_path = os.path.join(temp_dir, shp_file[0])
-                    st.session_state.river_centerlines = gpd.read_file(shp_path)
-                    st.success(f"✅ Loaded river centerlines: {len(st.session_state.river_centerlines)} features")
-        except Exception as e:
-            st.error(f"Error loading river shapefile: {e}")
-            st.info("💡 Tip: ZIP all shapefile components (.shp, .shx, .dbf, .prj) and upload the ZIP file")
-    
-    # Soil/rock polygons uploader
-    soil_rock_file = st.file_uploader(
-        "Upload Soil/Rock Polygons (Shapefile)", 
-        type=['zip', 'shp', 'shx', 'dbf', 'prj'],
-        key="soil_rock_uploader",
-        help="Upload shapefile as ZIP (recommended) or select all files (.shp, .shx, .dbf, .prj) together",
-        accept_multiple_files=True
-    )
-    
-    if soil_rock_file:
-        try:
-            import tempfile
-            import zipfile
-            temp_dir = tempfile.mkdtemp()
-            
-            # Check if ZIP file uploaded
-            zip_files = [f for f in soil_rock_file if f.name.endswith('.zip')]
-            if zip_files:
-                # Extract ZIP file
-                zip_path = os.path.join(temp_dir, zip_files[0].name)
-                with open(zip_path, 'wb') as f:
-                    f.write(zip_files[0].getvalue())
-                
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
-                
-                # Find .shp file in extracted files
-                shp_files = [f for f in os.listdir(temp_dir) if f.endswith('.shp')]
-                if shp_files:
-                    shp_path = os.path.join(temp_dir, shp_files[0])
-                    st.session_state.soil_rock_polygons = gpd.read_file(shp_path)
-                    st.success(f"✅ Loaded soil/rock polygons: {len(st.session_state.soil_rock_polygons)} features")
-                else:
-                    st.error("No .shp file found in ZIP archive")
-            else:
-                # Multiple individual files uploaded
-                for uploaded_file in soil_rock_file:
-                    file_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(file_path, 'wb') as f:
-                        f.write(uploaded_file.getvalue())
-                
-                # Check for required files
-                uploaded_names = [f.name for f in soil_rock_file]
-                shp_file = [f for f in uploaded_names if f.endswith('.shp')]
-                shx_file = [f for f in uploaded_names if f.endswith('.shx')]
-                
-                if not shp_file:
-                    st.error("Missing .shp file")
-                elif not shx_file:
-                    st.error("⚠️ Missing .shx file. Shapefiles need ALL components (.shp, .shx, .dbf, .prj). Tip: Upload as ZIP file instead!")
-                else:
-                    shp_path = os.path.join(temp_dir, shp_file[0])
-                    st.session_state.soil_rock_polygons = gpd.read_file(shp_path)
-                    st.success(f"✅ Loaded soil/rock polygons: {len(st.session_state.soil_rock_polygons)} features")
-        except Exception as e:
-            st.error(f"Error loading soil/rock shapefile: {e}")
-            st.info("💡 Tip: ZIP all shapefile components (.shp, .shx, .dbf, .prj) and upload the ZIP file")
-
     st.header("Filters")
 
     # Manual refresh button for when hot reload isn't working
@@ -421,12 +290,10 @@ with st.sidebar:
             "Ground Water Level (Spherical Kriging)",
             "Indicator Kriging (Yield Suitability)",
             "Indicator Kriging (Spherical)",
-            "Indicator Kriging (Spherical Continuous)",
-            "Regression Kriging (ML + Geostatistics)",
-            "Quantile Regression Forest (ML Uncertainty)"
+            "Indicator Kriging (Spherical Continuous)"
         ],
         index=5,  # Default to Ground Water Level (Spherical Kriging)
-        help="Choose the visualization type: yield estimation, depth analysis, groundwater level, yield suitability probability, or machine learning methods (RK/QRF)",
+        help="Choose the visualization type: yield estimation, depth analysis, groundwater level, or yield suitability probability",
         key="visualization_method_selector"
     )
 
@@ -489,59 +356,6 @@ with st.sidebar:
         st.session_state.auto_fit_variogram = True
         st.session_state.variogram_model = 'spherical'
         print(f"🎯 ENHANCED CONTINUOUS INDICATOR: Selected method with 2x well search radius functionality")
-    elif visualization_method == "Regression Kriging (ML + Geostatistics)":
-        st.session_state.interpolation_method = 'regression_kriging'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = True
-        st.session_state.variogram_model = 'spherical'
-    elif visualization_method == "Quantile Regression Forest (ML Uncertainty)":
-        st.session_state.interpolation_method = 'quantile_rf'
-        st.session_state.show_kriging_variance = False
-        st.session_state.auto_fit_variogram = False
-
-    # Regional ML Model Training (for RK and QRF)
-    is_ml_method = st.session_state.interpolation_method in ['regression_kriging', 'quantile_rf']
-    
-    if is_ml_method:
-        # Check if we have the required covariates
-        has_covariates = (st.session_state.get('river_centerlines') is not None and 
-                         st.session_state.get('soil_rock_polygons') is not None)
-        has_wells = st.session_state.get('wells_data') is not None
-        
-        if has_covariates and has_wells:
-            # Train regional models if not already trained
-            if st.session_state.interpolation_method == 'regression_kriging' and st.session_state.regional_rk_model is None:
-                with st.spinner("🌍 Training REGIONAL Regression Kriging model on all Canterbury wells..."):
-                    from interpolation import train_regional_rk_model
-                    all_wells = st.session_state.wells_data
-                    regional_model = train_regional_rk_model(
-                        all_wells,
-                        river_centerlines=st.session_state.river_centerlines,
-                        soil_rock_polygons=st.session_state.soil_rock_polygons
-                    )
-                    if regional_model.get('success'):
-                        st.session_state.regional_rk_model = regional_model
-                        st.success(f"✅ Regional RK model trained! Variogram range: {regional_model['vario_params'][2]:.0f}m")
-                    else:
-                        st.warning("⚠️ Regional RK training failed. Will use local training per tile.")
-            
-            elif st.session_state.interpolation_method == 'quantile_rf' and st.session_state.regional_qrf_model is None:
-                with st.spinner("🌍 Training REGIONAL Quantile RF model on all Canterbury wells..."):
-                    from interpolation import train_regional_qrf_model
-                    all_wells = st.session_state.wells_data
-                    regional_model = train_regional_qrf_model(
-                        all_wells,
-                        river_centerlines=st.session_state.river_centerlines,
-                        soil_rock_polygons=st.session_state.soil_rock_polygons
-                    )
-                    if regional_model.get('success'):
-                        st.session_state.regional_qrf_model = regional_model
-                        st.success("✅ Regional QRF model trained!")
-                    else:
-                        st.warning("⚠️ Regional QRF training failed. Will use local training per tile.")
-        else:
-            if not has_covariates:
-                st.info("ℹ️ Upload river centerlines and soil/rock shapefiles to enable regional ML model training")
 
     # Indicator Kriging Variogram Settings (only for indicator methods)
     is_indicator_method = st.session_state.interpolation_method in [

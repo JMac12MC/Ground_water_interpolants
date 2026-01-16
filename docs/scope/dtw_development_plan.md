@@ -27,3 +27,4 @@
 3. **Data paths:** Keep raw vs derived data separated (`data/raw`, `data/processed`, `data/tiles`); never mutate raw sources.
 4. **Quality flags:** Carry quality flags from targets through to predictions and tiles; include in metadata/CLI output.
 5. **Acceptance:** Each PR should land with green tests and a short README snippet describing how to re-run the new step.
+6. **Seed dataset:** Use `data/sample/` (covariate rasters + wells) to bootstrap DTW map development before full pipelines are wired.

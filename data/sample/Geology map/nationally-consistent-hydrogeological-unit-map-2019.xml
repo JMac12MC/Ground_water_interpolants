@@ -1,0 +1,320 @@
+<gmd:MD_Metadata xmlns:gco="http://www.isotc211.org/2005/gco" xmlns:gmd="http://www.isotc211.org/2005/gmd" xmlns:gts="http://www.isotc211.org/2005/gts" xmlns:gml="http://www.opengis.net/gml" xmlns="http://www.isotc211.org/2005/gmd">
+  <gmd:fileIdentifier>
+    <gco:CharacterString>f901ed99-9eb2-2252-ef25-02a430758365</gco:CharacterString>
+  </gmd:fileIdentifier>
+  <gmd:language>
+    <gco:CharacterString>eng</gco:CharacterString>
+  </gmd:language>
+  <gmd:characterSet>
+    <gmd:MD_CharacterSetCode codeList="./resources/codeList.xml#MD_CharacterSetCode" codeListValue="004"/>
+  </gmd:characterSet>
+  <gmd:hierarchyLevel>
+    <gmd:MD_ScopeCode codeList="./resources/codeList.xml#MD_ScopeCode" codeListValue="005"/>
+  </gmd:hierarchyLevel>
+  <gmd:hierarchyLevelName>
+    <gco:CharacterString>dataset</gco:CharacterString>
+  </gmd:hierarchyLevelName>
+  <gmd:contact>
+    <gmd:CI_ResponsibleParty>
+      <gmd:individualName>
+        <gco:CharacterString>Magali Moreau (GNS Science)</gco:CharacterString>
+      </gmd:individualName>
+      <gmd:organisationName>
+        <gco:CharacterString>Empty</gco:CharacterString>
+      </gmd:organisationName>
+      <gmd:positionName>
+        <gco:CharacterString>Empty</gco:CharacterString>
+      </gmd:positionName>
+      <gmd:role>
+        <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+      </gmd:role>
+    </gmd:CI_ResponsibleParty>
+  </gmd:contact>
+  <gmd:dateStamp>
+    <gco:DateTime>20191105</gco:DateTime>
+  </gmd:dateStamp>
+  <gmd:metadataStandardName>
+    <gco:CharacterString>ISO 19115:2003/19139</gco:CharacterString>
+  </gmd:metadataStandardName>
+  <gmd:metadataStandardVersion>
+    <gco:CharacterString>1.0</gco:CharacterString>
+  </gmd:metadataStandardVersion>
+  <gmd:spatialRepresentationInfo>
+    <gmd:MD_VectorSpatialRepresentation>
+      <gmd:topologyLevel>
+        <gmd:MD_TopologyLevelCode codeList="./resources/codeList.xml#MD_TopologyLevelCode" codeListValue="001"/>
+      </gmd:topologyLevel>
+      <gmd:geometricObjects>
+        <gmd:MD_GeometricObjects>
+          <gmd:geometricObjectType>
+            <gmd:MD_GeometricObjectTypeCode codeList="./resources/codeList.xml#MD_GeometricObjectTypeCode" codeListValue="002"/>
+          </gmd:geometricObjectType>
+          <gmd:geometricObjectCount>
+            <gco:Integer>1290</gco:Integer>
+          </gmd:geometricObjectCount>
+        </gmd:MD_GeometricObjects>
+      </gmd:geometricObjects>
+    </gmd:MD_VectorSpatialRepresentation>
+  </gmd:spatialRepresentationInfo>
+  <gmd:spatialRepresentationInfo>
+    <gmd:MD_VectorSpatialRepresentation>
+      <gmd:topologyLevel>
+        <gmd:MD_TopologyLevelCode codeList="./resources/codeList.xml#MD_TopologyLevelCode" codeListValue="001"/>
+      </gmd:topologyLevel>
+      <gmd:geometricObjects>
+        <gmd:MD_GeometricObjects>
+          <gmd:geometricObjectType>
+            <gmd:MD_GeometricObjectTypeCode codeList="./resources/codeList.xml#MD_GeometricObjectTypeCode" codeListValue="002"/>
+          </gmd:geometricObjectType>
+          <gmd:geometricObjectCount>
+            <gco:Integer>1290</gco:Integer>
+          </gmd:geometricObjectCount>
+        </gmd:MD_GeometricObjects>
+      </gmd:geometricObjects>
+    </gmd:MD_VectorSpatialRepresentation>
+  </gmd:spatialRepresentationInfo>
+  <gmd:spatialRepresentationInfo>
+    <gmd:MD_VectorSpatialRepresentation>
+      <gmd:topologyLevel>
+        <gmd:MD_TopologyLevelCode codeList="./resources/codeList.xml#MD_TopologyLevelCode" codeListValue="001"/>
+      </gmd:topologyLevel>
+      <gmd:geometricObjects>
+        <gmd:MD_GeometricObjects>
+          <gmd:geometricObjectType>
+            <gmd:MD_GeometricObjectTypeCode codeList="./resources/codeList.xml#MD_GeometricObjectTypeCode" codeListValue="002"/>
+          </gmd:geometricObjectType>
+          <gmd:geometricObjectCount>
+            <gco:Integer>1290</gco:Integer>
+          </gmd:geometricObjectCount>
+        </gmd:MD_GeometricObjects>
+      </gmd:geometricObjects>
+    </gmd:MD_VectorSpatialRepresentation>
+  </gmd:spatialRepresentationInfo>
+  <gmd:identificationInfo>
+    <gmd:MD_DataIdentification>
+      <gmd:citation>
+        <gmd:CI_Citation>
+          <gmd:title>
+            <gco:CharacterString>NZ_hydrogeological_unit_outcrop</gco:CharacterString>
+          </gmd:title>
+          <gmd:alternateTitle>
+            <gco:CharacterString>New Zealand Groundwater Atlas</gco:CharacterString>
+          </gmd:alternateTitle>
+          <gmd:citedResponsibleParty>
+            <gmd:CI_ResponsibleParty>
+              <gmd:individualName>
+                <gco:CharacterString>Magali Moreau (GNS Science)</gco:CharacterString>
+              </gmd:individualName>
+              <gmd:organisationName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:organisationName>
+              <gmd:positionName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:positionName>
+              <gmd:role>
+                <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+              </gmd:role>
+            </gmd:CI_ResponsibleParty>
+          </gmd:citedResponsibleParty>
+          <gmd:presentationForm>
+            <gmd:CI_PresentationFormCode codeList="./resources/codeList.xml#CI_PresentationFormCode" codeListValue="005"/>
+          </gmd:presentationForm>
+        </gmd:CI_Citation>
+      </gmd:citation>
+      <gmd:abstract>
+        <gco:CharacterString>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;New Zealand Hydrogeological unit map (HUM) separated into aquifers, aquitards, aquicludes and basement developed in a nationally-consistent manner. This dataset includes only outcropping hydrogeological units. This dataset was also joined to the hydrogeological system dataset (Moreau et al. 2019), to &lt;/SPAN&gt;&lt;SPAN&gt;provide a single polygon for each unique combination of HUM and hydrogeological system&lt;/SPAN&gt;&lt;SPAN&gt;. &lt;/SPAN&gt;&lt;SPAN&gt;Summary statistics of surficially mapped products are provided for each polygon (groundwater use, flow, recharge, discharge to the surface; depth to hydrogeological basement; and number of drinking water wells serving &amp;gt;100 people). Each polygon is attributed the following 24 hydrogeological attributes as follows (attribute name as it appears in the dataset is shown in brackets):&lt;/SPAN&gt;&lt;/P&gt;&lt;UL STYLE="margin:0 0 0 0;padding:0 0 0 0;"&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;hydrogeological unit type (HUM_type)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;unique name (HUM_name)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;geological era (HUM_era)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;geological age descriptor (HUM_age)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;lithological type (HUM_lith)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;lithological descriptor (HUM_rock)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;unique identification, in younger to older geological time order (HUM_order).&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;Hydrogeological System name (HS_name, sourced from Moreau et al. 2019)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;Hydrogeological System type (HS_type, sourced from Moreau et al. 2019)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;polygon area in square km (poly_area)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;estimated minimum depth class to hydrogeological basement: 1 = surficial,&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN /&gt;&lt;SPAN&gt;&lt;SPAN&gt;7 = very deep (base_MIN, sourced from Westerhoff et al. 2019b)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;estimated maximum depth class to hydrogeological basement: 1 = surficial,&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN /&gt;&lt;SPAN&gt;&lt;SPAN&gt;7 = very deep (base_MAX, sourced from Westerhoff et al. 2019b)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;estimated mean depth class to hydrogeological basement: 1 = surficial, 7 = very deep (base_MEAN, sourced from Westerhoff et al. 2019b)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;mean estimated volumetric groundwater flow rate (amplitude) class: 1 = low amplitude, 4 = very high amplitude (flow_MEAN, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;predominant estimated volumetric groundwater flow rate (amplitude) class: 1 = low amplitude, 4 = very high amplitude (flow_MAJOR, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;median estimated volumetric groundwater flow rate (amplitude) class: 1 = low amplitude, 4 = very high amplitude (flow_MEDIAN, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;mean probability class of discharge of groundwater to the surface: 1 = low probability, 3 = high probability (GWSW_MEAN, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;predominant probability class of discharge of groundwater to the surface: 1 = low probability, 3 = high probability (GWSW_MAJOR, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;median probability class of discharge of groundwater to the surface: 1 = low probability, 3 = high probability (GWSW_MEDIA, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;sum of estimated groundwater recharge in m&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;3&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;/day (RR_sum_m3d, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;mean estimated groundwater recharge in m&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;3&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;/day per square km (RR_sqkm_m3, sourced from Westerhoff et al. 2019a)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;sum of estimated groundwater use in m&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;3&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;/day (use_sum_m3, sourced from KC 2019)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;mean estimated groundwater use in m&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;3&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN&gt;&lt;SPAN&gt;/day per square km (use_sqkm_m, sourced from KC 2019)&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;LI&gt;&lt;P STYLE="text-align:Justify;margin:7 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;number of drinking water wells serving more than 100 people (DWW_Count, sourced from KC 2019).&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/LI&gt;&lt;/UL&gt;&lt;P&gt;&lt;SPAN /&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;Where reference to the data is to be included in a reference list the following citation is suggested: &lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;White PA, Moreau M, Mourot F, Rawlinson ZJ. 2019. New Zealand groundwater atlas:&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN /&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;hydrogeological-unit map of New Zealand. Lower Hutt (NZ): GNS Science. 86 p. Consultancy Report 2019/144.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN STYLE="font-size:12pt"&gt;The Hydrogeological System dataset utilised is from: &lt;/SPAN&gt;&lt;SPAN&gt;Moreau M, White PA&lt;/SPAN&gt;&lt;SPAN&gt;, Mourot F, Rawlinson Z&lt;/SPAN&gt;&lt;SPAN&gt;, Tschritter C, Cameron SG&lt;/SPAN&gt;&lt;SPAN&gt;, Westerhoff R. 2019. Classification of New Zealand hydrogeological systems. Lower Hutt (NZ): GNS Science. 28 p. (GNS Science report; 2018/35). doi:10.21420/42QW-MC74.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;Summary statistics are calculated from datasets described in the following reports: &lt;/SPAN&gt;&lt;SPAN /&gt;&lt;SPAN /&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN STYLE="font-size:12pt"&gt;Westerhoff RS, Tschritter C, Rawlinson ZJ. 2019. New Zealand groundwater &lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;a&lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;tlas: depth to hydrogeological basement. Lower Hutt (NZ): GNS Science. 19 p. Consultancy Report 2019/140.&lt;/SPAN&gt;&lt;SPAN /&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;Westerhoff RS, Dark A, Zammit C, Tschritter C, Rawlinson ZJ&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;. 2019. New Zealand Groundwater Atlas: Groundwater Fluxes. Wairakei (NZ): GNS Science. 60 p. Consultancy Report 2019/126.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;KC, B. (2019). New Zealand Groundwater Atlas: Groundwater use and drinking water supply wells serving more than 100 people. Prepared for the Ministry for the Environment (MfE). Aqualinc Research Limited. 27 p.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN /&gt;&lt;/P&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;In compiling the HUM stacked polygon GIS data set, inferences and assumptions have been made about HUM units at a regional scale. At the time of publishing, no validations using actual observations have been made (eg yield and aquifer properties), and the data sets do not include any information regarding the sustainability of an aquifer unit (eg groundwater use, recharge/discharge areas and water balance). Experience and an appreciation of the limitations of this data set is needed by persons using this data set as an element in their decision-making over access to and use of groundwater resources. In addition, this data set should be treated with caution for detailed studies at map scales of less than 1:250,000.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;The uncertainty pertaining to the HUM outcrop polygon GIS data set are a combination of the uncertainty of the HUM stacked polygons and the source data from which summary statistics were derived (KC 2001; Westerhoff et al 2019a, 2019b).&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN /&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</gco:CharacterString>
+      </gmd:abstract>
+      <gmd:purpose>
+        <gco:CharacterString>New Zealand Hydrogeological unit map (HUM) separated into aquifers, aquitards, aquicludes and basement developed in a nationally-consistent manner. This dataset includes only outcropping hydrogeological units. Summary statistics of surficially mapped products are also provided for each polygon (groundwater use, flow, recharge, discharge to the surface; depth to hydrogeological basement; and number of drinking water wells serving &gt;100 people).</gco:CharacterString>
+      </gmd:purpose>
+      <gmd:pointOfContact>
+        <gmd:CI_ResponsibleParty>
+          <gmd:individualName>
+            <gco:CharacterString>Magali Moreau (GNS Science)</gco:CharacterString>
+          </gmd:individualName>
+          <gmd:organisationName>
+            <gco:CharacterString>Empty</gco:CharacterString>
+          </gmd:organisationName>
+          <gmd:positionName>
+            <gco:CharacterString>Empty</gco:CharacterString>
+          </gmd:positionName>
+          <gmd:role>
+            <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+          </gmd:role>
+        </gmd:CI_ResponsibleParty>
+      </gmd:pointOfContact>
+      <gmd:resourceConstraints>
+        <gmd:MD_LegalConstraints>
+          <gmd:useLimitation>
+            <gco:CharacterString>These data have been developed for the purpose of national-scale assessments. While all care and diligence has been used in processing, analysing and extracting data and information for this publication, the Ministry for the Environment and the Institute of Geological and Nuclear Sciences Limited (GNS Science) give no warranty in relation to these data - including its accuracy, reliability and suitability - and accept no liability whatsoever in relation to any loss, damage, or other costs relating to the use of any part of these data or any compilations, derivative works, or modifications of these data.</gco:CharacterString>
+          </gmd:useLimitation>
+        </gmd:MD_LegalConstraints>
+      </gmd:resourceConstraints>
+      <gmd:resourceConstraints>
+        <gmd:MD_Constraints>
+          <gmd:useLimitation>
+            <gco:CharacterString>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;Where reference to the data is to be included in a reference list the following citation is suggested: &lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;White PA, Moreau M, Mourot F, Rawlinson ZJ. 2019. New Zealand groundwater atlas:&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN /&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;hydrogeological-unit map of New Zealand. Lower Hutt (NZ): GNS Science. 86 p. Consultancy Report 2019/144.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;In compiling the HUM stacked polygon GIS data set, inferences and assumptions have been made about HUM units at a regional scale. At the time of publishing, no validations using actual observations have been made (eg yield and aquifer properties), and the data sets do not include any information regarding the sustainability of an aquifer unit (eg groundwater use, recharge/discharge areas and water balance). Experience and an appreciation of the limitations of this data set is needed by persons using this data set as an element in their decision-making over access to and use of groundwater resources. In addition, this data set should be treated with caution for detailed studies at map scales of less than 1:250,000.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;The uncertainty pertaining to the HUM outcrop polygon GIS data set are a combination of the uncertainty of the HUM stacked polygons and the source data from which summary statistics were derived (KC 2001; Westerhoff et al 2019a, 2019b).&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN /&gt;&lt;SPAN /&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</gco:CharacterString>
+          </gmd:useLimitation>
+        </gmd:MD_Constraints>
+      </gmd:resourceConstraints>
+      <gmd:spatialRepresentationType>
+        <gmd:MD_SpatialRepresentationTypeCode codeList="./resources/codeList.xml#MD_SpatialRepresentationTypeCode" codeListValue="002"/>
+      </gmd:spatialRepresentationType>
+      <gmd:language>
+        <gco:CharacterString>eng</gco:CharacterString>
+      </gmd:language>
+      <gmd:characterSet>
+        <gmd:MD_CharacterSetCode codeList="./resources/codeList.xml#MD_CharacterSetCode" codeListValue="004"/>
+      </gmd:characterSet>
+      <gmd:topicCategory>
+        <gmd:MD_TopicCategoryCode>geoscientificInformation</gmd:MD_TopicCategoryCode>
+      </gmd:topicCategory>
+      <gmd:topicCategory>
+        <gmd:MD_TopicCategoryCode>environment</gmd:MD_TopicCategoryCode>
+      </gmd:topicCategory>
+      <gmd:environmentDescription>
+        <gco:CharacterString>Version 6.2 (Build 9200) ; Esri ArcGIS 10.5.1.7333</gco:CharacterString>
+      </gmd:environmentDescription>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement/>
+        </gmd:EX_Extent>
+      </gmd:extent>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement/>
+        </gmd:EX_Extent>
+      </gmd:extent>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement/>
+        </gmd:EX_Extent>
+      </gmd:extent>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement/>
+        </gmd:EX_Extent>
+      </gmd:extent>
+      <gmd:extent>
+        <gmd:EX_Extent>
+          <gmd:geographicElement>
+            <gmd:EX_GeographicBoundingBox>
+              <gmd:westBoundLongitude>
+                <gco:Decimal>166.4267905531803</gco:Decimal>
+              </gmd:westBoundLongitude>
+              <gmd:eastBoundLongitude>
+                <gco:Decimal>178.55021953944038</gco:Decimal>
+              </gmd:eastBoundLongitude>
+              <gmd:southBoundLatitude>
+                <gco:Decimal>-46.67493947687571</gco:Decimal>
+              </gmd:southBoundLatitude>
+              <gmd:northBoundLatitude>
+                <gco:Decimal>-34.39341836737043</gco:Decimal>
+              </gmd:northBoundLatitude>
+            </gmd:EX_GeographicBoundingBox>
+          </gmd:geographicElement>
+        </gmd:EX_Extent>
+      </gmd:extent>
+    </gmd:MD_DataIdentification>
+  </gmd:identificationInfo>
+  <gmd:contentInfo>
+    <gmd:MD_ImageDescription>
+      <gmd:attributeDescription>
+        <gco:RecordType/>
+      </gmd:attributeDescription>
+      <gmd:contentType>
+        <gmd:MD_CoverageContentTypeCode codeList="./resources/codeList.xml#MD_CoverageContentTypeCode" codeListValue="001"/>
+      </gmd:contentType>
+      <gmd:dimension>
+        <gmd:MD_Band>
+          <gmd:descriptor>
+            <gco:CharacterString>Band_1</gco:CharacterString>
+          </gmd:descriptor>
+          <gmd:units/>
+          <gmd:bitsPerValue>
+            <gco:Integer>64</gco:Integer>
+          </gmd:bitsPerValue>
+        </gmd:MD_Band>
+      </gmd:dimension>
+    </gmd:MD_ImageDescription>
+  </gmd:contentInfo>
+  <gmd:distributionInfo>
+    <gmd:MD_Distribution>
+      <gmd:distributor>
+        <gmd:MD_Distributor>
+          <gmd:distributorContact>
+            <gmd:CI_ResponsibleParty>
+              <gmd:individualName>
+                <gco:CharacterString>Magali Moreau (GNS Science)</gco:CharacterString>
+              </gmd:individualName>
+              <gmd:organisationName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:organisationName>
+              <gmd:positionName>
+                <gco:CharacterString>Empty</gco:CharacterString>
+              </gmd:positionName>
+              <gmd:role>
+                <gmd:CI_RoleCode codeList="./resources/codeList.xml#CI_RoleCode" codeListValue="011"/>
+              </gmd:role>
+            </gmd:CI_ResponsibleParty>
+          </gmd:distributorContact>
+        </gmd:MD_Distributor>
+      </gmd:distributor>
+      <gmd:transferOptions>
+        <gmd:MD_DigitalTransferOptions>
+          <gmd:transferSize>
+            <gco:Real>299.535</gco:Real>
+          </gmd:transferSize>
+          <gmd:onLine>
+            <gmd:CI_OnlineResource>
+              <gmd:linkage>
+                <gmd:URL>https://data.mfe.govt.nz/layer/104445-nationally-consistent-hydrogeological-unit-map-2019/</gmd:URL>
+              </gmd:linkage>
+            </gmd:CI_OnlineResource>
+          </gmd:onLine>
+        </gmd:MD_DigitalTransferOptions>
+      </gmd:transferOptions>
+    </gmd:MD_Distribution>
+  </gmd:distributionInfo>
+  <gmd:dataQualityInfo>
+    <gmd:DQ_DataQuality>
+      <gmd:scope>
+        <gmd:DQ_Scope>
+          <gmd:level>
+            <gmd:MD_ScopeCode codeList="./resources/codeList.xml#MD_ScopeCode" codeListValue="015"/>
+          </gmd:level>
+        </gmd:DQ_Scope>
+      </gmd:scope>
+      <gmd:lineage>
+        <gmd:LI_Lineage>
+          <gmd:statement>
+            <gco:CharacterString>Supplied to Ministry for the Environment by GNS Science in November 2019.</gco:CharacterString>
+          </gmd:statement>
+        </gmd:LI_Lineage>
+      </gmd:lineage>
+    </gmd:DQ_DataQuality>
+  </gmd:dataQualityInfo>
+  <gmd:metadataConstraints>
+    <gmd:MD_LegalConstraints>
+      <gmd:useLimitation>
+        <gco:CharacterString>These data have been developed for the purpose of national-scale assessments. While all care and diligence has been used in processing, analysing and extracting data and information for this publication, the Ministry for the Environment and the Institute of Geological and Nuclear Sciences Limited (GNS Science) give no warranty in relation to these data - including its accuracy, reliability and suitability - and accept no liability whatsoever in relation to any loss, damage, or other costs relating to the use of any part of these data or any compilations, derivative works, or modifications of these data.</gco:CharacterString>
+      </gmd:useLimitation>
+    </gmd:MD_LegalConstraints>
+  </gmd:metadataConstraints>
+  <gmd:metadataConstraints>
+    <gmd:MD_Constraints>
+      <gmd:useLimitation>
+        <gco:CharacterString>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;Where reference to the data is to be included in a reference list the following citation is suggested: &lt;/SPAN&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;White PA, Moreau M, Mourot F, Rawlinson ZJ. 2019. New Zealand groundwater atlas:&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;SPAN /&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN&gt;hydrogeological-unit map of New Zealand. Lower Hutt (NZ): GNS Science. 86 p. Consultancy Report 2019/144.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;In compiling the HUM stacked polygon GIS data set, inferences and assumptions have been made about HUM units at a regional scale. At the time of publishing, no validations using actual observations have been made (eg yield and aquifer properties), and the data sets do not include any information regarding the sustainability of an aquifer unit (eg groundwater use, recharge/discharge areas and water balance). Experience and an appreciation of the limitations of this data set is needed by persons using this data set as an element in their decision-making over access to and use of groundwater resources. In addition, this data set should be treated with caution for detailed studies at map scales of less than 1:250,000.&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P STYLE="text-align:Justify;margin:15 0 0 0;"&gt;&lt;SPAN&gt;&lt;SPAN&gt;The uncertainty pertaining to the HUM outcrop polygon GIS data set are a combination of the uncertainty of the HUM stacked polygons and the source data from which summary statistics were derived (KC 2001; Westerhoff et al 2019a, 2019b).&lt;/SPAN&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN STYLE="font-size:12pt"&gt;&lt;SPAN /&gt;&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</gco:CharacterString>
+      </gmd:useLimitation>
+    </gmd:MD_Constraints>
+  </gmd:metadataConstraints>
+  <gmd:metadataConstraints>
+    <gmd:MD_LegalConstraints>
+      <gmd:useLimitation>Attribution 4.0 International</gmd:useLimitation>
+      <gmd:useLimitation>https://creativecommons.org/licenses/by/4.0/</gmd:useLimitation>
+      <gmd:useConstraints>
+        <gmd:MD_RestrictionCode codeList="http://standards.iso.org/ittf/PubliclyAvailableStandards/ISO_19139_Schemas/resources/Codelist/gmxCodelists.xml#MD_RestrictionCode" codeListValue="license">license</gmd:MD_RestrictionCode>
+      </gmd:useConstraints>
+    </gmd:MD_LegalConstraints>
+  </gmd:metadataConstraints>
+</gmd:MD_Metadata>

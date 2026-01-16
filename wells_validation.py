@@ -71,10 +71,25 @@ def resolve_columns(df_columns: Iterable[str]) -> Dict[str, str]:
 
 
 def coerce_float(value) -> float | None:
+    """Safely convert a value to float, returning None when conversion fails."""
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def is_missing_value(value) -> bool:
+    """Detect empty/NaN string or numeric placeholders."""
+    return pd.isna(value) or (isinstance(value, str) and not value.strip())
+
+
+def normalize_row_number(value) -> int | None:
+    """Return a positive integer row number or None when not usable."""
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def add_issue(
@@ -127,11 +142,7 @@ def validate(df: pd.DataFrame) -> tuple[List[Dict[str, str]], Dict[str, str]]:
                 continue
 
             raw_value = row[col_name]
-            is_missing = pd.isna(raw_value) or (
-                isinstance(raw_value, str) and not raw_value.strip()
-            )
-
-            if is_missing:
+            if is_missing_value(raw_value):
                 add_issue(
                     issues,
                     row_number=row_number,
@@ -173,11 +184,7 @@ def validate(df: pd.DataFrame) -> tuple[List[Dict[str, str]], Dict[str, str]]:
                 continue
 
             raw_value = row[col_name]
-            is_missing = pd.isna(raw_value) or (
-                isinstance(raw_value, str) and not raw_value.strip()
-            )
-
-            if is_missing:
+            if is_missing_value(raw_value):
                 add_issue(
                     issues,
                     row_number=row_number,
@@ -204,10 +211,11 @@ def write_outputs(
     issue_counter = Counter(issue["issue_type"] for issue in issues)
     severity_counter = Counter(issue["severity"] for issue in issues)
     rows_with_issue = {
-        int(issue["row_number"])
-        for issue in issues
-        if issue.get("row_number") not in ("", None)
-        and str(issue.get("row_number")).strip().lstrip("-").isdigit()
+        row_id
+        for row_id in (
+            normalize_row_number(issue.get("row_number")) for issue in issues
+        )
+        if row_id is not None
     }
 
     summary_rows = [

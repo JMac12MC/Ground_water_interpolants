@@ -64,12 +64,17 @@ See [USAGE_FOR_WTD_MAPPING.md](USAGE_FOR_WTD_MAPPING.md) for detailed instructio
 ### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/JMac12MC/Ground_water_interpolants.git
+cd Ground_water_interpolants
+
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
 # OR using uv (faster)
 uv pip install -r pyproject.toml
 ```
@@ -230,10 +235,18 @@ See `examples/generate_wtd_map.py` for a complete workflow example similar to Hy
 
 ## Documentation
 
-- [Architecture Overview](docs/scope/architecture_summary.md)
-- [Development Plan](docs/scope/README.md)
-- [WTD Mapping Usage Guide](USAGE_FOR_WTD_MAPPING.md)
-- [Quick Start Guide](docs/scope/quick_start.md)
+### Quick Start
+- [Quick Start Guide](docs/scope/quick_start.md) - Get started quickly
+- [Installation Guide](#installation) - Setup instructions
+
+### WTD Mapping
+- **[Detailed WTD Mapping Guide](USAGE_FOR_WTD_MAPPING.md)** - Complete workflow for high-resolution water table depth mapping
+- **[Comparison with HydroFrame-ML](COMPARISON.md)** - Detailed comparison and compatibility analysis
+- [Example Scripts](examples/README.md) - Ready-to-use training and map generation scripts
+
+### Architecture & Development
+- [Architecture Overview](docs/scope/architecture_summary.md) - System design
+- [Development Plan](docs/scope/README.md) - Roadmap and planning
 
 ## Contributing
 

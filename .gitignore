@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.db
+*.sqlite
+*.sqlite3
+heatmaps.db
+
+# Logs
+*.log
+
+# Temporary files
+/tmp/
+*.tmp
+model_outputs/
+
+# Data files (large)
+*.tif
+*.geotiff
+*.pkl
+*.joblib
+*.npy
+
+# Except example config
+!examples/covariate_config_example.json

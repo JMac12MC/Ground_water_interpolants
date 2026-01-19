@@ -1,0 +1,18 @@
+{
+  "elevation": "path/to/covariates/elevation_30m.tif",
+  "slope": "path/to/covariates/slope_30m.tif",
+  "aspect": "path/to/covariates/aspect_30m.tif",
+  "twi": "path/to/covariates/topographic_wetness_index_30m.tif",
+  "tri": "path/to/covariates/terrain_ruggedness_index_30m.tif",
+  "dist_to_stream": "path/to/covariates/distance_to_stream_30m.tif",
+  "drainage_density": "path/to/covariates/drainage_density_30m.tif",
+  "flow_accumulation": "path/to/covariates/flow_accumulation_30m.tif",
+  "soil_permeability": "path/to/covariates/soil_permeability_30m.tif",
+  "soil_texture_sand": "path/to/covariates/soil_sand_fraction_30m.tif",
+  "soil_texture_clay": "path/to/covariates/soil_clay_fraction_30m.tif",
+  "depth_to_bedrock": "path/to/covariates/depth_to_bedrock_30m.tif",
+  "mean_annual_precip": "path/to/covariates/mean_annual_precipitation_30m.tif",
+  "potential_et": "path/to/covariates/potential_evapotranspiration_30m.tif",
+  "aridity_index": "path/to/covariates/aridity_index_30m.tif",
+  "mean_annual_temp": "path/to/covariates/mean_annual_temperature_30m.tif"
+}

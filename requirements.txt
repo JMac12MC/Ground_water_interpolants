@@ -1,0 +1,41 @@
+# Groundwater Interpolation System - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web Framework & Visualization
+streamlit>=1.45.1
+streamlit-folium>=0.25.0
+folium>=0.19.6
+
+# Scientific Computing
+numpy>=2.2.5
+pandas>=2.2.3
+scipy>=1.15.3
+
+# Machine Learning
+scikit-learn>=1.6.1
+quantile-forest>=1.4.1
+joblib>=1.4.2
+
+# Geospatial
+geopandas>=1.0.1
+shapely>=2.1.0
+pyproj>=3.7.1
+rasterio>=1.4.3
+rio-cogeo>=5.4.2
+
+# Geostatistics
+pykrige>=1.7.2
+scikit-gstat>=1.0.21
+
+# Visualization
+matplotlib>=3.10.3
+pillow>=11.2.1
+
+# Database
+psycopg2-binary>=2.9.10
+sqlalchemy>=2.0.41
+
+# Utilities
+requests>=2.32.3
+trafilatura>=2.0.0
+tqdm>=4.66.0

@@ -25,4 +25,6 @@ dependencies = [
     "rio-cogeo>=5.4.2",
     "pillow>=11.2.1",
     "quantile-forest>=1.4.1",
+    "joblib>=1.4.2",
+    "tqdm>=4.66.0",
 ]
